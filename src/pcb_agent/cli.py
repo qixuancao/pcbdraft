@@ -10,6 +10,7 @@ from pathlib import Path
 
 from . import __version__
 from .api import serve
+from .benchmark import run_benchmark
 from .blocks import BlockRegistry
 from .doctor import doctor_report
 from .errors import PcbAgentError, TransactionRejected
@@ -57,7 +58,7 @@ def positive_timeout(value: str) -> float:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="pcb-agent",
-        description="Evidence-driven KiCad reviewer and transactional safe patcher.",
+        description="Evidence-driven semantic PCB design, validation, and release runtime.",
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
@@ -179,6 +180,18 @@ def build_parser() -> argparse.ArgumentParser:
     evidence.add_argument("--statement", required=True)
     evidence.add_argument("--artifact", required=True, action="append")
     evidence.add_argument("--metadata", required=True, metavar="JSON_FILE")
+
+    benchmark = subcommands.add_parser(
+        "benchmark", help="run the independent error-injection and repair corpus"
+    )
+    benchmark.add_argument("OUTPUT", help="new benchmark result JSON file")
+    benchmark.add_argument("--repetitions", type=int, choices=range(2, 21), default=5)
+    benchmark.add_argument("--corpus", metavar="JSON_FILE")
+    benchmark.add_argument("--model-runs", type=int, choices=(0, 2, 3, 4, 5), default=0)
+    benchmark.add_argument(
+        "--model-timeout", type=positive_timeout, default=420.0, metavar="SEC"
+    )
+    benchmark.add_argument("--json", action="store_true", dest="as_json")
 
     semantic_preview = subcommands.add_parser(
         "semantic-preview", help="prepare a previewable semantic IR transaction"
@@ -363,6 +376,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             print(f"external evidence recorded: {path}")
             return 0
+        if args.command == "benchmark":
+            result = run_benchmark(
+                args.OUTPUT,
+                repetitions=args.repetitions,
+                corpus_path=args.corpus,
+                model_runs=args.model_runs,
+                model_timeout=args.model_timeout,
+            )
+            metrics = result.result["metrics"]
+            value = {
+                "report": str(result.report_path),
+                "metrics": metrics,
+                "model_consistency": result.result["model_consistency"],
+            }
+            _emit(value, args.as_json, f"benchmark complete: {result.report_path}")
+            passed = (
+                metrics["confusion_matrix"]["false_negative"] == 0
+                and metrics["confusion_matrix"]["false_positive"] == 0
+                and metrics["repair"]["success_rate"] == 1.0
+                and metrics["repair"]["introduced_regression_cases"] == 0
+                and metrics["repeatability"]["rate"] == 1.0
+            )
+            return 0 if passed else 3
         if args.command == "semantic-preview":
             change_set = load_change_set_bytes(
                 read_bytes_limited(Path(args.CHANGE_SET), MAX_CHANGE_BYTES)

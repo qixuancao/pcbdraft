@@ -20,6 +20,7 @@ class JsonRpcApiTests(unittest.TestCase):
         self.assertEqual(result["api_version"], "1.0")
         self.assertIn("project.generate", result["methods"])
         self.assertIn("sync.preview", result["methods"])
+        self.assertIn("benchmark.run", result["methods"])
         self.assertEqual(
             result["accepted_scope"]["high_risk_domains"], "explicitly_rejected"
         )

@@ -22,6 +22,7 @@ from .parts import PartGraph
 from .process import run_command
 from .project import sha256_file
 from .runs import utc_timestamp
+from .semantic_rules import evaluate_semantic_rules
 
 VALIDATION_SCHEMA = "pcb-agent-validation"
 VALIDATION_VERSION = 1
@@ -603,6 +604,38 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
             checks.append(_check_group(constraint, inspections, placements))
         elif constraint.kind == "routing":
             checks.append(_check_routing(design, constraint, project.manifest, graph))
+    footprint_bounds = {
+        component_id: (
+            inspection.bbox_x_mm,
+            inspection.bbox_y_mm,
+            inspection.bbox_x_mm + inspection.width_mm,
+            inspection.bbox_y_mm + inspection.height_mm,
+        )
+        for component_id, inspection in inspections.items()
+    }
+    semantic_findings = evaluate_semantic_rules(
+        design,
+        graph,
+        placements=placements,
+        footprint_bounds=footprint_bounds,
+        routing=project.manifest["generation"]["pcb"]["routing"],
+        approximate_geometry=False,
+    )
+    checks.append(
+        CheckResult(
+            "l3.semantic_intent_registry",
+            "L3",
+            "completed",
+            "fail" if semantic_findings else "pass",
+            "All deterministic semantic intent rules passed."
+            if not semantic_findings
+            else "One or more deterministic semantic intent rules failed.",
+            (project.ir_path.name, "trusted part graph", "generation receipts"),
+            {"findings": [finding.to_dict() for finding in semantic_findings]},
+            True,
+            True,
+        )
+    )
     if not checks:
         checks.append(
             CheckResult(

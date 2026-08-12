@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, TextIO
 
 from . import __version__
+from .benchmark import run_benchmark
 from .blocks import BlockRegistry
 from .errors import PcbAgentError, ValidationError
 from .external_evidence import record_external_evidence
@@ -40,6 +41,7 @@ def capabilities() -> dict[str, Any]:
             "sync.preview",
             "sync.apply",
             "evidence.record",
+            "benchmark.run",
         ],
         "evidence_states": sorted(EVIDENCE_STATES),
         "accepted_scope": {
@@ -207,6 +209,25 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             metadata=params["metadata"],
         )
         return {"index": str(path)}
+    if method == "benchmark.run":
+        _exact(
+            params,
+            {"output"},
+            {"repetitions", "corpus", "model_runs", "model_timeout"},
+        )
+        corpus = params.get("corpus")
+        result = run_benchmark(
+            _path(params["output"], "output"),
+            repetitions=_integer(params.get("repetitions", 5), "repetitions"),
+            corpus_path=_path(corpus, "corpus") if corpus is not None else None,
+            model_runs=_integer(params.get("model_runs", 0), "model_runs"),
+            model_timeout=_timeout(params.get("model_timeout", 420.0)),
+        )
+        return {
+            "report": str(result.report_path),
+            "metrics": result.result["metrics"],
+            "model_consistency": result.result["model_consistency"],
+        }
     raise RpcError(-32601, f"method not found: {method}")
 
 
@@ -283,6 +304,12 @@ def _timeout(value: Any) -> float:
     if not 0 < result <= 3600:
         raise RpcError(-32602, "timeout must be in (0, 3600]")
     return result
+
+
+def _integer(value: Any, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise RpcError(-32602, f"{name} must be an integer")
+    return value
 
 
 def _project_result(project: Any) -> dict[str, Any]:
