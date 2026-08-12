@@ -71,6 +71,16 @@ class NativeKiCadGenerationTests(unittest.TestCase):
             self.assertEqual(first_pcb.reference_planes[0]["layer"], "B.Cu")
             self.assertTrue(first_pcb.reference_planes[0]["filled"])
             self.assertGreater(first_pcb.reference_planes[0]["area_mm2"], 0)
+            self.assertGreaterEqual(
+                sum(via.net == "GND" for via in first_pcb.routing.vias), 2
+            )
+            self.assertTrue(
+                all(
+                    metric["outcome"] == "pass"
+                    and metric["metric"] == "minimum_relevant_copper_pad_edge_gap"
+                    for metric in first_pcb.constraint_metrics.values()
+                )
+            )
             project = json.loads(first_pcb.project_path.read_text(encoding="utf-8"))
             self.assertEqual(
                 project["board"]["design_settings"]["rule_severities"][

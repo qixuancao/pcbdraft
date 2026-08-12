@@ -14,10 +14,15 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from .errors import PcbAgentError
+from .blocks import BlockRegistry
+from .errors import PcbAgentError, ValidationError
 from .io import make_directory, read_bytes_limited
+from .managed import MANAGED_MANIFEST, open_managed_project
+from .parts import PartGraph
 from .process import redact_argv, remaining_timeout, run_command
-from .project import ProjectFiles
+from .project import ProjectFiles, sha256_file
+from .requirements import load_requirements
+from .semantic_rules import evaluate_semantic_rules
 
 PROCESS_OUTPUT_LIMIT = 1024 * 1024
 NETLIST_LIMIT = 8 * 1024 * 1024
@@ -30,6 +35,7 @@ NODE_LIMIT = 5_000
 IPCD356_RECORD_LIMIT = 2_000
 STRING_LIMIT = 512
 PROMPT_CONTEXT_LIMIT = 1024 * 1024
+MANAGED_CONTEXT_LIMIT = 512 * 1024
 
 
 def _bounded(value: str | None, limit: int = STRING_LIMIT) -> str:
@@ -226,11 +232,13 @@ def _parse_ipcd356(data: bytes) -> dict[str, Any]:
     }
 
 
+def _context_size(context: Mapping[str, Any]) -> int:
+    return len(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+
+
 def _fit_prompt_context(context: dict[str, Any]) -> dict[str, Any]:
     def size() -> int:
-        return len(
-            json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")
-        )
+        return _context_size(context)
 
     for key, list_key in (
         ("board_connectivity", "records"),
@@ -265,9 +273,121 @@ def _fit_prompt_context(context: dict[str, Any]) -> dict[str, Any]:
     return context
 
 
+def _managed_semantic_context(project_root: Path) -> dict[str, Any]:
+    """Return trusted, bounded design intent for an intact managed project.
+
+    Merely placing JSON files next to a KiCad project does not enable this path:
+    ``open_managed_project`` strictly parses the manifest, requirements, and IR,
+    validates every managed member, and checks the pinned KiCad compatibility.
+    Byte and semantic synchronization are reported separately so reviewers do not
+    mistake stale intent for native-board evidence.
+    """
+    manifest_path = project_root / MANAGED_MANIFEST
+    if not manifest_path.exists():
+        return {
+            "available": False,
+            "reason": "not_a_managed_project",
+        }
+    try:
+        project = open_managed_project(project_root)
+        requirements = load_requirements(project.requirements_path)
+        graph = PartGraph.bundled()
+        registry = BlockRegistry.bundled(graph)
+        drift = project.drift()
+        part_issues = graph.validate_design(project.design, check_libraries=True)
+        semantic_findings = evaluate_semantic_rules(
+            project.design,
+            graph,
+            routing=project.manifest["generation"]["pcb"]["routing"],
+            approximate_geometry=False,
+        )
+        used_part_ids = sorted(
+            {component.part_id for component in project.design.components}
+        )
+        used_block_ids = sorted(block.id for block in project.design.blocks)
+        block_definitions = {
+            definition.id: definition
+            for definition in registry.definitions()
+            if definition.id in used_block_ids
+        }
+        generation = project.manifest["generation"]
+        context = {
+            "available": True,
+            "schema": "pcb-agent-managed-review-context",
+            "version": 1,
+            "authority": project.manifest["sync"].get("authority"),
+            "synchronization": {
+                "state": "synchronized" if not drift else "drifted",
+                "drift": list(drift),
+                "manifest_state": project.manifest["sync"].get("state"),
+                "kicad_compatibility": project.manifest["sync"].get(
+                    "kicad_compatibility"
+                ),
+            },
+            "identity": {
+                "design_content_hash": project.design.content_hash(),
+                "requirements_sha256": sha256_file(project.requirements_path),
+                "ir_sha256": sha256_file(project.ir_path),
+                "schematic_sha256": sha256_file(project.schematic_path),
+                "board_sha256": sha256_file(project.board_path),
+            },
+            "requirements": requirements.to_dict(),
+            "design_ir": project.design.to_dict(),
+            "trusted_parts": {
+                "license": graph.license_id,
+                "records": [graph.get(part_id).to_dict() for part_id in used_part_ids],
+                "contract_issues": [issue.to_dict() for issue in part_issues],
+            },
+            "verified_blocks": [
+                {
+                    "id": definition.id,
+                    "version": definition.version,
+                    "kind": definition.kind,
+                    "verification_state": definition.verification_state,
+                    "description": definition.description,
+                    "constraints": list(definition.constraints),
+                    "evidence": list(definition.evidence),
+                    "verification_tests": list(definition.verification_tests),
+                }
+                for definition in (
+                    block_definitions[block_id] for block_id in used_block_ids
+                )
+            ],
+            "generation_evidence": {
+                "schematic": generation["schematic"],
+                "placement": generation["pcb"]["placement"],
+                "routing": generation["pcb"]["routing"],
+                "constraint_metrics": generation["pcb"].get("constraint_metrics", {}),
+                "native_board_snapshot": project.manifest["native_snapshots"]["board"],
+            },
+            "semantic_rule_evaluation": {
+                "method": "deterministic_typed_ir_rules_without_approximate_geometry",
+                "outcome": "pass" if not semantic_findings else "fail",
+                "findings": [finding.to_dict() for finding in semantic_findings],
+            },
+            "interpretation": {
+                "native_evidence_authoritative": not drift,
+                "intent_evidence_authoritative": not drift,
+                "physical_or_human_signoff": False,
+            },
+        }
+        if _context_size(context) > MANAGED_CONTEXT_LIMIT:
+            raise PcbAgentError(
+                f"managed semantic context exceeds {MANAGED_CONTEXT_LIMIT} bytes"
+            )
+        return context
+    except (PcbAgentError, ValidationError, KeyError, TypeError) as exc:
+        return {
+            "available": False,
+            "reason": "invalid_or_unsafe_managed_project",
+            "failure": str(exc)[:STRING_LIMIT],
+        }
+
+
 def collect_semantic_context(
     *,
     files: ProjectFiles,
+    project_root: Path | None = None,
     output_dir: Path,
     deadline: float,
     redactions: Mapping[str, str],
@@ -346,11 +466,14 @@ def collect_semantic_context(
             payloads[name] = data
 
     context: dict[str, Any] = {
-        "context_version": 1,
+        "context_version": 2,
         "exports": exports,
         "schematic": {"available": False},
         "board_statistics": {"available": False},
         "board_connectivity": {"available": False},
+        "managed_project": _managed_semantic_context(project_root)
+        if project_root is not None
+        else {"available": False, "reason": "project_root_not_supplied"},
     }
     parsers = {
         "schematic_netlist": ("schematic", _parse_netlist),

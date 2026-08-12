@@ -34,6 +34,16 @@ MAX_EXPORT_OUTPUT = 4 * 1024 * 1024
 MAX_RELEASE_FILES = 256
 MAX_RELEASE_BYTES = 512 * 1024 * 1024
 REPRODUCIBLE_TIMESTAMP = "1980-01-01T00:00:00"
+AUDIT_ARTIFACT_PATHS = frozenset(
+    {
+        "validation/receipt.json",
+        "validation/erc.raw.json",
+        "validation/drc.raw.json",
+    }
+)
+RELEASE_CONTROL_PATHS = frozenset(
+    {"receipt.json", "release-manifest.json", "release.zip"}
+)
 
 
 @dataclass(frozen=True)
@@ -133,6 +143,7 @@ def build_manufacturing_release(
                     "managed project changed during manufacturing export"
                 )
 
+            audit_artifacts = _inventory_exact(root, AUDIT_ARTIFACT_PATHS)
             artifacts = _inventory(
                 root,
                 exclude={"receipt.json", "release-manifest.json", "release.zip"},
@@ -206,6 +217,7 @@ def build_manufacturing_release(
                     "archive_sha256": archive_hash,
                     "tool_runs": tool_runs,
                     "normalization": normalization,
+                    "audit_artifacts": audit_artifacts,
                 }
             )
             atomic_write_json(receipt_path, receipt)
@@ -286,8 +298,8 @@ def verify_manufacturing_release(value: str | Path) -> ReleaseVerification:
         path.relative_to(root).as_posix()
         for path in root.rglob("*")
         if path.is_file()
-        and path.name not in {"receipt.json", "release-manifest.json", "release.zip"}
-        and not _volatile_artifact(path)
+        and path.relative_to(root).as_posix() not in RELEASE_CONTROL_PATHS
+        and path.relative_to(root).as_posix() not in AUDIT_ARTIFACT_PATHS
     }
     if actual_nonvolatile != set(expected):
         raise ValidationError("release directory inventory differs from its manifest")
@@ -297,6 +309,12 @@ def verify_manufacturing_release(value: str | Path) -> ReleaseVerification:
         raise ValidationError("release manifest hash differs from its receipt")
     if receipt.get("archive_sha256") != archive_hash:
         raise ValidationError("release archive hash differs from its receipt")
+    audit = _verify_audit_artifacts(root, receipt.get("audit_artifacts"))
+    actual_files = {
+        path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
+    }
+    if actual_files != set(expected) | set(audit) | set(RELEASE_CONTROL_PATHS):
+        raise ValidationError("release directory contains untracked files")
     _verify_archive(archive_path, manifest_path, expected)
     return ReleaseVerification(root, manifest_hash, archive_hash, len(expected))
 
@@ -704,7 +722,7 @@ def _inventory(root: Path, *, exclude: set[str]) -> list[dict[str, Any]]:
         for path in root.rglob("*")
         if path.is_file()
         and path.relative_to(root).as_posix() not in exclude
-        and not _volatile_artifact(path)
+        and path.relative_to(root).as_posix() not in AUDIT_ARTIFACT_PATHS
     )
     if len(files) > MAX_RELEASE_FILES:
         raise ValidationError("release exceeds the artifact count limit")
@@ -721,14 +739,62 @@ def _inventory(root: Path, *, exclude: set[str]) -> list[dict[str, Any]]:
     ]
 
 
+def _inventory_exact(
+    root: Path, relative_paths: frozenset[str]
+) -> list[dict[str, Any]]:
+    records = []
+    for relative in sorted(relative_paths):
+        path = _single_link_file(root / relative)
+        records.append(
+            {
+                "path": relative,
+                "size": path.stat().st_size,
+                "sha256": sha256_file(path, max_bytes=16 * 1024 * 1024),
+            }
+        )
+    return records
+
+
+def _verify_audit_artifacts(root: Path, value: Any) -> dict[str, dict[str, Any]]:
+    if not isinstance(value, list) or len(value) != len(AUDIT_ARTIFACT_PATHS):
+        raise ValidationError("release audit artifact list is malformed")
+    records: dict[str, dict[str, Any]] = {}
+    for entry in value:
+        if not isinstance(entry, dict) or set(entry) != {"path", "size", "sha256"}:
+            raise ValidationError("release audit artifact entry is malformed")
+        relative = entry["path"]
+        size = entry["size"]
+        digest = entry["sha256"]
+        if (
+            relative not in AUDIT_ARTIFACT_PATHS
+            or relative in records
+            or isinstance(size, bool)
+            or not isinstance(size, int)
+            or not 0 <= size <= 16 * 1024 * 1024
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            raise ValidationError("release audit artifact identity is invalid")
+        path = _single_link_file(root / relative)
+        if (
+            path.stat().st_size != size
+            or sha256_file(path, max_bytes=16 * 1024 * 1024) != digest
+        ):
+            raise ValidationError(f"release audit artifact hash mismatch: {relative}")
+        records[relative] = entry
+    if set(records) != set(AUDIT_ARTIFACT_PATHS):
+        raise ValidationError("release audit artifact set is incomplete")
+    return records
+
+
 def _write_archive(root: Path, output: Path) -> None:
     files = sorted(
         path
         for path in root.rglob("*")
         if path.is_file()
         and path != output
-        and path.name != "receipt.json"
-        and not _volatile_artifact(path)
+        and path.relative_to(root).as_posix() != "receipt.json"
+        and path.relative_to(root).as_posix() not in AUDIT_ARTIFACT_PATHS
     )
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in files:
@@ -736,7 +802,7 @@ def _write_archive(root: Path, output: Path) -> None:
             info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o100644 << 16
-            archive.writestr(info, path.read_bytes())
+            archive.writestr(info, read_bytes_limited(path, 128 * 1024 * 1024))
     output.chmod(0o644)
 
 
@@ -816,7 +882,3 @@ def _safe_release_relative(value: Any) -> bool:
         and "." not in path.parts
         and path.as_posix() == value
     )
-
-
-def _volatile_artifact(path: Path) -> bool:
-    return path.name == "receipt.json" or path.name.endswith(".raw.json")

@@ -72,6 +72,7 @@ class PcbGeneration:
     placement_diagnostics: tuple[str, ...]
     routing: RoutingResult
     reference_planes: tuple[dict[str, Any], ...]
+    constraint_metrics: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -102,6 +103,7 @@ class PcbGeneration:
                 "reference_planes": [dict(item) for item in self.reference_planes],
                 "diagnostics": list(self.routing.diagnostics),
             },
+            "constraint_metrics": self.constraint_metrics,
         }
 
 
@@ -229,6 +231,13 @@ def generate_pcb(
         raise ValidationError(
             "bounded router left nets unrouted: " + ", ".join(routing.unrouted)
         )
+    constraint_metrics = _native_constraint_metrics(
+        design,
+        board_components,
+        resolved_graph,
+        inspection,
+        placements,
+    )
 
     job = _build_job(
         design,
@@ -268,6 +277,7 @@ def generate_pcb(
         placement_diagnostics=placement_result.diagnostics,
         routing=routing,
         reference_planes=reference_planes,
+        constraint_metrics=constraint_metrics,
     )
 
 
@@ -577,12 +587,369 @@ def _route(
         grid_mm=ROUTING_GRID_MM,
         max_expansions=750_000,
     )
-    return router.route(
+    routed = router.route(
         pads,
         widths=widths,
         power_nets=(net.name for net in design.nets if net.net_class == "power"),
         seed_segments=escape_segments,
     )
+    return _add_reference_stitching_vias(
+        design,
+        components,
+        graph,
+        tuple(pads),
+        routed,
+    )
+
+
+def _add_reference_stitching_vias(
+    design: Design,
+    components: tuple[Component, ...],
+    graph: PartGraph,
+    pads: tuple[RoutingPad, ...],
+    routing: RoutingResult,
+) -> RoutingResult:
+    """Add deterministic through-via ties from routed GND copper to its plane.
+
+    Candidate centers are sampled on existing GND tracks and rejected against
+    foreign pads, tracks, vias, and the board edge.  This keeps geometry in a
+    deterministic solver instead of asking an LLM to guess stitching locations.
+    """
+    net_by_id = {net.id: net for net in design.nets}
+    reference_contracts = [
+        constraint
+        for constraint in design.constraints
+        if constraint.kind == "routing"
+        and constraint.params.get("continuous_reference_net") is not None
+    ]
+    if not reference_contracts:
+        return routing
+    reference_ids = {
+        str(constraint.params["continuous_reference_net"])
+        for constraint in reference_contracts
+    }
+    if len(reference_ids) != 1 or not reference_ids <= set(net_by_id):
+        raise ValidationError("routing constraints require one valid reference net")
+    reference_net = net_by_id[next(iter(reference_ids))].name
+    raw_minimums = [
+        constraint.params.get("min_reference_stitching_vias")
+        for constraint in reference_contracts
+    ]
+    if any(
+        not isinstance(value, int) or isinstance(value, bool) or value < 1
+        for value in raw_minimums
+    ):
+        raise ValidationError(
+            "reference-plane stitching-via minimum must be a positive integer"
+        )
+    minimum = max(raw_minimums)
+
+    diameter = max(design.board.min_drill_mm + 0.3, 0.6)
+    drill = max(design.board.min_drill_mm, 0.3)
+    radius = diameter / 2
+    clearance = design.board.min_clearance_mm + ROUTING_GEOMETRY_MARGIN_MM
+    candidates: set[tuple[float, float]] = set()
+    for segment in routing.segments:
+        if segment.net != reference_net:
+            continue
+        length = math.hypot(
+            segment.x2_mm - segment.x1_mm, segment.y2_mm - segment.y1_mm
+        )
+        steps = max(1, math.ceil(length / ROUTING_GRID_MM))
+        for index in range(steps + 1):
+            fraction = index / steps
+            point = (
+                round(segment.x1_mm + (segment.x2_mm - segment.x1_mm) * fraction, 6),
+                round(segment.y1_mm + (segment.y2_mm - segment.y1_mm) * fraction, 6),
+            )
+            if _stitching_candidate_is_clear(
+                point,
+                reference_net=reference_net,
+                radius=radius,
+                clearance=clearance,
+                design=design,
+                pads=pads,
+                routing=routing,
+            ):
+                candidates.add(point)
+
+    targets = _reference_stitching_targets(
+        design, components, graph, pads, reference_net
+    )
+    selected: list[tuple[float, float]] = []
+    available = sorted(candidates)
+    for target in targets:
+        choices = sorted(
+            available,
+            key=lambda point: (math.dist(point, target), point[0], point[1]),
+        )
+        choice = next(
+            (
+                point
+                for point in choices
+                if math.dist(point, target) <= 6.0
+                and all(math.dist(point, other) >= 2.0 for other in selected)
+            ),
+            None,
+        )
+        if choice is not None:
+            selected.append(choice)
+            available.remove(choice)
+        if len(selected) >= minimum:
+            break
+    while len(selected) < minimum:
+        choices = [
+            point
+            for point in available
+            if all(math.dist(point, other) >= 2.0 for other in selected)
+        ]
+        if not choices:
+            raise ValidationError(
+                "could not place the declared number of safe reference-plane stitching vias"
+            )
+        choice = max(
+            choices,
+            key=lambda point: (
+                min(
+                    (math.dist(point, other) for other in selected),
+                    default=math.inf,
+                ),
+                -point[0],
+                -point[1],
+            ),
+        )
+        selected.append(choice)
+        available.remove(choice)
+
+    stitching = tuple(
+        RouteVia(
+            net=reference_net,
+            x_mm=point[0],
+            y_mm=point[1],
+            diameter_mm=diameter,
+            drill_mm=drill,
+            from_layer=0,
+            to_layer=design.board.layers - 1,
+        )
+        for point in sorted(selected)
+    )
+    return RoutingResult(
+        segments=routing.segments,
+        vias=tuple(sorted((*routing.vias, *stitching))),
+        unrouted=routing.unrouted,
+        state=routing.state,
+        expanded_nodes=routing.expanded_nodes,
+        diagnostics=tuple(
+            sorted(
+                (
+                    *routing.diagnostics,
+                    f"added {len(stitching)} deterministic {reference_net} reference-plane stitching vias",
+                )
+            )
+        ),
+    )
+
+
+def _stitching_candidate_is_clear(
+    point: tuple[float, float],
+    *,
+    reference_net: str,
+    radius: float,
+    clearance: float,
+    design: Design,
+    pads: tuple[RoutingPad, ...],
+    routing: RoutingResult,
+) -> bool:
+    x_mm, y_mm = point
+    edge_limit = design.board.edge_clearance_mm + radius
+    if not (
+        edge_limit <= x_mm <= design.board.width_mm - edge_limit
+        and edge_limit <= y_mm <= design.board.height_mm - edge_limit
+    ):
+        return False
+    for pad in pads:
+        gap = _point_rectangle_gap(point, pad)
+        required = radius + (0.1 if pad.net == reference_net else clearance)
+        if gap + 1e-9 < required:
+            return False
+    for segment in routing.segments:
+        if segment.net == reference_net:
+            continue
+        gap = _point_segment_distance(point, segment)
+        if gap + 1e-9 < radius + segment.width_mm / 2 + clearance:
+            return False
+    for via in routing.vias:
+        required = radius + via.diameter_mm / 2
+        if via.net != reference_net:
+            required += clearance
+        if math.dist(point, (via.x_mm, via.y_mm)) + 1e-9 < required:
+            return False
+    return True
+
+
+def _reference_stitching_targets(
+    design: Design,
+    components: tuple[Component, ...],
+    graph: PartGraph,
+    pads: tuple[RoutingPad, ...],
+    reference_net: str,
+) -> tuple[tuple[float, float], ...]:
+    component_by_id = {component.id: component for component in components}
+    pad_by_key: dict[tuple[str, str], RoutingPad] = {}
+    for pad in pads:
+        component_id, _index, number = pad.id.split("/", 2)
+        pad_by_key[(component_id, number)] = pad
+    targets: list[tuple[float, float]] = []
+    for constraint in sorted(design.constraints, key=lambda item: item.id):
+        if constraint.kind != "decoupling":
+            continue
+        capacitors = [
+            component_by_id[target]
+            for target in constraint.targets
+            if target in component_by_id
+            and "capacitance_f" in graph.get(component_by_id[target].part_id).ratings
+        ]
+        for capacitor in capacitors:
+            reference_endpoints = [
+                endpoint
+                for net in design.nets
+                if net.name == reference_net
+                for endpoint in net.endpoints
+                if endpoint.component == capacitor.id
+            ]
+            for endpoint in reference_endpoints:
+                pin = graph.get(capacitor.part_id).pin(endpoint.pin)
+                if pin is None:
+                    continue
+                pad = pad_by_key.get((capacitor.id, pin.footprint_pad))
+                if pad is not None:
+                    targets.append((pad.x_mm, pad.y_mm))
+    if not targets:
+        targets.extend((pad.x_mm, pad.y_mm) for pad in pads if pad.net == reference_net)
+    return tuple(sorted(set(targets)))
+
+
+def _point_rectangle_gap(point: tuple[float, float], pad: RoutingPad) -> float:
+    delta_x = max(0.0, abs(point[0] - pad.x_mm) - pad.width_mm / 2)
+    delta_y = max(0.0, abs(point[1] - pad.y_mm) - pad.height_mm / 2)
+    return math.hypot(delta_x, delta_y)
+
+
+def _point_segment_distance(point: tuple[float, float], segment: RouteSegment) -> float:
+    start = (segment.x1_mm, segment.y1_mm)
+    end = (segment.x2_mm, segment.y2_mm)
+    vector = (end[0] - start[0], end[1] - start[1])
+    squared = vector[0] ** 2 + vector[1] ** 2
+    if squared <= 1e-18:
+        return math.dist(point, start)
+    projection = (
+        (point[0] - start[0]) * vector[0] + (point[1] - start[1]) * vector[1]
+    ) / squared
+    bounded = max(0.0, min(1.0, projection))
+    closest = (start[0] + bounded * vector[0], start[1] + bounded * vector[1])
+    return math.dist(point, closest)
+
+
+def _native_constraint_metrics(
+    design: Design,
+    components: tuple[Component, ...],
+    graph: PartGraph,
+    inspections: dict[str, FootprintInspection],
+    placements: dict[str, dict[str, float | str | bool]],
+) -> dict[str, Any]:
+    """Record exact native pad-rectangle metrics used by L3 decoupling checks."""
+    component_by_id = {component.id: component for component in components}
+    pad_positions: dict[tuple[str, str], tuple[float, float, float, float]] = {}
+    for component in components:
+        origin = placements[component.id]
+        part = graph.get(component.part_id)
+        for pin in part.pins:
+            matching = [
+                pad
+                for pad in inspections[component.id].pads
+                if pad.number == pin.footprint_pad
+            ]
+            if len(matching) != 1:
+                raise ValidationError(
+                    f"cannot derive native pad metric for {component.id}/{pin.number}"
+                )
+            pad = matching[0]
+            pad_positions[(component.id, pin.number)] = (
+                float(origin["x_mm"]) + pad.x_mm,
+                float(origin["y_mm"]) + pad.y_mm,
+                pad.width_mm / 2,
+                pad.height_mm / 2,
+            )
+    result: dict[str, Any] = {}
+    for constraint in sorted(design.constraints, key=lambda item: item.id):
+        if constraint.kind != "decoupling":
+            continue
+        targets = [
+            component_by_id[target]
+            for target in constraint.targets
+            if target in component_by_id
+        ]
+        capacitors = [
+            component
+            for component in targets
+            if "capacitance_f" in graph.get(component.part_id).ratings
+        ]
+        devices = [component for component in targets if component not in capacitors]
+        distances: dict[str, float] = {}
+        if len(capacitors) == 1 and len(devices) == 1:
+            capacitor, device = capacitors[0], devices[0]
+            for net in design.nets:
+                if net.id not in constraint.targets:
+                    continue
+                cap_points = [
+                    pad_positions[(endpoint.component, endpoint.pin)]
+                    for endpoint in net.endpoints
+                    if endpoint.component == capacitor.id
+                ]
+                device_points = [
+                    pad_positions[(endpoint.component, endpoint.pin)]
+                    for endpoint in net.endpoints
+                    if endpoint.component == device.id
+                ]
+                if cap_points and device_points:
+                    distances[net.name] = min(
+                        _pad_rectangle_gap(first, second)
+                        for first in cap_points
+                        for second in device_points
+                    )
+        maximum = float(constraint.params["max_distance_mm"])
+        metric_valid = (
+            constraint.params.get("distance_metric")
+            == "minimum_relevant_copper_pad_edge_gap"
+            and constraint.params.get("geometry_evidence")
+            == "native_footprint_pad_rectangles"
+        )
+        result[constraint.id] = {
+            "kind": "decoupling",
+            "metric": constraint.params.get("distance_metric"),
+            "geometry_evidence": constraint.params.get("geometry_evidence"),
+            "distance_mm_by_net": {
+                name: round(distance, 6) for name, distance in sorted(distances.items())
+            },
+            "maximum_mm": maximum,
+            "outcome": "pass"
+            if metric_valid
+            and len(distances) >= 2
+            and all(distance <= maximum + 1e-9 for distance in distances.values())
+            else "fail",
+        }
+    if any(metric["outcome"] != "pass" for metric in result.values()):
+        raise ValidationError("native decoupling geometry violates its declared metric")
+    return result
+
+
+def _pad_rectangle_gap(
+    first: tuple[float, float, float, float],
+    second: tuple[float, float, float, float],
+) -> float:
+    delta_x = max(0.0, abs(first[0] - second[0]) - first[2] - second[2])
+    delta_y = max(0.0, abs(first[1] - second[1]) - first[3] - second[3])
+    return math.hypot(delta_x, delta_y)
 
 
 def _escape_segment(

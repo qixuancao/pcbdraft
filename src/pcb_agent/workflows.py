@@ -215,6 +215,7 @@ def run_review(
 
         semantic_context = collect_semantic_context(
             files=files,
+            project_root=project,
             output_dir=run_dir / "semantic",
             deadline=deadline,
             redactions=redactions,

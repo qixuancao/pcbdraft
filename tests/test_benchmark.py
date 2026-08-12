@@ -14,8 +14,8 @@ class IndependentBenchmarkTests(unittest.TestCase):
     def test_bundled_corpus_is_license_clear_balanced_and_substantial(self) -> None:
         document, cases = load_corpus()
         self.assertEqual(document["license"], "CC0-1.0")
-        self.assertEqual(len(cases), 84)
-        self.assertEqual(sum(case.label == "fault" for case in cases), 64)
+        self.assertEqual(len(cases), 90)
+        self.assertEqual(sum(case.label == "fault" for case in cases), 70)
         self.assertEqual(sum(case.label == "clean" for case in cases), 20)
         self.assertGreaterEqual(len({case.category for case in cases}), 15)
         self.assertIn("No competitor fixture", document["methodology"])
@@ -37,18 +37,18 @@ class IndependentBenchmarkTests(unittest.TestCase):
             self.assertEqual(
                 metrics["confusion_matrix"],
                 {
-                    "true_positive": 64,
+                    "true_positive": 70,
                     "false_negative": 0,
                     "false_positive": 0,
                     "true_negative": 20,
                 },
             )
             self.assertEqual(metrics["detection"]["targeted_code_recall"], 1.0)
-            self.assertEqual(metrics["repair"]["eligible"], 59)
+            self.assertEqual(metrics["repair"]["eligible"], 65)
             self.assertEqual(metrics["repair"]["success_rate"], 1.0)
             self.assertEqual(metrics["repair"]["introduced_regression_cases"], 0)
             self.assertEqual(metrics["repeatability"]["rate"], 1.0)
-            self.assertEqual(metrics["latency"]["samples"], 252)
+            self.assertEqual(metrics["latency"]["samples"], 270)
             self.assertGreater(metrics["latency"]["mean_ms"], 0)
             self.assertEqual(result.result["model_consistency"]["state"], "unavailable")
             self.assertTrue(output.is_file())

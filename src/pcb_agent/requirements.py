@@ -247,6 +247,7 @@ def compile_requirements(
     ports = {instance.block.id: instance.ports for instance in instances}
 
     power = _power_contract(spec.power)
+    _validate_power_scope(spec, power)
     i2c = _i2c_contract(spec.interfaces)
     provenance = _provenance(spec, resolved_registry)
     requirements = tuple(
@@ -477,6 +478,25 @@ def _power_contract(value: Mapping[str, Any]) -> dict[str, float]:
     return result
 
 
+def _validate_power_scope(spec: RequirementsSpec, power: Mapping[str, float]) -> None:
+    """Require one unambiguous rectangular supply/current/power envelope."""
+    expected_power_w = spec.scope.max_voltage_v * spec.scope.max_current_a
+    mismatches: list[str] = []
+    if not math.isclose(power["max_v"], spec.scope.max_voltage_v, abs_tol=1e-12):
+        mismatches.append("maximum voltage")
+    if not math.isclose(
+        power["max_current_a"], spec.scope.max_current_a, abs_tol=1e-12
+    ):
+        mismatches.append("maximum current")
+    if not math.isclose(spec.scope.max_power_w, expected_power_w, abs_tol=1e-12):
+        mismatches.append("maximum power")
+    if mismatches:
+        raise ValidationError(
+            "the bundled profile requires power and scope to describe the same "
+            "simultaneous maximum envelope; mismatched " + ", ".join(mismatches)
+        )
+
+
 def _i2c_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
     matches = [entry for entry in values if entry.get("kind") == "i2c"]
     if len(matches) != 1:
@@ -624,7 +644,12 @@ def _constraints(
             "decouple_mcu",
             "decoupling",
             ("mcu_u1", "mcu_c1", "net_3v3", "net_gnd"),
-            {"max_distance_mm": 3.0, "min_capacitance_f": 1e-7},
+            {
+                "max_distance_mm": 3.0,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-7,
+            },
             "release_blocking",
             "MCU supply transient return must be local.",
             block_source["core"],
@@ -633,7 +658,12 @@ def _constraints(
             "decouple_sensor",
             "decoupling",
             ("sensor_u2", "sensor_c2", "net_3v3", "net_gnd"),
-            {"max_distance_mm": 2.0, "min_capacitance_f": 1e-7},
+            {
+                "max_distance_mm": 2.0,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-7,
+            },
             "release_blocking",
             "Sensor decoupling must be local.",
             block_source["sensor"],
@@ -727,7 +757,9 @@ def _constraints(
             ("v3v3",),
             {
                 "max_current_a": power["max_current_a"],
-                "max_power_w": power["nominal_v"] * power["max_current_a"],
+                "max_power_w": spec.scope.max_power_w,
+                "voltage_basis_v": spec.scope.max_voltage_v,
+                "envelope": "simultaneous_declared_scope_maxima",
             },
             "release_blocking",
             "Keep all loads inside the external supply budget.",
@@ -741,6 +773,7 @@ def _constraints(
                 "width_mm": 0.25,
                 "max_length_mm": 100,
                 "continuous_reference_net": "net_gnd",
+                "min_reference_stitching_vias": 2,
                 "auto_route": True,
                 "neckdown_width_mm": spec.board.min_track_mm,
                 "neckdown_max_length_mm_per_pad": 2.25,

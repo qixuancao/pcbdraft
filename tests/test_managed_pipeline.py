@@ -116,6 +116,20 @@ class ManagedPipelineTests(unittest.TestCase):
         )
         self.assertEqual(checks["l3.i2c_electrical_budget"]["outcome"], "pass")
         self.assertEqual(checks["l3.updi_power_policy"]["outcome"], "pass")
+        self.assertGreaterEqual(
+            checks["l3.routing_i2c"]["metrics"]["reference_plane"][
+                "stitching_via_count"
+            ],
+            2,
+        )
+        self.assertTrue(
+            all(
+                metric["outcome"] == "pass"
+                for metric in self.generated.project.manifest["generation"]["pcb"][
+                    "constraint_metrics"
+                ].values()
+            )
+        )
 
     def test_real_manufacturing_candidate_contains_cross_checked_outputs(self) -> None:
         result = build_manufacturing_release(

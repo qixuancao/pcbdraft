@@ -689,30 +689,54 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
     positions = _pin_positions(design, components, graph, inspections, placements)
     checks: list[CheckResult] = []
     for constraint in design.constraints:
-        if constraint.kind == "decoupling":
+        try:
+            if constraint.kind == "decoupling":
+                checks.append(
+                    _check_decoupling(
+                        design, constraint, graph, positions, project.ir_path.name
+                    )
+                )
+            elif constraint.kind == "interface_pullups":
+                checks.append(_check_pullups(design, constraint, graph))
+            elif constraint.kind == "i2c_electrical_budget":
+                checks.append(_check_i2c_electrical_budget(design, constraint))
+            elif constraint.kind == "source_ownership":
+                checks.append(_check_source_ownership(design, constraint))
+            elif constraint.kind == "current_limit":
+                checks.append(_check_current_limit(design, constraint, graph))
+            elif constraint.kind == "edge_placement":
+                checks.append(
+                    _check_edge(
+                        design,
+                        constraint,
+                        inspections,
+                        placements,
+                        project.board_path.name,
+                    )
+                )
+            elif constraint.kind == "functional_group":
+                checks.append(_check_group(constraint, inspections, placements))
+            elif constraint.kind == "routing":
+                checks.append(
+                    _check_routing(design, constraint, project.manifest, graph)
+                )
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
             checks.append(
-                _check_decoupling(
-                    design, constraint, graph, positions, project.ir_path.name
+                CheckResult(
+                    f"l3.{constraint.id}",
+                    "L3",
+                    "completed",
+                    "fail",
+                    f"{constraint.kind} constraint parameters are invalid.",
+                    (project.ir_path.name,),
+                    {
+                        "failure_kind": type(exc).__name__,
+                        "constraint_kind": constraint.kind,
+                    },
+                    constraint.severity == "release_blocking",
+                    constraint.severity in {"required", "release_blocking"},
                 )
             )
-        elif constraint.kind == "interface_pullups":
-            checks.append(_check_pullups(design, constraint, graph))
-        elif constraint.kind == "i2c_electrical_budget":
-            checks.append(_check_i2c_electrical_budget(design, constraint))
-        elif constraint.kind == "source_ownership":
-            checks.append(_check_source_ownership(design, constraint))
-        elif constraint.kind == "current_limit":
-            checks.append(_check_current_limit(design, constraint, graph))
-        elif constraint.kind == "edge_placement":
-            checks.append(
-                _check_edge(
-                    design, constraint, inspections, placements, project.board_path.name
-                )
-            )
-        elif constraint.kind == "functional_group":
-            checks.append(_check_group(constraint, inspections, placements))
-        elif constraint.kind == "routing":
-            checks.append(_check_routing(design, constraint, project.manifest, graph))
     footprint_bounds = {
         component_id: (
             inspection.bbox_x_mm,
@@ -830,13 +854,20 @@ def _check_decoupling(
                     for second in device_points
                 )
     maximum = float(constraint.params["max_distance_mm"])
+    metric_valid = (
+        constraint.params.get("distance_metric")
+        == "minimum_relevant_copper_pad_edge_gap"
+        and constraint.params.get("geometry_evidence")
+        == "native_footprint_pad_rectangles"
+    )
     capacitance = (
         float(graph.get(capacitor.part_id).ratings.get("capacitance_f", 0))
         if capacitor is not None
         else 0.0
     )
     passed = (
-        len(distances) == len(nets)
+        metric_valid
+        and len(distances) == len(nets)
         and all(distance <= maximum + 1e-9 for distance in distances.values())
         and capacitance >= float(constraint.params["min_capacitance_f"])
     )
@@ -855,6 +886,8 @@ def _check_decoupling(
             },
             "maximum_mm": maximum,
             "capacitance_f": capacitance,
+            "distance_metric": constraint.params.get("distance_metric"),
+            "geometry_evidence": constraint.params.get("geometry_evidence"),
         },
         constraint.severity == "release_blocking",
         constraint.severity in {"required", "release_blocking"},
@@ -1176,10 +1209,31 @@ def _check_routing(
             and plane.get("filled") is True
             and _positive_finite(plane.get("area_mm2"))
         ]
-        passed = passed and bool(matching_planes)
+        raw_stitching = constraint.params.get("min_reference_stitching_vias")
+        stitching_contract_valid = (
+            isinstance(raw_stitching, int)
+            and not isinstance(raw_stitching, bool)
+            and raw_stitching >= 1
+        )
+        minimum_stitching = raw_stitching if stitching_contract_valid else 0
+        via_counts = routing.get("via_count_by_net", {})
+        stitching_count = (
+            int(via_counts.get(reference_net.name, 0))
+            if reference_net is not None and isinstance(via_counts, dict)
+            else 0
+        )
+        passed = (
+            passed
+            and bool(matching_planes)
+            and stitching_contract_valid
+            and stitching_count >= minimum_stitching
+        )
         metrics["reference_plane"] = {
             "net_id": reference_net_id,
             "evidence": matching_planes,
+            "stitching_via_count": stitching_count,
+            "minimum_stitching_vias": minimum_stitching,
+            "stitching_contract_valid": stitching_contract_valid,
         }
     component_by_id = {component.id: component for component in design.components}
     for target in constraint.targets:

@@ -6,8 +6,10 @@ from pathlib import Path
 
 from pcb_agent.blocks import BlockRegistry
 from pcb_agent.errors import ValidationError
+from pcb_agent.ir import Design
 from pcb_agent.parts import PartGraph
 from pcb_agent.requirements import RequirementsSpec, compile_requirements
+from pcb_agent.semantic_rules import evaluate_semantic_rules
 from tests.requirements_factory import controller_requirements_dict
 
 
@@ -55,6 +57,19 @@ class RequirementsCompilerTests(unittest.TestCase):
         self.assertEqual(interface.params["bus_capacitance_pf_max"], 200.0)
         self.assertEqual(interface.params["external_pullups"], "forbidden")
         self.assertAlmostEqual(interface.params["rise_time_limit_ns"], 1000.0)
+        constraints = {constraint.id: constraint for constraint in first.constraints}
+        self.assertEqual(
+            constraints["decouple_mcu"].params["distance_metric"],
+            "minimum_relevant_copper_pad_edge_gap",
+        )
+        self.assertEqual(
+            constraints["routing_i2c"].params["min_reference_stitching_vias"], 2
+        )
+        self.assertEqual(constraints["power_budget"].params["max_power_w"], 0.36)
+        self.assertEqual(
+            constraints["power_budget"].params["envelope"],
+            "simultaneous_declared_scope_maxima",
+        )
         sense = next(
             endpoint
             for net in first.nets
@@ -161,6 +176,44 @@ class RequirementsCompilerTests(unittest.TestCase):
                 graph=self.graph,
                 registry=self.registry,
             )
+
+    def test_power_scope_must_describe_one_unambiguous_envelope(self) -> None:
+        value = controller_requirements_dict()
+        value["scope"]["max_power_w"] = 0.33
+        with self.assertRaisesRegex(ValidationError, "simultaneous maximum envelope"):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
+
+        value = controller_requirements_dict()
+        value["power"]["max_current_a"] = 0.09
+        with self.assertRaisesRegex(ValidationError, "simultaneous maximum envelope"):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
+
+    def test_malformed_constraint_params_become_findings_not_exceptions(self) -> None:
+        design = compile_requirements(
+            RequirementsSpec.from_dict(controller_requirements_dict()),
+            graph=self.graph,
+            registry=self.registry,
+        )
+        document = design.to_dict()
+        next(
+            constraint
+            for constraint in document["constraints"]
+            if constraint["id"] == "routing_i2c"
+        )["params"]["width_mm"] = "not-a-number"
+        hostile = Design.from_dict(document, validate=False)
+        findings = evaluate_semantic_rules(hostile, self.graph)
+        self.assertIn(
+            "intent.invalid_constraint_params",
+            {finding.code for finding in findings},
+        )
 
     def test_recognized_domain_without_bundled_generator_is_explicitly_rejected(
         self,

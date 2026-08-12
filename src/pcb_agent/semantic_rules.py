@@ -82,34 +82,44 @@ def evaluate_semantic_rules(
     kinds = {constraint.kind for constraint in design.constraints}
     findings.extend(_coverage_findings(design, graph, kinds))
     for constraint in constraints.values():
-        if constraint.kind == "decoupling":
-            finding = _decoupling_finding(
-                design,
-                graph,
-                constraint,
-                position_map,
-                approximate_geometry=approximate_geometry,
+        try:
+            if constraint.kind == "decoupling":
+                finding = _decoupling_finding(
+                    design,
+                    graph,
+                    constraint,
+                    position_map,
+                    approximate_geometry=approximate_geometry,
+                )
+            elif constraint.kind == "interface_pullups":
+                finding = _pullup_finding(design, graph, constraint)
+            elif constraint.kind == "i2c_electrical_budget":
+                finding = _i2c_electrical_budget_finding(design, constraint)
+            elif constraint.kind == "source_ownership":
+                finding = _source_ownership_finding(design, constraint)
+            elif constraint.kind == "current_limit":
+                finding = _current_limit_finding(design, graph, constraint)
+            elif constraint.kind == "functional_group":
+                finding = _group_finding(constraint, position_map)
+            elif constraint.kind == "edge_placement":
+                finding = _edge_finding(
+                    design, constraint, position_map, footprint_bounds
+                )
+            elif constraint.kind == "manufacturing_rules":
+                finding = _manufacturing_finding(design, constraint)
+            elif constraint.kind == "routing":
+                finding = _routing_finding(design, constraint, routing)
+            elif constraint.kind == "power_budget":
+                finding = _power_budget_finding(design, constraint)
+            else:
+                finding = None
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            finding = _finding(
+                "intent.invalid_constraint_params",
+                constraint.id,
+                f"{constraint.kind} constraint parameters are invalid: {type(exc).__name__}",
+                constraint_kind=constraint.kind,
             )
-        elif constraint.kind == "interface_pullups":
-            finding = _pullup_finding(design, graph, constraint)
-        elif constraint.kind == "i2c_electrical_budget":
-            finding = _i2c_electrical_budget_finding(design, constraint)
-        elif constraint.kind == "source_ownership":
-            finding = _source_ownership_finding(design, constraint)
-        elif constraint.kind == "current_limit":
-            finding = _current_limit_finding(design, graph, constraint)
-        elif constraint.kind == "functional_group":
-            finding = _group_finding(constraint, position_map)
-        elif constraint.kind == "edge_placement":
-            finding = _edge_finding(design, constraint, position_map, footprint_bounds)
-        elif constraint.kind == "manufacturing_rules":
-            finding = _manufacturing_finding(design, constraint)
-        elif constraint.kind == "routing":
-            finding = _routing_finding(design, constraint, routing)
-        elif constraint.kind == "power_budget":
-            finding = _power_budget_finding(design, constraint)
-        else:
-            finding = None
         if finding is not None:
             findings.append(finding)
 
@@ -262,6 +272,13 @@ def _decoupling_finding(
     maximum = float(constraint.params.get("max_distance_mm", 0.0))
     minimum_capacitance = float(constraint.params.get("min_capacitance_f", 0.0))
     reasons: list[str] = []
+    if (
+        constraint.params.get("distance_metric")
+        != "minimum_relevant_copper_pad_edge_gap"
+    ):
+        reasons.append("distance metric is missing or unsupported")
+    if constraint.params.get("geometry_evidence") != "native_footprint_pad_rectangles":
+        reasons.append("native geometry evidence contract is missing or unsupported")
     if len(capacitors) != 1 or len(devices) != 1 or len(nets) < 2:
         reasons.append(
             "target set does not identify one capacitor, one device, and two rails"
@@ -662,6 +679,19 @@ def _routing_finding(
     maximum = constraint.params.get("max_length_mm")
     if maximum is not None and float(maximum) <= 0:
         reasons.append("maximum route length is not positive")
+    reference_net_id = constraint.params.get("continuous_reference_net")
+    raw_stitching = constraint.params.get("min_reference_stitching_vias")
+    stitching_contract_valid = (
+        isinstance(raw_stitching, int)
+        and not isinstance(raw_stitching, bool)
+        and raw_stitching >= 1
+    )
+    if reference_net_id is not None and not stitching_contract_valid:
+        reasons.append(
+            "continuous reference plane lacks a positive integer stitching-via contract"
+        )
+    elif reference_net_id is None and raw_stitching is not None:
+        reasons.append("stitching-via contract lacks a reference-net identity")
     if routing is not None:
         if routing.get("state") != "completed" or routing.get("unrouted"):
             reasons.append("router receipt is incomplete")
@@ -681,7 +711,6 @@ def _routing_finding(
                 reasons.append(f"{net.name} lacks width evidence")
             elif any(float(width) + 1e-9 < neckdown for width in widths[net.name]):
                 reasons.append(f"{net.name} is narrower than the neckdown limit")
-        reference_net_id = constraint.params.get("continuous_reference_net")
         if reference_net_id is not None:
             reference_net = net_by_id.get(str(reference_net_id))
             planes = routing.get("reference_planes", [])
@@ -694,6 +723,17 @@ def _routing_finding(
             ):
                 reasons.append(
                     "declared continuous reference plane lacks fill evidence"
+                )
+            minimum_stitching = raw_stitching if stitching_contract_valid else 0
+            via_counts = routing.get("via_count_by_net", {})
+            actual_stitching = (
+                int(via_counts.get(reference_net.name, 0))
+                if reference_net is not None and isinstance(via_counts, dict)
+                else 0
+            )
+            if actual_stitching < minimum_stitching:
+                reasons.append(
+                    "continuous reference plane has fewer stitching vias than declared"
                 )
     if not reasons:
         return None
@@ -714,22 +754,43 @@ def _positive_finite(value: Any) -> bool:
 
 
 def _power_budget_finding(design: Design, constraint: Any) -> RuleFinding | None:
-    declared_current = float(constraint.params.get("max_current_a", -1))
-    declared_power = float(constraint.params.get("max_power_w", -1))
+    try:
+        declared_current = float(constraint.params.get("max_current_a", -1))
+        declared_power = float(constraint.params.get("max_power_w", -1))
+        voltage_basis = float(constraint.params.get("voltage_basis_v", -1))
+    except (TypeError, ValueError, OverflowError):
+        return _finding(
+            "intent.power_budget",
+            constraint.id,
+            "power-budget constraint contains non-numeric envelope values",
+        )
     expected_power = design.scope.max_voltage_v * design.scope.max_current_a
     if (
-        declared_current <= design.scope.max_current_a + 1e-12
-        and declared_power <= expected_power + 1e-12
-        and declared_current >= 0
-        and declared_power >= 0
+        math.isclose(
+            declared_current, design.scope.max_current_a, rel_tol=0, abs_tol=1e-12
+        )
+        and math.isclose(
+            declared_power, design.scope.max_power_w, rel_tol=0, abs_tol=1e-12
+        )
+        and math.isclose(
+            design.scope.max_power_w, expected_power, rel_tol=0, abs_tol=1e-12
+        )
+        and math.isclose(
+            voltage_basis,
+            design.scope.max_voltage_v,
+            rel_tol=0,
+            abs_tol=1e-12,
+        )
+        and constraint.params.get("envelope") == "simultaneous_declared_scope_maxima"
     ):
         return None
     return _finding(
         "intent.power_budget",
         constraint.id,
-        "power-budget constraint exceeds the declared scope envelope",
+        "power-budget constraint is inconsistent with the declared scope envelope",
         declared_current_a=declared_current,
         declared_power_w=declared_power,
+        expected_power_w=expected_power,
     )
 
 
