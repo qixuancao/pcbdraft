@@ -408,6 +408,7 @@ def _build_checks(
             production=True,
         )
     )
+    checks.extend(_ignored_rule_checks(erc, drc))
 
     erc_violations = _erc_violations(erc)
     checks.append(
@@ -479,15 +480,24 @@ def _build_checks(
             True,
         )
     )
+    external_document = load_external_evidence(project)
+    external_by_level = {
+        entry["level"]: entry for entry in external_document["entries"]
+    }
+    l4_external = external_by_level.get("L4")
     checks.append(
         CheckResult(
             "l4.live_sourcing",
             "L4",
-            "unavailable",
-            "unknown",
-            "Live authorized-distributor stock and price were not queried; no current availability claim is made.",
-            ("bundled part catalog sourcing.stock_status=not_checked",),
-            None,
+            "completed" if l4_external is not None else "unavailable",
+            l4_external["outcome"] if l4_external is not None else "unknown",
+            "Externally supplied sourcing and selected-fabricator evidence was integrity-checked; its commercial truth was not independently verified."
+            if l4_external is not None
+            else "Live authorized-distributor stock and selected-fabricator capability were not supplied; no current availability or process-capability claim is made.",
+            tuple(artifact["path"] for artifact in l4_external["artifacts"])
+            if l4_external is not None
+            else ("bundled part catalog sourcing.stock_status=not_checked",),
+            _external_metrics(l4_external) if l4_external is not None else None,
             False,
             True,
         )
@@ -527,7 +537,7 @@ def _build_checks(
     )
 
     checks.extend(_analysis_checks(project, graph))
-    checks.extend(_external_gate_checks(project))
+    checks.extend(_external_gate_checks(external_document))
     return tuple(checks)
 
 
@@ -588,6 +598,84 @@ def _drc_section(tool: dict[str, Any], name: str) -> list[Any]:
     return list(document[name])
 
 
+def _ignored_rule_checks(erc: dict[str, Any], drc: dict[str, Any]) -> list[CheckResult]:
+    expected = {
+        "erc": {
+            "simulation_model_issue": "SPICE models are not required by this low-speed fixture; optional simulation remains separately unavailable at L5.",
+            "footprint_filter": "The trusted part graph declares the exact symbol, footprint, pin/pad map, and evidence; the generic symbol glob rejects a legitimate JST vendor footprint name.",
+        },
+        "drc": {
+            "tuning_profile_track_geometries": "No tuned transmission line or differential-pair profile exists in the accepted low-speed scope.",
+            "footprint_filters_mismatch": "Exact part-graph mapping and native schematic-to-PCB parity replace the generic symbol footprint glob for this generated design.",
+        },
+    }
+    tools = {"erc": erc, "drc": drc}
+    actual: dict[str, set[str]] = {}
+    for name, tool in tools.items():
+        document = tool.get("document")
+        ignored = (
+            document.get("ignored_checks", []) if isinstance(document, dict) else []
+        )
+        actual[name] = {
+            str(item["key"])
+            for item in ignored
+            if isinstance(item, dict) and isinstance(item.get("key"), str)
+        }
+    ready = all(tool["status"] == "completed" for tool in tools.values())
+    mismatches = {
+        name: {
+            "unexpected": sorted(actual[name] - set(expected[name])),
+            "missing_declared_not_applicable": sorted(
+                set(expected[name]) - actual[name]
+            ),
+        }
+        for name in tools
+    }
+    policy_passed = ready and not any(
+        values["unexpected"] or values["missing_declared_not_applicable"]
+        for values in mismatches.values()
+    )
+    checks = [
+        CheckResult(
+            "l2.ignored_rule_policy",
+            "L2",
+            "completed" if ready else "unavailable",
+            "pass" if policy_passed else "fail" if ready else "unknown",
+            "Every disabled KiCad rule is explicitly classified as not applicable."
+            if policy_passed
+            else "KiCad disabled-rule coverage is unavailable or differs from the explicit policy.",
+            tuple(
+                tool["report"]
+                for tool in tools.values()
+                if tool["status"] == "completed"
+            ),
+            {"policy": mismatches},
+            True,
+            True,
+        )
+    ]
+    for tool_name, definitions in expected.items():
+        for key, summary in definitions.items():
+            checks.append(
+                CheckResult(
+                    f"l2.not_applicable.{tool_name}.{key}",
+                    "L2",
+                    "not_applicable"
+                    if ready and key in actual[tool_name]
+                    else "unavailable",
+                    "pass" if ready and key in actual[tool_name] else "unknown",
+                    summary,
+                    (tools[tool_name]["report"],)
+                    if tools[tool_name]["status"] == "completed"
+                    else (),
+                    {"kicad_rule": key},
+                    False,
+                    False,
+                )
+            )
+    return checks
+
+
 def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckResult]:
     design = project.design
     components = tuple(
@@ -609,6 +697,10 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
             )
         elif constraint.kind == "interface_pullups":
             checks.append(_check_pullups(design, constraint, graph))
+        elif constraint.kind == "i2c_electrical_budget":
+            checks.append(_check_i2c_electrical_budget(design, constraint))
+        elif constraint.kind == "source_ownership":
+            checks.append(_check_source_ownership(design, constraint))
         elif constraint.kind == "current_limit":
             checks.append(_check_current_limit(design, constraint, graph))
         elif constraint.kind == "edge_placement":
@@ -831,6 +923,91 @@ def _check_pullups(design: Any, constraint: Any, graph: PartGraph) -> CheckResul
     )
 
 
+def _check_i2c_electrical_budget(design: Any, constraint: Any) -> CheckResult:
+    pullup = float(constraint.params["pullup_ohm"])
+    capacitance = float(constraint.params["bus_capacitance_pf_max"])
+    rise_time = 0.8473 * pullup * capacitance * 1e-3
+    rise_limit = float(constraint.params["rise_time_limit_ns"])
+    domain = next(domain for domain in design.power_domains if domain.id == "v3v3")
+    sink_current = domain.max_v / pullup * 1000
+    sink_limit = float(constraint.params["sink_current_limit_ma"])
+    interface = next(
+        interface for interface in design.interfaces if interface.id == "sensor_i2c"
+    )
+    passed = (
+        rise_time <= rise_limit + 1e-9
+        and sink_current <= sink_limit + 1e-9
+        and interface.params.get("external_pullups") == "forbidden"
+        and constraint.params.get("external_pullups") == "forbidden"
+    )
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "Declared I2C capacitance, pull-up, rise-time, sink-current, and external-pull-up policy meet the bounded interface contract."
+        if passed
+        else "The declared I2C electrical budget is inconsistent or exceeds its bound.",
+        ("semantic IR interface and power-domain contracts",),
+        {
+            "bus_capacitance_pf_max": capacitance,
+            "calculated_rise_time_ns": round(rise_time, 6),
+            "rise_time_limit_ns": rise_limit,
+            "calculated_sink_current_ma": round(sink_current, 6),
+            "sink_current_limit_ma": sink_limit,
+            "external_pullups": interface.params.get("external_pullups"),
+        },
+        True,
+        True,
+    )
+
+
+def _check_source_ownership(design: Any, constraint: Any) -> CheckResult:
+    net = next(net for net in design.nets if net.id == "net_3v3")
+    components = {component.id: component for component in design.components}
+    sources = sorted(
+        f"{endpoint.component}:{endpoint.pin}"
+        for endpoint in net.endpoints
+        if endpoint.role == "source"
+        and not components[endpoint.component].attributes.get(
+            "exclude_from_board", False
+        )
+    )
+    sense = [
+        endpoint
+        for endpoint in net.endpoints
+        if endpoint.component == constraint.params["sense_component"]
+        and endpoint.pin == constraint.params["sense_pin"]
+        and endpoint.role == constraint.params["sense_role"]
+    ]
+    expected_source = str(constraint.params["physical_source_component"])
+    passed = (
+        len(sources) == 1
+        and sources[0].split(":", 1)[0] == expected_source
+        and len(sense) == 1
+        and constraint.params.get("simultaneous_external_power_sources") == "forbidden"
+    )
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "The Qwiic connector is the sole populated rail source and UPDI VTREF is sense-only."
+        if passed
+        else "The rail source or UPDI voltage-reference ownership contract failed.",
+        ("semantic IR endpoint roles",),
+        {
+            "physical_sources": sources,
+            "sense_endpoint_count": len(sense),
+            "simultaneous_external_power_sources": constraint.params.get(
+                "simultaneous_external_power_sources"
+            ),
+        },
+        True,
+        True,
+    )
+
+
 def _check_current_limit(design: Any, constraint: Any, graph: PartGraph) -> CheckResult:
     resistor = next(
         (
@@ -986,6 +1163,24 @@ def _check_routing(
     )
     metrics: dict[str, Any] = {"nets": {}}
     passed = routing["state"] == "completed" and not routing["unrouted"]
+    reference_net_id = constraint.params.get("continuous_reference_net")
+    if reference_net_id is not None:
+        reference_net = net_by_id.get(str(reference_net_id))
+        planes = routing.get("reference_planes", [])
+        matching_planes = [
+            plane
+            for plane in planes
+            if isinstance(plane, dict)
+            and reference_net is not None
+            and str(plane.get("net", "")).lstrip("/") == reference_net.name
+            and plane.get("filled") is True
+            and _positive_finite(plane.get("area_mm2"))
+        ]
+        passed = passed and bool(matching_planes)
+        metrics["reference_plane"] = {
+            "net_id": reference_net_id,
+            "evidence": matching_planes,
+        }
     component_by_id = {component.id: component for component in design.components}
     for target in constraint.targets:
         net = net_by_id[target]
@@ -1026,6 +1221,15 @@ def _check_routing(
         metrics,
         constraint.severity == "release_blocking",
         True,
+    )
+
+
+def _positive_finite(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(float(value))
+        and float(value) > 0
     )
 
 
@@ -1098,8 +1302,18 @@ def _analysis_checks(project: ManagedProject, graph: PartGraph) -> list[CheckRes
     return checks
 
 
-def _external_gate_checks(project: ManagedProject) -> list[CheckResult]:
-    document = load_external_evidence(project)
+def _external_metrics(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "actor": entry["actor"],
+        "role": entry["role"],
+        "performed_at": entry["performed_at"],
+        "statement": entry["statement"],
+        "metadata": entry["metadata"],
+        "verification": entry["verification"],
+    }
+
+
+def _external_gate_checks(document: dict[str, Any]) -> list[CheckResult]:
     by_level = {entry["level"]: entry for entry in document["entries"]}
     checks = []
     definitions = {
@@ -1137,14 +1351,7 @@ def _external_gate_checks(project: ManagedProject) -> list[CheckResult]:
                 entry["outcome"],
                 "Externally supplied evidence was integrity-checked and recorded; its engineering truth was not independently verified by the runtime.",
                 tuple(artifact["path"] for artifact in entry["artifacts"]),
-                {
-                    "actor": entry["actor"],
-                    "role": entry["role"],
-                    "performed_at": entry["performed_at"],
-                    "statement": entry["statement"],
-                    "metadata": entry["metadata"],
-                    "verification": entry["verification"],
-                },
+                _external_metrics(entry),
                 False,
                 True,
             )

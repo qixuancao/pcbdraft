@@ -21,6 +21,9 @@ class TrustedPartGraphTests(unittest.TestCase):
         )
         self.assertEqual(part.pin("6").footprint_pad, "6")
         self.assertIn("updi", part.pin("6").functions)
+        vtref = self.graph.get("samtec.tsw-103-07-g-s").pin("2")
+        self.assertEqual(vtref.name, "VTREF")
+        self.assertIn("voltage_sense", vtref.functions)
 
     def test_valid_design_satisfies_part_and_rating_contracts(self) -> None:
         design = Design.from_dict(minimal_design_dict())

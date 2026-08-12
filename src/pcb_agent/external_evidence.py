@@ -1,4 +1,4 @@
-"""Honest import of externally produced L6/L7 review and physical evidence."""
+"""Honest import of externally produced L4/L6/L7 release evidence."""
 
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ EXTERNAL_LIMIT = 64 * 1024 * 1024
 INDEX_LIMIT = 4 * 1024 * 1024
 METADATA_LIMIT = 256 * 1024
 MAX_ARTIFACTS = 64
+EXTERNAL_LEVELS = {"L4", "L6", "L7"}
 _UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 
 
@@ -50,8 +51,8 @@ def record_external_evidence(
         if isinstance(project_value, ManagedProject)
         else open_managed_project(project_value)
     )
-    if level not in {"L6", "L7"}:
-        raise ValidationError("external evidence level must be L6 or L7")
+    if level not in EXTERNAL_LEVELS:
+        raise ValidationError("external evidence level must be L4, L6, or L7")
     if outcome not in {"pass", "fail"}:
         raise ValidationError("external evidence outcome must be pass or fail")
     for name, value, limit in (
@@ -68,23 +69,7 @@ def record_external_evidence(
             raise ValidationError(f"external evidence {name} is invalid")
     if _UTC_RE.fullmatch(performed_at) is None:
         raise ValidationError("external evidence performed_at must be UTC ISO-8601")
-    if not isinstance(metadata, dict):
-        raise ValidationError("external evidence metadata must be an object")
-    normalized_metadata = _json_value(metadata, "$.metadata")
-    if len(canonical_json_bytes(normalized_metadata)) > METADATA_LIMIT:
-        raise ValidationError("external evidence metadata exceeds its byte limit")
-    required_metadata = (
-        {"review_scope", "reviewer_qualification"}
-        if level == "L6"
-        else {"board_serial", "test_plan", "result_summary"}
-    )
-    if not required_metadata <= set(metadata) or not all(
-        isinstance(normalized_metadata[name], str) and normalized_metadata[name].strip()
-        for name in required_metadata
-    ):
-        raise ValidationError(
-            f"{level} evidence requires metadata: {', '.join(sorted(required_metadata))}"
-        )
+    normalized_metadata = _validate_metadata(level, metadata)
     if not 1 <= len(artifacts) <= MAX_ARTIFACTS:
         raise ValidationError(f"external evidence requires 1-{MAX_ARTIFACTS} artifacts")
 
@@ -201,7 +186,7 @@ def load_external_evidence(
         }:
             raise ValidationError("external evidence entry is malformed")
         level = entry["level"]
-        if level not in {"L6", "L7"} or level in seen:
+        if level not in EXTERNAL_LEVELS or level in seen:
             raise ValidationError("external evidence levels are invalid or duplicated")
         seen.add(level)
         if entry["outcome"] not in {"pass", "fail"}:
@@ -224,22 +209,48 @@ def load_external_evidence(
                 raise ValidationError(f"external evidence {name} is invalid")
         if _UTC_RE.fullmatch(entry["performed_at"]) is None:
             raise ValidationError("external evidence performed_at is invalid")
-        if (
-            not isinstance(entry["metadata"], dict)
-            or len(canonical_json_bytes(_json_value(entry["metadata"], "$.metadata")))
-            > METADATA_LIMIT
-        ):
-            raise ValidationError("external evidence metadata is invalid")
+        if _UTC_RE.fullmatch(entry["recorded_at"]) is None:
+            raise ValidationError("external evidence recorded_at is invalid")
+        _validate_metadata(level, entry["metadata"])
         if not isinstance(entry["artifacts"], list) or not entry["artifacts"]:
             raise ValidationError("external evidence artifacts are missing")
         if len(entry["artifacts"]) > MAX_ARTIFACTS:
             raise ValidationError("external evidence artifact count is excessive")
+        total = 0
         for artifact in entry["artifacts"]:
-            _verify_artifact(project, artifact)
+            total += _verify_artifact(project, artifact)
+            if total > EXTERNAL_LIMIT:
+                raise ValidationError("external evidence exceeds the total byte limit")
     return document
 
 
-def _verify_artifact(project: ManagedProject, value: Any) -> None:
+def _validate_metadata(level: str, value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValidationError("external evidence metadata must be an object")
+    normalized = _json_value(value, "$.metadata")
+    if len(canonical_json_bytes(normalized)) > METADATA_LIMIT:
+        raise ValidationError("external evidence metadata exceeds its byte limit")
+    required_by_level = {
+        "L4": {
+            "authorized_sourcing_snapshot",
+            "fabricator_capability",
+            "assembly_profile",
+        },
+        "L6": {"review_scope", "reviewer_qualification"},
+        "L7": {"board_serial", "test_plan", "result_summary"},
+    }
+    required = required_by_level[level]
+    if not required <= set(normalized) or not all(
+        isinstance(normalized[name], str) and normalized[name].strip()
+        for name in required
+    ):
+        raise ValidationError(
+            f"{level} evidence requires metadata: {', '.join(sorted(required))}"
+        )
+    return normalized
+
+
+def _verify_artifact(project: ManagedProject, value: Any) -> int:
     if not isinstance(value, dict) or set(value) != {"path", "size", "sha256"}:
         raise ValidationError("external evidence artifact record is malformed")
     relative = value["path"]
@@ -248,14 +259,23 @@ def _verify_artifact(project: ManagedProject, value: Any) -> None:
         or not relative.startswith(f"{EXTERNAL_DIR}/")
         or Path(relative).is_absolute()
         or ".." in Path(relative).parts
+        or Path(relative).as_posix() != relative
     ):
         raise ValidationError("external evidence artifact path is unsafe")
+    size = value["size"]
+    digest = value["sha256"]
+    if (
+        isinstance(size, bool)
+        or not isinstance(size, int)
+        or not 0 <= size <= EXTERNAL_LIMIT
+        or not isinstance(digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+    ):
+        raise ValidationError("external evidence artifact identity is invalid")
     path = project.root / relative
     if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
         raise ValidationError("external evidence artifact is missing or unsafe")
     data = read_bytes_limited(path, EXTERNAL_LIMIT)
-    if (
-        len(data) != value["size"]
-        or hashlib.sha256(data).hexdigest() != value["sha256"]
-    ):
+    if len(data) != size or hashlib.sha256(data).hexdigest() != digest:
         raise ValidationError("external evidence artifact hash mismatch")
+    return len(data)

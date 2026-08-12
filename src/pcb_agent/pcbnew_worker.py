@@ -377,6 +377,20 @@ def inspect_board_job(job):
             )
         else:
             raise TypeError("board contains an unsupported track object")
+    zones = []
+    for zone in board.Zones():
+        layer = zone.GetLayer()
+        zones.append(
+            {
+                "net": str(zone.GetNetname()),
+                "layer": str(board.GetLayerName(layer)),
+                "filled": bool(zone.HasFilledPolysForLayer(layer)),
+                "area_mm2": round(float(zone.CalculateFilledArea()) / 1e12, 6),
+                "pad_connection": "solid"
+                if zone.GetPadConnection() == pcbnew.ZONE_CONNECTION_FULL
+                else "other",
+            }
+        )
     settings = board.GetDesignSettings()
     return {
         "schema": "pcb-agent-pcbnew-result",
@@ -385,6 +399,7 @@ def inspect_board_job(job):
         "kicad_version": pcbnew.GetBuildVersion(),
         "components": sorted(components, key=lambda item: item["reference"]),
         "tracks": sorted(tracks, key=lambda item: json.dumps(item, sort_keys=True)),
+        "zones": sorted(zones, key=lambda item: json.dumps(item, sort_keys=True)),
         "board": {
             "layers": board.GetCopperLayerCount(),
             "thickness_mm": _mm(settings.GetBoardThickness()),
@@ -438,6 +453,47 @@ def _configure_board(board, rules, layer_count):
     netclass.SetViaDrill(settings.m_MinThroughDrill)
 
 
+def _configure_project_rules(project_data):
+    """Replace KiCad's broad default ignores with an explicit scope policy."""
+    try:
+        board_severities = project_data["board"]["design_settings"]["rule_severities"]
+    except (KeyError, TypeError) as exc:
+        raise ValueError("pcbnew project lacks board rule severities") from exc
+    if not isinstance(board_severities, dict):
+        raise TypeError("pcbnew board rule severities are malformed")
+    board_severities.update(
+        {
+            # The trusted graph and parity gate own the exact vendor mapping;
+            # generic symbol glob filters reject valid JST naming. Validation
+            # records this exact disabled heuristic as not applicable.
+            "footprint_filters_mismatch": "ignore",
+            "footprint_type_mismatch": "error",
+            "missing_courtyard": "warning",
+            "track_not_centered_on_via": "error",
+            # No impedance-tuned or differential-pair profile exists in the
+            # accepted low-speed scope. Validation records this exact N/A.
+            "tuning_profile_track_geometries": "ignore",
+        }
+    )
+    erc = project_data.setdefault("erc", {})
+    if not isinstance(erc, dict):
+        raise TypeError("pcbnew ERC project settings are malformed")
+    erc.setdefault("meta", {"version": 0})
+    erc_severities = erc.setdefault("rule_severities", {})
+    if not isinstance(erc_severities, dict):
+        raise TypeError("pcbnew ERC rule severities are malformed")
+    erc_severities.update(
+        {
+            "footprint_filter": "ignore",
+            "four_way_junction": "warning",
+            "single_global_label": "warning",
+            # Bundled parts deliberately make no SPICE-model claim. L5 reports
+            # optional simulation separately instead of treating absence as pass.
+            "simulation_model_issue": "ignore",
+        }
+    )
+
+
 def _set_footprint_uuids(footprint, design_id, component_id, replacements):
     _set_uuid(footprint, _stable(design_id, "footprint", component_id), replacements)
     for field_index, field in enumerate(footprint.GetFields()):
@@ -483,6 +539,45 @@ def _add_outline(board, design_id, width_mm, height_mm, replacements):
         shape.SetEnd(pcbnew.VECTOR2I_MM(second[0], second[1]))
         _set_uuid(shape, _stable(design_id, "board_outline", str(index)), replacements)
         board.Add(shape)
+
+
+def _add_reference_plane(
+    board,
+    design_id,
+    net_item,
+    layer,
+    width_mm,
+    height_mm,
+    edge_clearance_mm,
+    local_clearance_mm,
+    replacements,
+):
+    inset = edge_clearance_mm + 0.05
+    if width_mm <= 2 * inset or height_mm <= 2 * inset:
+        raise ValueError("board is too small for the declared reference plane")
+    zone = pcbnew.ZONE(board)
+    zone.SetLayer(layer)
+    zone.SetNet(net_item)
+    zone.SetLocalClearance(pcbnew.FromMM(local_clearance_mm))
+    # Solid connection is deliberate for this low-current candidate. It avoids
+    # thermally starved narrow header spokes; assembly review remains an L6 gate.
+    zone.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
+    outline = zone.Outline()
+    polygon = outline.NewOutline()
+    for x_mm, y_mm in (
+        (inset, inset),
+        (width_mm - inset, inset),
+        (width_mm - inset, height_mm - inset),
+        (inset, height_mm - inset),
+    ):
+        outline.Append(pcbnew.VECTOR2I_MM(x_mm, y_mm), polygon)
+    _set_uuid(
+        zone,
+        _stable(design_id, "reference_plane", str(board.GetLayerName(layer))),
+        replacements,
+    )
+    board.Add(zone)
+    return zone
 
 
 def build_job(job, output_path):
@@ -649,6 +744,21 @@ def build_job(job, output_path):
             matches[0].SetNet(net_item)
 
     _add_outline(board, design_id, width_mm, height_mm, uuid_replacements)
+    ground_name = next((name for name in net_items if name.lstrip("/") == "GND"), None)
+    if ground_name is None:
+        raise ValueError("build job lacks the required GND reference net")
+    reference_layer = actual_layers[1] if layers == 4 else actual_layers[-1]
+    reference_plane = _add_reference_plane(
+        board,
+        design_id,
+        net_items[ground_name],
+        reference_layer,
+        width_mm,
+        height_mm,
+        _number(rules["edge_clearance_mm"], "edge_clearance_mm", positive=True),
+        _number(rules["min_clearance_mm"], "min_clearance_mm", positive=True),
+        uuid_replacements,
+    )
     for index, entry in enumerate(segments):
         segment = _strict(
             entry, {"net", "layer", "x1_mm", "y1_mm", "x2_mm", "y2_mm", "width_mm"}
@@ -705,6 +815,14 @@ def build_job(job, output_path):
         _set_uuid(via, _stable(design_id, "via", str(index)), uuid_replacements)
         board.Add(via)
 
+    if not pcbnew.ZONE_FILLER(board).Fill(board.Zones()):
+        raise ValueError("pcbnew failed to fill the GND reference plane")
+    if not reference_plane.HasFilledPolysForLayer(reference_layer):
+        raise ValueError("GND reference plane has no filled polygon")
+    reference_area_mm2 = round(float(reference_plane.CalculateFilledArea()) / 1e12, 6)
+    if reference_area_mm2 <= 0:
+        raise ValueError("GND reference plane has non-positive filled area")
+
     target = Path(output_path).resolve(strict=False)
     if target.suffix != ".kicad_pcb" or target.is_symlink():
         raise ValueError("board output must be a non-symlink .kicad_pcb path")
@@ -728,6 +846,7 @@ def build_job(job, output_path):
             raise ValueError("pcbnew did not create a project settings file")
         project_data = json.loads(auxiliary_project.read_text(encoding="utf-8"))
         project_data["meta"]["filename"] = project_target.name
+        _configure_project_rules(project_data)
         auxiliary_project.write_text(
             json.dumps(
                 project_data,
@@ -762,7 +881,17 @@ def build_job(job, output_path):
             "nets": len(nets),
             "segments": len(segments),
             "vias": len(vias),
+            "zones": 1,
         },
+        "reference_planes": [
+            {
+                "net": ground_name,
+                "layer": str(board.GetLayerName(reference_layer)),
+                "filled": True,
+                "area_mm2": reference_area_mm2,
+                "pad_connection": "solid",
+            }
+        ],
     }
 
 

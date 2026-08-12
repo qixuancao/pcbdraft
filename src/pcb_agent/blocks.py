@@ -283,7 +283,7 @@ def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
             "updi_j2",
             "J2",
             "samtec.tsw-103-07-g-s",
-            "UPDI",
+            "UPDI_VTREF_SENSE",
             definition.id,
             (4, 15),
             rotation=90,
@@ -294,7 +294,7 @@ def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
         "vcc": (
             Endpoint("mcu_u1", "1", "load"),
             Endpoint("mcu_c1", "1", "decoupling"),
-            Endpoint("updi_j2", "2", "external"),
+            Endpoint("updi_j2", "2", "voltage_sense"),
         ),
         "gnd": (
             Endpoint("mcu_u1", "8", "return"),

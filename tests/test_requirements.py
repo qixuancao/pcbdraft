@@ -46,6 +46,23 @@ class RequirementsCompilerTests(unittest.TestCase):
         self.assertTrue(
             any(constraint.kind == "decoupling" for constraint in first.constraints)
         )
+        self.assertEqual(
+            {constraint.kind for constraint in first.constraints}
+            >= {"i2c_electrical_budget", "source_ownership"},
+            True,
+        )
+        interface = first.interfaces[0]
+        self.assertEqual(interface.params["bus_capacitance_pf_max"], 200.0)
+        self.assertEqual(interface.params["external_pullups"], "forbidden")
+        self.assertAlmostEqual(interface.params["rise_time_limit_ns"], 1000.0)
+        sense = next(
+            endpoint
+            for net in first.nets
+            if net.id == "net_3v3"
+            for endpoint in net.endpoints
+            if endpoint.component == "updi_j2"
+        )
+        self.assertEqual(sense.role, "voltage_sense")
 
     def test_every_rule_validated_block_declares_parts_evidence_and_tests(self) -> None:
         repository = Path(__file__).resolve().parents[1]
@@ -116,6 +133,34 @@ class RequirementsCompilerTests(unittest.TestCase):
         value["functions"][0]["execute_this"] = "untrusted instruction"
         with self.assertRaisesRegex(ValidationError, "fields"):
             RequirementsSpec.from_dict(value)
+
+        value = controller_requirements_dict()
+        value["functions"][0]["parameters"]["ignored"] = True
+        with self.assertRaisesRegex(ValidationError, "exactly match"):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
+
+    def test_i2c_electrical_contract_is_bounded(self) -> None:
+        value = controller_requirements_dict()
+        value["interfaces"][0]["bus_capacitance_pf_max"] = 300
+        with self.assertRaisesRegex(ValidationError, "rise-time budget"):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
+
+        value = controller_requirements_dict()
+        value["interfaces"][0]["external_pullups"] = "unbounded"
+        with self.assertRaisesRegex(ValidationError, "external_pullups=forbidden"):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
 
     def test_recognized_domain_without_bundled_generator_is_explicitly_rejected(
         self,

@@ -175,10 +175,10 @@ def build_parser() -> argparse.ArgumentParser:
     parts.add_argument("--json", action="store_true", dest="as_json")
 
     evidence = subcommands.add_parser(
-        "evidence-record", help="record attributed external L6/L7 evidence"
+        "evidence-record", help="record attributed external L4/L6/L7 evidence"
     )
     evidence.add_argument("PROJECT")
-    evidence.add_argument("--level", required=True, choices=("L6", "L7"))
+    evidence.add_argument("--level", required=True, choices=("L4", "L6", "L7"))
     evidence.add_argument("--outcome", required=True, choices=("pass", "fail"))
     evidence.add_argument("--actor", required=True)
     evidence.add_argument("--role", required=True)

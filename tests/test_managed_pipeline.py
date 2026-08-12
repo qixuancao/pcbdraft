@@ -83,6 +83,11 @@ class ManagedPipelineTests(unittest.TestCase):
             generated.project.manifest["native_snapshots"]["board"]["board"]["layers"],
             4,
         )
+        zones = generated.project.manifest["native_snapshots"]["board"]["zones"]
+        self.assertEqual(len(zones), 1)
+        self.assertEqual(zones[0]["net"], "/GND")
+        self.assertEqual(zones[0]["layer"], "In1.Cu")
+        self.assertTrue(zones[0]["filled"])
 
     def test_l0_l7_validation_is_candidate_ready_but_not_production_claimed(
         self,
@@ -99,6 +104,18 @@ class ManagedPipelineTests(unittest.TestCase):
         self.assertEqual(levels["L7"].state, "human_required")
         report = json.loads(result.report_path.read_text(encoding="utf-8"))
         self.assertFalse(report["readiness"]["production_claimed"])
+        checks = {
+            check["id"]: check
+            for level in report["levels"]
+            for check in level["checks"]
+        }
+        self.assertEqual(checks["l2.ignored_rule_policy"]["outcome"], "pass")
+        self.assertEqual(
+            checks["l2.not_applicable.erc.simulation_model_issue"]["state"],
+            "not_applicable",
+        )
+        self.assertEqual(checks["l3.i2c_electrical_budget"]["outcome"], "pass")
+        self.assertEqual(checks["l3.updi_power_policy"]["outcome"], "pass")
 
     def test_real_manufacturing_candidate_contains_cross_checked_outputs(self) -> None:
         result = build_manufacturing_release(
@@ -135,6 +152,30 @@ class ManagedPipelineTests(unittest.TestCase):
         )
         verified = verify_manufacturing_release(result.root)
         self.assertEqual(verified.archive_sha256, result.archive_sha256)
+        receipt = json.loads((result.root / "receipt.json").read_text(encoding="utf-8"))
+        self.assertEqual(
+            {entry["path"] for entry in receipt["audit_artifacts"]},
+            {
+                "validation/receipt.json",
+                "validation/erc.raw.json",
+                "validation/drc.raw.json",
+            },
+        )
+
+        raw_erc = result.root / "validation" / "erc.raw.json"
+        original_raw = raw_erc.read_bytes()
+        raw_erc.write_bytes(original_raw + b"tamper")
+        with self.assertRaisesRegex(ValidationError, "audit artifact hash mismatch"):
+            verify_manufacturing_release(result.root)
+        raw_erc.write_bytes(original_raw)
+
+        hidden = result.root / "extra"
+        hidden.mkdir()
+        (hidden / "receipt.json").write_text("{}\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValidationError, "inventory|untracked"):
+            verify_manufacturing_release(result.root)
+        (hidden / "receipt.json").unlink()
+        hidden.rmdir()
 
         positions = result.root / "manufacturing" / "positions.csv"
         positions.write_bytes(positions.read_bytes() + b"tamper")
@@ -166,10 +207,73 @@ class ManagedPipelineTests(unittest.TestCase):
             document["entries"][0]["verification"],
             "externally_supplied_not_independently_verified",
         )
+        index = copy / "external-evidence.json"
+        original_index = index.read_bytes()
+        malformed = json.loads(original_index)
+        del malformed["entries"][0]["metadata"]["reviewer_qualification"]
+        index.write_text(json.dumps(malformed), encoding="utf-8")
+        with self.assertRaisesRegex(ValidationError, "requires metadata"):
+            load_external_evidence(copy)
+        index.write_bytes(original_index)
         stored = copy / document["entries"][0]["artifacts"][0]["path"]
         stored.write_text("tampered\n", encoding="utf-8")
         with self.assertRaisesRegex(ValidationError, "hash mismatch"):
             load_external_evidence(copy)
+
+    def test_complete_external_l4_l6_l7_chain_can_unlock_production_readiness(
+        self,
+    ) -> None:
+        copy = self.parent / "production-gate-project"
+        shutil.copytree(self.generated.project.root, copy)
+        records = {
+            "L4": {
+                "metadata": {
+                    "authorized_sourcing_snapshot": "test-only authorized distributor snapshot",
+                    "fabricator_capability": "test-only selected process capability",
+                    "assembly_profile": "test-only process review",
+                },
+                "role": "supply and manufacturing engineer",
+            },
+            "L6": {
+                "metadata": {
+                    "review_scope": "complete test-only design review",
+                    "reviewer_qualification": "test-only electronics engineer",
+                },
+                "role": "electronics engineer",
+            },
+            "L7": {
+                "metadata": {
+                    "board_serial": "TEST-NOT-A-PHYSICAL-BOARD",
+                    "test_plan": "test-only schema exercise",
+                    "result_summary": "test-only pass record",
+                },
+                "role": "test engineer",
+            },
+        }
+        for level, record in records.items():
+            artifact = self.parent / f"{level.lower()}-test-evidence.txt"
+            artifact.write_text(
+                f"Synthetic unit-test evidence for {level}; not acceptance evidence.\n",
+                encoding="utf-8",
+            )
+            record_external_evidence(
+                copy,
+                level=level,
+                outcome="pass",
+                actor=f"Test {level} Actor",
+                role=record["role"],
+                performed_at="2026-08-12T00:00:00Z",
+                statement="Schema-only test record; not a real external attestation.",
+                artifacts=[artifact],
+                metadata=record["metadata"],
+            )
+        result = validate_managed_project(
+            copy, output=self.parent / "production-gate-validation"
+        )
+        self.assertTrue(result.candidate_ready)
+        self.assertTrue(result.production_ready)
+        report = json.loads(result.report_path.read_text(encoding="utf-8"))
+        self.assertFalse(report["readiness"]["production_claimed"])
 
     def test_existing_output_is_never_overwritten(self) -> None:
         occupied = self.parent / "occupied"

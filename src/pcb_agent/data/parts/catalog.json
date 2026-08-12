@@ -202,7 +202,7 @@
       "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
       "pins": [
         {"number": "1", "name": "UPDI", "electrical_type": "passive", "functions": ["updi"], "required": true, "footprint_pad": "1"},
-        {"number": "2", "name": "3V3", "electrical_type": "passive", "functions": ["supply"], "required": true, "footprint_pad": "2"},
+        {"number": "2", "name": "VTREF", "electrical_type": "passive", "functions": ["voltage_sense"], "required": true, "footprint_pad": "2"},
         {"number": "3", "name": "GND", "electrical_type": "passive", "functions": ["ground"], "required": true, "footprint_pad": "3"}
       ],
       "ratings": {"absolute_max_voltage_v": 250, "max_current_a": 3.0},

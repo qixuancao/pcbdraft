@@ -66,6 +66,22 @@ class NativeKiCadGenerationTests(unittest.TestCase):
             self.assertEqual(first_schematic.sha256, second_schematic.sha256)
             self.assertEqual(first_pcb.sha256, second_pcb.sha256)
             self.assertEqual(first_pcb.project_sha256, second_pcb.project_sha256)
+            self.assertEqual(len(first_pcb.reference_planes), 1)
+            self.assertEqual(first_pcb.reference_planes[0]["net"], "/GND")
+            self.assertEqual(first_pcb.reference_planes[0]["layer"], "B.Cu")
+            self.assertTrue(first_pcb.reference_planes[0]["filled"])
+            self.assertGreater(first_pcb.reference_planes[0]["area_mm2"], 0)
+            project = json.loads(first_pcb.project_path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                project["board"]["design_settings"]["rule_severities"][
+                    "track_not_centered_on_via"
+                ],
+                "error",
+            )
+            self.assertEqual(
+                project["erc"]["rule_severities"]["footprint_filter"],
+                "ignore",
+            )
 
             erc_path = root / "erc.json"
             drc_path = root / "drc.json"
@@ -114,10 +130,21 @@ class NativeKiCadGenerationTests(unittest.TestCase):
                 [item for sheet in erc["sheets"] for item in sheet["violations"]],
                 [],
             )
+            self.assertEqual(
+                {item["key"] for item in erc["ignored_checks"]},
+                {"simulation_model_issue", "footprint_filter"},
+            )
             drc = json.loads(drc_path.read_text(encoding="utf-8"))
             self.assertEqual(drc["violations"], [])
             self.assertEqual(drc["unconnected_items"], [])
             self.assertEqual(drc["schematic_parity"], [])
+            self.assertEqual(
+                {item["key"] for item in drc["ignored_checks"]},
+                {
+                    "tuning_profile_track_geometries",
+                    "footprint_filters_mismatch",
+                },
+            )
 
 
 if __name__ == "__main__":

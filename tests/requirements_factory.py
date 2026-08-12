@@ -54,8 +54,11 @@ def controller_requirements_dict() -> dict[str, Any]:
             {
                 "id": "programming",
                 "kind": "updi_programming",
-                "intent": "Expose UPDI, supply, and ground on a serviceable header.",
-                "parameters": {"connector_pitch_mm": 2.54},
+                "intent": "Expose UPDI, target-voltage sense, and ground on a serviceable header.",
+                "parameters": {
+                    "connector_pitch_mm": 2.54,
+                    "power_pin_mode": "target_voltage_sense_only",
+                },
             },
         ],
         "power": {"nominal_v": 3.3, "min_v": 3.0, "max_v": 3.6, "max_current_a": 0.1},
@@ -65,6 +68,8 @@ def controller_requirements_dict() -> dict[str, Any]:
                 "kind": "i2c",
                 "speed_hz": 100000,
                 "external_connector": True,
+                "bus_capacitance_pf_max": 200,
+                "external_pullups": "forbidden",
             }
         ],
         "board": {

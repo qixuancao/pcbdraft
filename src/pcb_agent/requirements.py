@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -47,6 +48,16 @@ GENERATION_PROFILE_DOMAINS = {
     "sensor",
     "simple_control",
     "i2c",
+}
+PROFILE_FUNCTION_PARAMETERS: dict[str, dict[str, Any]] = {
+    "microcontroller": {"programming": "updi"},
+    "temperature_sensor": {"accuracy_class": "general_purpose"},
+    "status_indicator": {"color": "green"},
+    "i2c_connector": {"pin_order": ["GND", "3V3", "SDA", "SCL"]},
+    "updi_programming": {
+        "connector_pitch_mm": 2.54,
+        "power_pin_mode": "target_voltage_sense_only",
+    },
 }
 
 
@@ -221,6 +232,7 @@ def compile_requirements(
         raise ValidationError(
             "the built-in profile accepts one instance of each supported function"
         )
+    _validate_profile_functions(functions)
 
     instances = [
         resolved_registry.instantiate("qwiic_power_input"),
@@ -375,6 +387,9 @@ def compile_requirements(
             "voltage_v": power["nominal_v"],
             "pullup_ohm": 4700,
             "topology": "open_drain",
+            "bus_capacitance_pf_max": i2c["bus_capacitance_pf_max"],
+            "external_pullups": i2c["external_pullups"],
+            "rise_time_limit_ns": i2c["rise_time_limit_ns"],
         },
         intent="Board-local and connector-exposed environmental sensor bus.",
     )
@@ -394,7 +409,12 @@ def compile_requirements(
         constraints=constraints,
         board=spec.board,
         analyses=(
-            {"id": "power_budget", "kind": "power_budget", "required": True},
+            {
+                "id": "power_budget",
+                "kind": "power_budget",
+                "required": False,
+                "reason": "Firmware-dependent maximum load remains part of qualified L6 review.",
+            },
             {
                 "id": "led_current",
                 "kind": "ohms_law",
@@ -462,7 +482,14 @@ def _i2c_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
     if len(matches) != 1:
         raise ValidationError("requirements must define exactly one I2C interface")
     value = matches[0]
-    allowed = {"id", "kind", "speed_hz", "external_connector"}
+    allowed = {
+        "id",
+        "kind",
+        "speed_hz",
+        "external_connector",
+        "bus_capacitance_pf_max",
+        "external_pullups",
+    }
     if set(value) != allowed:
         raise ValidationError(
             "I2C interface fields do not match the supported contract"
@@ -478,7 +505,42 @@ def _i2c_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
         or not 10_000 <= speed <= 400_000
     ):
         raise ValidationError("I2C speed_hz must be an integer from 10 kHz to 400 kHz")
-    return dict(value)
+    capacitance = value.get("bus_capacitance_pf_max")
+    if (
+        isinstance(capacitance, bool)
+        or not isinstance(capacitance, (int, float))
+        or not math.isfinite(float(capacitance))
+        or not 1 <= float(capacitance) <= 400
+    ):
+        raise ValidationError(
+            "I2C bus_capacitance_pf_max must be a finite number from 1 to 400 pF"
+        )
+    if value.get("external_pullups") != "forbidden":
+        raise ValidationError(
+            "the bundled profile requires external_pullups=forbidden so the total pull-up is bounded"
+        )
+    rise_time_limit_ns = 1000.0 if speed <= 100_000 else 300.0
+    rise_time_ns = 0.8473 * 4700 * float(capacitance) * 1e-3
+    if rise_time_ns > rise_time_limit_ns + 1e-9:
+        raise ValidationError(
+            "the declared I2C capacitance and 4.7 kOhm pull-ups exceed the rise-time budget"
+        )
+    return {
+        **dict(value),
+        "bus_capacitance_pf_max": float(capacitance),
+        "rise_time_limit_ns": rise_time_limit_ns,
+        "calculated_rise_time_ns": rise_time_ns,
+    }
+
+
+def _validate_profile_functions(functions: dict[str, dict[str, Any]]) -> None:
+    """Reject profile parameters that would otherwise be silently ignored."""
+    for kind, expected in PROFILE_FUNCTION_PARAMETERS.items():
+        actual = functions[kind]["parameters"]
+        if actual != expected:
+            raise ValidationError(
+                f"{kind} parameters must exactly match the supported profile contract"
+            )
 
 
 def _provenance(
@@ -542,7 +604,7 @@ def _function_acceptance(kind: str) -> tuple[str, ...]:
             "External connector pin order is GND/3V3/SDA/SCL and edge placement is enforced.",
         ),
         "updi_programming": (
-            "UPDI, supply, and return are exposed on an accessible header.",
+            "UPDI, target-voltage sense, and return are exposed on an accessible header without a second supply source.",
         ),
     }[kind]
 
@@ -586,6 +648,24 @@ def _constraints(
             block_source["sensor"],
         ),
         Constraint(
+            "i2c_electrical_budget",
+            "i2c_electrical_budget",
+            ("sensor_i2c", "net_i2c_sda", "net_i2c_scl", "pullup_r1", "pullup_r2"),
+            {
+                "speed_hz": i2c["speed_hz"],
+                "pullup_ohm": 4700,
+                "bus_capacitance_pf_max": i2c["bus_capacitance_pf_max"],
+                "rise_time_limit_ns": i2c["rise_time_limit_ns"],
+                "calculated_rise_time_ns": i2c["calculated_rise_time_ns"],
+                "sink_current_limit_ma": 3.0,
+                "calculated_sink_current_ma": power["max_v"] / 4700 * 1000,
+                "external_pullups": i2c["external_pullups"],
+            },
+            "release_blocking",
+            "Bound the declared I2C RC rise time, low-level sink current, and external pull-up policy.",
+            block_source["sensor"],
+        ),
+        Constraint(
             "sensor_group",
             "functional_group",
             ("sensor_u2", "sensor_c2", "pullup_r1", "pullup_r2", "qwiic_j1"),
@@ -610,6 +690,21 @@ def _constraints(
             {"edge": "left", "max_edge_distance_mm": 4.0},
             "required",
             "Programming header must remain accessible.",
+            block_source["core"],
+        ),
+        Constraint(
+            "updi_power_policy",
+            "source_ownership",
+            ("updi_j2", "qwiic_j1", "net_3v3"),
+            {
+                "physical_source_component": "qwiic_j1",
+                "sense_component": "updi_j2",
+                "sense_pin": "2",
+                "sense_role": "voltage_sense",
+                "simultaneous_external_power_sources": "forbidden",
+            },
+            "release_blocking",
+            "UPDI pin 2 is target-voltage sense only; the programmer must not source the rail while Qwiic power is present.",
             block_source["core"],
         ),
         Constraint(
@@ -680,6 +775,9 @@ def _constraints(
                 "min_hole_to_hole_mm": max(spec.board.min_clearance_mm, 0.2),
                 "edge_clearance_mm": spec.board.edge_clearance_mm,
                 "assembly_side": "front",
+                "process_profile": "generic_standard_low_voltage_2_4_layer_v1",
+                "fabricator": "not_selected",
+                "capability_verification": "external_l4_required",
             },
             "release_blocking",
             "Fabrication limits are explicit design inputs.",

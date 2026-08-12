@@ -99,6 +99,14 @@ class HostileInputSecurityTests(unittest.TestCase):
         nested["reviewer_qualification"] = "test"
         with self.assertRaisesRegex(ValidationError, "nesting"):
             record_external_evidence(**common, metadata=nested)
+        with self.assertRaisesRegex(ValidationError, "L4, L6, or L7"):
+            record_external_evidence(
+                **(common | {"level": "L5"}),
+                metadata={
+                    "review_scope": "test",
+                    "reviewer_qualification": "test",
+                },
+            )
 
     def test_release_refuses_symlink_output(self) -> None:
         link = self.root / "release-link"

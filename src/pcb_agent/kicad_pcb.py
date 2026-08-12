@@ -71,6 +71,7 @@ class PcbGeneration:
     placement_iterations: int
     placement_diagnostics: tuple[str, ...]
     routing: RoutingResult
+    reference_planes: tuple[dict[str, Any], ...]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -98,6 +99,7 @@ class PcbGeneration:
                 "length_mm_by_net_and_width": _routing_lengths_by_width(self.routing),
                 "via_count_by_net": _routing_vias(self.routing),
                 "width_range_mm_by_net": _routing_width_ranges(self.routing),
+                "reference_planes": [dict(item) for item in self.reference_planes],
                 "diagnostics": list(self.routing.diagnostics),
             },
         }
@@ -241,6 +243,7 @@ def generate_pcb(
     )
     if result.get("mode") != "build" or not isinstance(result.get("sha256"), str):
         raise PcbAgentError("pcbnew worker returned a malformed build receipt")
+    reference_planes = _parse_reference_planes(result.get("reference_planes"))
     assert_supported_kicad_version(str(result.get("kicad_version", "")))
     actual_hash = sha256_file(target, max_bytes=128 * 1024 * 1024)
     if actual_hash != result["sha256"]:
@@ -264,7 +267,31 @@ def generate_pcb(
         placement_iterations=placement_result.iterations,
         placement_diagnostics=placement_result.diagnostics,
         routing=routing,
+        reference_planes=reference_planes,
     )
+
+
+def _parse_reference_planes(value: Any) -> tuple[dict[str, Any], ...]:
+    required = {"net", "layer", "filled", "area_mm2", "pad_connection"}
+    if not isinstance(value, list) or len(value) != 1:
+        raise PcbAgentError("pcbnew worker did not return one reference plane")
+    plane = value[0]
+    if not isinstance(plane, dict) or set(plane) != required:
+        raise PcbAgentError("pcbnew worker returned a malformed reference plane")
+    area = plane.get("area_mm2")
+    if (
+        not isinstance(plane.get("net"), str)
+        or plane["net"].lstrip("/") != "GND"
+        or plane.get("layer") not in {"B.Cu", "In1.Cu"}
+        or plane.get("filled") is not True
+        or isinstance(area, bool)
+        or not isinstance(area, (int, float))
+        or not math.isfinite(float(area))
+        or float(area) <= 0
+        or plane.get("pad_connection") != "solid"
+    ):
+        raise PcbAgentError("pcbnew worker reference-plane evidence is invalid")
+    return (dict(plane),)
 
 
 def inspect_footprints(

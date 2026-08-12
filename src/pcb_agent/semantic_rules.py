@@ -92,6 +92,10 @@ def evaluate_semantic_rules(
             )
         elif constraint.kind == "interface_pullups":
             finding = _pullup_finding(design, graph, constraint)
+        elif constraint.kind == "i2c_electrical_budget":
+            finding = _i2c_electrical_budget_finding(design, constraint)
+        elif constraint.kind == "source_ownership":
+            finding = _source_ownership_finding(design, constraint)
         elif constraint.kind == "current_limit":
             finding = _current_limit_finding(design, graph, constraint)
         elif constraint.kind == "functional_group":
@@ -129,6 +133,13 @@ def _coverage_findings(
     required: dict[str, str] = {"manufacturing_rules": "board"}
     if any(interface.kind == "i2c" for interface in design.interfaces):
         required["interface_pullups"] = "i2c"
+        required["i2c_electrical_budget"] = "i2c"
+    if any(
+        endpoint.role == "voltage_sense"
+        for net in design.nets
+        for endpoint in net.endpoints
+    ):
+        required["source_ownership"] = "voltage_sense"
     known_parts = {part["id"] for part in graph.to_dict()["parts"]}
     if any(
         graph.get(component.part_id).kind == "led"
@@ -330,6 +341,152 @@ def _pullup_finding(
     )
 
 
+def _i2c_electrical_budget_finding(
+    design: Design, constraint: Any
+) -> RuleFinding | None:
+    interfaces = [
+        interface
+        for interface in design.interfaces
+        if interface.kind == "i2c" and interface.id in constraint.targets
+    ]
+    reasons: list[str] = []
+    if len(interfaces) != 1:
+        reasons.append("target set does not identify exactly one I2C interface")
+        interface = None
+    else:
+        interface = interfaces[0]
+    try:
+        speed_hz = int(constraint.params["speed_hz"])
+        pullup_ohm = float(constraint.params["pullup_ohm"])
+        capacitance_pf = float(constraint.params["bus_capacitance_pf_max"])
+        rise_limit_ns = float(constraint.params["rise_time_limit_ns"])
+        declared_rise_ns = float(constraint.params["calculated_rise_time_ns"])
+        sink_limit_ma = float(constraint.params["sink_current_limit_ma"])
+        declared_sink_ma = float(constraint.params["calculated_sink_current_ma"])
+    except (KeyError, TypeError, ValueError):
+        return _finding(
+            "intent.i2c_electrical_budget",
+            constraint.id,
+            "I2C electrical budget parameters are incomplete or invalid",
+        )
+    values = (
+        float(speed_hz),
+        pullup_ohm,
+        capacitance_pf,
+        rise_limit_ns,
+        declared_rise_ns,
+        sink_limit_ma,
+        declared_sink_ma,
+    )
+    if not all(math.isfinite(value) and value > 0 for value in values):
+        reasons.append("electrical budget values must be positive and finite")
+    expected_limit_ns = 1000.0 if speed_hz <= 100_000 else 300.0
+    calculated_rise_ns = 0.8473 * pullup_ohm * capacitance_pf * 1e-3
+    power_domain = next(
+        (
+            domain
+            for domain in design.power_domains
+            if interface is not None and domain.id == interface.power_domain
+        ),
+        None,
+    )
+    calculated_sink_ma = (
+        power_domain.max_v / pullup_ohm * 1000
+        if power_domain is not None and pullup_ohm > 0
+        else math.inf
+    )
+    if interface is not None:
+        expected_params = {
+            "speed_hz": speed_hz,
+            "pullup_ohm": pullup_ohm,
+            "bus_capacitance_pf_max": capacitance_pf,
+            "rise_time_limit_ns": rise_limit_ns,
+            "external_pullups": constraint.params.get("external_pullups"),
+        }
+        for name, expected in expected_params.items():
+            actual = interface.params.get(name)
+            if actual != expected:
+                reasons.append(f"interface {name} disagrees with the budget")
+    if rise_limit_ns != expected_limit_ns:
+        reasons.append("rise-time limit does not match the declared I2C speed")
+    if abs(declared_rise_ns - calculated_rise_ns) > 1e-6:
+        reasons.append("recorded rise time does not match the RC calculation")
+    if calculated_rise_ns > rise_limit_ns + 1e-9:
+        reasons.append("calculated RC rise time exceeds the protocol limit")
+    if abs(declared_sink_ma - calculated_sink_ma) > 1e-6:
+        reasons.append(
+            "recorded sink current does not match the worst-case rail calculation"
+        )
+    if calculated_sink_ma > sink_limit_ma + 1e-9:
+        reasons.append("worst-case pull-up current exceeds the declared sink limit")
+    if constraint.params.get("external_pullups") != "forbidden":
+        reasons.append("external pull-ups are not forbidden by the bounded profile")
+    if not reasons:
+        return None
+    return _finding(
+        "intent.i2c_electrical_budget",
+        constraint.id,
+        "; ".join(sorted(set(reasons))),
+        calculated_rise_time_ns=round(calculated_rise_ns, 6),
+        calculated_sink_current_ma=round(calculated_sink_ma, 6),
+    )
+
+
+def _source_ownership_finding(design: Design, constraint: Any) -> RuleFinding | None:
+    reasons: list[str] = []
+    net = next(
+        (
+            net
+            for net in design.nets
+            if net.id in constraint.targets and net.name == "3V3"
+        ),
+        None,
+    )
+    if net is None:
+        return _finding(
+            "intent.source_ownership",
+            constraint.id,
+            "source-ownership target does not identify the 3V3 rail",
+        )
+    component_by_id = {component.id: component for component in design.components}
+    physical_sources = sorted(
+        (endpoint.component, endpoint.pin)
+        for endpoint in net.endpoints
+        if endpoint.role == "source"
+        and endpoint.component in component_by_id
+        and not component_by_id[endpoint.component].attributes.get(
+            "exclude_from_board", False
+        )
+    )
+    expected_source = constraint.params.get("physical_source_component")
+    if [component for component, _pin in physical_sources] != [expected_source]:
+        reasons.append("the populated rail does not have exactly one declared source")
+    sense_component = constraint.params.get("sense_component")
+    sense_pin = constraint.params.get("sense_pin")
+    sense_role = constraint.params.get("sense_role")
+    sense_matches = [
+        endpoint
+        for endpoint in net.endpoints
+        if endpoint.component == sense_component and endpoint.pin == sense_pin
+    ]
+    if len(sense_matches) != 1 or sense_matches[0].role != sense_role:
+        reasons.append(
+            "the UPDI voltage-reference pin is not a sense-only rail endpoint"
+        )
+    if constraint.params.get("simultaneous_external_power_sources") != "forbidden":
+        reasons.append("simultaneous external sources are not explicitly forbidden")
+    if not reasons:
+        return None
+    return _finding(
+        "intent.source_ownership",
+        constraint.id,
+        "; ".join(reasons),
+        physical_sources=",".join(
+            f"{component}:{pin}" for component, pin in physical_sources
+        ),
+    )
+
+
 def _current_limit_finding(
     design: Design, graph: PartGraph, constraint: Any
 ) -> RuleFinding | None:
@@ -524,12 +681,35 @@ def _routing_finding(
                 reasons.append(f"{net.name} lacks width evidence")
             elif any(float(width) + 1e-9 < neckdown for width in widths[net.name]):
                 reasons.append(f"{net.name} is narrower than the neckdown limit")
+        reference_net_id = constraint.params.get("continuous_reference_net")
+        if reference_net_id is not None:
+            reference_net = net_by_id.get(str(reference_net_id))
+            planes = routing.get("reference_planes", [])
+            if reference_net is None or not any(
+                isinstance(plane, dict)
+                and str(plane.get("net", "")).lstrip("/") == reference_net.name
+                and plane.get("filled") is True
+                and _positive_finite(plane.get("area_mm2"))
+                for plane in planes
+            ):
+                reasons.append(
+                    "declared continuous reference plane lacks fill evidence"
+                )
     if not reasons:
         return None
     return _finding(
         "intent.routing",
         constraint.id,
         "; ".join(sorted(set(reasons))),
+    )
+
+
+def _positive_finite(value: Any) -> bool:
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and math.isfinite(float(value))
+        and float(value) > 0
     )
 
 

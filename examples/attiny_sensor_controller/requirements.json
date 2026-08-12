@@ -81,8 +81,8 @@
   },
   "source": {
     "acquired_at": "2026-08-12",
-    "locator": "src/pcb_agent/data/benchmark/acceptance_requirements.json",
-    "name": "independent CC0 acceptance fixture"
+    "locator": "examples/attiny_sensor_controller/requirements.json",
+    "name": "public low-voltage acceptance example"
   },
   "version": 1
 }
