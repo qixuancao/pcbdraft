@@ -199,8 +199,7 @@ class OfflineEndToEndTests(unittest.TestCase):
                 cwd=ROOT,
                 env=environment,
                 stdin=subprocess.DEVNULL,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 timeout=40,
                 check=False,
             )

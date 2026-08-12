@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import html
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 def _md(value: Any) -> str:

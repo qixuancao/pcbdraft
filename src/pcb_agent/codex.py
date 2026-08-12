@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import PcbAgentError, ValidationError
 from .io import atomic_write_json, atomic_write_text, load_json_limited

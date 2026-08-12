@@ -10,8 +10,9 @@ import hashlib
 import json
 import shutil
 import xml.etree.ElementTree as ET
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import PcbAgentError
 from .io import make_directory, read_bytes_limited

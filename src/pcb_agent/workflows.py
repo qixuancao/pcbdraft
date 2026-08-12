@@ -5,16 +5,29 @@ from __future__ import annotations
 import hashlib
 import shutil
 import time
+from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
-from typing import Any, Mapping
+from typing import Any
 
 from . import __version__
 from .codex import invoke_codex, patch_prompt, review_prompt
 from .doctor import probe_executable
 from .errors import PcbAgentError, TransactionRejected, ValidationError
 from .gates import collect_structured_evidence, gate_dict, gates_are_runnable, run_gates
-from .io import atomic_write_bytes, atomic_write_json, atomic_write_text, load_json_limited, make_directory, read_bytes_limited
-from .patching import MAX_TARGET_BYTES, apply_operations, build_unified_patch, regression_reasons
+from .io import (
+    atomic_write_bytes,
+    atomic_write_json,
+    atomic_write_text,
+    load_json_limited,
+    make_directory,
+    read_bytes_limited,
+)
+from .patching import (
+    MAX_TARGET_BYTES,
+    apply_operations,
+    build_unified_patch,
+    regression_reasons,
+)
 from .project import (
     baseline_manifest,
     canonical_project,
@@ -643,12 +656,13 @@ def run_apply(
         }
         _write_receipt(run_dir, receipt)
         return run_dir
+    # Roll back even on cancellation/KeyboardInterrupt after source mutation begins.
     except BaseException as exc:
         if receipt.get("status") == "applying":
             try:
                 _rollback(project=project, backup=backup, changed_paths=applied_paths)
                 receipt["rollback_completed"] = True
-            except BaseException as rollback_exc:
+            except BaseException as rollback_exc:  # noqa: BLE001 -- rollback must not mask root failure
                 receipt["rollback_completed"] = False
                 receipt["rollback_failure"] = str(rollback_exc)
             receipt["status"] = "rolled_back" if receipt.get("rollback_completed") else "rollback_failed"

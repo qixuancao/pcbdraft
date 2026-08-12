@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 from .errors import PcbAgentError
 from .io import load_json_limited, make_directory

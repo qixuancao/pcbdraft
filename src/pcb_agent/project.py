@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 import hashlib
 import os
 import re
 import shutil
 import stat
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any

@@ -8,9 +8,9 @@ import selectors
 import signal
 import subprocess
 import time
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Sequence
 
 from .errors import PcbAgentError, ValidationError
 
