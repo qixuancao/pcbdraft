@@ -23,6 +23,8 @@ jobs:
           sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo apt-get install --yes kicad
+      - name: Initialize KiCad user library tables
+        run: scripts/prepare-kicad-environment.sh
       - uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python }}
@@ -47,4 +49,6 @@ jobs:
           sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
           sudo apt-get install --yes kicad
+      - name: Initialize KiCad user library tables
+        run: scripts/prepare-kicad-environment.sh
       - run: scripts/release-check.sh

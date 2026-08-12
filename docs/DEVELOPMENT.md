@@ -12,6 +12,16 @@ uv run copperwright doctor --json
 
 Codex is optional unless changing the AI reviewer or running live model metrics.
 
+On a fresh noninteractive Linux account, initialize KiCad's user library tables
+after installing the KiCad 10 packages:
+
+```bash
+scripts/prepare-kicad-environment.sh
+```
+
+The initializer copies only missing vendor `sym-lib-table` and `fp-lib-table`
+templates. It preserves valid existing user tables and never disables ERC or DRC.
+
 ## Verification commands
 
 ```bash
