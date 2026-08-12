@@ -69,11 +69,11 @@ def _load_job(path):
     _strict(
         job,
         {"schema", "version", "mode", "design_id"},
-        {"components", "board", "nets", "segments", "vias", "title"},
+        {"components", "board", "nets", "segments", "vias", "title", "board_path"},
     )
     if job["schema"] != "pcb-agent-pcbnew-job" or job["version"] != 1:
         raise ValueError("unsupported pcbnew worker job")
-    if job["mode"] not in {"inspect", "build"}:
+    if job["mode"] not in {"inspect", "inspect_board", "build"}:
         raise ValueError("unsupported pcbnew worker mode")
     _text(job["design_id"], "design_id", 128)
     return job
@@ -304,6 +304,95 @@ def inspect_job(job):
         "mode": "inspect",
         "kicad_version": pcbnew.GetBuildVersion(),
         "components": sorted(output, key=lambda item: item["id"]),
+    }
+
+
+def inspect_board_job(job):
+    raw_path = Path(_text(job.get("board_path"), "board_path", 4096))
+    if raw_path.suffix != ".kicad_pcb" or raw_path.is_symlink():
+        raise ValueError("inspect_board input must be a non-symlink .kicad_pcb")
+    path = raw_path.resolve(strict=True)
+    info = path.stat()
+    if not path.is_file() or info.st_size > 128 * 1024 * 1024:
+        raise ValueError("inspect_board input is missing or oversized")
+    board = pcbnew.LoadBoard(str(path))
+    if board is None:
+        raise ValueError("pcbnew could not load the board")
+    components = []
+    for footprint in board.GetFootprints():
+        properties = {
+            field.GetName(): field.GetText()
+            for field in footprint.GetFields()
+            if field.GetName()
+            not in {"Reference", "Value", "Datasheet", "Description", "KiLib_Generator"}
+        }
+        pads = sorted(
+            (
+                {"number": str(pad.GetNumber()), "net": str(pad.GetNetname())}
+                for pad in footprint.Pads()
+            ),
+            key=lambda item: item["number"],
+        )
+        components.append(
+            {
+                "reference": str(footprint.GetReference()),
+                "value": str(footprint.GetValue()),
+                "footprint": footprint.GetFPID().GetUniStringLibId(),
+                "schematic_path": footprint.GetPath().AsString(),
+                "x_mm": _mm(footprint.GetPosition().x),
+                "y_mm": _mm(footprint.GetPosition().y),
+                "rotation_deg": round(
+                    float(footprint.GetOrientationDegrees()) % 360, 9
+                ),
+                "side": "back" if footprint.IsFlipped() else "front",
+                "properties": dict(sorted(properties.items())),
+                "pads": pads,
+            }
+        )
+    tracks = []
+    for item in board.Tracks():
+        if isinstance(item, pcbnew.PCB_VIA):
+            tracks.append(
+                {
+                    "kind": "via",
+                    "net": str(item.GetNetname()),
+                    "x_mm": _mm(item.GetPosition().x),
+                    "y_mm": _mm(item.GetPosition().y),
+                    "width_mm": _mm(item.GetWidth()),
+                    "drill_mm": _mm(item.GetDrillValue()),
+                }
+            )
+        elif isinstance(item, pcbnew.PCB_TRACK):
+            tracks.append(
+                {
+                    "kind": "segment",
+                    "net": str(item.GetNetname()),
+                    "x1_mm": _mm(item.GetStart().x),
+                    "y1_mm": _mm(item.GetStart().y),
+                    "x2_mm": _mm(item.GetEnd().x),
+                    "y2_mm": _mm(item.GetEnd().y),
+                    "width_mm": _mm(item.GetWidth()),
+                    "layer": str(board.GetLayerName(item.GetLayer())),
+                }
+            )
+        else:
+            raise TypeError("board contains an unsupported track object")
+    settings = board.GetDesignSettings()
+    return {
+        "schema": "pcb-agent-pcbnew-result",
+        "version": 1,
+        "mode": "inspect_board",
+        "kicad_version": pcbnew.GetBuildVersion(),
+        "components": sorted(components, key=lambda item: item["reference"]),
+        "tracks": sorted(tracks, key=lambda item: json.dumps(item, sort_keys=True)),
+        "board": {
+            "layers": board.GetCopperLayerCount(),
+            "thickness_mm": _mm(settings.GetBoardThickness()),
+            "min_clearance_mm": _mm(settings.m_MinClearance),
+            "min_track_mm": _mm(settings.m_TrackMinWidth),
+            "min_drill_mm": _mm(settings.m_MinThroughDrill),
+            "edge_clearance_mm": _mm(settings.m_CopperEdgeClearance),
+        },
     }
 
 
@@ -700,14 +789,18 @@ def _atomic_json(path, value):
 
 
 def main():
-    if len(sys.argv) != 4 or sys.argv[1] not in {"inspect", "build"}:
-        raise ValueError("usage: pcbnew_worker.py inspect|build JOB_JSON OUTPUT")
+    if len(sys.argv) != 4 or sys.argv[1] not in {"inspect", "inspect_board", "build"}:
+        raise ValueError(
+            "usage: pcbnew_worker.py inspect|inspect_board|build JOB_JSON OUTPUT"
+        )
     mode, job_path, output_path = sys.argv[1:]
     job = _load_job(job_path)
     if job["mode"] != mode:
         raise ValueError("worker argv mode disagrees with job mode")
     if mode == "inspect":
         _atomic_json(output_path, inspect_job(job))
+    elif mode == "inspect_board":
+        _atomic_json(output_path, inspect_board_job(job))
     else:
         result_path = str(Path(output_path).with_suffix(".worker-result.json"))
         _atomic_json(result_path, build_job(job, output_path))

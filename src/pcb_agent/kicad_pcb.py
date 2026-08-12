@@ -93,9 +93,85 @@ class PcbGeneration:
                 "expanded_nodes": self.routing.expanded_nodes,
                 "segment_count": len(self.routing.segments),
                 "via_count": len(self.routing.vias),
+                "length_mm_by_net": _routing_lengths(self.routing),
+                "length_mm_by_net_and_width": _routing_lengths_by_width(self.routing),
+                "via_count_by_net": _routing_vias(self.routing),
+                "width_range_mm_by_net": _routing_width_ranges(self.routing),
                 "diagnostics": list(self.routing.diagnostics),
             },
         }
+
+
+def inspect_native_board(
+    design: Design,
+    board_path: str | Path,
+    *,
+    system_python: str | Path | None = None,
+) -> dict[str, Any]:
+    """Return a bounded semantic snapshot of an existing native KiCad board."""
+    source = Path(board_path).resolve(strict=True)
+    job = {
+        "schema": "pcb-agent-pcbnew-job",
+        "version": 1,
+        "mode": "inspect_board",
+        "design_id": design.design_id,
+        "board_path": str(source),
+    }
+    with tempfile.TemporaryDirectory(prefix="pcb-agent-board-inspect-") as temporary:
+        result_path = Path(temporary) / "board-inspection.json"
+        result = _run_worker(
+            "inspect_board",
+            job,
+            result_path,
+            system_python=system_python,
+            timeout=30.0,
+        )
+    if result.get("mode") != "inspect_board":
+        raise PcbAgentError("pcbnew worker returned a malformed board inspection")
+    return result
+
+
+def _routing_lengths(routing: RoutingResult) -> dict[str, float]:
+    values: dict[str, float] = {}
+    for segment in routing.segments:
+        values[segment.net] = values.get(segment.net, 0.0) + math.hypot(
+            segment.x2_mm - segment.x1_mm, segment.y2_mm - segment.y1_mm
+        )
+    return {name: round(length, 6) for name, length in sorted(values.items())}
+
+
+def _routing_vias(routing: RoutingResult) -> dict[str, int]:
+    values: dict[str, int] = {}
+    for via in routing.vias:
+        values[via.net] = values.get(via.net, 0) + 1
+    return dict(sorted(values.items()))
+
+
+def _routing_lengths_by_width(
+    routing: RoutingResult,
+) -> dict[str, dict[str, float]]:
+    values: dict[str, dict[str, float]] = {}
+    for segment in routing.segments:
+        widths = values.setdefault(segment.net, {})
+        key = f"{segment.width_mm:.9f}".rstrip("0").rstrip(".")
+        widths[key] = widths.get(key, 0.0) + math.hypot(
+            segment.x2_mm - segment.x1_mm, segment.y2_mm - segment.y1_mm
+        )
+    return {
+        name: {width: round(length, 6) for width, length in sorted(widths.items())}
+        for name, widths in sorted(values.items())
+    }
+
+
+def _routing_width_ranges(routing: RoutingResult) -> dict[str, list[float]]:
+    values: dict[str, list[float]] = {}
+    for segment in routing.segments:
+        widths = values.setdefault(segment.net, [])
+        widths.append(segment.width_mm)
+    return {
+        name: [round(min(widths), 6), round(max(widths), 6)]
+        for name, widths in sorted(values.items())
+    }
 
 
 def generate_pcb(
@@ -686,7 +762,9 @@ def _run_worker(
         job_path = Path(temporary) / "job.json"
         atomic_write_json(job_path, job)
         result_path = (
-            output if mode == "inspect" else output.with_suffix(".worker-result.json")
+            output
+            if mode in {"inspect", "inspect_board"}
+            else output.with_suffix(".worker-result.json")
         )
         result = run_command(
             [str(python), "-I", str(worker), mode, str(job_path), str(output)],

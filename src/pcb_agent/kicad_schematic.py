@@ -45,6 +45,61 @@ def stable_kicad_uuid(design_id: str, kind: str, identifier: str) -> str:
     return str(uuid.uuid5(KICAD_NAMESPACE, f"{design_id}/{kind}/{identifier}"))
 
 
+def inspect_native_schematic(path: str | Path) -> dict[str, object]:
+    """Return a bounded semantic snapshot of a native KiCad schematic."""
+    source = Path(path)
+    if source.suffix != ".kicad_sch" or source.is_symlink():
+        raise ValidationError("schematic inspection requires a non-symlink .kicad_sch")
+    try:
+        resolved = source.resolve(strict=True)
+        if resolved.stat().st_size > 128 * 1024 * 1024:
+            raise ValidationError("schematic exceeds the inspection size limit")
+        schematic = Schematic.load(resolved)
+    except ValidationError:
+        raise
+    except Exception as exc:
+        raise PcbAgentError(f"KiCad schematic inspection failed: {exc}") from exc
+    fields = ("Manufacturer", "MPN", "Part_ID", "Lifecycle", "Trust")
+    components = []
+    for component in schematic.components:
+        properties = {}
+        for name in fields:
+            raw = component.properties.get(name)
+            if isinstance(raw, dict) and isinstance(raw.get("value"), str):
+                properties[name] = raw["value"]
+        components.append(
+            {
+                "reference": component.reference,
+                "value": component.value,
+                "symbol": component.lib_id,
+                "footprint": component.footprint,
+                "uuid": component.uuid,
+                "position_mm": [
+                    round(float(component.position.x), 6),
+                    round(float(component.position.y), 6),
+                ],
+                "rotation_deg": round(float(component.rotation) % 360, 6),
+                "properties": dict(sorted(properties.items())),
+            }
+        )
+    labels = sorted(
+        {
+            str(label.text)
+            for label in schematic.labels
+            if isinstance(label.text, str) and label.text
+        }
+    )
+    return {
+        "schema": "pcb-agent-schematic-snapshot",
+        "version": 1,
+        "root_uuid": schematic.uuid,
+        "components": sorted(components, key=lambda item: item["reference"]),
+        "label_names": labels,
+        "label_count": len(list(schematic.labels)),
+        "no_connect_count": len(list(schematic.no_connects)),
+    }
+
+
 def generate_schematic(
     design: Design,
     output: str | Path,
