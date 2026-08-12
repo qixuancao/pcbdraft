@@ -65,7 +65,7 @@ class RequirementsCompilerTests(unittest.TestCase):
         self.assertEqual(
             constraints["routing_i2c"].params["min_reference_stitching_vias"], 2
         )
-        self.assertEqual(constraints["power_budget"].params["max_power_w"], 0.36)
+        self.assertEqual(constraints["power_budget"].params["max_power_w"], 0.3465)
         self.assertEqual(
             constraints["power_budget"].params["envelope"],
             "simultaneous_declared_scope_maxima",

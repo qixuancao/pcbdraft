@@ -1,0 +1,319 @@
+{
+  "archive_sha256": "d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98",
+  "audit_artifacts": [
+    {
+      "path": "validation/drc.raw.json",
+      "sha256": "36432b050481d82447d1a09d87c5b4011ad3b89cd413244d03addf25b64a6aba",
+      "size": 673
+    },
+    {
+      "path": "validation/erc.raw.json",
+      "sha256": "b92e83d9df6de221d7defc9283ce187dc028d997f92084b1a0c25d37686768d0",
+      "size": 724
+    },
+    {
+      "path": "validation/receipt.json",
+      "sha256": "13088221950a4316599375d0b4876a77a907eb41c87da89f2a4f5f9b91bc859e",
+      "size": 1162
+    }
+  ],
+  "candidate_ready": true,
+  "completed_at": "2026-08-12T15:45:29Z",
+  "created_at": "2026-08-12T15:45:22Z",
+  "design_content_hash": "4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2",
+  "manifest_sha256": "64b779d1ea1ff744307a2faf803ea0c42b9b9710504b63b93a1742bf4f0cd778",
+  "normalization": [
+    {
+      "content_sha256": "b7da42832d45bc44f91348fc87aa0378c194e8f35a5a66dcb01a90e89c323dfa",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "4b6974b5fa841f7e0788d4f84209393b1124e1a1e94b002150232a89f313f8d7",
+      "path": "board.step"
+    },
+    {
+      "content_sha256": "24d9ef4b621b0826bcac22caca2ef6f495cf2f8ef7de5caa1feb01bbf77e6bbb",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "0b869ea34ad7e856df5f1f7a318b3ea5256c0b7c08b0ed4c62cbcc4a8e94c5e5",
+      "path": "board_stats.json"
+    },
+    {
+      "content_sha256": "b77e669f8a9811d041a952728dadc410d04a46692fbdc792e2ee543e928f323a",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "217ac2913b251fa90fa9ffdd4c6dcd88626a82955f9dea17fe3186d8c446a357",
+      "path": "drill/attiny_sensor_controller.drl"
+    },
+    {
+      "content_sha256": "da85bd24363dfce36647d37bec4aa761ee8b752e21804368c1299570bbad0925",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "172103b110ddc7c4e999441dbb73aaad0bbcf31b81033d9e93921a3cac33a3d9",
+      "path": "drill/drill_report.rpt"
+    },
+    {
+      "content_sha256": "732c91afd20af70b80eb7faf1d413ef8f58217477cdf056cf4a23d3484b319a2",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "60f8c6bd0583bbb385f59e64bec640cc91ca493df80bfb98a16f78a532b47705",
+      "path": "gerber/attiny_sensor_controller-B_Cu.gbl"
+    },
+    {
+      "content_sha256": "f896a6ab99406f098fe05a9497ec7b6f449b35e312049b8858e119a5973deae6",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "f8a8072b2bdc483d17d4a6255e1c1ed85495a35b6f6820866f21bd5059a06415",
+      "path": "gerber/attiny_sensor_controller-B_Mask.gbs"
+    },
+    {
+      "content_sha256": "371f7cae17fd6aaf738400b6524da840b236086b44120b115d588cdb629f7ef4",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "0124549b6e2a7bb4c338015337f388e85aa9559c155f3251bc7198f4a9df7fb3",
+      "path": "gerber/attiny_sensor_controller-B_Silkscreen.gbo"
+    },
+    {
+      "content_sha256": "fd7c65b984b437a6accd4c4431433021ed372a2324bb13df68d1ed56c1a7ce25",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "7fb7a08c602eff4706b842d9c2629b4bc1502bc34935df761aefc59b74e656d4",
+      "path": "gerber/attiny_sensor_controller-Edge_Cuts.gm1"
+    },
+    {
+      "content_sha256": "5baa28dac3cf5880b3a5559a64c95a4d195a1f1da90667918171d6762fd4c90f",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "468f607663c0f705979b521ae8d3335f9fbc6deb8999390686aa51809b03741f",
+      "path": "gerber/attiny_sensor_controller-F_Cu.gtl"
+    },
+    {
+      "content_sha256": "de61a077a223ddf9eadbd2892ee9d6196128b2ea760dcb8253d6b2384959b9db",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "006d05f887a6f5e71a5fe51bd8cd7e1010296df2b57670d02b9ed62df8c74c0d",
+      "path": "gerber/attiny_sensor_controller-F_Mask.gts"
+    },
+    {
+      "content_sha256": "9ea8e03f3f2967371aea7b2bed32511e37c8dbf5803fe5b83fb810ea672862cb",
+      "creation_time_fields_normalized": 3,
+      "original_sha256": "101c7ed5df287314029e5d13302e3a46845a0bbb1805d1a52f3f2b2f49f70c97",
+      "path": "gerber/attiny_sensor_controller-F_Silkscreen.gto"
+    },
+    {
+      "content_sha256": "9b7cdfc3c349a07989b4fe1aa10b685bcac7230602bcbfb40c164417ca67038a",
+      "creation_time_fields_normalized": 2,
+      "original_sha256": "606fd28237f1a0559d1d83fcc0b013727ae7336453c74692f2365dd39edda002",
+      "path": "gerber/attiny_sensor_controller-job.gbrjob"
+    },
+    {
+      "content_sha256": "d404ae8fb13b5970ddb3fb1bd62eca84083fec33cbe482d18d07626aa3f22cde",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "955d1ff09302646f20458d42c1e8a81c9f8dd15ca4b2e199aea8bbd09a2b21a5",
+      "path": "schematic.pdf"
+    },
+    {
+      "content_sha256": "e59d29f077da255af0515913a512e75c175661a29e61a1597e01694506722ead",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "0d6f9e485d1f90175c06b47cad7a4f72d1294069343b108219fbe94df69caa45",
+      "path": "svg/attiny_sensor_controller-Edge_Cuts.svg"
+    },
+    {
+      "content_sha256": "1dc1fa4d85f3a000085512fd0a26180e9b921c0226f07761f9106c278541505a",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "ac0b96c846820c2f7b23ec392b1a848b02aa27ad1d82d3f01ab330939e889238",
+      "path": "svg/attiny_sensor_controller-F_Cu.svg"
+    },
+    {
+      "content_sha256": "fe459e431c8e01100517c0ce768a5450577bb0f1001a1628573a0b5d08de92a0",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "da3c875cd4c2eb78f486e38c3082b352dee0c6bb1b5e0a139658fcd5704add44",
+      "path": "svg/attiny_sensor_controller-F_Mask.svg"
+    },
+    {
+      "content_sha256": "6041a0cb66733a3cdcd124b8a382c96aa95d457159682793230d033f096fbe9b",
+      "creation_time_fields_normalized": 1,
+      "original_sha256": "e2f7a4b3c8a01a9dc8676e170e07c6e3e122ba96538c658584a57f8741fbfb81",
+      "path": "svg/attiny_sensor_controller-F_Silkscreen.svg"
+    }
+  ],
+  "production_ready": false,
+  "project": "/mnt/2T/pcb-agent-runtime/examples/attiny_sensor_controller/project",
+  "schema": "pcb-agent-release-receipt",
+  "status": "complete",
+  "tool_runs": [
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "gerbers",
+        "-o",
+        "<RELEASE>/manufacturing/gerber",
+        "-l",
+        "F.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.268,
+      "exit_code": 0,
+      "name": "gerbers",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "drill",
+        "-o",
+        "<RELEASE>/manufacturing/drill",
+        "--generate-report",
+        "--report-path",
+        "<RELEASE>/manufacturing/drill/drill_report.rpt",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.165,
+      "exit_code": 0,
+      "name": "drill",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "pos",
+        "-o",
+        "<RELEASE>/manufacturing/positions.csv",
+        "--format",
+        "csv",
+        "--units",
+        "mm",
+        "--side",
+        "both",
+        "--exclude-dnp",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.166,
+      "exit_code": 0,
+      "name": "positions",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "ipcd356",
+        "-o",
+        "<RELEASE>/manufacturing/connectivity.d356",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.161,
+      "exit_code": 0,
+      "name": "connectivity",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "stats",
+        "-o",
+        "<RELEASE>/manufacturing/board_stats.json",
+        "--format",
+        "json",
+        "--units",
+        "mm",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.169,
+      "exit_code": 0,
+      "name": "board_stats",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "sch",
+        "export",
+        "bom",
+        "-o",
+        "<RELEASE>/manufacturing/bom.csv",
+        "--fields",
+        "Reference,Value,Footprint,Manufacturer,MPN,Part_ID,Lifecycle,Trust,QUANTITY",
+        "--labels",
+        "Reference,Value,Footprint,Manufacturer,MPN,Part_ID,Lifecycle,Trust,Quantity",
+        "<PROJECT>/attiny_sensor_controller.kicad_sch"
+      ],
+      "duration_seconds": 0.22,
+      "exit_code": 0,
+      "name": "bom",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "sch",
+        "export",
+        "pdf",
+        "-o",
+        "<RELEASE>/manufacturing/schematic.pdf",
+        "<PROJECT>/attiny_sensor_controller.kicad_sch"
+      ],
+      "duration_seconds": 0.222,
+      "exit_code": 0,
+      "name": "schematic_pdf",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "svg",
+        "-o",
+        "<RELEASE>/manufacturing/svg",
+        "-l",
+        "F.Cu,F.Mask,F.SilkS,Edge.Cuts",
+        "--mode-multi",
+        "--fit-page-to-board",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.246,
+      "exit_code": 0,
+      "name": "board_svg",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "render",
+        "-o",
+        "<RELEASE>/manufacturing/board-top.png",
+        "--width",
+        "1200",
+        "--height",
+        "800",
+        "--side",
+        "top",
+        "--quality",
+        "basic",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.473,
+      "exit_code": 0,
+      "name": "board_render",
+      "status": "completed"
+    },
+    {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "step",
+        "--force",
+        "--board-only",
+        "-o",
+        "<RELEASE>/manufacturing/board.step",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "duration_seconds": 0.18,
+      "exit_code": 0,
+      "name": "step",
+      "status": "completed"
+    }
+  ],
+  "version": 1
+}

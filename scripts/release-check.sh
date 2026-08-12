@@ -28,7 +28,7 @@ uv venv --python 3.11 "$CHECK_ROOT/venv"
 uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
 "$CHECK_ROOT/venv/bin/pcb-agent" --version
 "$CHECK_ROOT/venv/bin/python" -c \
-    'from pcb_agent.benchmark import load_corpus; assert len(load_corpus()[1]) == 84'
+    'from pcb_agent.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 
 "$CHECK_ROOT/venv/bin/pcb-agent" benchmark \
     "$CHECK_ROOT/benchmark.json" --repetitions 2 --json

@@ -1,47 +1,82 @@
 # Specification traceability
 
-Source specification: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on
-2026-08-12.  Status values are `implemented`, `in progress`, `external gate`, and
-`not applicable`; an item is not marked implemented until its cited automated check passes.
+Source: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on 2026-08-12.
+`implemented` means local code and an automated verification path exist. `external
+gate` means the runtime behavior is complete but truthful evidence can only come
+from a person, supplier, fabrication, lab, or physical board.
 
-| ID | Requirement | Implementation evidence | Verification evidence | Status |
+| ID | Analysis / completion requirement | Implementation | Verification | Status |
 |---|---|---|---|---|
-| R01 | Model-independent semantic circuit/PCB IR | `pcb_agent.ir` | `tests/test_ir.py` | implemented |
-| R02 | Explicit requirements, intent, constraints, risk and provenance | `Design`, `Requirement`, `Constraint`, `Provenance` | `test_ir` round-trip/graph checks | implemented |
-| R03 | Deterministic serialization, comparison and content identity | `Design.canonical_bytes/content_hash` | deterministic reordered-input test | implemented |
-| R04 | Honest rejection of unsupported high-risk designs | `pcb_agent.scope` | `tests/test_scope.py` | implemented |
-| R05 | Canonical part identity and symbol/footprint/pad graph | `pcb_agent.parts`, seed CC0 catalog | `tests/test_parts.py` real KiCad library resolution | implemented |
-| R06 | Ratings, lifecycle, sourcing, BOM and manufacturability contracts | `PartRecord` contracts | part/rating validation tests | implemented |
-| R07 | Evidence and trust states distinguish extraction/rules/human/production | `PartRecord.trust`, per-record evidence | catalog schema tests | implemented |
-| R08 | Semantic transactional edits are primary; preview, commit, undo, recovery | `pcb_agent.operations`, `pcb_agent.transactions` | `test_operations`, `test_transactions` | implemented |
-| R09 | Preconditions, idempotency and conflict detection | typed operation expectations + base/staged/source hashes | stale-field/base/drift/idempotency tests | implemented |
-| R10 | High-level stable CLI/Python/agent API | `pcb_agent.cli`, Python modules, versioned JSON-RPC in `pcb_agent.api` | `tests/test_api.py`, CLI E2E | implemented |
-| R11 | Structured requirements to schematic/PCB IR | strict `RequirementsSpec` + deterministic compiler | `tests/test_requirements.py` | implemented |
-| R12 | Versioned, verified reusable functional blocks | CC0 block catalog + `BlockRegistry` implementations | block evidence/part/instantiation tests | implemented |
-| R13 | Constraints and PCB synchronization | compiler constraints, managed manifest, `pcb_agent.sync` | real `pcbnew` pose import/apply/undo E2E | implemented |
-| R14 | Deterministic placement solver | bounded objective solver in `pcb_agent.placement` | `tests/test_placement.py`, generated-board reproducibility | implemented |
-| R15 | Constraint-aware routing integration | bounded grid router, fine-pitch neckdown, layers/vias, receipts | `tests/test_routing.py`, routed real-board DRC=0 | implemented |
-| R16 | L0 syntax/file validity | `pcb_agent.validation` manifest/IR/KiCad parse checks | `tests/test_managed_pipeline.py` with real KiCad | implemented |
-| R17 | L1 component/pin/footprint/connectivity validity | unified part contracts and schematic/PCB parity gate | part tests plus real parity E2E | implemented |
-| R18 | L2 ERC/DRC with raw evidence | existing `gates.py` | existing fake + real smoke | implemented |
-| R19 | L3 deterministic interface/functional rules | shared `pcb_agent.semantic_rules` plus exact pad/footprint/route checks | 78-case injected-fault corpus and managed validation E2E | implemented |
-| R20 | L4 BOM/lifecycle/DFM/manufacturing checks | catalog lifecycle, BOM cross-checks, KiCad DRC and declared fabrication contracts | real manufacturing-release E2E | implemented |
-| R21 | L5 simulation/SI/PI/thermal/EMI integration with honest availability | deterministic DC adapter, heuristic power budget, explicit unavailable/N-A adapters | validation state assertions | implemented |
-| R22 | L6 human review is never fabricated | attributed external-evidence importer and production gate | missing/imported/tampered evidence tests | implemented |
-| R23 | L7 physical build/test feedback is never fabricated | attributed, hash-checked physical evidence importer | missing/imported/tampered evidence tests | implemented |
-| R24 | Explicit completed/N-A/unavailable/heuristic/human-required states | `CheckResult`/`LevelResult` evidence model | L0-L7 managed-pipeline tests | implemented |
-| R25 | BOM, Gerber, drill, position, IPC-D356, PDF/SVG/render/STEP and release bundle | `pcb_agent.release` with cross-checks and deterministic ZIP | real `kicad-cli` manufacturing E2E | implemented |
-| R26 | Bidirectional KiCad synchronization and semantic diff | recognized native pose import; unsupported native drift rejection; regeneration | real `pcbnew` preview/apply/validate/undo E2E | implemented |
-| R27 | Snapshots, receipts, rollback and crash recovery | durable semantic journal, backup, undo/recovery; legacy patch receipts | apply/undo/partial-state recovery tests | implemented |
-| R28 | Concurrency safety | `ResourceLock` + pre/post hash conflict checks | lock contention and drift tests | implemented |
-| R29 | Bounded execution and hostile-project handling | bounded process/JSON/tree/model paths, create-only outputs, link checks, locks | process, project, transaction, integration, benchmark security tests | implemented |
-| R30 | Independent license-clear error-injection corpus | 78-case CC0 corpus and independent methodology record | `tests/test_benchmark.py` license/balance/integrity checks | implemented |
-| R31 | Detection, FP, repair, regression, repeatability, latency metrics | `pcb_agent.benchmark` and CLI/API runner | full-corpus metric assertions; final artifact pending | implemented |
-| R32 | Model-output consistency measurement | blinded, isolated, bounded optional Codex repetitions | 2-run live smoke passed; final persisted run pending | in progress |
-| R33 | Low-voltage 2-4 layer MCU/sensor/control acceptance example | planned ATtiny402/TMP102 board | real ERC/DRC/manufacturing E2E | in progress |
-| R34 | Documentation, deploy/test/benchmark scripts, CI and packaging | existing MVP docs/scripts; release work pending | clean build/install checks | in progress |
-| R35 | Physical manufacture and engineering sign-off | evidence import only; requires people/fabrication | L6/L7 remain explicit gates | external gate |
+| R01 | Model-independent semantic circuit/PCB IR | `pcb_agent.ir` | `tests/test_ir.py` strict round trip | implemented |
+| R02 | Requirements, typed interfaces, power domains, modules, budgets, intent, constraints, risk, verification, provenance | IR records and compiler output | IR/requirements tests and checked-in `design.pcbir.json` | implemented |
+| R03 | Readable, versionable, comparable, compilable deterministic identity | canonical JSON and `Design.content_hash()` | reordered-input byte/hash equality | implemented |
+| R04 | Explicit bounded low-voltage scope; reject unsupported/high-risk work | `pcb_agent.scope`, profile declaration | scope/requirements/API tests | implemented |
+| R05 | Canonical part identity graph | `pcb_agent.parts`, CC0 part catalog | `tests/test_parts.py` | implemented |
+| R06 | Manufacturer/MPN/package, symbol, footprint, exact pin/pad map | `PartRecord`, `PinDefinition` | real KiCad library resolution and native parity | implemented |
+| R07 | Ratings, lifecycle/source, sourcing, BOM, manufacturing, models | part contracts | part/requirements/validation/release tests | implemented |
+| R08 | Separate extracted/rule/human/production trust and provenance | trust enums and per-record evidence | catalog schema/trust tests | implemented |
+| R09 | Verified reusable blocks | CC0 block catalog + `BlockRegistry` builders | metadata/implementation parts/ports/test equality | implemented |
+| R10 | Semantic edits are primary, not raw KiCad text | `operations.py`, `transactions.py` | operation and transaction suites | implemented |
+| R11 | Snapshot, preconditions, semantic diff, validate, commit/rollback | change set and transaction journal | preview/apply/undo/recovery E2E | implemented |
+| R12 | Idempotency and concurrent conflict protection | base/field/source/staged hashes + `ResourceLock` | drift, idempotency, contention tests | implemented |
+| R13 | High-level stable CLI/Python/agent API | `cli.py`, modules, JSON-RPC API 1.0 | CLI integration and `tests/test_api.py` | implemented |
+| R14 | Strict requirements to semantic schematic/PCB design | `RequirementsSpec`, `compile_requirements` | compiler tests and acceptance fixture | implemented |
+| R15 | Functional grouping and constraint generation | compiler constraints and block ports | semantic/requirements tests | implemented |
+| R16 | Dedicated deterministic placement optimizer | `placement.py` | overlap/near/group/fixed tests | implemented |
+| R17 | Dedicated bounded multilayer router | `routing.py`, fine-pitch escapes | route/via/keepout/bound tests | implemented |
+| R18 | Native KiCad compilation through proven interfaces | `kicad_schematic.py`, isolated `pcbnew_worker.py` | real reproducible KiCad generation | implemented |
+| R19 | KiCad round trip without post-generation loss of control | managed snapshots + `sync.py` pose import | real move/preview/regenerate/validate/undo | implemented |
+| R20 | Reject unsupported native topology/part/rule drift | snapshot comparison and semantic import allow-list | sync and manifest drift tests | implemented |
+| R21 | L0 file/syntax validity | validation manifest/IR/KiCad parse checks | real managed validation | implemented |
+| R22 | L1 symbol/pin/footprint/connectivity validity | part graph and native parity | part tests + real schematic parity | implemented |
+| R23 | L2 ERC/DRC | bounded real `kicad-cli` JSON reports | real 2/4-layer ERC/DRC tests | implemented |
+| R24 | L3 interface/function/intent rules | shared `semantic_rules.py` | semantic corpus and managed validation | implemented |
+| R25 | L4 BOM/lifecycle/DFM/manufacturing rules | catalog contracts, KiCad DRC, BOM/position/export cross-checks | real release E2E | implemented |
+| R26 | L5 SPICE/SI/PI/thermal/EMI integration states | deterministic DC/power adapter, explicit N/A/unavailable results | L5 state assertions in managed pipeline | implemented |
+| R27 | L6 qualified human review remains honest | attributed external-evidence importer | missing/imported/tampered tests | implemented |
+| R28 | L7 fabrication/bring-up/test feedback remains honest | L7 artifact/serial/test-plan importer | missing/imported/tampered tests | implemented |
+| R29 | Completed/N-A/unavailable/heuristic/human-required states | `CheckResult`/`LevelResult` evidence model | L0–L7 state tests | implemented |
+| R30 | Manufacturing release workflow | `release.py` exports and contracts | real Gerber/drill/BOM/position/PDF/SVG/PNG/STEP/IPC-D356 E2E | implemented |
+| R31 | Receipts, evidence bundles, rollback/recovery | validation/release/transaction receipts and backups | transaction/integration/release tests | implemented |
+| R32 | Byte-reproducible content releases | normalized content/audit split and deterministic ZIP | two-release byte/hash equality test | implemented |
+| R33 | Offline release verification and tamper detection | `release-verify`, `release.verify` | exact inventory/hash/ZIP and tamper tests | implemented |
+| R34 | KiCad compatibility testing | fail-closed KiCad 10 policy; exact 10.0.5 marker | compatibility/doctor/real generation tests | implemented |
+| R35 | Bounded execution and hostile-project safety | process/JSON/tree/archive/model bounds and link/path checks | security/process/integration/transaction tests | implemented |
+| R36 | License-clear independent fault corpus | 90-case CC0 corpus, 70 faults + 20 controls | corpus integrity/license tests | implemented |
+| R37 | Detection and false-positive metrics | `benchmark.py` confusion/target metrics | persisted result: 70 TP, 0 FN, 0 FP, 20 TN | implemented |
+| R38 | Repair success and introduced regressions | production typed change sets and post-repair rules | persisted result: 65/65, 0 regressions | implemented |
+| R39 | Repeatability and latency | finding digests and monotonic timing | 90/90 stable; mean 0.290597 ms over 450 | implemented |
+| R40 | Model consistency across repetitions | blinded optional Codex runner | 2 runs, 48/48 correct, agreement 1.0 | implemented |
+| R41 | Initial low-voltage MCU/sensor/control acceptance fixture | ATtiny402/TMP102 3.3 V 2-layer project; real 4-layer test variant | checked-in example, release, real review | implemented |
+| R42 | Unsupported domains fail explicitly | profile/global policy split in API/compiler | SPI policy-domain rejection and mains high-risk rejection | implemented |
+| R43 | Install/deploy/test/benchmark/docs/CI packaging | `pyproject.toml`, scripts, Makefile, docs, GitHub workflow | clean wheel/sdist/install and release check | implemented |
+| R44 | Open-source licensing | Apache-2.0 source, CC0 data, KiCad/dependency notice | package license/member inspection | implemented |
+| R45 | Physical manufacture, qualified sign-off, live sourcing, EMC and measured L7 | evidence import/gates only | candidate remains `production=false`; no fabricated evidence | external gate |
 
-This table is updated at every verified milestone.  External gates are product behavior,
-not unfinished software: the runtime must preserve and report them rather than manufacture
-evidence.
+## Persisted acceptance evidence
+
+- Managed example: `examples/attiny_sensor_controller/project/`
+- Design content hash:
+  `4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2`
+- Candidate release: `artifacts/acceptance/release/`
+- Release manifest hash:
+  `64b779d1ea1ff744307a2faf803ea0c42b9b9710504b63b93a1742bf4f0cd778`
+- Release ZIP hash:
+  `d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98`
+- Real final Codex review: `artifacts/acceptance/review/20260812T154551Z-8f8b4876/`
+- Benchmark: `artifacts/benchmark/benchmark-20260812.json`
+
+## Reproducible verification entry points
+
+```bash
+scripts/test.sh
+scripts/benchmark.sh
+scripts/smoke.sh
+scripts/compatibility.sh
+scripts/release-check.sh
+pcb-agent release-verify artifacts/acceptance/release --json
+```
+
+R26, R27, R28, and R45 intentionally do not equate ERC/DRC or a model response
+with physical correctness. The software for recording and gating those states is
+implemented; the missing engineering/physical facts are external by definition.

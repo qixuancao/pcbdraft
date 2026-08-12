@@ -1,0 +1,24 @@
+%TF.GenerationSoftware,KiCad,Pcbnew,10.0.5-10.0.5~ubuntu26.04.1*%
+%TF.CreationDate,1980-01-01T00:00:00+00:00*%
+%TF.ProjectId,attiny_sensor_controller,61747469-6e79-45f7-9365-6e736f725f63,1.0*%
+%TF.SameCoordinates,Original*%
+%TF.FileFunction,Soldermask,Bot*%
+%TF.FilePolarity,Negative*%
+%FSLAX46Y46*%
+G04 Gerber Fmt 4.6, Leading zero omitted, Abs format (unit mm)*
+G04 Created by KiCad (PCBNEW 10.0.5-10.0.5~ubuntu26.04.1) date 1980-01-01 00:00:00*
+%MOMM*%
+%LPD*%
+G01*
+G04 APERTURE LIST*
+%ADD10R,1.700000X1.700000*%
+%ADD11C,1.700000*%
+G04 APERTURE END LIST*
+D10*
+%TO.C,J2*%
+X4000000Y-15000000D03*
+D11*
+X6540000Y-15000000D03*
+X9080000Y-15000000D03*
+%TD*%
+M02*

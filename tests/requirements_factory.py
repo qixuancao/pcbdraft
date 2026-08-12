@@ -19,9 +19,9 @@ def controller_requirements_dict() -> dict[str, Any]:
                 "simple_control",
                 "i2c",
             ],
-            "max_voltage_v": 3.6,
+            "max_voltage_v": 3.465,
             "max_current_a": 0.1,
-            "max_power_w": 0.36,
+            "max_power_w": 0.3465,
             "layers": 2,
             "intended_use": "Non-safety-critical environmental sensing prototype.",
             "risk_class": "prototype",
@@ -61,7 +61,12 @@ def controller_requirements_dict() -> dict[str, Any]:
                 },
             },
         ],
-        "power": {"nominal_v": 3.3, "min_v": 3.0, "max_v": 3.6, "max_current_a": 0.1},
+        "power": {
+            "nominal_v": 3.3,
+            "min_v": 3.0,
+            "max_v": 3.465,
+            "max_current_a": 0.1,
+        },
         "interfaces": [
             {
                 "id": "sensor_i2c",

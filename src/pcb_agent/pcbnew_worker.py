@@ -386,9 +386,15 @@ def inspect_board_job(job):
                 "layer": str(board.GetLayerName(layer)),
                 "filled": bool(zone.HasFilledPolysForLayer(layer)),
                 "area_mm2": round(float(zone.CalculateFilledArea()) / 1e12, 6),
-                "pad_connection": "solid"
-                if zone.GetPadConnection() == pcbnew.ZONE_CONNECTION_FULL
-                else "other",
+                "pad_connection": (
+                    "solid"
+                    if zone.GetPadConnection() == pcbnew.ZONE_CONNECTION_FULL
+                    else (
+                        "thermal_relief"
+                        if zone.GetPadConnection() == pcbnew.ZONE_CONNECTION_THERMAL
+                        else "other"
+                    )
+                ),
             }
         )
     settings = board.GetDesignSettings()
@@ -559,9 +565,11 @@ def _add_reference_plane(
     zone.SetLayer(layer)
     zone.SetNet(net_item)
     zone.SetLocalClearance(pcbnew.FromMM(local_clearance_mm))
-    # Solid connection is deliberate for this low-current candidate. It avoids
-    # thermally starved narrow header spokes; assembly review remains an L6 gate.
-    zone.SetPadConnection(pcbnew.ZONE_CONNECTION_FULL)
+    # Thermal relief is deterministic and keeps the through-hole programming
+    # header hand-solderable while retaining a continuous low-current reference.
+    zone.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+    zone.SetThermalReliefGap(pcbnew.FromMM(0.2))
+    zone.SetThermalReliefSpokeWidth(pcbnew.FromMM(0.3))
     outline = zone.Outline()
     polygon = outline.NewOutline()
     for x_mm, y_mm in (
@@ -889,7 +897,7 @@ def build_job(job, output_path):
                 "layer": str(board.GetLayerName(reference_layer)),
                 "filled": True,
                 "area_mm2": reference_area_mm2,
-                "pad_connection": "solid",
+                "pad_connection": "thermal_relief",
             }
         ],
     }

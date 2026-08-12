@@ -4,3 +4,7 @@ __pycache__/
 *.egg-info/
 /build/
 /dist/
+.pcb-agent-locks/
+.pcb-agent-transactions/
+*.kicad_prl
+artifacts/local/

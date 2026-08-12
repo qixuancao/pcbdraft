@@ -1,0 +1,279 @@
+{
+  "artifacts": [
+    "codex-events.jsonl",
+    "codex-final.json",
+    "codex-invocation.json",
+    "codex-output.schema.json",
+    "evidence.json",
+    "gates/drc.json",
+    "gates/erc.json",
+    "inventory.json",
+    "receipt.json",
+    "report.json",
+    "report.md",
+    "semantic-context.json",
+    "semantic/board-netlist.d356",
+    "semantic/board-stats.json",
+    "semantic/schematic.netlist.xml"
+  ],
+  "codex": {
+    "approval_policy": "never",
+    "argv": [
+      "/home/qixuancao/.local/bin/codex",
+      "exec",
+      "--json",
+      "--ephemeral",
+      "--ignore-user-config",
+      "--ignore-rules",
+      "--strict-config",
+      "--enable",
+      "use_legacy_landlock",
+      "--skip-git-repo-check",
+      "--color",
+      "never",
+      "--sandbox",
+      "read-only",
+      "--model",
+      "gpt-5.6-sol",
+      "--config",
+      "model_reasoning_effort=\"max\"",
+      "--config",
+      "service_tier=\"default\"",
+      "--config",
+      "features.fast_mode=false",
+      "--config",
+      "features.hooks=false",
+      "--config",
+      "agents.enabled=false",
+      "--config",
+      "features.multi_agent=false",
+      "--config",
+      "features.multi_agent_v2=false",
+      "--config",
+      "features.apps=false",
+      "--config",
+      "features.browser_use=false",
+      "--config",
+      "features.computer_use=false",
+      "--config",
+      "features.image_generation=false",
+      "--config",
+      "features.plugins=false",
+      "--config",
+      "features.skill_search=false",
+      "--config",
+      "features.tool_suggest=false",
+      "--config",
+      "tools.web_search=false",
+      "--config",
+      "approval_policy=\"never\"",
+      "--config",
+      "allow_login_shell=false",
+      "--config",
+      "shell_environment_policy.inherit=\"none\"",
+      "--config",
+      "shell_environment_policy.ignore_default_excludes=false",
+      "--config",
+      "project_doc_max_bytes=0",
+      "--cd",
+      "<PROJECT>",
+      "--output-schema",
+      "<RUN_DIR>/codex-output.schema.json",
+      "--output-last-message",
+      "<RUN_DIR>/codex-final.json",
+      "-"
+    ],
+    "completed": true,
+    "completion_event": true,
+    "duration_seconds": 340.286,
+    "exit_code": 0,
+    "fast_mode": false,
+    "hooks": false,
+    "jsonl": "codex-events.jsonl",
+    "jsonl_truncated": false,
+    "jsonl_valid": true,
+    "last_message": "codex-final.json",
+    "login_shell": false,
+    "model": "gpt-5.6-sol",
+    "multi_agent": false,
+    "network_tools": false,
+    "output_limited": false,
+    "output_schema": "codex-output.schema.json",
+    "prompt_in_argv": false,
+    "prompt_transport": "stdin",
+    "reasoning_effort": "max",
+    "sandbox": "read-only",
+    "schema_valid": true,
+    "service_tier": "default",
+    "timed_out": false
+  },
+  "created_at": "2026-08-12T15:45:51Z",
+  "gates": {
+    "drc": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "drc",
+        "--format",
+        "json",
+        "--severity-error",
+        "--severity-warning",
+        "--output",
+        "<RUN_DIR>/gates/drc.json",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "counts": {
+        "error": 0,
+        "warning": 0
+      },
+      "duration_seconds": 1.811,
+      "exit_code": 0,
+      "failure_kind": null,
+      "name": "drc",
+      "raw_report": "gates/drc.json",
+      "raw_report_sha256": "e492682693c2730100292bf2cfbeb3f192c8c178fc545a7a26a277fe9a809299",
+      "tool_status": "ok"
+    },
+    "erc": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "sch",
+        "erc",
+        "--format",
+        "json",
+        "--severity-error",
+        "--severity-warning",
+        "--output",
+        "<RUN_DIR>/gates/erc.json",
+        "<PROJECT>/attiny_sensor_controller.kicad_sch"
+      ],
+      "counts": {
+        "error": 0,
+        "warning": 0
+      },
+      "duration_seconds": 1.641,
+      "exit_code": 0,
+      "failure_kind": null,
+      "name": "erc",
+      "raw_report": "gates/erc.json",
+      "raw_report_sha256": "bb364d8e940732104e60073096a6171fd25e28ca7b8317f3c06e2903be94aefd",
+      "tool_status": "ok"
+    }
+  },
+  "input_hashes": {
+    "attiny_sensor_controller.kicad_pcb": "39cfe2cc1ada9090e0ad80a669bf2d9fc86d3c751ae9e1f98482ba0549338186",
+    "attiny_sensor_controller.kicad_prl": "f81f7b4f821ec42d437891e36dfd15ff2d03644d9a4a94ed756eb813b4162dae",
+    "attiny_sensor_controller.kicad_pro": "738228e9022c5977a6416a28883bed07b94f64b65c30ebda75374fc79c066489",
+    "attiny_sensor_controller.kicad_sch": "1e43f2d9389a22ce94d8e1a05bfef2e0a60fc8e78d54901b076d473baaae0bc4",
+    "attiny_sensor_controller.worker-result.json": "88b1dd3cf210b7386afda5a5c6cdd2315f0cb13906e406129f456a5d6d623d99",
+    "design.pcbir.json": "4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2",
+    "project.pcb-agent.json": "4dbf9480187b99300c9b9b5c95684fa2a3d109ac6c4e4cdc8dd5a53cfa12435a",
+    "requirements.pcbreq.json": "9b9e8a4274bbbbebd13dc48e74303b463255adf04589cfaffc4cadaf3e336065"
+  },
+  "kind": "review",
+  "project": "/mnt/2T/pcb-agent-runtime/examples/attiny_sensor_controller/project",
+  "receipt_version": 1,
+  "run_id": "20260812T154551Z-8f8b4876",
+  "runtime": {
+    "name": "pcb-agent-runtime",
+    "version": "0.2.0"
+  },
+  "selected_files": {
+    "board": "attiny_sensor_controller.kicad_pcb",
+    "schematic": "attiny_sensor_controller.kicad_sch"
+  },
+  "selected_input_hashes": {
+    "board": "39cfe2cc1ada9090e0ad80a669bf2d9fc86d3c751ae9e1f98482ba0549338186",
+    "schematic": "1e43f2d9389a22ce94d8e1a05bfef2e0a60fc8e78d54901b076d473baaae0bc4"
+  },
+  "semantic_exports": {
+    "board_connectivity": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "ipcd356",
+        "--output",
+        "<RUN_DIR>/semantic/board-netlist.d356",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "artifact": "board-netlist.d356",
+      "available": true,
+      "bytes": 3747,
+      "duration_seconds": 0.164,
+      "exit_code": 0,
+      "failure_kind": null,
+      "sha256": "61dd6fcb31b26d9203f7686bad877f103555579d9cab82c147048233694e2824"
+    },
+    "board_statistics": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "stats",
+        "--format",
+        "json",
+        "--units",
+        "mm",
+        "--output",
+        "<RUN_DIR>/semantic/board-stats.json",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "artifact": "board-stats.json",
+      "available": true,
+      "bytes": 1752,
+      "duration_seconds": 0.167,
+      "exit_code": 0,
+      "failure_kind": null,
+      "sha256": "1f9eeba78d1ef639cdcea2094592f0c7c191cc5f8b93327fff888a223ff7e9f4"
+    },
+    "schematic_netlist": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "--output",
+        "<RUN_DIR>/semantic/schematic.netlist.xml",
+        "<PROJECT>/attiny_sensor_controller.kicad_sch"
+      ],
+      "artifact": "schematic.netlist.xml",
+      "available": true,
+      "bytes": 28542,
+      "duration_seconds": 0.224,
+      "exit_code": 0,
+      "failure_kind": null,
+      "sha256": "eedc87c46eb30c0a8e8557527df792b02b01ae1a9292eb91f2b470e92919b902"
+    }
+  },
+  "status": "complete",
+  "tool_versions": {
+    "codex": {
+      "argv": [
+        "/home/qixuancao/.local/bin/codex",
+        "--version"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "output_limited": false,
+      "path": "/home/qixuancao/.local/bin/codex",
+      "timed_out": false,
+      "version": "codex-cli 0.147.0"
+    },
+    "kicad-cli": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "--version"
+      ],
+      "available": true,
+      "exit_code": 0,
+      "output_limited": false,
+      "path": "/usr/bin/kicad-cli",
+      "timed_out": false,
+      "version": "10.0.5"
+    }
+  },
+  "updated_at": "2026-08-12T15:51:35Z"
+}

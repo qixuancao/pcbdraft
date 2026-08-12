@@ -1,0 +1,652 @@
+{
+  "board_connectivity": {
+    "available": true,
+    "data": {
+      "record_count": 16,
+      "records": [
+        "317/LED_CTRL        VIA        MD0118PA00X+005787Y-005512X0236Y0000R000S3",
+        "317/I2C_SDA         VIA        MD0118PA00X+006024Y-006496X0236Y0000R000S3",
+        "317/3V3             VIA        MD0118PA00X+006299Y-005354X0236Y0000R000S3",
+        "317/LED_CTRL        VIA        MD0118PA00X+006654Y-007126X0236Y0000R000S3",
+        "317/UPDI            VIA        MD0118PA00X+007520Y-006181X0236Y0000R000S3",
+        "317/I2C_SDA         VIA        MD0118PA00X+008622Y-005591X0236Y0000R000S3",
+        "317/3V3             VIA        MD0118PA00X+009646Y-005945X0236Y0000R000S3",
+        "317/I2C_SCL         VIA        MD0118PA00X+011142Y-005591X0236Y0000R000S3",
+        "317/I2C_SCL         VIA        MD0118PA00X+011614Y-005669X0236Y0000R000S3",
+        "317/3V3             VIA        MD0118PA00X+012008Y-005276X0236Y0000R000S3",
+        "317/I2C_SDA         VIA        MD0118PA00X+012480Y-005630X0236Y0000R000S3",
+        "317/3V3             VIA        MD0118PA00X+012953Y-005945X0236Y0000R000S3",
+        "317/I2C_SDA         VIA        MD0118PA00X+013228Y-006102X0236Y0000R000S3",
+        "317/UPDI            J2    -1    D0394PA00X+001575Y-005906X0669Y0669R270S0",
+        "317/3V3             J2    -2    D0394PA00X+002575Y-005906X0669Y0000R270S0",
+        "317/GND             J2    -3    D0394PA00X+003575Y-005906X0669Y0000R270S0"
+      ],
+      "records_truncated": false
+    }
+  },
+  "board_statistics": {
+    "available": true,
+    "data": {
+      "board": {
+        "area": "1350.00 mm²",
+        "back_component_density": "0.68",
+        "back_copper_area": "1251.378 mm²",
+        "back_footprint_area": "9.127 mm²",
+        "back_footprint_density": "0.68",
+        "board_thickness": "1.6000 mm",
+        "front_component_density": "10.63",
+        "front_copper_area": "75.367 mm²",
+        "front_footprint_area": "143.458 mm²",
+        "front_footprint_density": "10.63",
+        "has_outline": true,
+        "height": "30.0000 mm",
+        "min_drill_diameter": "0.3000 mm",
+        "min_track_clearance": "0.1356 mm",
+        "min_track_width": "0.2000 mm",
+        "width": "45.0000 mm"
+      },
+      "components": {
+        "total": {
+          "back": 0,
+          "front": 10,
+          "total": 10
+        },
+        "未指定": {
+          "back": 0,
+          "front": 0,
+          "total": 0
+        },
+        "直插_(tht)": {
+          "back": 0,
+          "front": 1,
+          "total": 1
+        },
+        "贴片": {
+          "back": 0,
+          "front": 9,
+          "total": 9
+        }
+      },
+      "drill_holes": [
+        {
+          "count": 13,
+          "plated": true,
+          "shape": "圆形",
+          "source": "过孔",
+          "start_layer": "F.Cu",
+          "stop_layer": "B.Cu",
+          "x_size": "0.3000 mm",
+          "y_size": "0.3000 mm"
+        },
+        {
+          "count": 3,
+          "plated": true,
+          "shape": "圆形",
+          "source": "焊盘",
+          "start_layer": "F.Cu",
+          "stop_layer": "B.Cu",
+          "x_size": "1.0000 mm",
+          "y_size": "1.0000 mm"
+        }
+      ],
+      "metadata": {
+        "board_name": "attiny_sensor_controller",
+        "date": "2026-08-12T22:59:08",
+        "generator": "KiCad 10.0.5-10.0.5~ubuntu26.04.1",
+        "project": "attiny_sensor_controller"
+      },
+      "pads": {
+        "半孔": 0,
+        "压接": 0,
+        "贴片": 32,
+        "连接器": 0,
+        "通孔": 3,
+        "非电镀孔_(npth)": 0
+      },
+      "vias": {
+        "": 0
+      }
+    }
+  },
+  "context_version": 1,
+  "exports": {
+    "board_connectivity": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "ipcd356",
+        "--output",
+        "<RUN_DIR>/semantic/board-netlist.d356",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "artifact": "board-netlist.d356",
+      "available": true,
+      "bytes": 3599,
+      "duration_seconds": 0.16,
+      "exit_code": 0,
+      "failure_kind": null,
+      "sha256": "2d578c96bbd83f2d6a57b34237d88930adbf0771fa39005e1aaf3c961a66a558"
+    },
+    "board_statistics": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "pcb",
+        "export",
+        "stats",
+        "--format",
+        "json",
+        "--units",
+        "mm",
+        "--output",
+        "<RUN_DIR>/semantic/board-stats.json",
+        "<PROJECT>/attiny_sensor_controller.kicad_pcb"
+      ],
+      "artifact": "board-stats.json",
+      "available": true,
+      "bytes": 1752,
+      "duration_seconds": 0.171,
+      "exit_code": 0,
+      "failure_kind": null,
+      "sha256": "03b549d42752fb57e37ba2f85f30bedecce3a44ae9299f8f0aab4f0bd63aa9c4"
+    },
+    "schematic_netlist": {
+      "argv": [
+        "/usr/bin/kicad-cli",
+        "sch",
+        "export",
+        "netlist",
+        "--format",
+        "kicadxml",
+        "--output",
+        "<RUN_DIR>/semantic/schematic.netlist.xml",
+        "<PROJECT>/attiny_sensor_controller.kicad_sch"
+      ],
+      "artifact": "schematic.netlist.xml",
+      "available": true,
+      "bytes": 28542,
+      "duration_seconds": 0.213,
+      "exit_code": 0,
+      "failure_kind": null,
+      "sha256": "53efdbbafc928567f6d7483c0102c94af9b3e704f0f7deb4c8b047398281c02e"
+    }
+  },
+  "schematic": {
+    "available": true,
+    "data": {
+      "component_count": 10,
+      "components": [
+        {
+          "description": "Unpolarized capacitor",
+          "fields": {
+            "Datasheet": "https://www.murata.com/en-global/products/productdetail?partno=GRM188R71C104KA01%23",
+            "Description": "100 nF 10% 16 V X7R 0603 ceramic capacitor",
+            "Footprint": "Capacitor_SMD:C_0603_1608Metric",
+            "Lifecycle": "active",
+            "MPN": "GRM188R71C104KA01D",
+            "Manufacturer": "Murata Manufacturing",
+            "Part_ID": "murata.grm188r71c104ka01d",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Capacitor_SMD:C_0603_1608Metric",
+          "library": "Device",
+          "part": "C",
+          "reference": "C1",
+          "value": "100n"
+        },
+        {
+          "description": "Unpolarized capacitor",
+          "fields": {
+            "Datasheet": "https://www.murata.com/en-global/products/productdetail?partno=GRM188R71C104KA01%23",
+            "Description": "100 nF 10% 16 V X7R 0603 ceramic capacitor",
+            "Footprint": "Capacitor_SMD:C_0603_1608Metric",
+            "Lifecycle": "active",
+            "MPN": "GRM188R71C104KA01D",
+            "Manufacturer": "Murata Manufacturing",
+            "Part_ID": "murata.grm188r71c104ka01d",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Capacitor_SMD:C_0603_1608Metric",
+          "library": "Device",
+          "part": "C",
+          "reference": "C2",
+          "value": "100n"
+        },
+        {
+          "description": "Light emitting diode",
+          "fields": {
+            "Datasheet": "https://optoelectronics.liteon.com/upload/download/DS22-2000-229/LTST-C190KGKT.pdf",
+            "Description": "Green 0603 indicator LED",
+            "Footprint": "LED_SMD:LED_0603_1608Metric",
+            "Lifecycle": "active",
+            "MPN": "LTST-C190KGKT",
+            "Manufacturer": "Lite-On",
+            "Part_ID": "liteon.ltst-c190kgkt",
+            "Trust": "rule_validated"
+          },
+          "footprint": "LED_SMD:LED_0603_1608Metric",
+          "library": "Device",
+          "part": "LED",
+          "reference": "D1",
+          "value": "GREEN"
+        },
+        {
+          "description": "Generic connector, single row, 01x04, script generated (kicad-library-utils/schlib/autogen/connector/)",
+          "fields": {
+            "Datasheet": "https://www.jst-mfg.com/product/pdf/eng/eSH.pdf",
+            "Description": "4-position 1.0 mm pitch horizontal SH-series wire-to-board connector",
+            "Footprint": "Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal",
+            "Lifecycle": "active",
+            "MPN": "SM04B-SRSS-TB(LF)(SN)",
+            "Manufacturer": "JST",
+            "Part_ID": "jst.sm04b-srss-tb",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal",
+          "library": "Connector_Generic",
+          "part": "Conn_01x04",
+          "reference": "J1",
+          "value": "QWIIC"
+        },
+        {
+          "description": "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)",
+          "fields": {
+            "Datasheet": "https://www.samtec.com/products/tsw",
+            "Description": "3-position 2.54 mm vertical through-hole header",
+            "Footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+            "Lifecycle": "active",
+            "MPN": "TSW-103-07-G-S",
+            "Manufacturer": "Samtec",
+            "Part_ID": "samtec.tsw-103-07-g-s",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+          "library": "Connector_Generic",
+          "part": "Conn_01x03",
+          "reference": "J2",
+          "value": "UPDI_VTREF_SENSE"
+        },
+        {
+          "description": "Resistor",
+          "fields": {
+            "Datasheet": "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_13.pdf",
+            "Description": "4.7 kOhm 1% 0603 thick-film resistor",
+            "Footprint": "Resistor_SMD:R_0603_1608Metric",
+            "Lifecycle": "active",
+            "MPN": "RC0603FR-074K7L",
+            "Manufacturer": "YAGEO",
+            "Part_ID": "yageo.rc0603fr-074k7l",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Resistor_SMD:R_0603_1608Metric",
+          "library": "Device",
+          "part": "R",
+          "reference": "R1",
+          "value": "4.7k"
+        },
+        {
+          "description": "Resistor",
+          "fields": {
+            "Datasheet": "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_13.pdf",
+            "Description": "4.7 kOhm 1% 0603 thick-film resistor",
+            "Footprint": "Resistor_SMD:R_0603_1608Metric",
+            "Lifecycle": "active",
+            "MPN": "RC0603FR-074K7L",
+            "Manufacturer": "YAGEO",
+            "Part_ID": "yageo.rc0603fr-074k7l",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Resistor_SMD:R_0603_1608Metric",
+          "library": "Device",
+          "part": "R",
+          "reference": "R2",
+          "value": "4.7k"
+        },
+        {
+          "description": "Resistor",
+          "fields": {
+            "Datasheet": "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_13.pdf",
+            "Description": "1 kOhm 1% 0603 thick-film resistor",
+            "Footprint": "Resistor_SMD:R_0603_1608Metric",
+            "Lifecycle": "active",
+            "MPN": "RC0603FR-071KL",
+            "Manufacturer": "YAGEO",
+            "Part_ID": "yageo.rc0603fr-071kl",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Resistor_SMD:R_0603_1608Metric",
+          "library": "Device",
+          "part": "R",
+          "reference": "R3",
+          "value": "1k"
+        },
+        {
+          "description": "20MHz, 4kB Flash, 256B SRAM, 128B EEPROM, SOIC-8",
+          "fields": {
+            "Datasheet": "https://ww1.microchip.com/downloads/aemDocuments/documents/MCU08/ProductDocuments/DataSheets/ATtiny202-402-DataSheet-DS40002318A.pdf",
+            "Description": "8-bit tinyAVR MCU, 4 KiB flash, SOIC-8",
+            "Footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+            "Lifecycle": "active",
+            "MPN": "ATtiny402-SSN",
+            "Manufacturer": "Microchip Technology",
+            "Part_ID": "microchip.attiny402-ssn",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+          "library": "MCU_Microchip_ATtiny",
+          "part": "ATtiny402-SS",
+          "reference": "U1",
+          "value": "ATtiny402-SS"
+        },
+        {
+          "description": "Digital Temperature Sensor, ±3°C, low-Power, SMBus, 12 bit, Two-Wire Serial Interface, SOT-563",
+          "fields": {
+            "Datasheet": "https://www.ti.com/lit/ds/symlink/tmp102.pdf",
+            "Description": "Low-power digital temperature sensor with I2C/SMBus interface, SOT-563",
+            "Footprint": "Package_TO_SOT_SMD:SOT-563",
+            "Lifecycle": "active",
+            "MPN": "TMP102BDRLR",
+            "Manufacturer": "Texas Instruments",
+            "Part_ID": "ti.tmp102bdrlr",
+            "Trust": "rule_validated"
+          },
+          "footprint": "Package_TO_SOT_SMD:SOT-563",
+          "library": "Sensor_Temperature",
+          "part": "TMP102xxDRL",
+          "reference": "U2",
+          "value": "TMP102B"
+        }
+      ],
+      "components_truncated": false,
+      "design": {
+        "revision": "1.0",
+        "title": "ATtiny temperature controller"
+      },
+      "net_count": 10,
+      "nets": [
+        {
+          "code": "1",
+          "name": "/3V3",
+          "node_count": 8,
+          "nodes": [
+            {
+              "pin": "1",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "C1"
+            },
+            {
+              "pin": "1",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "C2"
+            },
+            {
+              "pin": "2",
+              "pin_function": "Pin_2_2",
+              "pin_type": "passive",
+              "reference": "J1"
+            },
+            {
+              "pin": "2",
+              "pin_function": "Pin_2_2",
+              "pin_type": "passive",
+              "reference": "J2"
+            },
+            {
+              "pin": "1",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "R1"
+            },
+            {
+              "pin": "1",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "R2"
+            },
+            {
+              "pin": "1",
+              "pin_function": "VCC_1",
+              "pin_type": "power_in",
+              "reference": "U1"
+            },
+            {
+              "pin": "5",
+              "pin_function": "V+_5",
+              "pin_type": "power_in",
+              "reference": "U2"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "2",
+          "name": "/GND",
+          "node_count": 8,
+          "nodes": [
+            {
+              "pin": "2",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "C1"
+            },
+            {
+              "pin": "2",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "C2"
+            },
+            {
+              "pin": "1",
+              "pin_function": "K_1",
+              "pin_type": "passive",
+              "reference": "D1"
+            },
+            {
+              "pin": "1",
+              "pin_function": "Pin_1_1",
+              "pin_type": "passive",
+              "reference": "J1"
+            },
+            {
+              "pin": "3",
+              "pin_function": "Pin_3_3",
+              "pin_type": "passive",
+              "reference": "J2"
+            },
+            {
+              "pin": "8",
+              "pin_function": "GND_8",
+              "pin_type": "power_in",
+              "reference": "U1"
+            },
+            {
+              "pin": "2",
+              "pin_function": "GND_2",
+              "pin_type": "power_in",
+              "reference": "U2"
+            },
+            {
+              "pin": "4",
+              "pin_function": "ADD0_4",
+              "pin_type": "input",
+              "reference": "U2"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "3",
+          "name": "/I2C_SCL",
+          "node_count": 4,
+          "nodes": [
+            {
+              "pin": "4",
+              "pin_function": "Pin_4_4",
+              "pin_type": "passive",
+              "reference": "J1"
+            },
+            {
+              "pin": "2",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "R2"
+            },
+            {
+              "pin": "5",
+              "pin_function": "PA2_5",
+              "pin_type": "bidirectional",
+              "reference": "U1"
+            },
+            {
+              "pin": "1",
+              "pin_function": "SCL_1",
+              "pin_type": "input",
+              "reference": "U2"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "4",
+          "name": "/I2C_SDA",
+          "node_count": 4,
+          "nodes": [
+            {
+              "pin": "3",
+              "pin_function": "Pin_3_3",
+              "pin_type": "passive",
+              "reference": "J1"
+            },
+            {
+              "pin": "2",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "R1"
+            },
+            {
+              "pin": "4",
+              "pin_function": "PA1_4",
+              "pin_type": "bidirectional",
+              "reference": "U1"
+            },
+            {
+              "pin": "6",
+              "pin_function": "SDA_6",
+              "pin_type": "bidirectional",
+              "reference": "U2"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "5",
+          "name": "/LED_ANODE",
+          "node_count": 2,
+          "nodes": [
+            {
+              "pin": "2",
+              "pin_function": "A_2",
+              "pin_type": "passive",
+              "reference": "D1"
+            },
+            {
+              "pin": "2",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "R3"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "6",
+          "name": "/LED_CTRL",
+          "node_count": 2,
+          "nodes": [
+            {
+              "pin": "1",
+              "pin_function": "",
+              "pin_type": "passive",
+              "reference": "R3"
+            },
+            {
+              "pin": "2",
+              "pin_function": "PA6_2",
+              "pin_type": "bidirectional",
+              "reference": "U1"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "7",
+          "name": "/UPDI",
+          "node_count": 2,
+          "nodes": [
+            {
+              "pin": "1",
+              "pin_function": "Pin_1_1",
+              "pin_type": "passive",
+              "reference": "J2"
+            },
+            {
+              "pin": "6",
+              "pin_function": "~{RESET}/PA0_6",
+              "pin_type": "bidirectional",
+              "reference": "U1"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "8",
+          "name": "unconnected-(U1-PA3-Pad7)",
+          "node_count": 1,
+          "nodes": [
+            {
+              "pin": "7",
+              "pin_function": "PA3_7",
+              "pin_type": "bidirectional+no_connect",
+              "reference": "U1"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "9",
+          "name": "unconnected-(U1-PA7-Pad3)",
+          "node_count": 1,
+          "nodes": [
+            {
+              "pin": "3",
+              "pin_function": "PA7_3",
+              "pin_type": "bidirectional+no_connect",
+              "reference": "U1"
+            }
+          ],
+          "nodes_truncated": false
+        },
+        {
+          "code": "10",
+          "name": "unconnected-(U2-ALERT-Pad3)",
+          "node_count": 1,
+          "nodes": [
+            {
+              "pin": "3",
+              "pin_function": "ALERT_3",
+              "pin_type": "open_collector+no_connect",
+              "reference": "U2"
+            }
+          ],
+          "nodes_truncated": false
+        }
+      ],
+      "nets_truncated": false,
+      "nodes_kept": 33,
+      "nodes_seen_in_kept_nets": 33,
+      "nodes_truncated": false
+    }
+  }
+}

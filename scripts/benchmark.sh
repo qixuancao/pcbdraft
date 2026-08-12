@@ -1,39 +1,25 @@
 #!/usr/bin/env bash
-# Benchmarks pcb-agent review and safe patch on a KiCad project copy.
-# Run: FIXTURE_DIR=/path/to/project scripts/benchmark.sh
-# Needs: pcb-agent prerequisites; writes only under BENCH_ROOT.
+# Run the independent CC0 semantic fault/repair benchmark.
+# Optional: BENCHMARK_OUTPUT=/new/file.json MODEL_RUNS=2 REPETITIONS=5.
 set -euo pipefail
 
-ROOT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-: "${FIXTURE_DIR:?set FIXTURE_DIR to one unambiguous KiCad project}"
-FIXTURE_DIR=$(realpath -e -- "$FIXTURE_DIR")
-BENCH_ROOT=$(realpath -m -- "${BENCH_ROOT:-/tmp/pcb-agent-runtime-benchmark}")
-TIMEOUT=${TIMEOUT:-420}
-REQUEST=${REQUEST:-}
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+REPETITIONS=${REPETITIONS:-5}
+MODEL_RUNS=${MODEL_RUNS:-0}
+MODEL_TIMEOUT=${MODEL_TIMEOUT:-420}
 
-if [[ "$BENCH_ROOT" == / || "$BENCH_ROOT" == "$HOME" || "$BENCH_ROOT" == "$ROOT_DIR" ||
-      "$FIXTURE_DIR" == "$BENCH_ROOT" || "$FIXTURE_DIR" == "$BENCH_ROOT/"* ]]; then
-  printf 'unsafe BENCH_ROOT: %s\n' "$BENCH_ROOT" >&2
-  exit 2
-fi
-
-rm -rf -- "$BENCH_ROOT"
-install -d -m 700 "$BENCH_ROOT/project" "$BENCH_ROOT/runs"
-cp -a -- "$FIXTURE_DIR"/. "$BENCH_ROOT/project"/
-
-start=$SECONDS
-"$ROOT_DIR/pcb-agent" review "$BENCH_ROOT/project" \
-  --output "$BENCH_ROOT/runs" --timeout "$TIMEOUT"
-review_seconds=$((SECONDS - start))
-
-if [[ -n "$REQUEST" ]]; then
-  start=$SECONDS
-  "$ROOT_DIR/pcb-agent" patch "$BENCH_ROOT/project" \
-    --request "$REQUEST" --output "$BENCH_ROOT/runs" --timeout "$TIMEOUT"
-  patch_seconds=$((SECONDS - start))
+if [[ -n "${BENCHMARK_OUTPUT:-}" ]]; then
+    OUTPUT=$BENCHMARK_OUTPUT
 else
-  patch_seconds=null
+    BENCHMARK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/pcb-agent-benchmark.XXXXXX")
+    OUTPUT="$BENCHMARK_ROOT/benchmark.json"
 fi
 
-printf '{"bench_root":"%s","review_seconds":%d,"patch_seconds":%s}\n' \
-  "$BENCH_ROOT" "$review_seconds" "$patch_seconds"
+cd "$REPO_DIR"
+uv run pcb-agent benchmark "$OUTPUT" \
+    --repetitions "$REPETITIONS" \
+    --model-runs "$MODEL_RUNS" \
+    --model-timeout "$MODEL_TIMEOUT" \
+    --json
+printf 'benchmark artifact: %s\n' "$OUTPUT"

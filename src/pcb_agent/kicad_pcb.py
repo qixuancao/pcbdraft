@@ -298,7 +298,7 @@ def _parse_reference_planes(value: Any) -> tuple[dict[str, Any], ...]:
         or not isinstance(area, (int, float))
         or not math.isfinite(float(area))
         or float(area) <= 0
-        or plane.get("pad_connection") != "solid"
+        or plane.get("pad_connection") != "thermal_relief"
     ):
         raise PcbAgentError("pcbnew worker reference-plane evidence is invalid")
     return (dict(plane),)

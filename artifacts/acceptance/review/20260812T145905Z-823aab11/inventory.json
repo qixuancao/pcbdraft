@@ -1,0 +1,76 @@
+{
+  "complete": true,
+  "entries": [
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "attiny_sensor_controller.kicad_pcb",
+      "sha256": "c5b32e00cd5b59110623a69fddf3a3b98a2411fd1f89dae4e3b083063cb0bf4d",
+      "size": 100302
+    },
+    {
+      "kind": "file",
+      "mode": 436,
+      "relative_path": "attiny_sensor_controller.kicad_prl",
+      "sha256": "f81f7b4f821ec42d437891e36dfd15ff2d03644d9a4a94ed756eb813b4162dae",
+      "size": 2311
+    },
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "attiny_sensor_controller.kicad_pro",
+      "sha256": "738228e9022c5977a6416a28883bed07b94f64b65c30ebda75374fc79c066489",
+      "size": 9858
+    },
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "attiny_sensor_controller.kicad_sch",
+      "sha256": "1e43f2d9389a22ce94d8e1a05bfef2e0a60fc8e78d54901b076d473baaae0bc4",
+      "size": 55301
+    },
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "attiny_sensor_controller.worker-result.json",
+      "sha256": "09af82a831116f8e0633062d24baacbf69f0ca5d5cb224721c8936f4be000bc2",
+      "size": 455
+    },
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "design.pcbir.json",
+      "sha256": "ff52e14a9b99810a4eca0b96cec05965e9c66d1a5943ed1865b1bc2c08b1bc9a",
+      "size": 16718
+    },
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "project.pcb-agent.json",
+      "sha256": "723ab293bc56406b33aef158f4549d83f1aebd058baa022732ede3d47bd564b0",
+      "size": 78095
+    },
+    {
+      "kind": "file",
+      "mode": 420,
+      "relative_path": "requirements.pcbreq.json",
+      "sha256": "fdaac09383c8e1ed7e7a5a85c91811acce6b81213e7508b830c0ce83216f9d80",
+      "size": 1862
+    }
+  ],
+  "entry_count": 8,
+  "limits": {
+    "max_file_bytes": 67108864,
+    "max_files": 500,
+    "max_total_bytes": 268435456,
+    "max_tree_members": 10000
+  },
+  "omitted": {
+    "file_limit": 0,
+    "file_too_large": 0,
+    "special_file": 0,
+    "total_byte_limit": 0
+  },
+  "root": "/mnt/2T/pcb-agent-runtime/examples/attiny_sensor_controller/project",
+  "total_hashed_bytes": 264902
+}
