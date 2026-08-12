@@ -1,4 +1,4 @@
-# Security policy and threat model
+# CopperWright security policy and threat model
 
 ## Supported versions
 

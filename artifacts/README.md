@@ -1,6 +1,8 @@
-# Persisted verification artifacts
+# CopperWright persisted verification artifacts
 
 These artifacts are selected real acceptance evidence, not test mocks.
+They were created before the CopperWright rename and intentionally retain their
+recorded `pcb-agent-runtime` names and paths.
 
 ## `acceptance/release`
 
@@ -10,7 +12,7 @@ project. `release-manifest.json` inventories 31 stable content artifacts;
 pre-normalization hashes, and three raw audit artifacts. Verify it with:
 
 ```bash
-pcb-agent release-verify artifacts/acceptance/release --json
+copperwright release-verify artifacts/acceptance/release --json
 ```
 
 Expected hashes:

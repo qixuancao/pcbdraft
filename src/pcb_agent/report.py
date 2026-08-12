@@ -84,7 +84,7 @@ def render_review_markdown(
         else "- No error/warning records in parsed gate JSON."
     )
 
-    return f"""# PCB design review
+    return f"""# CopperWright PCB design review
 
 Run: {_md(run_id)}<br>
 Project: {_md(project)}<br>

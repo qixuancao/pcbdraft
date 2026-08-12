@@ -1,4 +1,4 @@
-# Contributing
+# Contributing to CopperWright
 
 Contributions are welcome within the runtime's evidence-first scope. Read
 [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) before changing parts, verified

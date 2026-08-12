@@ -211,7 +211,7 @@ def run_benchmark(
         "version": BENCHMARK_VERSION,
         "created_at": utc_timestamp(),
         "engine": {
-            "name": "pcb-agent deterministic semantic intent registry",
+            "name": "CopperWright deterministic semantic intent registry",
             "version": 1,
             "python": platform.python_version(),
             "kicad": kicad_version,
@@ -503,7 +503,7 @@ def _repair_change_set(case: CorpusCase, base: Design, faulty: Design) -> Change
             "id": f"repair_{case.id}",
             "base_hash": faulty.content_hash(),
             "intent": f"Restore the independently injected {case.id} fixture.",
-            "actor": "pcb-agent-benchmark",
+            "actor": "copperwright-benchmark",
             "operations": [
                 {
                     "id": "restore_contract",

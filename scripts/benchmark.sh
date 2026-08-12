@@ -12,12 +12,12 @@ MODEL_TIMEOUT=${MODEL_TIMEOUT:-420}
 if [[ -n "${BENCHMARK_OUTPUT:-}" ]]; then
     OUTPUT=$BENCHMARK_OUTPUT
 else
-    BENCHMARK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/pcb-agent-benchmark.XXXXXX")
+    BENCHMARK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/copperwright-benchmark.XXXXXX")
     OUTPUT="$BENCHMARK_ROOT/benchmark.json"
 fi
 
 cd "$REPO_DIR"
-uv run pcb-agent benchmark "$OUTPUT" \
+uv run copperwright benchmark "$OUTPUT" \
     --repetitions "$REPETITIONS" \
     --model-runs "$MODEL_RUNS" \
     --model-timeout "$MODEL_TIMEOUT" \

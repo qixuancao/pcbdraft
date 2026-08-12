@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from . import __version__
+from . import LEGACY_RUNTIME_NAMES, PRODUCT_NAME, __version__
 from .codex import invoke_codex, patch_prompt, review_prompt
 from .doctor import probe_executable
 from .errors import PcbAgentError, TransactionRejected, ValidationError
@@ -53,7 +53,7 @@ PROMPT_INVENTORY_ENTRIES = 200
 def _receipt_base(*, run_id: str, kind: str, project: Path) -> dict[str, Any]:
     return {
         "receipt_version": 1,
-        "runtime": {"name": "pcb-agent-runtime", "version": __version__},
+        "runtime": {"name": PRODUCT_NAME, "version": __version__},
         "run_id": run_id,
         "kind": kind,
         "project": str(project),
@@ -561,12 +561,12 @@ def run_apply(
     receipt_path = run_dir / "receipt.json"
     receipt = load_json_limited(receipt_path, RECEIPT_LIMIT)
     if not isinstance(receipt, dict) or receipt.get("kind") != "patch":
-        raise ValidationError("run directory is not a pcb-agent patch transaction")
+        raise ValidationError("run directory is not a CopperWright patch transaction")
     runtime = receipt.get("runtime")
     if (
         receipt.get("receipt_version") != 1
         or not isinstance(runtime, dict)
-        or runtime.get("name") != "pcb-agent-runtime"
+        or runtime.get("name") not in {PRODUCT_NAME, *LEGACY_RUNTIME_NAMES}
     ):
         raise ValidationError("unsupported or malformed transaction receipt")
     if receipt.get("status") != "ready":

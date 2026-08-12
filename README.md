@@ -1,9 +1,15 @@
-# PCB Agent Runtime
+<p align="center">
+  <img src="docs/assets/brand/copperwright-mark-256.png" width="180" alt="CopperWright copper PCB-trace W mark">
+</p>
 
-`pcb-agent-runtime` is an open-source, model-independent runtime for turning
+<h1 align="center">CopperWright</h1>
+
+<p align="center"><strong>Evidence-driven PCB automation for KiCad.</strong></p>
+
+CopperWright is an Apache-2.0-licensed, model-independent runtime for turning
 bounded electronic requirements into reviewable, validated, reversible KiCad
 projects. KiCad remains the schematic/PCB, geometry, rule-checking, and
-manufacturing backend; the runtime adds semantic intent, trusted part contracts,
+manufacturing backend; CopperWright adds semantic intent, trusted part contracts,
 transactions, deterministic algorithms, evidence gates, and an agent-facing API.
 
 The checked-in acceptance design is a real routed ATtiny402/TMP102 controller.
@@ -88,16 +94,16 @@ For a repository checkout:
 
 ```bash
 scripts/deploy.sh
-uv run pcb-agent doctor --json
+uv run copperwright doctor --json
 ```
 
 For an isolated install from a built wheel:
 
 ```bash
 uv build
-uv venv /tmp/pcb-agent-venv
-uv pip install --python /tmp/pcb-agent-venv/bin/python dist/*.whl
-/tmp/pcb-agent-venv/bin/pcb-agent --version
+uv venv /tmp/copperwright-venv
+uv pip install --python /tmp/copperwright-venv/bin/python dist/*.whl
+/tmp/copperwright-venv/bin/copperwright --version
 ```
 
 `doctor.ok` means the deterministic core is usable. Codex availability is
@@ -111,18 +117,18 @@ All output paths are create-only. Use new paths or remove prior disposable outpu
 yourself.
 
 ```bash
-pcb-agent compile \
+copperwright compile \
   examples/attiny_sensor_controller/requirements.json \
   --output /tmp/controller.pcbir.json --json
 
-pcb-agent generate \
+copperwright generate \
   examples/attiny_sensor_controller/requirements.json \
   /tmp/controller --json
 
-pcb-agent inspect /tmp/controller --json
-pcb-agent validate /tmp/controller --output /tmp/controller-validation --json
-pcb-agent release /tmp/controller /tmp/controller-release --json
-pcb-agent release-verify /tmp/controller-release --json
+copperwright inspect /tmp/controller --json
+copperwright validate /tmp/controller --output /tmp/controller-validation --json
+copperwright release /tmp/controller /tmp/controller-release --json
+copperwright release-verify /tmp/controller-release --json
 ```
 
 The generated project contains the source requirements, semantic IR, native
@@ -145,10 +151,10 @@ Agents should emit a typed `pcb-agent-change-set`, then use the transaction
 commands rather than editing KiCad text:
 
 ```bash
-pcb-agent semantic-preview design.pcbir.json change-set.json --output /tmp/tx
-pcb-agent semantic-apply /tmp/tx
-pcb-agent semantic-undo /tmp/tx
-pcb-agent semantic-recover /tmp/tx
+copperwright semantic-preview design.pcbir.json change-set.json --output /tmp/tx
+copperwright semantic-apply /tmp/tx
+copperwright semantic-undo /tmp/tx
+copperwright semantic-recover /tmp/tx
 ```
 
 Operations cover requirements, components, nets/endpoints, constraints, board
@@ -160,9 +166,9 @@ staging. Publication rechecks source and staged hashes under a resource lock.
 To import a reviewed native KiCad footprint move:
 
 ```bash
-pcb-agent sync /tmp/controller --json
-pcb-agent sync /tmp/controller --apply --json
-pcb-agent sync-undo /tmp/.pcb-agent-transactions/sync-...
+copperwright sync /tmp/controller --json
+copperwright sync /tmp/controller --apply --json
+copperwright sync-undo /tmp/.pcb-agent-transactions/sync-...
 ```
 
 Only pose changes are imported. Unknown board bytes, footprint changes, new or
@@ -204,7 +210,7 @@ The model response remains a heuristic review and cannot satisfy L6.
 
 ## CLI and agent API
 
-Run `pcb-agent --help` and `pcb-agent COMMAND --help` for the authoritative CLI.
+Run `copperwright --help` and `copperwright COMMAND --help` for the authoritative CLI.
 Major command groups are:
 
 - design: `compile`, `generate`, `inspect`, `parts`
@@ -222,7 +228,7 @@ source of scope and method support.
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"runtime.capabilities","params":{}}' \
-  | pcb-agent api
+  | copperwright api
 ```
 
 The process accepts at most 10,000 requests and 4 MiB per request. Parameter sets
@@ -236,7 +242,7 @@ Run the deterministic corpus without a model or network:
 ```bash
 scripts/benchmark.sh
 # or
-pcb-agent benchmark /tmp/pcb-agent-benchmark.json --repetitions 5 --json
+copperwright benchmark /tmp/copperwright-benchmark.json --repetitions 5 --json
 ```
 
 An explicitly requested live model consistency run uses two or more blinded,
@@ -248,6 +254,19 @@ MODEL_RUNS=2 scripts/benchmark.sh
 
 Current measured results and limitations are in [BENCHMARK.md](BENCHMARK.md).
 The benchmark is a regression corpus, not a claim about all PCB failures.
+
+## Compatibility names
+
+The distribution and primary command are `copperwright`. The installed
+`pcb-agent` command remains an equivalent compatibility alias. The internal Python
+module stays `pcb_agent` to avoid a risky, value-free module migration.
+
+Stable on-disk and protocol identifiers—including `pcb-agent-*` schemas,
+`project.pcb-agent.json`, `.pcb-agent-*` transaction/lock directories, and the
+`PCB_AGENT_*` test/config namespace—also remain unchanged. Checked-in engineering
+receipts and benchmark artifacts created before the rename retain
+`pcb-agent-runtime` exactly as recorded; CopperWright does not rewrite historical
+evidence to make it look newer.
 
 ## Development and release checks
 

@@ -1,4 +1,8 @@
-# PCB Agent Runtime 最终完成报告
+# CopperWright 历史基线：PCB Agent Runtime 最终完成报告
+
+> 本报告记录 2026-08-13 品牌切换前的完整工程验收事实。当前产品名和主命令
+> 已改为 CopperWright / `copperwright`；为保持证据真实性，报告中的既有提交、
+> 哈希、schema、工件路径和历史运行名称不作追溯改写。
 
 完成日期：2026-08-13（Asia/Shanghai）
 
@@ -153,7 +157,7 @@ scripts/test.sh
 scripts/compatibility.sh
 scripts/benchmark.sh
 scripts/release-check.sh
-pcb-agent release-verify artifacts/acceptance/release --json
+copperwright release-verify artifacts/acceptance/release --json
 ```
 
 需要现有已认证 Codex CLI 才运行模型重复；生成、验证、制造发布、离线校验

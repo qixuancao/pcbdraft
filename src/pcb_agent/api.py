@@ -8,7 +8,13 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
-from . import __version__
+from . import (
+    COMPATIBILITY_CLIS,
+    DISTRIBUTION_NAME,
+    PRIMARY_CLI,
+    PRODUCT_NAME,
+    __version__,
+)
 from .benchmark import run_benchmark
 from .blocks import BlockRegistry
 from .errors import PcbAgentError, ValidationError
@@ -36,6 +42,13 @@ def capabilities() -> dict[str, Any]:
     return {
         "api_version": API_VERSION,
         "runtime_version": __version__,
+        "product": {
+            "name": PRODUCT_NAME,
+            "distribution": DISTRIBUTION_NAME,
+            "primary_cli": PRIMARY_CLI,
+            "compatibility_clis": list(COMPATIBILITY_CLIS),
+            "python_module": "pcb_agent",
+        },
         "transport": "newline_delimited_json_rpc_2.0",
         "methods": [
             "runtime.capabilities",

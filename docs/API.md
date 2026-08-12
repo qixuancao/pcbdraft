@@ -1,6 +1,7 @@
-# Agent API reference
+# CopperWright agent API reference
 
-`pcb-agent api` serves newline-delimited JSON-RPC 2.0 over stdin/stdout. It has no
+`copperwright api` serves newline-delimited JSON-RPC 2.0 over stdin/stdout. The
+legacy `pcb-agent api` spelling is equivalent. The service has no
 network listener and performs no authentication. The caller is responsible for
 process isolation and filesystem permissions.
 
@@ -48,7 +49,7 @@ lock-protected and hash checked.
 ## Example session
 
 ```bash
-pcb-agent api <<'EOF'
+copperwright api <<'EOF'
 {"jsonrpc":"2.0","id":"caps","method":"runtime.capabilities","params":{}}
 {"jsonrpc":"2.0","id":"parts","method":"parts.find","params":{"function":"i2c_sda"}}
 {"jsonrpc":"2.0","id":"inspect","method":"project.inspect","params":{"project":"/tmp/controller"}}

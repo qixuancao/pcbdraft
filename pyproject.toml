@@ -3,14 +3,14 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pcb-agent-runtime"
+name = "copperwright"
 version = "0.2.0"
-description = "Agent-safe, evidence-driven semantic PCB design runtime for KiCad"
+description = "CopperWright: agent-safe, evidence-driven semantic PCB design for KiCad"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
-authors = [{name = "pcb-agent-runtime contributors"}]
+authors = [{name = "CopperWright contributors"}]
 keywords = ["pcb", "kicad", "eda", "agent", "electronics", "automation"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -32,6 +32,7 @@ dependencies = [
 dev = ["build>=1.2", "ruff>=0.12"]
 
 [project.scripts]
+copperwright = "pcb_agent.cli:main"
 pcb-agent = "pcb_agent.cli:main"
 
 [tool.setuptools]

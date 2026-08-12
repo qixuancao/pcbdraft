@@ -1,4 +1,4 @@
-"""Command-line interface for pcb-agent-runtime."""
+"""Command-line interface for CopperWright."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from . import __version__
+from . import PRIMARY_CLI, PRODUCT_NAME, __version__
 from .api import serve
 from .benchmark import run_benchmark
 from .blocks import BlockRegistry
@@ -55,10 +55,19 @@ def positive_timeout(value: str) -> float:
     return timeout
 
 
-def build_parser() -> argparse.ArgumentParser:
+def invoked_program(argv0: str | None = None) -> str:
+    """Return the supported launcher name, defaulting module use to the primary CLI."""
+    name = Path(argv0 if argv0 is not None else sys.argv[0]).name
+    return name if name in {PRIMARY_CLI, "pcb-agent"} else PRIMARY_CLI
+
+
+def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="pcb-agent",
-        description="Evidence-driven semantic PCB design, validation, and release runtime.",
+        prog=prog or invoked_program(),
+        description=(
+            f"{PRODUCT_NAME}: evidence-driven semantic PCB design, validation, "
+            "and release runtime."
+        ),
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
@@ -438,10 +447,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "api":
             return serve()
     except TransactionRejected as exc:
-        print(f"pcb-agent: {exc}", file=sys.stderr)
+        print(f"{parser.prog}: {exc}", file=sys.stderr)
         return exc.exit_code
     except PcbAgentError as exc:
-        print(f"pcb-agent: {exc}", file=sys.stderr)
+        print(f"{parser.prog}: {exc}", file=sys.stderr)
         return exc.exit_code
     parser.error("unknown command")
     return 2

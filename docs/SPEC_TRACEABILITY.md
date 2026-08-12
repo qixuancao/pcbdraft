@@ -1,4 +1,4 @@
-# Specification traceability
+# CopperWright specification traceability
 
 Source: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on 2026-08-12.
 `implemented` means local code and an automated verification path exist. `external
@@ -75,7 +75,7 @@ scripts/benchmark.sh
 scripts/smoke.sh
 scripts/compatibility.sh
 scripts/release-check.sh
-pcb-agent release-verify artifacts/acceptance/release --json
+copperwright release-verify artifacts/acceptance/release --json
 ```
 
 R26, R27, R28, and R45 intentionally do not equate ERC/DRC or a model response

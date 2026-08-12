@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-CHECK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/pcb-agent-release-check.XXXXXX")
+CHECK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/copperwright-release-check.XXXXXX")
 cleanup() {
     rm -rf -- "$CHECK_ROOT"
 }
@@ -26,22 +26,23 @@ tar -tzf "$SDIST" >/dev/null
 
 uv venv --python 3.11 "$CHECK_ROOT/venv"
 uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
+"$CHECK_ROOT/venv/bin/copperwright" --version
 "$CHECK_ROOT/venv/bin/pcb-agent" --version
 "$CHECK_ROOT/venv/bin/python" -c \
     'from pcb_agent.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 
-"$CHECK_ROOT/venv/bin/pcb-agent" benchmark \
+"$CHECK_ROOT/venv/bin/copperwright" benchmark \
     "$CHECK_ROOT/benchmark.json" --repetitions 2 --json
-"$CHECK_ROOT/venv/bin/pcb-agent" generate \
+"$CHECK_ROOT/venv/bin/copperwright" generate \
     "$REPO_DIR/examples/attiny_sensor_controller/requirements.json" \
     "$CHECK_ROOT/project" --json
-"$CHECK_ROOT/venv/bin/pcb-agent" validate \
+"$CHECK_ROOT/venv/bin/copperwright" validate \
     "$CHECK_ROOT/project" --output "$CHECK_ROOT/validation" --json
-"$CHECK_ROOT/venv/bin/pcb-agent" release \
+"$CHECK_ROOT/venv/bin/copperwright" release \
     "$CHECK_ROOT/project" "$CHECK_ROOT/release-a" --json
-"$CHECK_ROOT/venv/bin/pcb-agent" release \
+"$CHECK_ROOT/venv/bin/copperwright" release \
     "$CHECK_ROOT/project" "$CHECK_ROOT/release-b" --json
-"$CHECK_ROOT/venv/bin/pcb-agent" release-verify \
+"$CHECK_ROOT/venv/bin/copperwright" release-verify \
     "$CHECK_ROOT/release-a" --json
 
 "$CHECK_ROOT/venv/bin/python" -c \

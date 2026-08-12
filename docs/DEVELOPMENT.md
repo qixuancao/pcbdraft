@@ -1,4 +1,4 @@
-# Development and release guide
+# CopperWright development and release guide
 
 ## Environment
 
@@ -7,7 +7,7 @@ CLI, and system Python bindings. Then run:
 
 ```bash
 uv sync --frozen --extra dev
-uv run pcb-agent doctor --json
+uv run copperwright doctor --json
 ```
 
 Codex is optional unless changing the AI reviewer or running live model metrics.
@@ -19,6 +19,7 @@ scripts/test.sh
 scripts/benchmark.sh
 scripts/smoke.sh
 scripts/compatibility.sh
+scripts/generate-brand-assets.sh --check
 scripts/release-check.sh
 ```
 
@@ -36,6 +37,10 @@ generation/sync/release cases; otherwise those cases are explicit skips.
 installs the wheel into a fresh environment, runs a deterministic benchmark,
 generates and validates the acceptance project, creates two releases, compares
 content hashes, and verifies the bundle offline.
+
+`scripts/generate-brand-assets.sh --check` regenerates every derived icon and the
+social preview in a private temporary directory and byte-compares them with the
+tracked assets.
 
 ## Adding a part
 

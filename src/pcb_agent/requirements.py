@@ -432,7 +432,7 @@ def compile_requirements(
             },
         ),
         metadata={
-            "compiler": "pcb-agent-runtime",
+            "compiler": "copperwright",
             "profile": "attiny402_tmp102_controller_v1",
             "priorities": list(spec.priorities),
             "requirements_hash": _sha256(spec.canonical_bytes()),
@@ -585,7 +585,7 @@ def _provenance(
             Provenance(
                 id=f"block_{definition.id}",
                 kind="verified_block",
-                source="pcb-agent-runtime bundled block catalog",
+                source="CopperWright bundled block catalog",
                 locator=f"data/blocks/catalog.json#{definition.id}@{definition.version}",
                 acquired_at="2026-08-12",
                 method="rule_validated",

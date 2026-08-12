@@ -1223,7 +1223,7 @@ def ir_json_schema() -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://pcb-agent-runtime.invalid/schema/ir-v1.json",
-        "title": "PCB Agent semantic design IR v1",
+        "title": "CopperWright semantic design IR v1",
         "type": "object",
         "additionalProperties": False,
         "required": sorted(properties),

@@ -19,7 +19,7 @@ class ResourceLock:
     """Exclusive Linux ``flock`` keyed by a canonical resource path.
 
     The lock directory is runtime-owned rather than inside an untrusted KiCad
-    project.  Locks are advisory: every writer in pcb-agent-runtime uses them, but
+    project. Locks are advisory: every writer in CopperWright uses them, but
     unrelated editors still require hash-based conflict detection.
     """
 

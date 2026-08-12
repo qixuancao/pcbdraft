@@ -1,4 +1,4 @@
-# Benchmark report
+# CopperWright benchmark report
 
 Measured on 2026-08-12. The machine-readable result is
 [`artifacts/benchmark/benchmark-20260812.json`](artifacts/benchmark/benchmark-20260812.json).

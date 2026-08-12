@@ -1,6 +1,6 @@
 include LICENSE NOTICE README.md BENCHMARK.md CHANGELOG.md CONTRIBUTING.md SECURITY.md
-include Makefile pcb-agent uv.lock
-recursive-include docs *.md
+include Makefile copperwright pcb-agent uv.lock
+recursive-include docs *.md *.png
 recursive-include scripts *.sh
 recursive-include examples *.md *.json *.kicad_sch *.kicad_pcb *.kicad_pro
 recursive-include tests *.py

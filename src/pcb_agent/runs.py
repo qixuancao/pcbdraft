@@ -19,7 +19,7 @@ def new_run_id() -> str:
 
 
 def default_runs_parent() -> Path:
-    return Path.home() / ".local" / "share" / "pcb-agent-runtime" / "runs"
+    return Path.home() / ".local" / "share" / "copperwright" / "runs"
 
 
 def canonical_output_parent(value: str | None) -> Path:

@@ -1,6 +1,6 @@
-# Architecture
+# CopperWright architecture
 
-PCB Agent Runtime is a compiler/runtime around KiCad, not a replacement EDA GUI.
+CopperWright is a compiler/runtime around KiCad, not a replacement EDA GUI.
 The semantic design is authoritative; native KiCad files are deterministic build
 products with a deliberately narrow, fail-closed import path.
 

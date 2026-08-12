@@ -1,9 +1,14 @@
-# Changelog
+# CopperWright changelog
 
 All notable changes are documented here. The project follows semantic versioning
 for the CLI/API package; individual on-disk schemas are independently versioned.
 
-## 0.2.0 — 2026-08-12
+## 0.2.0 — 2026-08-13 (first CopperWright release)
+
+- Adopted CopperWright branding, durable mark/icon/social-preview assets, the
+  `copperwright` distribution name, and a primary `copperwright` CLI.
+- Retained `pcb-agent` as a CLI alias and kept internal modules, schemas, on-disk
+  compatibility names, and historical evidence stable.
 
 - Added strict semantic circuit/PCB IR, trusted parts, and verified block registry.
 - Added semantic transactions, preview/diff, locking, rollback, undo, and recovery.

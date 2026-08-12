@@ -1,1 +1,1 @@
-"""pcb-agent-runtime test package."""
+"""CopperWright test package."""
