@@ -55,7 +55,7 @@
       "ratings": {"supply_voltage_v": {"min": 1.4, "max": 3.6}, "absolute_max_voltage_v": 4.0, "operating_temperature_c": {"min": -40, "max": 125}},
       "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.ti.com/product/TMP102"},
       "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
-      "manufacturing": {"package": "SOT-563", "assembly": "reflow", "pitch_mm": 0.5, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "manufacturing": {"package": "SOT-563", "assembly": "reflow", "pitch_mm": 0.5, "minimum_pad_gap_mm": 0.15, "courtyard_required": true, "rohs_evidence": "source_required"},
       "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-563.wrl"},
       "bom": true,
       "trust": "rule_validated",

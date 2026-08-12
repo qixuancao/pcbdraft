@@ -74,7 +74,7 @@ def controller_requirements_dict() -> dict[str, Any]:
             "thickness_mm": 1.6,
             "edge_clearance_mm": 0.5,
             "min_track_mm": 0.2,
-            "min_clearance_mm": 0.2,
+            "min_clearance_mm": 0.1,
             "min_drill_mm": 0.3,
             "finish": "hasl_lead_free",
         },

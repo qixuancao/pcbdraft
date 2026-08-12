@@ -80,6 +80,18 @@ class RequirementsCompilerTests(unittest.TestCase):
                 registry=self.registry,
             )
 
+    def test_board_rules_must_be_compatible_with_fine_pitch_package(self) -> None:
+        value = controller_requirements_dict()
+        value["board"]["min_clearance_mm"] = 0.2
+        with self.assertRaisesRegex(
+            ValidationError, "footprint_clearance_incompatible"
+        ):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
+
     def test_high_risk_scope_is_never_silently_compiled(self) -> None:
         value = copy.deepcopy(controller_requirements_dict())
         value["scope"]["domains"].append("mains")

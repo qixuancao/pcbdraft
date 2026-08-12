@@ -214,7 +214,7 @@ def _qwiic_power_input(definition: BlockDefinition) -> BlockInstance:
             "jst.sm04b-srss-tb",
             "QWIIC",
             definition.id,
-            (41, 15),
+            (40.5, 15),
             rotation=270,
             fixed=True,
         ),
@@ -263,7 +263,12 @@ def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
             (17, 15),
         ),
         _component(
-            "mcu_c1", "C1", "murata.grm188r71c104ka01d", "100n", definition.id, (17, 9)
+            "mcu_c1",
+            "C1",
+            "murata.grm188r71c104ka01d",
+            "100n",
+            definition.id,
+            (17, 12),
         ),
         _component(
             "updi_j2",
@@ -315,7 +320,7 @@ def _tmp102_sensor(definition: BlockDefinition) -> BlockInstance:
             "murata.grm188r71c104ka01d",
             "100n",
             definition.id,
-            (31, 10),
+            (31, 13),
         ),
         _component(
             "pullup_r1",
@@ -323,7 +328,7 @@ def _tmp102_sensor(definition: BlockDefinition) -> BlockInstance:
             "yageo.rc0603fr-074k7l",
             "4.7k",
             definition.id,
-            (27, 7),
+            (27, 10),
             rotation=90,
         ),
         _component(
@@ -332,7 +337,7 @@ def _tmp102_sensor(definition: BlockDefinition) -> BlockInstance:
             "yageo.rc0603fr-074k7l",
             "4.7k",
             definition.id,
-            (34, 7),
+            (35, 10),
             rotation=90,
         ),
     )

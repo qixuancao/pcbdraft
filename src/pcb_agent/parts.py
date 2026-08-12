@@ -487,6 +487,20 @@ class PartGraph:
                         "BOM part has no footprint contract",
                     )
                 )
+            minimum_pad_gap = part.manufacturing.get("minimum_pad_gap_mm")
+            if (
+                isinstance(minimum_pad_gap, (int, float))
+                and not isinstance(minimum_pad_gap, bool)
+                and design.board.min_clearance_mm > float(minimum_pad_gap) + 1e-9
+            ):
+                issues.append(
+                    IRIssue(
+                        "error",
+                        "part.footprint_clearance_incompatible",
+                        f"$.components[{index}]",
+                        f"board clearance {design.board.min_clearance_mm:g} mm exceeds the {part.id} footprint's {float(minimum_pad_gap):g} mm minimum pad gap",
+                    )
+                )
             if check_libraries:
                 for library_kind, resolution in self.resolve_libraries(part).items():
                     if not resolution.available:
