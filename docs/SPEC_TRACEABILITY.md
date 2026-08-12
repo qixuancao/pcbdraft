@@ -13,8 +13,8 @@ Source specification: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on
 | R05 | Canonical part identity and symbol/footprint/pad graph | `pcb_agent.parts`, seed CC0 catalog | `tests/test_parts.py` real KiCad library resolution | implemented |
 | R06 | Ratings, lifecycle, sourcing, BOM and manufacturability contracts | `PartRecord` contracts | part/rating validation tests | implemented |
 | R07 | Evidence and trust states distinguish extraction/rules/human/production | `PartRecord.trust`, per-record evidence | catalog schema tests | implemented |
-| R08 | Semantic transactional edits are primary; preview, commit, undo, recovery | planned `operations/transactions` modules | focused + E2E transaction tests | in progress |
-| R09 | Preconditions, idempotency and conflict detection | planned change-set protocol | concurrency/idempotency tests | in progress |
+| R08 | Semantic transactional edits are primary; preview, commit, undo, recovery | `pcb_agent.operations`, `pcb_agent.transactions` | `test_operations`, `test_transactions` | implemented |
+| R09 | Preconditions, idempotency and conflict detection | typed operation expectations + base/staged/source hashes | stale-field/base/drift/idempotency tests | implemented |
 | R10 | High-level stable CLI/Python/agent API | planned CLI and JSON-RPC surface | CLI/RPC compatibility tests | in progress |
 | R11 | Structured requirements to schematic/PCB IR | planned deterministic requirements compiler | generation E2E | in progress |
 | R12 | Versioned, verified reusable functional blocks | planned block registry | block contract fixtures | in progress |
@@ -32,8 +32,8 @@ Source specification: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on
 | R24 | Explicit completed/N-A/unavailable/heuristic/human-required states | planned validation evidence model | state coverage tests | in progress |
 | R25 | BOM, Gerber, drill, position, render and release evidence bundle | planned manufacturing backend | real `kicad-cli` E2E | in progress |
 | R26 | Bidirectional KiCad synchronization and semantic diff | planned KiCad adapters | import/export/check E2E | in progress |
-| R27 | Snapshots, receipts, rollback and crash recovery | existing text-patch base; semantic protocol pending | recovery E2E | in progress |
-| R28 | Concurrency safety | planned OS-lock + manifest compare | multiprocessing tests | in progress |
+| R27 | Snapshots, receipts, rollback and crash recovery | durable semantic journal, backup, undo/recovery; legacy patch receipts | apply/undo/partial-state recovery tests | implemented |
+| R28 | Concurrency safety | `ResourceLock` + pre/post hash conflict checks | lock contention and drift tests | implemented |
 | R29 | Bounded execution and hostile-project handling | existing process/tree bounds; new paths pending | security suite | in progress |
 | R30 | Independent license-clear error-injection corpus | planned CC0 corpus | corpus license/integrity test | in progress |
 | R31 | Detection, FP, repair, regression, repeatability, latency metrics | planned benchmark runner | reproducible benchmark artifact | in progress |
