@@ -41,7 +41,9 @@ def atomic_write_bytes(path: Path, data: bytes, *, mode: int = 0o600) -> None:
     descriptor = -1
     temporary_name = ""
     try:
-        descriptor, temporary_name = tempfile.mkstemp(prefix=".pcb-agent-", dir=path.parent)
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=".pcb-agent-", dir=path.parent
+        )
         os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             descriptor = -1
@@ -70,13 +72,16 @@ def atomic_write_text(path: Path, text: str, *, mode: int = 0o600) -> None:
 
 def atomic_write_json(path: Path, value: Any, *, mode: int = 0o600) -> None:
     try:
-        rendered = json.dumps(
-            value,
-            ensure_ascii=False,
-            indent=2,
-            sort_keys=True,
-            allow_nan=False,
-        ) + "\n"
+        rendered = (
+            json.dumps(
+                value,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                allow_nan=False,
+            )
+            + "\n"
+        )
     except (TypeError, ValueError) as exc:
         raise PcbAgentError(f"cannot serialize JSON artifact: {path.name}") from exc
     atomic_write_text(path, rendered, mode=mode)

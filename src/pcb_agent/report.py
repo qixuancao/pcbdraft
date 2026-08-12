@@ -17,7 +17,11 @@ def _md(value: Any) -> str:
 
 
 def _items(values: list[str]) -> str:
-    return "\n".join(f"- {_md(value)}" for value in values) if values else "- None identified"
+    return (
+        "\n".join(f"- {_md(value)}" for value in values)
+        if values
+        else "- None identified"
+    )
 
 
 def render_review_markdown(
@@ -41,7 +45,10 @@ def render_review_markdown(
 
     findings: list[str] = []
     for index, finding in enumerate(review.get("findings", []), start=1):
-        evidence = "; ".join(_md(value) for value in finding["evidence"]) or "No concrete evidence supplied"
+        evidence = (
+            "; ".join(_md(value) for value in finding["evidence"])
+            or "No concrete evidence supplied"
+        )
         findings.append(
             f"### {index}. [{_md(finding['severity'].upper())}] {_md(finding['title'])}\n\n"
             f"- Category: {_md(finding['category'])}\n"
@@ -51,26 +58,38 @@ def render_review_markdown(
             f"- Rationale: {_md(finding['rationale'])}\n"
             f"- Proposed action: {_md(finding['proposed_action'])}"
         )
-    finding_text = "\n\n".join(findings) if findings else "No AI heuristic findings returned."
+    finding_text = (
+        "\n\n".join(findings) if findings else "No AI heuristic findings returned."
+    )
 
     violation_lines: list[str] = []
     for gate_name in ("erc", "drc"):
         detail = (violations or {}).get(gate_name, {})
         for violation in detail.get("violations", [])[:50]:
-            description = violation.get("description") or violation.get("type") or "unnamed violation"
+            description = (
+                violation.get("description")
+                or violation.get("type")
+                or "unnamed violation"
+            )
             violation_lines.append(
                 f"- {gate_name.upper()} [{_md(violation.get('severity'))}]: {_md(description)}"
             )
         if detail.get("violations_truncated"):
-            violation_lines.append(f"- {gate_name.upper()}: additional violations omitted from Markdown; see evidence.json")
-    violation_text = "\n".join(violation_lines) if violation_lines else "- No error/warning records in parsed gate JSON."
+            violation_lines.append(
+                f"- {gate_name.upper()}: additional violations omitted from Markdown; see evidence.json"
+            )
+    violation_text = (
+        "\n".join(violation_lines)
+        if violation_lines
+        else "- No error/warning records in parsed gate JSON."
+    )
 
     return f"""# PCB design review
 
-Run: {_md(run_id)}  
-Project: {_md(project)}  
-Schematic: {_md(selected_files['schematic'])}  
-Board: {_md(selected_files['board'])}
+Run: {_md(run_id)}<br>
+Project: {_md(project)}<br>
+Schematic: {_md(selected_files["schematic"])}<br>
+Board: {_md(selected_files["board"])}
 
 ## Scope and interpretation
 
@@ -89,25 +108,25 @@ manufacturability, regulatory compliance, or production readiness.
 
 ## AI heuristic overview
 
-Risk: **{_md(review['risk'])}**
+Risk: **{_md(review["risk"])}**
 
-{_md(review['summary'])}
+{_md(review["summary"])}
 
 ### Modules
 
-{_items(review['modules'])}
+{_items(review["modules"])}
 
 ### Interfaces
 
-{_items(review['interfaces'])}
+{_items(review["interfaces"])}
 
 ### Power domains
 
-{_items(review['power_domains'])}
+{_items(review["power_domains"])}
 
 ### Missing constraints
 
-{_items(review['missing_constraints'])}
+{_items(review["missing_constraints"])}
 
 ## AI heuristic findings
 
@@ -115,5 +134,5 @@ Risk: **{_md(review['risk'])}**
 
 ## Unsupported checks
 
-{_items(review['unsupported_checks'])}
+{_items(review["unsupported_checks"])}
 """

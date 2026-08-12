@@ -21,4 +21,3 @@ class TransactionRejected(PcbAgentError):
     def __init__(self, message: str, run_dir: str) -> None:
         super().__init__(message)
         self.run_dir = run_dir
-

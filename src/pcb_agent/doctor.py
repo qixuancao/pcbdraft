@@ -42,7 +42,9 @@ def probe_executable(executable: str | None, version_args: list[str]) -> dict[st
         }
     combined = result.stdout if result.stdout.strip() else result.stderr
     return {
-        "available": result.returncode == 0 and not result.timed_out and not result.output_limited,
+        "available": result.returncode == 0
+        and not result.timed_out
+        and not result.output_limited,
         "path": executable,
         "version": printable_first_line(combined),
         "exit_code": result.returncode,

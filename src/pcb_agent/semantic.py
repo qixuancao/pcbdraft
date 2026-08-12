@@ -103,8 +103,12 @@ def _parse_netlist(data: bytes) -> dict[str, Any]:
 
     title_block = root.find("./design/sheet/title_block")
     design = {
-        "title": _bounded(title_block.findtext("title") if title_block is not None else None),
-        "revision": _bounded(title_block.findtext("rev") if title_block is not None else None),
+        "title": _bounded(
+            title_block.findtext("title") if title_block is not None else None
+        ),
+        "revision": _bounded(
+            title_block.findtext("rev") if title_block is not None else None
+        ),
     }
 
     raw_components = root.findall("./components/comp")
@@ -121,9 +125,15 @@ def _parse_netlist(data: bytes) -> dict[str, Any]:
                 "reference": _bounded(component.get("ref"), 128),
                 "value": _bounded(component.findtext("value")),
                 "footprint": _bounded(component.findtext("footprint")),
-                "library": _bounded(library.get("lib") if library is not None else None, 256),
-                "part": _bounded(library.get("part") if library is not None else None, 256),
-                "description": _bounded(library.get("description") if library is not None else None),
+                "library": _bounded(
+                    library.get("lib") if library is not None else None, 256
+                ),
+                "part": _bounded(
+                    library.get("part") if library is not None else None, 256
+                ),
+                "description": _bounded(
+                    library.get("description") if library is not None else None
+                ),
                 "fields": fields,
             }
         )
@@ -218,16 +228,26 @@ def _parse_ipcd356(data: bytes) -> dict[str, Any]:
 
 def _fit_prompt_context(context: dict[str, Any]) -> dict[str, Any]:
     def size() -> int:
-        return len(json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8"))
+        return len(
+            json.dumps(context, ensure_ascii=False, sort_keys=True).encode("utf-8")
+        )
 
-    for key, list_key in (("board_connectivity", "records"), ("schematic", "nets"), ("schematic", "components")):
+    for key, list_key in (
+        ("board_connectivity", "records"),
+        ("schematic", "nets"),
+        ("schematic", "components"),
+    ):
         section = context.get(key)
         if not isinstance(section, dict):
             continue
         data = section.get("data")
         container = data if isinstance(data, dict) else section
         values = container.get(list_key)
-        while size() > PROMPT_CONTEXT_LIMIT and isinstance(values, list) and len(values) > 1:
+        while (
+            size() > PROMPT_CONTEXT_LIMIT
+            and isinstance(values, list)
+            and len(values) > 1
+        ):
             del values[(len(values) + 1) // 2 :]
             container[f"{list_key}_truncated_for_prompt"] = True
         if size() > PROMPT_CONTEXT_LIMIT and isinstance(values, list) and values:
@@ -236,7 +256,10 @@ def _fit_prompt_context(context: dict[str, Any]) -> dict[str, Any]:
     for section_name in ("board_statistics", "board_connectivity", "schematic"):
         if size() <= PROMPT_CONTEXT_LIMIT:
             break
-        context[section_name] = {"available": False, "failure_kind": "prompt_context_limit"}
+        context[section_name] = {
+            "available": False,
+            "failure_kind": "prompt_context_limit",
+        }
     if size() > PROMPT_CONTEXT_LIMIT:
         raise PcbAgentError("semantic KiCad context exceeds the prompt limit")
     return context

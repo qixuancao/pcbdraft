@@ -97,7 +97,9 @@ def _bounded_string(value: Any, limit: int = 1000) -> str | None:
     return value[:limit]
 
 
-def structured_violations(document: Any, *, max_violations: int = 100) -> dict[str, Any]:
+def structured_violations(
+    document: Any, *, max_violations: int = 100
+) -> dict[str, Any]:
     """Extract bounded violation records without depending on one KiCad JSON layout."""
     records: list[dict[str, Any]] = []
     total_seen = 0
@@ -180,10 +182,15 @@ def collect_structured_evidence(
             evidence[name] = {"available": False, "failure_kind": result.failure_kind}
             continue
         try:
-            document = load_json_limited(output_dir / result.raw_report, GATE_JSON_LIMIT)
+            document = load_json_limited(
+                output_dir / result.raw_report, GATE_JSON_LIMIT
+            )
             evidence[name] = {"available": True, **structured_violations(document)}
         except PcbAgentError:
-            evidence[name] = {"available": False, "failure_kind": "evidence_parse_failed"}
+            evidence[name] = {
+                "available": False,
+                "failure_kind": "evidence_parse_failed",
+            }
     return evidence
 
 
@@ -374,7 +381,9 @@ def run_gates(
 
 
 def gates_are_runnable(results: Mapping[str, GateResult]) -> bool:
-    return all(name in results and results[name].tool_status == "ok" for name in ("erc", "drc"))
+    return all(
+        name in results and results[name].tool_status == "ok" for name in ("erc", "drc")
+    )
 
 
 def gate_dict(results: Mapping[str, GateResult], *, prefix: str) -> dict[str, Any]:

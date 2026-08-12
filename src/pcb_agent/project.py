@@ -57,14 +57,22 @@ def validate_agent_tree(root: Path) -> None:
         except OSError as exc:
             raise PcbAgentError(f"cannot inspect project member: {relative}") from exc
         if stat.S_ISLNK(mode):
-            raise ValidationError(f"project symlinks are not accepted for agent workflows: {relative}")
+            raise ValidationError(
+                f"project symlinks are not accepted for agent workflows: {relative}"
+            )
         if not stat.S_ISREG(mode):
-            raise ValidationError(f"project special files are not accepted for agent workflows: {relative}")
+            raise ValidationError(
+                f"project special files are not accepted for agent workflows: {relative}"
+            )
 
 
 def _safe_candidate(root: Path, path: Path) -> bool:
     try:
-        return path.is_file() and not path.is_symlink() and path.resolve(strict=True).is_relative_to(root)
+        return (
+            path.is_file()
+            and not path.is_symlink()
+            and path.resolve(strict=True).is_relative_to(root)
+        )
     except OSError:
         return False
 
@@ -77,8 +85,12 @@ def _format_candidates(root: Path, candidates: list[Path]) -> str:
 def discover_project(root: Path) -> ProjectFiles:
     """Select exactly one matching schematic/board pair; never guess."""
     root = canonical_project(root)
-    root_schematics = sorted(path for path in root.glob("*.kicad_sch") if _safe_candidate(root, path))
-    root_boards = sorted(path for path in root.glob("*.kicad_pcb") if _safe_candidate(root, path))
+    root_schematics = sorted(
+        path for path in root.glob("*.kicad_sch") if _safe_candidate(root, path)
+    )
+    root_boards = sorted(
+        path for path in root.glob("*.kicad_pcb") if _safe_candidate(root, path)
+    )
 
     if root_schematics or root_boards:
         if len(root_schematics) != 1 or len(root_boards) != 1:
@@ -89,8 +101,12 @@ def discover_project(root: Path) -> ProjectFiles:
             )
         schematic, board = root_schematics[0], root_boards[0]
     else:
-        schematics = sorted(path for path in root.rglob("*.kicad_sch") if _safe_candidate(root, path))
-        boards = sorted(path for path in root.rglob("*.kicad_pcb") if _safe_candidate(root, path))
+        schematics = sorted(
+            path for path in root.rglob("*.kicad_sch") if _safe_candidate(root, path)
+        )
+        boards = sorted(
+            path for path in root.rglob("*.kicad_pcb") if _safe_candidate(root, path)
+        )
         if len(schematics) != 1 or len(boards) != 1:
             raise ValidationError(
                 "ambiguous or incomplete nested KiCad project; "
@@ -133,7 +149,9 @@ def _iter_members(root: Path, *, max_members: int) -> Iterator[Path]:
         current_path = Path(current)
         scanned += len(directories) + len(files)
         if scanned > max_members:
-            raise ValidationError(f"project tree exceeds the {max_members} member traversal limit")
+            raise ValidationError(
+                f"project tree exceeds the {max_members} member traversal limit"
+            )
         for directory in list(directories):
             member = current_path / directory
             if member.is_symlink():
@@ -154,7 +172,12 @@ def build_manifest(
     """Hash a bounded tree without following symlinks or accepting special files."""
     root = canonical_project(root)
     entries: list[dict[str, Any]] = []
-    omitted = {"file_limit": 0, "file_too_large": 0, "total_byte_limit": 0, "special_file": 0}
+    omitted = {
+        "file_limit": 0,
+        "file_too_large": 0,
+        "total_byte_limit": 0,
+        "special_file": 0,
+    }
     total_bytes = 0
 
     for member in _iter_members(root, max_members=TREE_MEMBER_LIMIT):
@@ -207,7 +230,9 @@ def build_manifest(
 
     omitted_total = sum(omitted.values())
     if strict and omitted_total:
-        raise ValidationError(f"project exceeds safe baseline manifest bounds ({omitted_total} omitted members)")
+        raise ValidationError(
+            f"project exceeds safe baseline manifest bounds ({omitted_total} omitted members)"
+        )
     return {
         "root": str(root),
         "entries": entries,
@@ -279,7 +304,9 @@ def validate_baseline_document(manifest: Any, *, expected_root: Path) -> dict[st
             or size < 0
             or relative_path in hashes
         ):
-            raise ValidationError("transaction baseline contains an unsafe or malformed entry")
+            raise ValidationError(
+                "transaction baseline contains an unsafe or malformed entry"
+            )
         hashes[relative_path] = digest
     return hashes
 
@@ -300,10 +327,16 @@ def manifests_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
 
 
 def resolve_member(root: Path, relative_path: str, *, must_exist: bool = True) -> Path:
-    if not isinstance(relative_path, str) or not relative_path or "\x00" in relative_path:
+    if (
+        not isinstance(relative_path, str)
+        or not relative_path
+        or "\x00" in relative_path
+    ):
         raise ValidationError("relative_path must be a non-empty string")
     if "\\" in relative_path:
-        raise ValidationError(f"backslashes are not allowed in relative_path: {relative_path}")
+        raise ValidationError(
+            f"backslashes are not allowed in relative_path: {relative_path}"
+        )
     pure = PurePosixPath(relative_path)
     if pure.is_absolute() or any(part in ("", ".", "..") for part in pure.parts):
         raise ValidationError(f"unsafe relative_path: {relative_path}")

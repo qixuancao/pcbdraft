@@ -74,7 +74,9 @@ def run_command(
             start_new_session=True,
         )
     except (OSError, ValueError) as exc:
-        raise PcbAgentError(f"failed to start executable: {Path(normalized[0]).name}") from exc
+        raise PcbAgentError(
+            f"failed to start executable: {Path(normalized[0]).name}"
+        ) from exc
 
     assert process.stdout is not None
     assert process.stderr is not None
@@ -123,7 +125,10 @@ def run_command(
                 if key.data == "stdin":
                     try:
                         if stdin_offset < len(stdin_view):
-                            written = os.write(stream.fileno(), stdin_view[stdin_offset : stdin_offset + 65536])
+                            written = os.write(
+                                stream.fileno(),
+                                stdin_view[stdin_offset : stdin_offset + 65536],
+                            )
                             stdin_offset += written
                         if stdin_offset >= len(stdin_view):
                             selector.unregister(stream)
@@ -156,7 +161,11 @@ def run_command(
                     _kill_process_group(process)
 
             if process.poll() is not None:
-                stdin_streams = [key.fileobj for key in selector.get_map().values() if key.data == "stdin"]
+                stdin_streams = [
+                    key.fileobj
+                    for key in selector.get_map().values()
+                    if key.data == "stdin"
+                ]
                 for stream in stdin_streams:
                     selector.unregister(stream)
                     stream.close()
@@ -203,4 +212,6 @@ def remaining_timeout(deadline: float) -> float:
 
 def printable_first_line(data: bytes, *, limit: int = 256) -> str:
     text = data.decode("utf-8", errors="replace").splitlines()[0] if data else ""
-    return "".join(character for character in text[:limit] if character.isprintable()).strip()
+    return "".join(
+        character for character in text[:limit] if character.isprintable()
+    ).strip()

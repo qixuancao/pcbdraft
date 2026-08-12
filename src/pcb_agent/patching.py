@@ -74,7 +74,9 @@ def _allowed_path(path: Path) -> bool:
     return any(name.endswith(suffix) for suffix in ALLOWED_SUFFIXES)
 
 
-def apply_operations(staging: Path, operations: Sequence[Mapping[str, Any]]) -> list[AppliedOperation]:
+def apply_operations(
+    staging: Path, operations: Sequence[Mapping[str, Any]]
+) -> list[AppliedOperation]:
     """Validate the complete change set, then atomically replace unique text in staging."""
     if len(operations) > MAX_OPERATIONS:
         raise ValidationError(f"change set exceeds {MAX_OPERATIONS} operations")
@@ -92,7 +94,10 @@ def apply_operations(staging: Path, operations: Sequence[Mapping[str, Any]]) -> 
         old_text = operation["old_text"]
         new_text = operation["new_text"]
         reason = operation["reason"]
-        if not all(isinstance(value, str) for value in (relative_path, old_text, new_text, reason)):
+        if not all(
+            isinstance(value, str)
+            for value in (relative_path, old_text, new_text, reason)
+        ):
             raise ValidationError(f"operation {index} contains a non-string field")
         if not old_text:
             raise ValidationError(f"operation {index} old_text must be non-empty")
@@ -101,7 +106,9 @@ def apply_operations(staging: Path, operations: Sequence[Mapping[str, Any]]) -> 
 
         total_bytes += len(old_text.encode("utf-8")) + len(new_text.encode("utf-8"))
         if total_bytes > MAX_TEXT_BYTES:
-            raise ValidationError(f"change set exceeds {MAX_TEXT_BYTES} replacement bytes")
+            raise ValidationError(
+                f"change set exceeds {MAX_TEXT_BYTES} replacement bytes"
+            )
 
         target = resolve_member(staging, relative_path, must_exist=True)
         if not _allowed_path(target):
@@ -113,7 +120,9 @@ def apply_operations(staging: Path, operations: Sequence[Mapping[str, Any]]) -> 
             try:
                 virtual_contents[target] = raw.decode("utf-8")
             except UnicodeDecodeError as exc:
-                raise ValidationError(f"file is not UTF-8 text: {relative_path}") from exc
+                raise ValidationError(
+                    f"file is not UTF-8 text: {relative_path}"
+                ) from exc
         content = virtual_contents[target]
         occurrences = content.count(old_text)
         if occurrences != 1:
@@ -150,8 +159,16 @@ def build_unified_patch(
     for relative_path in sorted(set(relative_paths)):
         original_path = resolve_member(original, relative_path, must_exist=True)
         staging_path = resolve_member(staging, relative_path, must_exist=True)
-        old = read_bytes_limited(original_path, MAX_TARGET_BYTES).decode("utf-8").splitlines(keepends=True)
-        new = read_bytes_limited(staging_path, MAX_TARGET_BYTES).decode("utf-8").splitlines(keepends=True)
+        old = (
+            read_bytes_limited(original_path, MAX_TARGET_BYTES)
+            .decode("utf-8")
+            .splitlines(keepends=True)
+        )
+        new = (
+            read_bytes_limited(staging_path, MAX_TARGET_BYTES)
+            .decode("utf-8")
+            .splitlines(keepends=True)
+        )
         chunks.extend(
             difflib.unified_diff(
                 old,
@@ -178,8 +195,16 @@ def regression_reasons(
         if before is None or current is None:
             reasons.append(f"{name}: missing gate result")
             continue
-        before_status = getattr(before, "tool_status", before.get("tool_status") if isinstance(before, Mapping) else None)
-        current_status = getattr(current, "tool_status", current.get("tool_status") if isinstance(current, Mapping) else None)
+        before_status = getattr(
+            before,
+            "tool_status",
+            before.get("tool_status") if isinstance(before, Mapping) else None,
+        )
+        current_status = getattr(
+            current,
+            "tool_status",
+            current.get("tool_status") if isinstance(current, Mapping) else None,
+        )
         if before_status == "ok" and current_status != "ok":
             reasons.append(f"{name}: gate changed from runnable to tool failure")
             continue
@@ -197,9 +222,13 @@ def regression_reasons(
             before_errors = counts.get("error") if isinstance(counts, Mapping) else None
         if isinstance(current, Mapping):
             counts = current.get("counts")
-            current_errors = counts.get("error") if isinstance(counts, Mapping) else None
+            current_errors = (
+                counts.get("error") if isinstance(counts, Mapping) else None
+            )
         if not isinstance(before_errors, int) or not isinstance(current_errors, int):
             reasons.append(f"{name}: error count unavailable")
         elif current_errors > before_errors:
-            reasons.append(f"{name}: error count increased from {before_errors} to {current_errors}")
+            reasons.append(
+                f"{name}: error count increased from {before_errors} to {current_errors}"
+            )
     return reasons

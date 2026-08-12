@@ -88,12 +88,15 @@ def _unavailable_tools(versions: Mapping[str, Any]) -> list[str]:
 
 def _prompt_inventory(inventory: Mapping[str, Any]) -> dict[str, Any]:
     entries = inventory.get("entries", [])
-    bounded_entries = entries[:PROMPT_INVENTORY_ENTRIES] if isinstance(entries, list) else []
+    bounded_entries = (
+        entries[:PROMPT_INVENTORY_ENTRIES] if isinstance(entries, list) else []
+    )
     return {
         "entries": bounded_entries,
         "entry_count": inventory.get("entry_count"),
         "entries_in_prompt": len(bounded_entries),
-        "prompt_entries_truncated": isinstance(entries, list) and len(entries) > len(bounded_entries),
+        "prompt_entries_truncated": isinstance(entries, list)
+        and len(entries) > len(bounded_entries),
         "total_hashed_bytes": inventory.get("total_hashed_bytes"),
         "complete": inventory.get("complete"),
         "omitted": inventory.get("omitted"),
@@ -128,7 +131,11 @@ def _capture_codex_failure(run_dir: Path, receipt: dict[str, Any]) -> None:
         try:
             receipt["codex"] = load_json_limited(invocation, RECEIPT_LIMIT)
         except PcbAgentError:
-            receipt["codex"] = {"completed": False, "schema_valid": False, "artifact_unreadable": True}
+            receipt["codex"] = {
+                "completed": False,
+                "schema_valid": False,
+                "artifact_unreadable": True,
+            }
 
 
 def _gate_failure_message(results: Mapping[str, Any]) -> str:
@@ -169,7 +176,9 @@ def run_review(
         _write_receipt(run_dir, receipt)
         unavailable = _unavailable_tools(receipt["tool_versions"])
         if unavailable:
-            raise PcbAgentError(f"required tool version check failed: {', '.join(unavailable)}")
+            raise PcbAgentError(
+                f"required tool version check failed: {', '.join(unavailable)}"
+            )
         inventory = review_inventory(project)
         receipt["input_hashes"] = manifest_hashes(inventory)
         atomic_write_json(run_dir / "inventory.json", inventory)
@@ -182,11 +191,15 @@ def run_review(
             executable=kicad_executable,
         )
         evidence_gates = gate_dict(gates, prefix="gates")
-        violation_evidence = collect_structured_evidence(output_dir=run_dir / "gates", results=gates)
+        violation_evidence = collect_structured_evidence(
+            output_dir=run_dir / "gates", results=gates
+        )
         evidence = {
             "kind": "deterministic_kicad_evidence",
             "selected_files": files.relative(project),
-            "inventory": {key: value for key, value in inventory.items() if key != "root"},
+            "inventory": {
+                key: value for key, value in inventory.items() if key != "root"
+            },
             "gates": evidence_gates,
             "violations": violation_evidence,
         }
@@ -194,7 +207,9 @@ def run_review(
         receipt["gates"] = evidence_gates
         if not gates_are_runnable(gates):
             receipt["status"] = "failed"
-            receipt["failure"] = f"deterministic gate tool failed: {_gate_failure_message(gates)}"
+            receipt["failure"] = (
+                f"deterministic gate tool failed: {_gate_failure_message(gates)}"
+            )
             _write_receipt(run_dir, receipt)
             raise PcbAgentError(f"review gate tool failed; evidence kept in {run_dir}")
 
@@ -261,23 +276,26 @@ def run_review(
             ),
         )
         receipt["status"] = "complete"
-        receipt["artifacts"] = _existing_artifacts(run_dir, [
-            "gates/erc.json",
-            "gates/drc.json",
-            "inventory.json",
-            "evidence.json",
-            "semantic/schematic.netlist.xml",
-            "semantic/board-stats.json",
-            "semantic/board-netlist.d356",
-            "semantic-context.json",
-            "codex-events.jsonl",
-            "codex-final.json",
-            "codex-output.schema.json",
-            "codex-invocation.json",
-            "report.json",
-            "report.md",
-            "receipt.json",
-        ])
+        receipt["artifacts"] = _existing_artifacts(
+            run_dir,
+            [
+                "gates/erc.json",
+                "gates/drc.json",
+                "inventory.json",
+                "evidence.json",
+                "semantic/schematic.netlist.xml",
+                "semantic/board-stats.json",
+                "semantic/board-netlist.d356",
+                "semantic-context.json",
+                "codex-events.jsonl",
+                "codex-final.json",
+                "codex-output.schema.json",
+                "codex-invocation.json",
+                "report.json",
+                "report.md",
+                "receipt.json",
+            ],
+        )
         _write_receipt(run_dir, receipt)
         return run_dir
     except Exception as exc:
@@ -331,7 +349,9 @@ def run_patch(
         _write_receipt(run_dir, receipt)
         unavailable = _unavailable_tools(receipt["tool_versions"])
         if unavailable:
-            raise PcbAgentError(f"required tool version check failed: {', '.join(unavailable)}")
+            raise PcbAgentError(
+                f"required tool version check failed: {', '.join(unavailable)}"
+            )
         baseline = baseline_manifest(project)
         receipt["baseline_manifest"] = "baseline.json"
         receipt["input_hashes"] = manifest_hashes(baseline)
@@ -340,7 +360,9 @@ def run_patch(
         copy_project(project, staging)
         copied = baseline_manifest(staging)
         if not manifests_match(baseline, copied):
-            raise ValidationError("source project changed while the staging snapshot was being copied")
+            raise ValidationError(
+                "source project changed while the staging snapshot was being copied"
+            )
         staging_files = discover_project(staging)
         inventory = review_inventory(staging)
         atomic_write_json(run_dir / "inventory.json", inventory)
@@ -359,9 +381,13 @@ def run_patch(
         receipt["baseline_gates"] = baseline_gate_data
         if not gates_are_runnable(baseline_gates):
             receipt["status"] = "failed"
-            receipt["failure"] = f"baseline gate tool failed: {_gate_failure_message(baseline_gates)}"
+            receipt["failure"] = (
+                f"baseline gate tool failed: {_gate_failure_message(baseline_gates)}"
+            )
             _write_receipt(run_dir, receipt)
-            raise PcbAgentError(f"baseline gate tool failed; transaction kept in {run_dir}")
+            raise PcbAgentError(
+                f"baseline gate tool failed; transaction kept in {run_dir}"
+            )
 
         codex = invoke_codex(
             mode="patch",
@@ -371,7 +397,10 @@ def run_patch(
                 request=request,
                 files=staging_files.relative(staging),
                 inventory=_prompt_inventory(inventory),
-                gates={"summary": baseline_gate_data, "violations": baseline_violation_evidence},
+                gates={
+                    "summary": baseline_gate_data,
+                    "violations": baseline_violation_evidence,
+                },
             ),
             deadline=deadline,
             redactions=redactions,
@@ -385,14 +414,18 @@ def run_patch(
         baseline_paths = set(manifest_hashes(baseline))
         staged_paths = set(manifest_hashes(staged_manifest))
         if baseline_paths != staged_paths:
-            raise ValidationError("change set attempted to create, remove, or rename project members")
+            raise ValidationError(
+                "change set attempted to create, remove, or rename project members"
+            )
         actual_changed = sorted(
             path
             for path in baseline_paths
             if manifest_hashes(baseline)[path] != manifest_hashes(staged_manifest)[path]
         )
         if actual_changed != changed_paths:
-            raise ValidationError("staging changes do not exactly match the declared operation paths")
+            raise ValidationError(
+                "staging changes do not exactly match the declared operation paths"
+            )
 
         after_files = discover_project(staging)
         after_gates = run_gates(
@@ -410,8 +443,14 @@ def run_patch(
             run_dir / "evidence.json",
             {
                 "kind": "deterministic_kicad_transaction_evidence",
-                "baseline": {"gates": baseline_gate_data, "violations": baseline_violation_evidence},
-                "after": {"gates": after_gate_data, "violations": after_violation_evidence},
+                "baseline": {
+                    "gates": baseline_gate_data,
+                    "violations": baseline_violation_evidence,
+                },
+                "after": {
+                    "gates": after_gate_data,
+                    "violations": after_violation_evidence,
+                },
             },
         )
         reasons = regression_reasons(baseline_gates, after_gates)
@@ -429,33 +468,42 @@ def run_patch(
         atomic_write_json(run_dir / "change_set.json", change_set)
         atomic_write_text(
             run_dir / "changes.patch",
-            build_unified_patch(original=project, staging=staging, relative_paths=changed_paths),
+            build_unified_patch(
+                original=project, staging=staging, relative_paths=changed_paths
+            ),
         )
         receipt["after_gates"] = after_gate_data
         receipt["status"] = status
         receipt["changed_paths"] = changed_paths
-        receipt["staged_hashes"] = {path: manifest_hashes(staged_manifest)[path] for path in changed_paths}
+        receipt["staged_hashes"] = {
+            path: manifest_hashes(staged_manifest)[path] for path in changed_paths
+        }
         receipt["rejection_reasons"] = reasons
-        receipt["artifacts"] = _existing_artifacts(run_dir, [
-            "baseline.json",
-            "baseline-gates/erc.json",
-            "baseline-gates/drc.json",
-            "after-gates/erc.json",
-            "after-gates/drc.json",
-            "inventory.json",
-            "codex-events.jsonl",
-            "codex-final.json",
-            "codex-output.schema.json",
-            "codex-invocation.json",
-            "evidence.json",
-            "change_set.json",
-            "changes.patch",
-            "receipt.json",
-            "staging/",
-        ])
+        receipt["artifacts"] = _existing_artifacts(
+            run_dir,
+            [
+                "baseline.json",
+                "baseline-gates/erc.json",
+                "baseline-gates/drc.json",
+                "after-gates/erc.json",
+                "after-gates/drc.json",
+                "inventory.json",
+                "codex-events.jsonl",
+                "codex-final.json",
+                "codex-output.schema.json",
+                "codex-invocation.json",
+                "evidence.json",
+                "change_set.json",
+                "changes.patch",
+                "receipt.json",
+                "staging/",
+            ],
+        )
         _write_receipt(run_dir, receipt)
         if reasons:
-            raise TransactionRejected(f"patch transaction rejected; see {run_dir}", str(run_dir))
+            raise TransactionRejected(
+                f"patch transaction rejected; see {run_dir}", str(run_dir)
+            )
         return run_dir
     except TransactionRejected:
         raise
@@ -491,11 +539,15 @@ def _rollback(
             target = resolve_member(project, relative_path, must_exist=True)
             source = resolve_member(backup, relative_path, must_exist=True)
             mode = target.stat().st_mode & 0o777
-            atomic_write_bytes(target, read_bytes_limited(source, MAX_TARGET_BYTES), mode=mode)
+            atomic_write_bytes(
+                target, read_bytes_limited(source, MAX_TARGET_BYTES), mode=mode
+            )
         except (PcbAgentError, OSError) as exc:
             errors.append(str(exc))
     if errors:
-        raise PcbAgentError("automatic rollback failed; restore from the run backup manually")
+        raise PcbAgentError(
+            "automatic rollback failed; restore from the run backup manually"
+        )
 
 
 def run_apply(
@@ -520,8 +572,10 @@ def run_apply(
         raise ValidationError("apply accepts only a ready transaction")
     project_value = receipt.get("project")
     changed_paths = receipt.get("changed_paths")
-    if not isinstance(project_value, str) or not isinstance(changed_paths, list) or not all(
-        isinstance(path, str) for path in changed_paths
+    if (
+        not isinstance(project_value, str)
+        or not isinstance(changed_paths, list)
+        or not all(isinstance(path, str) for path in changed_paths)
     ):
         raise ValidationError("transaction receipt is incomplete")
     if changed_paths != sorted(set(changed_paths)):
@@ -543,7 +597,9 @@ def run_apply(
     if operation_paths != set(changed_paths):
         raise ValidationError("transaction operation paths do not match changed_paths")
     existing_artifacts = receipt.get("artifacts")
-    if not isinstance(existing_artifacts, list) or not all(isinstance(item, str) for item in existing_artifacts):
+    if not isinstance(existing_artifacts, list) or not all(
+        isinstance(item, str) for item in existing_artifacts
+    ):
         raise ValidationError("transaction artifact list is malformed")
     codex_receipt = receipt.get("codex")
     if (
@@ -551,13 +607,19 @@ def run_apply(
         or codex_receipt.get("completed") is not True
         or codex_receipt.get("schema_valid") is not True
     ):
-        raise ValidationError("transaction lacks a completed schema-valid Codex change set")
+        raise ValidationError(
+            "transaction lacks a completed schema-valid Codex change set"
+        )
     baseline_gate_data = receipt.get("baseline_gates")
     after_gate_data = receipt.get("after_gates")
-    if not isinstance(baseline_gate_data, dict) or not isinstance(after_gate_data, dict):
+    if not isinstance(baseline_gate_data, dict) or not isinstance(
+        after_gate_data, dict
+    ):
         raise ValidationError("transaction gate evidence is missing")
     if regression_reasons(baseline_gate_data, after_gate_data):
-        raise ValidationError("transaction receipt is marked ready despite a gate regression")
+        raise ValidationError(
+            "transaction receipt is marked ready despite a gate regression"
+        )
     project = canonical_project(project_value)
     receipt["apply_tool_versions"] = _tool_versions(
         kicad_executable=kicad_executable,
@@ -566,7 +628,9 @@ def run_apply(
     )
     unavailable = _unavailable_tools(receipt["apply_tool_versions"])
     if unavailable:
-        receipt["last_apply_failure"] = f"required tool version check failed: {', '.join(unavailable)}"
+        receipt["last_apply_failure"] = (
+            f"required tool version check failed: {', '.join(unavailable)}"
+        )
         _write_receipt(run_dir, receipt)
         raise PcbAgentError(receipt["last_apply_failure"])
     staging_entry = run_dir / "staging"
@@ -581,39 +645,59 @@ def run_apply(
     baseline = load_json_limited(run_dir / "baseline.json", RECEIPT_LIMIT)
     baseline_hashes = validate_baseline_document(baseline, expected_root=project)
     if receipt.get("input_hashes") != baseline_hashes:
-        raise ValidationError("transaction receipt input hashes do not match its baseline")
+        raise ValidationError(
+            "transaction receipt input hashes do not match its baseline"
+        )
     current = baseline_manifest(project)
     if not manifests_match(baseline, current):
-        raise ValidationError("source project drifted from the transaction baseline; refusing apply")
+        raise ValidationError(
+            "source project drifted from the transaction baseline; refusing apply"
+        )
 
     expected_staged_hashes = receipt.get("staged_hashes")
-    if not isinstance(expected_staged_hashes, dict) or set(expected_staged_hashes) != set(changed_paths):
+    if not isinstance(expected_staged_hashes, dict) or set(
+        expected_staged_hashes
+    ) != set(changed_paths):
         raise ValidationError("transaction staged hashes are missing")
     for relative_path in changed_paths:
         if relative_path not in baseline_hashes:
-            raise ValidationError(f"changed path is absent from the baseline: {relative_path}")
+            raise ValidationError(
+                f"changed path is absent from the baseline: {relative_path}"
+            )
         staged_path = resolve_member(staging, relative_path, must_exist=True)
         staged_hash = sha256_file(staged_path, max_bytes=MAX_TARGET_BYTES)
         if staged_hash != expected_staged_hashes.get(relative_path):
-            raise ValidationError(f"staging file drifted after validation: {relative_path}")
+            raise ValidationError(
+                f"staging file drifted after validation: {relative_path}"
+            )
         if staged_hash == baseline_hashes[relative_path]:
-            raise ValidationError(f"declared changed path has baseline-identical content: {relative_path}")
+            raise ValidationError(
+                f"declared changed path has baseline-identical content: {relative_path}"
+            )
 
     deadline = time.monotonic() + timeout
     backup = run_dir / "backup"
     apply_gate_dir = run_dir / "apply-gates"
     if backup.exists() or backup.is_symlink():
-        raise ValidationError("transaction backup already exists; refusing a repeated apply")
+        raise ValidationError(
+            "transaction backup already exists; refusing a repeated apply"
+        )
     if apply_gate_dir.exists() or apply_gate_dir.is_symlink():
         raise ValidationError("transaction apply-gates artifact already exists")
     make_directory(backup)
-    redactions = {str(project): "<PROJECT>", str(staging): "<STAGING>", str(run_dir): "<RUN_DIR>"}
+    redactions = {
+        str(project): "<PROJECT>",
+        str(staging): "<STAGING>",
+        str(run_dir): "<RUN_DIR>",
+    }
 
     for relative_path in changed_paths:
         source = resolve_member(project, relative_path, must_exist=True)
         destination = backup / relative_path
         make_directory(destination.parent)
-        atomic_write_bytes(destination, read_bytes_limited(source, MAX_TARGET_BYTES), mode=0o600)
+        atomic_write_bytes(
+            destination, read_bytes_limited(source, MAX_TARGET_BYTES), mode=0o600
+        )
 
     receipt["status"] = "applying"
     receipt["backup"] = "backup/"
@@ -625,7 +709,9 @@ def run_apply(
             source = resolve_member(staging, relative_path, must_exist=True)
             mode = target.stat().st_mode & 0o777
             applied_paths.append(relative_path)
-            atomic_write_bytes(target, read_bytes_limited(source, MAX_TARGET_BYTES), mode=mode)
+            atomic_write_bytes(
+                target, read_bytes_limited(source, MAX_TARGET_BYTES), mode=mode
+            )
 
         project_files = discover_project(project)
         apply_gates = run_gates(
@@ -645,13 +731,18 @@ def run_apply(
             receipt["rollback_completed"] = True
             _record_apply_artifacts(run_dir, receipt)
             _write_receipt(run_dir, receipt)
-            raise PcbAgentError("apply validation regressed; original files restored from backup")
+            raise PcbAgentError(
+                "apply validation regressed; original files restored from backup"
+            )
 
         receipt["status"] = "applied"
         receipt["applied_at"] = utc_timestamp()
         _record_apply_artifacts(run_dir, receipt)
         receipt["applied_hashes"] = {
-            path: sha256_file(resolve_member(project, path, must_exist=True), max_bytes=MAX_TARGET_BYTES)
+            path: sha256_file(
+                resolve_member(project, path, must_exist=True),
+                max_bytes=MAX_TARGET_BYTES,
+            )
             for path in changed_paths
         }
         _write_receipt(run_dir, receipt)
@@ -665,7 +756,11 @@ def run_apply(
             except BaseException as rollback_exc:  # noqa: BLE001 -- rollback must not mask root failure
                 receipt["rollback_completed"] = False
                 receipt["rollback_failure"] = str(rollback_exc)
-            receipt["status"] = "rolled_back" if receipt.get("rollback_completed") else "rollback_failed"
+            receipt["status"] = (
+                "rolled_back"
+                if receipt.get("rollback_completed")
+                else "rollback_failed"
+            )
             receipt["failure"] = str(exc)
             _record_apply_artifacts(run_dir, receipt)
             _write_receipt(run_dir, receipt)
