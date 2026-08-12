@@ -65,6 +65,7 @@ from a person, supplier, fabrication, lab, or physical board.
   `d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98`
 - Real final Codex review: `artifacts/acceptance/review/20260812T154551Z-8f8b4876/`
 - Benchmark: `artifacts/benchmark/benchmark-20260812.json`
+- Final Chinese completion report: `docs/FINAL_REPORT_ZH.md`
 
 ## Reproducible verification entry points
 

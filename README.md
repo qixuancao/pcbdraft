@@ -43,7 +43,8 @@ external gates.
   primary mutation model.
 
 See [specification traceability](docs/SPEC_TRACEABILITY.md) for the requirement,
-implementation, and test mapping.
+implementation, and test mapping. The exact delivered verification results and
+remaining external gates are recorded in the [final Chinese report](docs/FINAL_REPORT_ZH.md).
 
 ## Supported scope
 
