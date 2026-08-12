@@ -16,8 +16,8 @@ Source specification: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on
 | R08 | Semantic transactional edits are primary; preview, commit, undo, recovery | `pcb_agent.operations`, `pcb_agent.transactions` | `test_operations`, `test_transactions` | implemented |
 | R09 | Preconditions, idempotency and conflict detection | typed operation expectations + base/staged/source hashes | stale-field/base/drift/idempotency tests | implemented |
 | R10 | High-level stable CLI/Python/agent API | planned CLI and JSON-RPC surface | CLI/RPC compatibility tests | in progress |
-| R11 | Structured requirements to schematic/PCB IR | planned deterministic requirements compiler | generation E2E | in progress |
-| R12 | Versioned, verified reusable functional blocks | planned block registry | block contract fixtures | in progress |
+| R11 | Structured requirements to schematic/PCB IR | strict `RequirementsSpec` + deterministic compiler | `tests/test_requirements.py` | implemented |
+| R12 | Versioned, verified reusable functional blocks | CC0 block catalog + `BlockRegistry` implementations | block evidence/part/instantiation tests | implemented |
 | R13 | Constraints and PCB synchronization | planned compiler/sync state | real KiCad round-trip E2E | in progress |
 | R14 | Deterministic placement solver | planned bounded objective solver | geometry/property tests | in progress |
 | R15 | Constraint-aware routing integration | planned bounded grid router + external adapter | routed real-board DRC | in progress |
