@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
+from .compatibility import evaluate_kicad_version
 from .errors import PcbAgentError
 from .process import printable_first_line, run_command
 
@@ -64,4 +65,17 @@ def doctor_report() -> dict[str, Any]:
         "kicad-cli": _check("kicad-cli", ["--version"]),
         "git": _check("git", ["--version"]),
     }
-    return {"ok": all(value["available"] for value in tools.values()), "tools": tools}
+    kicad = tools["kicad-cli"]
+    compatibility = evaluate_kicad_version(kicad.get("version") or "")
+    kicad["compatibility"] = compatibility.to_dict()
+    core_ok = (
+        tools["kicad-cli"]["available"]
+        and tools["git"]["available"]
+        and compatibility.supported
+    )
+    return {
+        "ok": core_ok,
+        "core_ok": core_ok,
+        "ai_review_available": tools["codex"]["available"],
+        "tools": tools,
+    }

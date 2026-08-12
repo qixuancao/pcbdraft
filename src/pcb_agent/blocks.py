@@ -161,11 +161,20 @@ class BlockRegistry:
                 f"block has metadata but no deterministic implementation: {block_id}"
             ) from exc
         actual_parts = {component.part_id for component in instance.components}
-        missing = actual_parts - set(definition.required_parts)
-        if missing:
+        if actual_parts != set(definition.required_parts):
             raise ValidationError(
-                f"block implementation uses undeclared parts: {', '.join(sorted(missing))}"
+                f"block implementation/metadata part mismatch: {block_id}"
             )
+        if set(instance.ports) != set(definition.ports):
+            raise ValidationError(
+                f"block implementation/metadata port mismatch: {block_id}"
+            )
+        if instance.block.components != tuple(
+            component.id for component in instance.components
+        ):
+            raise ValidationError(f"block component identity mismatch: {block_id}")
+        if any(component.block_id != block_id for component in instance.components):
+            raise ValidationError(f"block component ownership mismatch: {block_id}")
         return instance
 
 

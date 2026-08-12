@@ -61,15 +61,23 @@ class OfflineEndToEndTests(unittest.TestCase):
                 "report.md",
                 "receipt.json",
             }
-            present = {path.relative_to(run_dir).as_posix() for path in run_dir.rglob("*") if path.is_file()}
+            present = {
+                path.relative_to(run_dir).as_posix()
+                for path in run_dir.rglob("*")
+                if path.is_file()
+            }
             self.assertTrue(expected.issubset(present))
             receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["status"], "complete")
             self.assertTrue(receipt["codex"]["completed"])
             self.assertTrue(receipt["codex"]["schema_valid"])
             self.assertTrue(receipt["codex"]["completion_event"])
-            self.assertEqual(receipt["tool_versions"]["codex"]["version"], "codex-cli 0.147.0-fake")
-            self.assertEqual(receipt["tool_versions"]["kicad-cli"]["version"], "10.0.5-fake")
+            self.assertEqual(
+                receipt["tool_versions"]["codex"]["version"], "codex-cli 0.147.0-fake"
+            )
+            self.assertEqual(
+                receipt["tool_versions"]["kicad-cli"]["version"], "10.0.5-fake"
+            )
             codex_argv = "\0".join(receipt["codex"]["argv"])
             self.assertNotIn("Fake read-only heuristic review", codex_argv)
             self.assertNotIn(str(project), codex_argv)
@@ -78,7 +86,9 @@ class OfflineEndToEndTests(unittest.TestCase):
             self.assertIn("deterministic evidence", report)
             self.assertIn("AI heuristics", report)
             self.assertEqual(stat.S_IMODE(run_dir.stat().st_mode), 0o700)
-            self.assertEqual(stat.S_IMODE((run_dir / "receipt.json").stat().st_mode), 0o600)
+            self.assertEqual(
+                stat.S_IMODE((run_dir / "receipt.json").stat().st_mode), 0o600
+            )
 
     def test_patch_keeps_source_unchanged_then_apply_uses_backup(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -97,11 +107,18 @@ class OfflineEndToEndTests(unittest.TestCase):
             self.assertEqual(board.read_text(encoding="utf-8"), original)
             ready = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(ready["status"], "ready")
-            self.assertIn("OLD", (run_dir / "changes.patch").read_text(encoding="utf-8"))
+            self.assertIn(
+                "OLD", (run_dir / "changes.patch").read_text(encoding="utf-8")
+            )
 
-            run_apply(str(run_dir), kicad_executable=str(FAKES / "kicad-cli"), timeout=30)
+            run_apply(
+                str(run_dir), kicad_executable=str(FAKES / "kicad-cli"), timeout=30
+            )
             self.assertIn("NEW", board.read_text(encoding="utf-8"))
-            self.assertIn("OLD", (run_dir / "backup" / "demo.kicad_pcb").read_text(encoding="utf-8"))
+            self.assertIn(
+                "OLD",
+                (run_dir / "backup" / "demo.kicad_pcb").read_text(encoding="utf-8"),
+            )
             applied = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(applied["status"], "applied")
 
@@ -123,10 +140,17 @@ class OfflineEndToEndTests(unittest.TestCase):
                 )
             run_dir = next(runs.iterdir())
             receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
-            change_set = json.loads((run_dir / "change_set.json").read_text(encoding="utf-8"))
+            change_set = json.loads(
+                (run_dir / "change_set.json").read_text(encoding="utf-8")
+            )
             self.assertEqual(receipt["status"], "rejected")
             self.assertEqual(change_set["status"], "rejected")
-            self.assertTrue(any("error count increased" in reason for reason in receipt["rejection_reasons"]))
+            self.assertTrue(
+                any(
+                    "error count increased" in reason
+                    for reason in receipt["rejection_reasons"]
+                )
+            )
             self.assertEqual(board.read_bytes(), original)
 
     def test_apply_rejects_baseline_drift(self) -> None:
@@ -142,9 +166,13 @@ class OfflineEndToEndTests(unittest.TestCase):
                 kicad_executable=str(FAKES / "kicad-cli"),
                 codex_executable=str(FAKES / "codex"),
             )
-            (project / "demo.kicad_pro").write_text('{"drift": true}\n', encoding="utf-8")
+            (project / "demo.kicad_pro").write_text(
+                '{"drift": true}\n', encoding="utf-8"
+            )
             with self.assertRaisesRegex(ValidationError, "drifted"):
-                run_apply(str(run_dir), kicad_executable=str(FAKES / "kicad-cli"), timeout=30)
+                run_apply(
+                    str(run_dir), kicad_executable=str(FAKES / "kicad-cli"), timeout=30
+                )
             self.assertIn("OLD", board.read_text(encoding="utf-8"))
             self.assertFalse((run_dir / "backup").exists())
 
@@ -166,7 +194,11 @@ class OfflineEndToEndTests(unittest.TestCase):
             os.environ["PCB_AGENT_FAKE_APPLY_REGRESSION"] = "1"
             try:
                 with self.assertRaisesRegex(PcbAgentError, "restored"):
-                    run_apply(str(run_dir), kicad_executable=str(FAKES / "kicad-cli"), timeout=30)
+                    run_apply(
+                        str(run_dir),
+                        kicad_executable=str(FAKES / "kicad-cli"),
+                        timeout=30,
+                    )
             finally:
                 if previous is None:
                     os.environ.pop("PCB_AGENT_FAKE_APPLY_REGRESSION", None)
@@ -203,7 +235,9 @@ class OfflineEndToEndTests(unittest.TestCase):
                 timeout=40,
                 check=False,
             )
-            self.assertEqual(result.returncode, 0, result.stderr.decode("utf-8", errors="replace"))
+            self.assertEqual(
+                result.returncode, 0, result.stderr.decode("utf-8", errors="replace")
+            )
             run_dir = next((root / "runs").iterdir())
             combined = result.stdout + result.stderr
             for artifact in run_dir.rglob("*"):

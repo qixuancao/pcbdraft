@@ -43,7 +43,9 @@ class ReplaceTextTests(unittest.TestCase):
             target = root / "demo.kicad_pcb"
             target.write_text("OLD", encoding="utf-8")
             with self.assertRaises(ValidationError):
-                apply_operations(root, [operation("OLD", "NEW"), operation("MISSING", "X")])
+                apply_operations(
+                    root, [operation("OLD", "NEW"), operation("MISSING", "X")]
+                )
             self.assertEqual(target.read_text(encoding="utf-8"), "OLD")
 
 
@@ -55,7 +57,10 @@ class RegressionPolicyTests(unittest.TestCase):
         }
         after = {
             "erc": {"tool_status": "ok", "counts": {"error": 2, "warning": 0}},
-            "drc": {"tool_status": "tool_failed", "counts": {"error": None, "warning": None}},
+            "drc": {
+                "tool_status": "tool_failed",
+                "counts": {"error": None, "warning": None},
+            },
         }
         reasons = regression_reasons(baseline, after)
         self.assertTrue(any("error count increased" in reason for reason in reasons))
@@ -75,4 +80,3 @@ class RegressionPolicyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

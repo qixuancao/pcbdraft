@@ -15,8 +15,15 @@ from .errors import PcbAgentError, ValidationError
 from .external_evidence import record_external_evidence
 from .managed import generate_managed_project, open_managed_project
 from .parts import PartGraph
-from .release import build_manufacturing_release
-from .requirements import RequirementsSpec, compile_requirements
+from .release import build_manufacturing_release, verify_manufacturing_release
+from .requirements import (
+    GENERATION_PROFILE_DOMAINS,
+    GENERATION_PROFILE_ID,
+    SUPPORTED_FUNCTIONS,
+    RequirementsSpec,
+    compile_requirements,
+)
+from .scope import REJECTED_DOMAINS, SUPPORTED_DOMAINS
 from .sync import apply_kicad_import, preview_kicad_import
 from .validation import EVIDENCE_STATES, validate_managed_project
 
@@ -38,6 +45,7 @@ def capabilities() -> dict[str, Any]:
             "project.inspect",
             "project.validate",
             "project.release",
+            "release.verify",
             "sync.preview",
             "sync.apply",
             "evidence.record",
@@ -45,19 +53,24 @@ def capabilities() -> dict[str, Any]:
         ],
         "evidence_states": sorted(EVIDENCE_STATES),
         "accepted_scope": {
-            "layers": [2, 3, 4],
-            "domains": [
-                "low_voltage_mcu",
-                "sensor",
-                "simple_control",
-                "i2c",
-                "spi",
-                "uart",
-                "basic_usb2",
-                "ldo",
-                "simple_buck",
-            ],
+            "layers": [2, 4],
+            "domains": sorted(GENERATION_PROFILE_DOMAINS),
             "high_risk_domains": "explicitly_rejected",
+        },
+        "generation_profiles": [
+            {
+                "id": GENERATION_PROFILE_ID,
+                "domains": sorted(GENERATION_PROFILE_DOMAINS),
+                "functions": sorted(SUPPORTED_FUNCTIONS),
+                "layers": [2, 4],
+            }
+        ],
+        "scope_policy": {
+            "recognized_domains": sorted(SUPPORTED_DOMAINS),
+            "explicitly_rejected_domains": sorted(REJECTED_DOMAINS),
+            "recognized_without_bundled_generator": sorted(
+                SUPPORTED_DOMAINS - GENERATION_PROFILE_DOMAINS
+            ),
         },
     }
 
@@ -169,6 +182,11 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             "candidate_ready": result.candidate_ready,
             "production_ready": result.production_ready,
         }
+    if method == "release.verify":
+        _exact(params, {"release"})
+        return verify_manufacturing_release(
+            _path(params["release"], "release")
+        ).to_dict()
     if method == "sync.preview":
         _exact(params, {"project"})
         return preview_kicad_import(_path(params["project"], "project")).to_dict()

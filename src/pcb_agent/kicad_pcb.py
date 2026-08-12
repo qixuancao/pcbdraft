@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .compatibility import assert_supported_kicad_version
 from .errors import PcbAgentError, ValidationError
 from .io import atomic_write_json, load_json_limited
 from .ir import Component, Design
@@ -128,6 +129,7 @@ def inspect_native_board(
         )
     if result.get("mode") != "inspect_board":
         raise PcbAgentError("pcbnew worker returned a malformed board inspection")
+    assert_supported_kicad_version(str(result.get("kicad_version", "")))
     return result
 
 
@@ -207,6 +209,7 @@ def generate_pcb(
         resolved_graph,
         system_python=system_python,
     )
+    assert_supported_kicad_version(kicad_version)
     placement_result, placements = _place(design, board_components, inspection)
     if placement_result.state != "completed":
         raise ValidationError(
@@ -238,6 +241,7 @@ def generate_pcb(
     )
     if result.get("mode") != "build" or not isinstance(result.get("sha256"), str):
         raise PcbAgentError("pcbnew worker returned a malformed build receipt")
+    assert_supported_kicad_version(str(result.get("kicad_version", "")))
     actual_hash = sha256_file(target, max_bytes=128 * 1024 * 1024)
     if actual_hash != result["sha256"]:
         raise PcbAgentError("pcbnew worker board hash does not match its receipt")
@@ -337,7 +341,9 @@ def inspect_footprints(
     expected = {component.id for component in components}
     if set(inspections) != expected:
         raise PcbAgentError("pcbnew inspection omitted or added components")
-    return inspections, str(result.get("kicad_version", "unknown"))
+    version = str(result.get("kicad_version", "unknown"))
+    assert_supported_kicad_version(version)
+    return inspections, version
 
 
 def _parse_pad(value: Any) -> InspectedPad:

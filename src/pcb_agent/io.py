@@ -82,7 +82,7 @@ def atomic_write_json(path: Path, value: Any, *, mode: int = 0o600) -> None:
             )
             + "\n"
         )
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, RecursionError) as exc:
         raise PcbAgentError(f"cannot serialize JSON artifact: {path.name}") from exc
     atomic_write_text(path, rendered, mode=mode)
 
@@ -114,7 +114,7 @@ def read_text_limited(path: Path, limit: int) -> str:
 def load_json_limited(path: Path, limit: int) -> Any:
     try:
         return json.loads(read_text_limited(path, limit))
-    except json.JSONDecodeError as exc:
+    except (json.JSONDecodeError, RecursionError) as exc:
         raise PcbAgentError(f"invalid JSON artifact: {path.name}") from exc
 
 

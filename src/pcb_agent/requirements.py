@@ -30,7 +30,7 @@ from .ir import (
     canonical_json_bytes,
 )
 from .parts import PartGraph
-from .scope import assert_supported
+from .scope import assert_scope_supported, assert_supported
 
 REQUIREMENTS_SCHEMA = "pcb-agent-requirements"
 REQUIREMENTS_VERSION = 1
@@ -40,6 +40,13 @@ SUPPORTED_FUNCTIONS = {
     "status_indicator",
     "i2c_connector",
     "updi_programming",
+}
+GENERATION_PROFILE_ID = "low_voltage_i2c_controller_v1"
+GENERATION_PROFILE_DOMAINS = {
+    "low_voltage_mcu",
+    "sensor",
+    "simple_control",
+    "i2c",
 }
 
 
@@ -191,6 +198,16 @@ def compile_requirements(
     if spec.scope.layers != spec.board.layers:
         raise ValidationError(
             "requirements scope and board specify different layer counts"
+        )
+    # Apply the global risk boundary before describing narrower generator support.
+    # A rejected domain such as mains must never look like an ordinary missing
+    # feature that a caller could reasonably work around.
+    assert_scope_supported(spec.scope)
+    unsupported_profile_domains = set(spec.scope.domains) - GENERATION_PROFILE_DOMAINS
+    if unsupported_profile_domains:
+        raise ValidationError(
+            f"the {GENERATION_PROFILE_ID} bundled generator does not implement domains: "
+            + ", ".join(sorted(unsupported_profile_domains))
         )
     functions = {entry["kind"]: entry for entry in spec.functions}
     required = SUPPORTED_FUNCTIONS

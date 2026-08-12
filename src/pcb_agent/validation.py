@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 import secrets
 import shutil
@@ -149,7 +150,6 @@ def validate_managed_project(
             report = {
                 "schema": VALIDATION_SCHEMA,
                 "version": VALIDATION_VERSION,
-                "created_at": utc_timestamp(),
                 "design": {
                     "id": project.design.design_id,
                     "content_hash": project.design.content_hash(),
@@ -179,6 +179,10 @@ def validate_managed_project(
                     "production_ready": production_ready,
                     "report": report_path.name,
                     "report_sha256": report_hash,
+                    "tool_runs": {
+                        "erc": _audit_tool_result(erc),
+                        "drc": _audit_tool_result(drc),
+                    },
                 }
             )
             atomic_write_json(output_dir / "receipt.json", receipt)
@@ -228,6 +232,7 @@ def _run_kicad_report(
             "report": output.name,
             "document": None,
         }
+    raw_output = output.with_name(f"{output.stem}.raw{output.suffix}")
     if kind == "erc":
         argv = [
             executable,
@@ -238,7 +243,7 @@ def _run_kicad_report(
             "--severity-error",
             "--severity-warning",
             "--output",
-            str(output),
+            str(raw_output),
             str(project.schematic_path),
         ]
     elif kind == "drc":
@@ -251,7 +256,7 @@ def _run_kicad_report(
             "--severity-error",
             "--severity-warning",
             "--output",
-            str(output),
+            str(raw_output),
             "--schematic-parity",
             str(project.board_path),
         ]
@@ -290,16 +295,28 @@ def _run_kicad_report(
         failure = f"exit_code_{result.returncode}"
     try:
         document = (
-            load_json_limited(output, GATE_JSON_LIMIT) if failure is None else None
+            load_json_limited(raw_output, GATE_JSON_LIMIT) if failure is None else None
         )
     except PcbAgentError:
         failure = "missing_or_invalid_json"
         document = None
+    reported_at = document.get("date") if isinstance(document, dict) else None
+    if isinstance(document, dict):
+        normalized_document = copy.deepcopy(document)
+        normalized_document.pop("date", None)
+        atomic_write_json(output, normalized_document, mode=0o644)
+        raw_sha256 = sha256_file(raw_output, max_bytes=GATE_JSON_LIMIT)
+        document = normalized_document
+    else:
+        raw_sha256 = None
     return {
         "status": "completed" if failure is None else "unavailable",
         "failure": failure,
         "duration_seconds": result.duration_seconds,
         "report": output.name,
+        "raw_report": raw_output.name if raw_output.is_file() else None,
+        "raw_sha256": raw_sha256,
+        "reported_at": reported_at,
         "document": document,
     }
 
@@ -1186,6 +1203,17 @@ def _public_tool_result(value: dict[str, Any]) -> dict[str, Any]:
     return {
         "status": value["status"],
         "failure": value["failure"],
-        "duration_seconds": value["duration_seconds"],
         "report": value["report"],
+    }
+
+
+def _audit_tool_result(value: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "status": value["status"],
+        "failure": value["failure"],
+        "duration_seconds": value["duration_seconds"],
+        "normalized_report": value["report"],
+        "raw_report": value.get("raw_report"),
+        "raw_sha256": value.get("raw_sha256"),
+        "reported_at": value.get("reported_at"),
     }

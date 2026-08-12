@@ -28,6 +28,7 @@ _ID_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,127}$")
 _REF_RE = re.compile(r"^(?:#?[A-Z][A-Z0-9]*[0-9]+)$")
 _NET_RE = re.compile(r"^[A-Za-z0-9_+./~{}-]{1,128}$")
 _JSON_SCALARS = (str, int, float, bool, type(None))
+MAX_JSON_DEPTH = 64
 
 
 @dataclass(frozen=True, order=True)
@@ -56,8 +57,10 @@ def _is_number(value: Any) -> bool:
     )
 
 
-def _json_value(value: Any, path: str = "$") -> Any:
+def _json_value(value: Any, path: str = "$", *, _depth: int = 0) -> Any:
     """Validate and copy JSON data while rejecting ambiguous Python values."""
+    if _depth > MAX_JSON_DEPTH:
+        raise ValidationError(f"JSON nesting exceeds {MAX_JSON_DEPTH} levels at {path}")
     if isinstance(value, _JSON_SCALARS):
         if isinstance(value, float) and not math.isfinite(value):
             raise ValidationError(f"non-finite number at {path}")
@@ -67,11 +70,12 @@ def _json_value(value: Any, path: str = "$") -> Any:
         for key in sorted(value):
             if not isinstance(key, str):
                 raise ValidationError(f"non-string JSON key at {path}")
-            result[key] = _json_value(value[key], f"{path}.{key}")
+            result[key] = _json_value(value[key], f"{path}.{key}", _depth=_depth + 1)
         return result
     if isinstance(value, (list, tuple)):
         return [
-            _json_value(item, f"{path}[{index}]") for index, item in enumerate(value)
+            _json_value(item, f"{path}[{index}]", _depth=_depth + 1)
+            for index, item in enumerate(value)
         ]
     raise ValidationError(f"non-JSON value at {path}: {type(value).__name__}")
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from pathlib import Path
 
 from pcb_agent.blocks import BlockRegistry
 from pcb_agent.errors import ValidationError
@@ -47,15 +48,19 @@ class RequirementsCompilerTests(unittest.TestCase):
         )
 
     def test_every_rule_validated_block_declares_parts_evidence_and_tests(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
         for definition in self.registry.definitions():
             self.assertEqual(definition.verification_state, "rule_validated")
             self.assertTrue(definition.evidence)
             self.assertTrue(definition.verification_tests)
+            for relative in definition.verification_tests:
+                self.assertTrue((repository / relative).is_file(), relative)
             for part_id in definition.required_parts:
                 self.assertEqual(self.graph.get(part_id).id, part_id)
             instance = self.registry.instantiate(definition.id)
             self.assertEqual(instance.block.version, definition.version)
             self.assertTrue(instance.components)
+            self.assertEqual(set(instance.ports), set(definition.ports))
 
     def test_missing_function_and_unsafe_supply_are_rejected(self) -> None:
         value = controller_requirements_dict()
@@ -111,6 +116,18 @@ class RequirementsCompilerTests(unittest.TestCase):
         value["functions"][0]["execute_this"] = "untrusted instruction"
         with self.assertRaisesRegex(ValidationError, "fields"):
             RequirementsSpec.from_dict(value)
+
+    def test_recognized_domain_without_bundled_generator_is_explicitly_rejected(
+        self,
+    ) -> None:
+        value = controller_requirements_dict()
+        value["scope"]["domains"].append("spi")
+        with self.assertRaisesRegex(ValidationError, "does not implement domains: spi"):
+            compile_requirements(
+                RequirementsSpec.from_dict(value),
+                graph=self.graph,
+                registry=self.registry,
+            )
         value = controller_requirements_dict()
         value["functions"][0]["kind"] = "pcie"
         with self.assertRaisesRegex(

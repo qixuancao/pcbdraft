@@ -23,10 +23,10 @@
       "verification_state": "rule_validated",
       "description": "ATtiny402 core with local 100 nF decoupling and accessible UPDI header.",
       "required_parts": ["microchip.attiny402-ssn", "murata.grm188r71c104ka01d", "samtec.tsw-103-07-g-s"],
-      "ports": ["vcc", "gnd", "i2c_sda", "i2c_scl", "status_gpio"],
+      "ports": ["vcc", "gnd", "i2c_sda", "i2c_scl", "status_gpio", "updi"],
       "constraints": ["decoupling_distance", "updi_access", "functional_group"],
       "evidence": ["Microchip ATtiny202/402 datasheet", "KiCad official mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_rules.py"]
+      "verification_tests": ["tests/test_requirements.py", "tests/test_kicad_generation.py"]
     },
     {
       "id": "tmp102_i2c_sensor",
@@ -38,7 +38,7 @@
       "ports": ["vcc", "gnd", "sda", "scl"],
       "constraints": ["decoupling_distance", "i2c_pullups", "address_strap", "functional_group"],
       "evidence": ["Texas Instruments TMP102 datasheet", "KiCad official mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_rules.py"]
+      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
     },
     {
       "id": "gpio_status_led",
@@ -47,10 +47,10 @@
       "verification_state": "rule_validated",
       "description": "Current-limited green status LED driven by an MCU GPIO.",
       "required_parts": ["yageo.rc0603fr-071kl", "liteon.ltst-c190kgkt"],
-      "ports": ["gpio", "gnd"],
+      "ports": ["gpio", "anode", "gnd"],
       "constraints": ["led_current_budget", "polarity"],
       "evidence": ["LED and resistor manufacturer records", "Ohm-law current bound"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_analysis.py"]
+      "verification_tests": ["tests/test_requirements.py", "tests/test_semantic.py"]
     }
   ]
 }

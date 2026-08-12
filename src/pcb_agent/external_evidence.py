@@ -16,6 +16,7 @@ from .io import (
     make_directory,
     read_bytes_limited,
 )
+from .ir import _json_value, canonical_json_bytes
 from .locking import ResourceLock
 from .managed import ManagedProject, open_managed_project
 from .runs import utc_timestamp
@@ -26,6 +27,9 @@ EXTERNAL_INDEX = "external-evidence.json"
 EXTERNAL_DIR = "external-evidence"
 EXTERNAL_LIMIT = 64 * 1024 * 1024
 INDEX_LIMIT = 4 * 1024 * 1024
+METADATA_LIMIT = 256 * 1024
+MAX_ARTIFACTS = 64
+_UTC_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z$")
 
 
 def record_external_evidence(
@@ -56,24 +60,33 @@ def record_external_evidence(
         ("performed_at", performed_at, 64),
         ("statement", statement, 4096),
     ):
-        if not isinstance(value, str) or not value.strip() or len(value) > limit:
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value.encode("utf-8")) > limit
+        ):
             raise ValidationError(f"external evidence {name} is invalid")
+    if _UTC_RE.fullmatch(performed_at) is None:
+        raise ValidationError("external evidence performed_at must be UTC ISO-8601")
     if not isinstance(metadata, dict):
         raise ValidationError("external evidence metadata must be an object")
+    normalized_metadata = _json_value(metadata, "$.metadata")
+    if len(canonical_json_bytes(normalized_metadata)) > METADATA_LIMIT:
+        raise ValidationError("external evidence metadata exceeds its byte limit")
     required_metadata = (
         {"review_scope", "reviewer_qualification"}
         if level == "L6"
         else {"board_serial", "test_plan", "result_summary"}
     )
     if not required_metadata <= set(metadata) or not all(
-        isinstance(metadata[name], str) and metadata[name].strip()
+        isinstance(normalized_metadata[name], str) and normalized_metadata[name].strip()
         for name in required_metadata
     ):
         raise ValidationError(
             f"{level} evidence requires metadata: {', '.join(sorted(required_metadata))}"
         )
-    if not artifacts:
-        raise ValidationError("external evidence requires at least one artifact")
+    if not 1 <= len(artifacts) <= MAX_ARTIFACTS:
+        raise ValidationError(f"external evidence requires 1-{MAX_ARTIFACTS} artifacts")
 
     evidence_dir = project.root / EXTERNAL_DIR
     index_path = project.root / EXTERNAL_INDEX
@@ -136,7 +149,7 @@ def record_external_evidence(
                 "performed_at": performed_at,
                 "recorded_at": utc_timestamp(),
                 "statement": statement,
-                "metadata": metadata,
+                "metadata": normalized_metadata,
                 "artifacts": records,
                 "verification": "externally_supplied_not_independently_verified",
             }
@@ -195,8 +208,32 @@ def load_external_evidence(
             raise ValidationError("external evidence outcome is invalid")
         if entry["verification"] != "externally_supplied_not_independently_verified":
             raise ValidationError("external evidence attribution is invalid")
+        for name, limit in (
+            ("actor", 256),
+            ("role", 256),
+            ("performed_at", 64),
+            ("recorded_at", 64),
+            ("statement", 4096),
+        ):
+            value = entry[name]
+            if (
+                not isinstance(value, str)
+                or not value.strip()
+                or len(value.encode("utf-8")) > limit
+            ):
+                raise ValidationError(f"external evidence {name} is invalid")
+        if _UTC_RE.fullmatch(entry["performed_at"]) is None:
+            raise ValidationError("external evidence performed_at is invalid")
+        if (
+            not isinstance(entry["metadata"], dict)
+            or len(canonical_json_bytes(_json_value(entry["metadata"], "$.metadata")))
+            > METADATA_LIMIT
+        ):
+            raise ValidationError("external evidence metadata is invalid")
         if not isinstance(entry["artifacts"], list) or not entry["artifacts"]:
             raise ValidationError("external evidence artifacts are missing")
+        if len(entry["artifacts"]) > MAX_ARTIFACTS:
+            raise ValidationError("external evidence artifact count is excessive")
         for artifact in entry["artifacts"]:
             _verify_artifact(project, artifact)
     return document

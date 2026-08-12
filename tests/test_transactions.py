@@ -149,7 +149,10 @@ class SemanticTransactionTests(unittest.TestCase):
             resource = root / "resource"
             resource.write_text("x")
             locks = root / "locks"
-            with ResourceLock(resource, locks), self.assertRaisesRegex(PcbAgentError, "locked"):
+            with (
+                ResourceLock(resource, locks),
+                self.assertRaisesRegex(PcbAgentError, "locked"),
+            ):
                 ResourceLock(resource, locks, timeout=0.02).acquire()
 
 

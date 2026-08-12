@@ -13,6 +13,7 @@ from typing import Any
 
 from . import __version__
 from .blocks import BlockRegistry
+from .compatibility import assert_supported_kicad_version
 from .errors import ValidationError
 from .io import (
     atomic_write_bytes,
@@ -251,6 +252,7 @@ def open_managed_project(value: str | Path) -> ManagedProject:
         raise ValidationError("managed project manifest is missing or unsafe")
     manifest = load_json_limited(manifest_path, MANAGED_MANIFEST_LIMIT)
     _validate_manifest(manifest)
+    assert_supported_kicad_version(str(manifest["sync"].get("kicad_compatibility", "")))
     files = manifest["files"]
     paths = {name: _managed_member(root, relative) for name, relative in files.items()}
     design = load_design(paths["ir"])

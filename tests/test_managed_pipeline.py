@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import copy
 import json
 import shutil
 import subprocess
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from pcb_agent.errors import ValidationError
 from pcb_agent.external_evidence import load_external_evidence, record_external_evidence
 from pcb_agent.managed import generate_managed_project
-from pcb_agent.release import build_manufacturing_release
+from pcb_agent.release import (
+    build_manufacturing_release,
+    verify_manufacturing_release,
+)
 from pcb_agent.requirements import RequirementsSpec
 from pcb_agent.validation import validate_managed_project
 from tests.requirements_factory import controller_requirements_dict
@@ -63,6 +68,22 @@ class ManagedPipelineTests(unittest.TestCase):
             second.project.manifest["native_snapshots"],
         )
 
+    def test_four_layer_generation_and_real_validation_pass(self) -> None:
+        value = copy.deepcopy(controller_requirements_dict())
+        value["scope"]["layers"] = 4
+        value["board"]["layers"] = 4
+        generated = generate_managed_project(
+            RequirementsSpec.from_dict(value), self.parent / "four-layer"
+        )
+        validation = validate_managed_project(
+            generated.project, output=self.parent / "four-layer-validation"
+        )
+        self.assertTrue(validation.candidate_ready)
+        self.assertEqual(
+            generated.project.manifest["native_snapshots"]["board"]["board"]["layers"],
+            4,
+        )
+
     def test_l0_l7_validation_is_candidate_ready_but_not_production_claimed(
         self,
     ) -> None:
@@ -93,6 +114,32 @@ class ManagedPipelineTests(unittest.TestCase):
         self.assertTrue((result.root / "manufacturing" / "board-top.png").is_file())
         self.assertTrue(result.archive_path.is_file())
         self.assertFalse(manifest["readiness"]["production_claimed"])
+        self.assertNotIn("created_at", manifest)
+        self.assertTrue(
+            all("duration_seconds" not in run for run in manifest["tool_runs"])
+        )
+        self.assertTrue((result.root / "validation" / "erc.raw.json").is_file())
+        with zipfile.ZipFile(result.archive_path) as archive:
+            names = set(archive.namelist())
+        self.assertNotIn("validation/erc.raw.json", names)
+        self.assertNotIn("validation/receipt.json", names)
+
+        repeated = build_manufacturing_release(
+            self.generated.project,
+            self.parent / "release-repeated",
+        )
+        self.assertEqual(result.manifest_sha256, repeated.manifest_sha256)
+        self.assertEqual(result.archive_sha256, repeated.archive_sha256)
+        self.assertEqual(
+            result.manifest_path.read_bytes(), repeated.manifest_path.read_bytes()
+        )
+        verified = verify_manufacturing_release(result.root)
+        self.assertEqual(verified.archive_sha256, result.archive_sha256)
+
+        positions = result.root / "manufacturing" / "positions.csv"
+        positions.write_bytes(positions.read_bytes() + b"tamper")
+        with self.assertRaisesRegex(ValidationError, "hash mismatch"):
+            verify_manufacturing_release(result.root)
 
     def test_external_evidence_is_attributed_hashed_and_tamper_evident(self) -> None:
         copy = self.parent / "evidence-project"

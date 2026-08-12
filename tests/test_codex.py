@@ -20,7 +20,11 @@ class CodexArgvTests(unittest.TestCase):
         self.assertIn("--ignore-rules", argv)
         self.assertIn("--strict-config", argv)
         self.assertEqual(argv[argv.index("--enable") + 1], "use_legacy_landlock")
-        configs = [argv[index + 1] for index, value in enumerate(argv[:-1]) if value == "--config"]
+        configs = [
+            argv[index + 1]
+            for index, value in enumerate(argv[:-1])
+            if value == "--config"
+        ]
         self.assertIn('model_reasoning_effort="max"', configs)
         self.assertIn('service_tier="default"', configs)
         self.assertIn("features.fast_mode=false", configs)
@@ -51,7 +55,9 @@ class CodexArgvTests(unittest.TestCase):
         self.assertEqual(argv.count("-"), 1)
 
     def test_patch_schema_operation_has_explicit_type_for_codex(self) -> None:
-        operation = patch_schema()["properties"]["operations"]["items"]["properties"]["op"]
+        operation = patch_schema()["properties"]["operations"]["items"]["properties"][
+            "op"
+        ]
         self.assertEqual(operation, {"type": "string", "enum": ["replace_text"]})
 
 

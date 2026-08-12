@@ -8,7 +8,9 @@ from pcb_agent.gates import count_severities
 class GateJsonTests(unittest.TestCase):
     def test_counts_nested_erc_and_drc_shapes(self) -> None:
         document = {
-            "sheets": [{"violations": [{"severity": "error"}, {"severity": "warning"}]}],
+            "sheets": [
+                {"violations": [{"severity": "error"}, {"severity": "warning"}]}
+            ],
             "violations": [{"severity": "warning"}],
             "unconnected_items": [],
         }
@@ -20,4 +22,3 @@ class GateJsonTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

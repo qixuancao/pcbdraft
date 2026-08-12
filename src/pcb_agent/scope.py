@@ -50,8 +50,10 @@ def evaluate_scope(scope: Scope) -> ScopeDecision:
         reasons.append(
             f"domains require an explicit policy extension: {', '.join(unknown)}"
         )
-    if not 2 <= scope.layers <= 4:
-        reasons.append("automated generation supports only 2-4 copper layers")
+    if scope.layers not in {2, 4}:
+        reasons.append(
+            "automated KiCad generation supports 2- or 4-copper-layer stackups"
+        )
     if scope.max_voltage_v > 60:
         reasons.append(
             "declared maximum voltage exceeds the 60 VDC low-voltage boundary"
@@ -71,10 +73,15 @@ def evaluate_scope(scope: Scope) -> ScopeDecision:
     return ScopeDecision(accepted=not reasons, reasons=tuple(reasons))
 
 
-def assert_supported(design: Design) -> None:
-    decision = evaluate_scope(design.scope)
+def assert_scope_supported(scope: Scope) -> None:
+    """Reject a scope before any profile-specific compilation is attempted."""
+    decision = evaluate_scope(scope)
     if not decision.accepted:
         raise ValidationError(
             "design is outside the automated acceptance scope: "
             + "; ".join(decision.reasons)
         )
+
+
+def assert_supported(design: Design) -> None:
+    assert_scope_supported(design.scope)

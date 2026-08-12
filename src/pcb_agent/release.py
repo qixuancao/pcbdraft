@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import math
+import re
 import shutil
 import time
 import zipfile
@@ -13,18 +15,25 @@ from pathlib import Path
 from typing import Any
 
 from .errors import PcbAgentError, ValidationError
-from .io import atomic_write_json, make_directory
+from .io import (
+    atomic_write_bytes,
+    atomic_write_json,
+    load_json_limited,
+    make_directory,
+    read_bytes_limited,
+)
 from .locking import ResourceLock
 from .managed import ManagedProject, open_managed_project
 from .parts import PartGraph
 from .process import redact_argv, run_command
-from .project import sha256_file
+from .project import canonical_project, sha256_file, validate_agent_tree
 from .runs import utc_timestamp
 from .validation import validate_managed_project
 
 MAX_EXPORT_OUTPUT = 4 * 1024 * 1024
 MAX_RELEASE_FILES = 256
 MAX_RELEASE_BYTES = 512 * 1024 * 1024
+REPRODUCIBLE_TIMESTAMP = "1980-01-01T00:00:00"
 
 
 @dataclass(frozen=True)
@@ -36,6 +45,23 @@ class ManufacturingRelease:
     archive_sha256: str
     candidate_ready: bool
     production_ready: bool
+
+
+@dataclass(frozen=True)
+class ReleaseVerification:
+    root: Path
+    manifest_sha256: str
+    archive_sha256: str
+    artifact_count: int
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "root": str(self.root),
+            "manifest_sha256": self.manifest_sha256,
+            "archive_sha256": self.archive_sha256,
+            "artifact_count": self.artifact_count,
+            "verified": True,
+        }
 
 
 def build_manufacturing_release(
@@ -95,6 +121,7 @@ def build_manufacturing_release(
             for directory in (manufacturing, source, gerber, drill, svg):
                 make_directory(directory)
             tool_runs = _run_exports(project, manufacturing, deadline)
+            normalization = _normalize_export_metadata(manufacturing)
             _copy_sources(project, source)
             bom_contract = _verify_bom(project, resolved_graph, manufacturing)
             position_contract = _verify_positions(
@@ -113,7 +140,6 @@ def build_manufacturing_release(
             manifest = {
                 "schema": "pcb-agent-manufacturing-release",
                 "version": 1,
-                "created_at": utc_timestamp(),
                 "classification": "engineering_candidate",
                 "readiness": {
                     "engineering_candidate": True,
@@ -136,8 +162,28 @@ def build_manufacturing_release(
                     "positions": position_contract,
                     "fabrication": fabrication_contract,
                 },
-                "tool_runs": tool_runs,
+                "tool_runs": [
+                    {
+                        "name": run["name"],
+                        "status": run["status"],
+                        "exit_code": run["exit_code"],
+                        "argv": run["argv"],
+                    }
+                    for run in tool_runs
+                ],
                 "artifacts": artifacts,
+                "reproducibility": {
+                    "content_archive": "byte_reproducible_for_identical_managed_input_and_tool_version",
+                    "normalized_fields": "creation-time metadata only",
+                    "normalized_timestamp": REPRODUCIBLE_TIMESTAMP + "Z",
+                    "excluded_from_content_archive": [
+                        "receipt.json",
+                        "validation/receipt.json",
+                        "validation/erc.raw.json",
+                        "validation/drc.raw.json",
+                    ],
+                    "execution_audit_location": "receipt.json and validation/receipt.json",
+                },
                 "limitations": [
                     "This bundle is not a human engineering sign-off.",
                     "Live distributor stock and price were not verified.",
@@ -158,6 +204,8 @@ def build_manufacturing_release(
                     "production_ready": validation.production_ready,
                     "manifest_sha256": manifest_hash,
                     "archive_sha256": archive_hash,
+                    "tool_runs": tool_runs,
+                    "normalization": normalization,
                 }
             )
             atomic_write_json(receipt_path, receipt)
@@ -176,6 +224,81 @@ def build_manufacturing_release(
         receipt["failure"] = str(exc)[:2048]
         atomic_write_json(receipt_path, receipt)
         raise
+
+
+def verify_manufacturing_release(value: str | Path) -> ReleaseVerification:
+    """Verify a release directory and its deterministic archive without trust in names."""
+    root = canonical_project(value)
+    validate_agent_tree(root)
+    manifest_path = _single_link_file(root / "release-manifest.json")
+    receipt_path = _single_link_file(root / "receipt.json")
+    archive_path = _single_link_file(root / "release.zip")
+    manifest = load_json_limited(manifest_path, 16 * 1024 * 1024)
+    receipt = load_json_limited(receipt_path, 4 * 1024 * 1024)
+    if (
+        not isinstance(manifest, dict)
+        or manifest.get("schema") != "pcb-agent-manufacturing-release"
+        or manifest.get("version") != 1
+        or not isinstance(manifest.get("artifacts"), list)
+    ):
+        raise ValidationError("release manifest is malformed")
+    if (
+        not isinstance(receipt, dict)
+        or receipt.get("schema") != "pcb-agent-release-receipt"
+        or receipt.get("version") != 1
+        or receipt.get("status") != "complete"
+    ):
+        raise ValidationError("release receipt is malformed or incomplete")
+    artifacts = manifest["artifacts"]
+    if len(artifacts) > MAX_RELEASE_FILES:
+        raise ValidationError("release manifest exceeds the artifact count limit")
+    expected: dict[str, dict[str, Any]] = {}
+    total = 0
+    for entry in artifacts:
+        if not isinstance(entry, dict) or set(entry) != {"path", "size", "sha256"}:
+            raise ValidationError("release artifact entry is malformed")
+        relative = entry["path"]
+        if not _safe_release_relative(relative) or relative in expected:
+            raise ValidationError("release artifact path is unsafe or duplicated")
+        size = entry["size"]
+        digest = entry["sha256"]
+        if (
+            isinstance(size, bool)
+            or not isinstance(size, int)
+            or size < 0
+            or size > 128 * 1024 * 1024
+            or not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+        ):
+            raise ValidationError("release artifact size/hash is invalid")
+        path = _single_link_file(root / relative)
+        if (
+            path.stat().st_size != size
+            or sha256_file(path, max_bytes=128 * 1024 * 1024) != digest
+        ):
+            raise ValidationError(f"release artifact hash mismatch: {relative}")
+        total += size
+        expected[relative] = entry
+    if total > MAX_RELEASE_BYTES:
+        raise ValidationError("release manifest exceeds the total byte limit")
+
+    actual_nonvolatile = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.name not in {"receipt.json", "release-manifest.json", "release.zip"}
+        and not _volatile_artifact(path)
+    }
+    if actual_nonvolatile != set(expected):
+        raise ValidationError("release directory inventory differs from its manifest")
+    manifest_hash = sha256_file(manifest_path, max_bytes=16 * 1024 * 1024)
+    archive_hash = sha256_file(archive_path, max_bytes=MAX_RELEASE_BYTES)
+    if receipt.get("manifest_sha256") != manifest_hash:
+        raise ValidationError("release manifest hash differs from its receipt")
+    if receipt.get("archive_sha256") != archive_hash:
+        raise ValidationError("release archive hash differs from its receipt")
+    _verify_archive(archive_path, manifest_path, expected)
+    return ReleaseVerification(root, manifest_hash, archive_hash, len(expected))
 
 
 def _new_release_root(value: str | Path) -> Path:
@@ -346,6 +469,7 @@ def _run_exports(
                 "export",
                 "step",
                 "--force",
+                "--board-only",
                 "-o",
                 str(output / "board.step"),
                 board,
@@ -382,6 +506,64 @@ def _run_exports(
             }
         )
     return results
+
+
+def _normalize_export_metadata(output: Path) -> list[dict[str, Any]]:
+    """Replace creation-time metadata only, retaining original hashes in the receipt."""
+    paths = sorted(
+        [
+            *(output / "gerber").glob("*"),
+            *(output / "drill").glob("*"),
+            *(output / "svg").glob("*"),
+            output / "board_stats.json",
+            output / "schematic.pdf",
+            output / "board.step",
+        ]
+    )
+    records = []
+    for path in paths:
+        if path.is_symlink() or not path.is_file():
+            continue
+        before = read_bytes_limited(path, 128 * 1024 * 1024)
+        normalized, replacements = _normalize_creation_times(before)
+        if replacements:
+            atomic_write_bytes(path, normalized, mode=0o644)
+        records.append(
+            {
+                "path": path.relative_to(output).as_posix(),
+                "original_sha256": hashlib.sha256(before).hexdigest(),
+                "content_sha256": hashlib.sha256(normalized).hexdigest(),
+                "creation_time_fields_normalized": replacements,
+            }
+        )
+    return records
+
+
+def _normalize_creation_times(data: bytes) -> tuple[bytes, int]:
+    replacements = 0
+    patterns = (
+        (
+            rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}",
+            b"1980-01-01T00:00:00+00:00",
+        ),
+        (
+            rb"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}",
+            b"1980-01-01T00:00:00",
+        ),
+        (
+            rb"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+            b"1980-01-01 00:00:00",
+        ),
+        (
+            rb"D:\d{4}:\d{2}:\d{2}:\d{2}:\d{2}:\d{2}",
+            b"D:1980:01:01:00:00:00",
+        ),
+    )
+    result = data
+    for pattern, replacement in patterns:
+        result, count = re.subn(pattern, replacement, result)
+        replacements += count
+    return result, replacements
 
 
 def _copy_sources(project: ManagedProject, output: Path) -> None:
@@ -520,7 +702,9 @@ def _inventory(root: Path, *, exclude: set[str]) -> list[dict[str, Any]]:
     files = sorted(
         path
         for path in root.rglob("*")
-        if path.is_file() and path.relative_to(root).as_posix() not in exclude
+        if path.is_file()
+        and path.relative_to(root).as_posix() not in exclude
+        and not _volatile_artifact(path)
     )
     if len(files) > MAX_RELEASE_FILES:
         raise ValidationError("release exceeds the artifact count limit")
@@ -541,7 +725,10 @@ def _write_archive(root: Path, output: Path) -> None:
     files = sorted(
         path
         for path in root.rglob("*")
-        if path.is_file() and path != output and path.name != "receipt.json"
+        if path.is_file()
+        and path != output
+        and path.name != "receipt.json"
+        and not _volatile_artifact(path)
     )
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         for path in files:
@@ -551,3 +738,85 @@ def _write_archive(root: Path, output: Path) -> None:
             info.external_attr = 0o100644 << 16
             archive.writestr(info, path.read_bytes())
     output.chmod(0o644)
+
+
+def _verify_archive(
+    archive_path: Path,
+    manifest_path: Path,
+    expected: dict[str, dict[str, Any]],
+) -> None:
+    expected_names = set(expected) | {"release-manifest.json"}
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            members = archive.infolist()
+            names = [member.filename for member in members]
+            if len(names) != len(set(names)) or set(names) != expected_names:
+                raise ValidationError("release archive membership is invalid")
+            total = 0
+            for member in members:
+                if not _safe_release_relative(member.filename) or member.is_dir():
+                    raise ValidationError("release archive contains an unsafe member")
+                if member.flag_bits & 0x1:
+                    raise ValidationError("release archive must not contain encryption")
+                if member.date_time != (1980, 1, 1, 0, 0, 0):
+                    raise ValidationError(
+                        "release archive contains a non-reproducible timestamp"
+                    )
+                expected_size = (
+                    manifest_path.stat().st_size
+                    if member.filename == "release-manifest.json"
+                    else expected[member.filename]["size"]
+                )
+                if member.file_size != expected_size:
+                    raise ValidationError("release archive member size is invalid")
+                total += member.file_size
+                if total > MAX_RELEASE_BYTES:
+                    raise ValidationError("release archive expands beyond its limit")
+                digest = hashlib.sha256()
+                consumed = 0
+                with archive.open(member) as stream:
+                    while True:
+                        chunk = stream.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        consumed += len(chunk)
+                        if consumed > 128 * 1024 * 1024:
+                            raise ValidationError(
+                                "release archive member expands beyond its limit"
+                            )
+                        digest.update(chunk)
+                expected_digest = (
+                    sha256_file(manifest_path, max_bytes=16 * 1024 * 1024)
+                    if member.filename == "release-manifest.json"
+                    else expected[member.filename]["sha256"]
+                )
+                if digest.hexdigest() != expected_digest:
+                    raise ValidationError("release archive member hash mismatch")
+    except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
+        raise ValidationError("release archive is unreadable or corrupt") from exc
+
+
+def _single_link_file(path: Path) -> Path:
+    try:
+        info = path.lstat()
+    except OSError as exc:
+        raise ValidationError(f"release file is missing: {path.name}") from exc
+    if path.is_symlink() or not path.is_file() or info.st_nlink != 1:
+        raise ValidationError(f"release file is unsafe: {path.name}")
+    return path
+
+
+def _safe_release_relative(value: Any) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    path = Path(value)
+    return (
+        not path.is_absolute()
+        and ".." not in path.parts
+        and "." not in path.parts
+        and path.as_posix() == value
+    )
+
+
+def _volatile_artifact(path: Path) -> bool:
+    return path.name == "receipt.json" or path.name.endswith(".raw.json")

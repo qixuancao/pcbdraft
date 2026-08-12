@@ -24,7 +24,11 @@ class BoundedProcessTests(unittest.TestCase):
     def test_combined_output_limit_kills_process(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             result = run_command(
-                [sys.executable, "-c", "import sys; sys.stdout.write('x' * 1000000); sys.stdout.flush()"],
+                [
+                    sys.executable,
+                    "-c",
+                    "import sys; sys.stdout.write('x' * 1000000); sys.stdout.flush()",
+                ],
                 cwd=Path(temporary),
                 timeout=5,
                 max_output_bytes=1024,
@@ -35,4 +39,3 @@ class BoundedProcessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

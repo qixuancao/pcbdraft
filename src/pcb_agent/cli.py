@@ -25,7 +25,7 @@ from .ir import IR_FILE_LIMIT
 from .managed import generate_managed_project, open_managed_project
 from .operations import MAX_CHANGE_BYTES, load_change_set_bytes
 from .parts import PartGraph
-from .release import build_manufacturing_release
+from .release import build_manufacturing_release, verify_manufacturing_release
 from .requirements import compile_requirements, load_requirements
 from .sync import (
     apply_kicad_import,
@@ -141,6 +141,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--timeout", type=positive_timeout, default=180.0, metavar="SEC"
     )
     release_parser.add_argument("--json", action="store_true", dest="as_json")
+
+    release_verify = subcommands.add_parser(
+        "release-verify", help="verify a manufacturing release and deterministic ZIP"
+    )
+    release_verify.add_argument("RELEASE")
+    release_verify.add_argument("--json", action="store_true", dest="as_json")
 
     sync_parser = subcommands.add_parser(
         "sync", help="preview recognized KiCad edits and optionally import them"
@@ -317,6 +323,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "production_ready": result.production_ready,
             }
             _emit(value, args.as_json, f"manufacturing candidate built: {result.root}")
+            return 0
+        if args.command == "release-verify":
+            result = verify_manufacturing_release(args.RELEASE)
+            _emit(
+                result.to_dict(),
+                args.as_json,
+                f"manufacturing release verified: {result.root}",
+            )
             return 0
         if args.command == "sync":
             preview = preview_kicad_import(args.PROJECT)
