@@ -36,6 +36,7 @@ _ARTIFACT_KEYS = {
     "kicad_project",
     "requirements",
     "ir",
+    "validation_report",
     "release_archive",
 }
 
@@ -296,6 +297,10 @@ class CopperWrightHandler(BaseHTTPRequestHandler):
             if isinstance(release, dict):
                 release_path = Path(release["archive"])
                 relative = release_path.relative_to(project_root).as_posix()
+        elif key == "validation_report":
+            validation = view["artifacts"]["validation"]
+            if isinstance(validation, dict):
+                relative = validation.get("report")
         else:
             design = view.get("design")
             managed_key = {

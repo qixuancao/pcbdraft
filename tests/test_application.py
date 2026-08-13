@@ -8,6 +8,7 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from importlib.resources import files
 from pathlib import Path
 
 from pcb_agent.application import ApplicationService
@@ -227,6 +228,19 @@ class BrowserSecurityTests(unittest.TestCase):
                 workspace=self.temporary.name,
                 provider="builtin",
             )
+
+    def test_static_browser_shell_has_safe_setup_and_actionable_validation(
+        self,
+    ) -> None:
+        web = files("pcb_agent").joinpath("web")
+        html = web.joinpath("index.html").read_text(encoding="utf-8")
+        script = web.joinpath("app.js").read_text(encoding="utf-8")
+        self.assertIn('id="setup-dialog"', html)
+        self.assertIn("OPENAI_API_KEY=&lt;secret&gt;", html)
+        self.assertNotIn('id="provider-api-key"', html)
+        self.assertIn("Actionable findings & honest external gates", script)
+        self.assertIn("validation_report", script)
+        self.assertIn('node("strong", "", validation.candidate_ready', script)
 
 
 if __name__ == "__main__":

@@ -31,6 +31,13 @@ uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
 "$CHECK_ROOT/venv/bin/python" -c \
     'from pcb_agent.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 
+COPPERWRIGHT_EXE="$CHECK_ROOT/venv/bin/copperwright" \
+COPPERWRIGHT_PYTHON="$CHECK_ROOT/venv/bin/python" \
+    scripts/chat-e2e.sh "$CHECK_ROOT/chat-e2e"
+uv run python scripts/browser-e2e.py \
+    --executable "$CHECK_ROOT/venv/bin/copperwright" \
+    --output "$CHECK_ROOT/browser-e2e"
+
 "$CHECK_ROOT/venv/bin/copperwright" benchmark \
     "$CHECK_ROOT/benchmark.json" --repetitions 2 --json
 "$CHECK_ROOT/venv/bin/copperwright" generate \
@@ -49,4 +56,4 @@ uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
     'import json, pathlib, sys; a=json.loads((pathlib.Path(sys.argv[1])/"receipt.json").read_text()); b=json.loads((pathlib.Path(sys.argv[2])/"receipt.json").read_text()); assert a["manifest_sha256"] == b["manifest_sha256"]; assert a["archive_sha256"] == b["archive_sha256"]' \
     "$CHECK_ROOT/release-a" "$CHECK_ROOT/release-b"
 
-printf 'release check passed: wheel, sdist, clean install, benchmark, and E2E\n'
+printf 'release check passed: wheel, sdist, clean install, chat/browser E2E, benchmark, and release\n'

@@ -87,6 +87,7 @@ function renderDiagnostics() {
   }
   const detail = node("p", "loading-line", state.diagnostics.credential_guidance.persistence);
   target.append(detail);
+  byId("active-provider").textContent = `Active provider: ${provider.id}. Provider selection is fixed for this server process; restart CopperWright to change it.`;
 }
 
 function renderMessages(view) {
@@ -252,7 +253,7 @@ function renderValidation(view) {
   const readiness = card("Readiness claim");
   const metrics = node("div", "metric-grid");
   const candidate = node("div", "metric");
-  candidate.append(node("strong", validation.candidate_ready ? "Candidate ready" : "Blocked"), node("span", "", "engineering-candidate gate"));
+  candidate.append(node("strong", "", validation.candidate_ready ? "Candidate ready" : "Blocked"), node("span", "", "engineering-candidate gate"));
   const production = node("div", "metric");
   production.append(node("strong", "", "Not production-signed"), node("span", "", "human + physical gates remain"));
   metrics.append(candidate, production); readiness.append(metrics); target.append(readiness);
@@ -267,13 +268,38 @@ function renderValidation(view) {
     levels.append(row);
   }
   target.append(levels);
+  const noteworthy = [];
+  for (const level of validation.levels || []) {
+    for (const check of level.checks || []) {
+      if (check.outcome !== "pass" || !["completed", "not_applicable"].includes(check.state)) {
+        noteworthy.push({ level: level.level, ...check });
+      }
+    }
+  }
+  if (noteworthy.length) {
+    const findings = card("Actionable findings & honest external gates");
+    for (const finding of noteworthy) {
+      const item = node("article", `finding ${finding.outcome === "fail" ? "finding-fail" : "finding-external"}`);
+      const heading = node("div", "finding-heading");
+      heading.append(
+        node("strong", "", `${finding.level} · ${finding.id}`),
+        node("span", finding.outcome === "fail" ? "state-fail" : "state-warn", `${finding.state.replaceAll("_", " ")} · ${finding.outcome}`),
+      );
+      item.append(heading, node("p", "", finding.summary));
+      findings.append(item);
+    }
+    target.append(findings);
+  }
   const actions = card("Actions");
   const row = node("div", "artifact-links");
   const validate = node("button", "secondary", "Run validation again");
   validate.type = "button"; validate.addEventListener("click", () => runAction("validate"));
   const undo = node("button", "secondary", "Undo last change");
   undo.type = "button"; undo.disabled = !view.state.last_transaction; undo.addEventListener("click", () => runAction("undo"));
-  row.append(validate, undo); actions.append(row); target.append(actions);
+  row.append(validate, undo);
+  const report = artifactLink(view.project.id, "validation_report", "Open full validation JSON");
+  row.append(report);
+  actions.append(row); target.append(actions);
 }
 
 function renderConfirmation(view) {
@@ -419,8 +445,11 @@ async function retryActiveJob() {
 
 function bindEvents() {
   const dialog = byId("new-project-dialog");
+  const setupDialog = byId("setup-dialog");
   for (const id of ["new-project", "empty-new-project"]) byId(id).addEventListener("click", () => dialog.showModal());
   byId("close-new-project").addEventListener("click", () => dialog.close());
+  byId("provider-setup").addEventListener("click", () => setupDialog.showModal());
+  byId("close-setup").addEventListener("click", () => setupDialog.close());
   byId("new-project-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const name = byId("new-project-name").value.trim();

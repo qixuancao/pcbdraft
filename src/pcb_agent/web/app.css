@@ -65,6 +65,7 @@ a { color: var(--copper-bright); }
 .diagnostic-row strong { color: var(--ink); font-weight: 600; }
 .diagnostic-row .ok { color: var(--green); }
 .diagnostic-row .missing { color: var(--yellow); }
+.setup-button { width: 100%; margin-top: 7px; font-size: .7rem; }
 .loading-line, .local-note { color: var(--muted); font-size: .7rem; line-height: 1.5; }
 .local-note { margin: 16px 8px; }
 
@@ -153,6 +154,12 @@ th { color: #8da198; font-weight: 650; } td { color: #d7e2dc; }
 .level-name { font-weight: 800; color: var(--copper-bright); }
 .level-row strong { font-size: .72rem; }.level-row span { color: var(--muted); font-size: .65rem; }
 .state-pass { color: var(--green) !important; }.state-warn { color: var(--yellow) !important; }.state-fail { color: var(--red) !important; }
+.finding { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.finding:last-child { border-bottom: 0; }
+.finding-heading { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.finding-heading strong { font-size: .72rem; overflow-wrap: anywhere; }
+.finding-heading span { flex: none; font-size: .64rem; }
+.finding p { margin: 5px 0 0; }
 .path { padding: 8px; border-radius: 7px; color: #b7c7c0; background: #0a100f; font: .65rem ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
 
 dialog { width: min(580px, calc(100% - 28px)); padding: 0; color: var(--ink); border: 1px solid #4c675b; border-radius: 18px; background: var(--surface-1); box-shadow: var(--shadow); }
@@ -162,6 +169,10 @@ dialog h2 { margin: 0 0 10px; font-size: 1.55rem; }
 dialog label { margin-top: 6px; font-size: .75rem; font-weight: 700; }
 dialog input, dialog textarea { width: 100%; padding: 11px 12px; color: var(--ink); border: 1px solid var(--line); border-radius: 10px; outline: 0; background: var(--surface-2); }
 dialog input:focus, dialog textarea:focus { border-color: var(--copper); }
+.setup-option { padding: 11px 0; border-top: 1px solid var(--line); }
+.setup-option h3 { margin: 0 0 5px; font-size: .82rem; }
+.setup-option p { margin: 0 0 7px; color: var(--muted); font-size: .7rem; line-height: 1.5; }
+.setup-option code { display: block; padding: 9px; border-radius: 7px; color: #c7d6cf; background: #0a100f; font: .66rem ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; user-select: all; }
 .dialog-close { position: absolute; right: 13px; top: 11px; color: var(--muted); border: 0; background: transparent; font-size: 1.5rem; }
 .form-note { color: var(--muted); font-size: .7rem; line-height: 1.5; }
 .toast { position: fixed; z-index: 120; right: 22px; bottom: 22px; max-width: 420px; padding: 12px 15px; border: 1px solid #4b685b; border-radius: 11px; color: var(--ink); background: #1b2b25; box-shadow: var(--shadow); font-size: .78rem; }

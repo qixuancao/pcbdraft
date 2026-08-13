@@ -24,6 +24,7 @@
         <h2 id="diagnostic-title">First-run checks</h2>
         <div class="loading-line">Checking local tools…</div>
       </section>
+      <button id="provider-setup" class="text-button setup-button" type="button">Provider &amp; tool setup</button>
       <p class="local-note">Bound to loopback. No cloud account required.</p>
     </aside>
 
@@ -108,6 +109,36 @@
       <textarea id="new-project-request" name="request" rows="6" maxlength="16000" placeholder="Create a compact 2-layer TMP102 temperature sensor board with an I2C connector and status LED." required></textarea>
       <p class="form-note">Do not paste API keys. Provider credentials stay in the launch environment or Codex CLI.</p>
       <button class="primary wide" type="submit">Start conversation</button>
+    </form>
+  </dialog>
+
+  <dialog id="setup-dialog" aria-labelledby="setup-title">
+    <form method="dialog">
+      <button id="close-setup" class="dialog-close" type="button" aria-label="Close">×</button>
+      <p class="eyebrow">Local configuration</p>
+      <h2 id="setup-title">Provider &amp; tool setup</h2>
+      <p id="active-provider" class="form-note"></p>
+      <section class="setup-option">
+        <h3>Authenticated Codex CLI</h3>
+        <p>Authenticate outside CopperWright, then restart the app with:</p>
+        <code>copperwright app --provider codex</code>
+      </section>
+      <section class="setup-option">
+        <h3>OpenAI-compatible endpoint</h3>
+        <p>Set the endpoint, model, and API key only in the launch environment. Secret values never enter browser JavaScript or project records.</p>
+        <code>COPPERWRIGHT_OPENAI_BASE_URL=https://provider.example/v1 COPPERWRIGHT_OPENAI_MODEL=model-id OPENAI_API_KEY=&lt;secret&gt; copperwright app --provider openai-compatible</code>
+      </section>
+      <section class="setup-option">
+        <h3>Offline intent classifier</h3>
+        <p>Use the deterministic built-in classifier with no model or credential:</p>
+        <code>copperwright app --provider builtin</code>
+      </section>
+      <section class="setup-option">
+        <h3>KiCad 10 libraries</h3>
+        <p>From a CopperWright checkout, initialize the user library tables with:</p>
+        <code>scripts/prepare-kicad-environment.sh</code>
+      </section>
+      <button class="primary wide" type="submit">Done</button>
     </form>
   </dialog>
 
