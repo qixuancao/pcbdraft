@@ -1,13 +1,8 @@
-#!/usr/bin/env python3
-"""Repository-local primary CopperWright entry point."""
+#!/usr/bin/env bash
+# Runs this checkout through its uv-managed CopperWright environment.
+# Run: ./copperwright [args]
+# Requires: uv and a CopperWright repository checkout.
+set -euo pipefail
 
-from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
-
-from pcb_agent.cli import main  # noqa: E402
-
-raise SystemExit(main())
+REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec uv run --project "$REPO_DIR" python -m copperwright "$@"

@@ -237,7 +237,7 @@ copperwright release-verify /tmp/controller-release --json
 
 ## 시맨틱 트랜잭션
 
-Agent는 타입이 지정된 `pcb-agent-change-set`을 출력한 뒤 KiCad 텍스트를 직접
+Agent는 타입이 지정된 `copperwright-change-set`을 출력한 뒤 KiCad 텍스트를 직접
 편집하지 않고 트랜잭션 명령을 사용해야 합니다.
 
 ```bash
@@ -258,7 +258,7 @@ copperwright semantic-recover /tmp/tx
 ```bash
 copperwright sync /tmp/controller --json
 copperwright sync /tmp/controller --apply --json
-copperwright sync-undo /tmp/.pcb-agent-transactions/sync-...
+copperwright sync-undo /tmp/.copperwright-transactions/sync-...
 ```
 
 위치/자세 변경만 가져옵니다. 알 수 없는 보드 바이트, 풋프린트 변경, 부품 추가/제거,
@@ -345,25 +345,21 @@ MODEL_RUNS=2 scripts/benchmark.sh
 현재 측정 결과와 한계는 [BENCHMARK.md](BENCHMARK.md)에 있습니다. 이 벤치마크는
 회귀 코퍼스이며 모든 PCB 오류를 포괄한다는 주장이 아닙니다.
 
-## 호환 이름
+## 제품 식별자
 
-배포 패키지와 기본 명령은 `copperwright`입니다. 설치되는 `pcb-agent` 명령은
-동일한 기능의 호환 별칭으로 유지됩니다. 위험만 늘리고 실질적 가치가 없는 모듈
-마이그레이션을 피하기 위해 내부 Python 모듈도 `pcb_agent`를 유지합니다.
-
-안정적인 디스크 및 프로토콜 식별자도 변경하지 않습니다. 여기에는
-`pcb-agent-*` schema, `project.pcb-agent.json`, `.pcb-agent-*` 트랜잭션/잠금
-디렉터리, `PCB_AGENT_*` 테스트/설정 네임스페이스가 포함됩니다. 이름 변경 전에
-생성되어 커밋된 엔지니어링 영수증과 벤치마크 아티팩트는 기록된
-`pcb-agent-runtime`을 그대로 유지합니다. CopperWright는 과거 증거를 더 최신인
-것처럼 보이게 만들기 위해 다시 작성하지 않습니다.
+CopperWright의 배포, Python 가져오기 및 실행 명령은 모두 `copperwright`이며,
+공개 CLI와 Python 패키지도 이것뿐입니다. 디스크 및 프로토콜 식별자는 동일한
+네임스페이스를 사용합니다. `copperwright-*` schema,
+`project.copperwright.json`, `.copperwright-*` 트랜잭션/잠금 디렉터리,
+`COPPERWRIGHT_*` 테스트/설정 네임스페이스와 커밋된 엔지니어링 영수증 및
+벤치마크 아티팩트는 모두 CopperWright 식별자를 사용합니다.
 
 ## 개발 및 릴리스 검사
 
 ```bash
 scripts/test.sh
 scripts/smoke.sh                 # real KiCad demo; no model by default
-scripts/compatibility.sh         # Python 3.11–3.14 core matrix
+scripts/python-matrix.sh         # Python 3.11–3.14 core matrix
 scripts/chat-e2e.sh              # scriptable terminal product journey
 uv run python scripts/browser-e2e.py  # real Firefox journey and restart
 uv run python scripts/generate-product-examples.py
@@ -394,7 +390,7 @@ scripts/release-check.sh         # full clean-install product/release hard gate
 
 런타임 소스와 문서는 Apache-2.0이며 [LICENSE](LICENSE)를 참고하십시오. 내장
 부품/블록 카탈로그와 독립 벤치마크 데이터는
-[`src/pcb_agent/data/LICENSE.md`](src/pcb_agent/data/LICENSE.md)에 설명된 대로
+[`src/copperwright/data/LICENSE.md`](src/copperwright/data/LICENSE.md)에 설명된 대로
 CC0-1.0입니다. 생성된 예제 설계는 KiCad 라이브러리의
 CC-BY-SA 4.0 design exception에 따라 공식 KiCad 라이브러리 자료를 사용합니다.
 종속성 및 저작자 표시 정보는 [NOTICE](NOTICE)에 있습니다.

@@ -222,7 +222,7 @@ copperwright release-verify /tmp/controller-release --json
 
 ## 语义事务
 
-Agent 应输出类型化的 `pcb-agent-change-set`，然后使用事务命令，而不是编辑
+Agent 应输出类型化的 `copperwright-change-set`，然后使用事务命令，而不是编辑
 KiCad 文本：
 
 ```bash
@@ -242,7 +242,7 @@ IR，写入语义差异，然后才创建暂存区。发布时会在资源锁保
 ```bash
 copperwright sync /tmp/controller --json
 copperwright sync /tmp/controller --apply --json
-copperwright sync-undo /tmp/.pcb-agent-transactions/sync-...
+copperwright sync-undo /tmp/.copperwright-transactions/sync-...
 ```
 
 仅导入位姿变更。未知的电路板字节、封装变更、新增或移除元件、走线、网络映射、
@@ -322,22 +322,20 @@ MODEL_RUNS=2 scripts/benchmark.sh
 当前测量结果和限制见 [BENCHMARK.md](BENCHMARK.md)。该基准测试是回归语料库，
 并不声称覆盖所有 PCB 故障。
 
-## 兼容名称
+## 产品标识
 
-分发包和主命令名为 `copperwright`。安装后仍提供等效的 `pcb-agent` 兼容别名。
-内部 Python 模块继续使用 `pcb_agent`，以避免风险高且没有实际价值的模块迁移。
-
-稳定的磁盘和协议标识符也保持不变，包括 `pcb-agent-*` schema、
-`project.pcb-agent.json`、`.pcb-agent-*` 事务/锁目录以及 `PCB_AGENT_*`
-测试/配置命名空间。品牌切换前创建并提交的工程回执和基准工件仍保留当时记录的
-`pcb-agent-runtime`；CopperWright 不会重写历史证据来制造更新的假象。
+CopperWright 的分发包、Python 导入和执行命令均为 `copperwright`，这是唯一的
+公开 CLI 和 Python 包。磁盘与协议标识符使用同一命名空间，包括
+`copperwright-*` schema、`project.copperwright.json`、`.copperwright-*`
+事务/锁目录和 `COPPERWRIGHT_*` 测试/配置命名空间。已提交的工程回执和基准工件
+也全部使用 CopperWright 标识符。
 
 ## 开发与发布检查
 
 ```bash
 scripts/test.sh
 scripts/smoke.sh                 # real KiCad demo; no model by default
-scripts/compatibility.sh         # Python 3.11–3.14 core matrix
+scripts/python-matrix.sh         # Python 3.11–3.14 core matrix
 scripts/chat-e2e.sh              # scriptable terminal product journey
 uv run python scripts/browser-e2e.py  # real Firefox journey and restart
 uv run python scripts/generate-product-examples.py
@@ -366,7 +364,7 @@ multi-agent、网络和特权工具，并通过 stdin 传入提示。该策略�
 
 运行时源代码和文档采用 Apache-2.0；参见 [LICENSE](LICENSE)。内置元件/功能块
 目录和独立基准数据采用 CC0-1.0，详见
-[`src/pcb_agent/data/LICENSE.md`](src/pcb_agent/data/LICENSE.md)。生成的示例设计
+[`src/copperwright/data/LICENSE.md`](src/copperwright/data/LICENSE.md)。生成的示例设计
 使用 KiCad 官方库材料，适用 KiCad 库的 CC-BY-SA 4.0 design exception。依赖和
 归属说明见 [NOTICE](NOTICE)。
 对公开项目的有界研究及实际复用决策记录在

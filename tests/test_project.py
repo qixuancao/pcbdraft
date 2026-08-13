@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pcb_agent.errors import ValidationError
-from pcb_agent.project import canonical_project, discover_project, resolve_member
+from copperwright.errors import ValidationError
+from copperwright.project import canonical_project, discover_project, resolve_member
 
 
 class ProjectDiscoveryTests(unittest.TestCase):

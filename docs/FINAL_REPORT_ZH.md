@@ -1,15 +1,14 @@
-# CopperWright 历史基线：PCB Agent Runtime 最终完成报告
+# CopperWright 工程基线：最终完成报告
 
-> 本报告记录 2026-08-13 品牌切换前的完整工程验收事实。当前产品名和主命令
-> 已改为 CopperWright / `copperwright`；为保持证据真实性，报告中的既有提交、
-> 哈希、schema、工件路径和历史运行名称不作追溯改写。
+> 本报告保留 2026-08-13 工程验收背景。当前产品名、主命令、schema、工件路径和
+> 记录的运行名称均使用 CopperWright / `copperwright`。
 
 完成日期：2026-08-13（Asia/Shanghai）
 
 ## 结论
 
 仓库已从 reviewer/safe-patcher MVP 完成到规范所要求的、有明确支持边界的
-PCB Agent Runtime 0.2.0。需求追踪表中的本地可实现项 R01–R44 均有代码和
+CopperWright 0.2.0。需求追踪表中的本地可实现项 R01–R44 均有代码和
 自动验证路径；R45 仅保留必须来自供应商、合格工程师、制造和实物测试的
 外部门禁。当前 ATtiny402/TMP102 验收设计为 `engineering_candidate=true`，
 并且诚实保持 `production=false`、`production_claimed=false`。
@@ -46,11 +45,11 @@ PCB Agent Runtime 0.2.0。需求追踪表中的本地可实现项 R01–R44 均�
 10.0.5（运行时标记 `10.0.5-10.0.5~ubuntu26.04.1`）。
 
 - 设计内容 SHA-256：
-  `4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2`
+  `b75625e0bbd759c42f20e24d6ca91bcfca64fa9b8efb1dde6b6f5cefe54d8a0f`
 - 原理图 SHA-256：
-  `1e43f2d9389a22ce94d8e1a05bfef2e0a60fc8e78d54901b076d473baaae0bc4`
+  `5ddcf62791d69e5014a8fbc876a716863233aa98ba51ece6bae8ac510dbab570`
 - PCB SHA-256：
-  `39cfe2cc1ada9090e0ad80a669bf2d9fc86d3c751ae9e1f98482ba0549338186`
+  `941461c59c57f753bfab946b3e38c047c6bac45f7ae9bec8eef753d66436f61c`
 - 真实 ERC：0 error、0 warning；真实 DRC：0 error、0 warning。
 - 布线：176 段、15 个过孔、`unrouted=[]`；其中 GND 拼接过孔 2 个。
 - B.Cu GND 热焊盘填充面积：1215.059312 mm²。
@@ -62,7 +61,7 @@ PCB Agent Runtime 0.2.0。需求追踪表中的本地可实现项 R01–R44 均�
   796.462 ns、最大电压下拉电流 0.737234 mA，并禁止额外外部上拉。
 
 持久化验证报告 SHA-256 为
-`c8aa38bb285ba2b041378f42921a0392d22da89bc1cd07921e0ec073ba3bb20d`。
+`86a79ed3eed04da7d8287e368991e67426c927ec81195ecfc616e5b60148ac36`。
 L0–L3 全部 `completed/pass`；本地 L4 BOM/生命周期/DFM 检查通过，但实时
 库存和指定制造商能力不可用；L5 的 LED 直流计算通过，固件相关数字功能和
 完整最坏功耗没有足够证据；L6 需要合格人审；L7 需要实物制造和测试。
@@ -70,7 +69,7 @@ L0–L3 全部 `completed/pass`；本地 L4 BOM/生命周期/DFM 检查通过，
 ## 自动化验证结果
 
 - `scripts/test.sh`：Ruff、格式、编译和 93/93 测试通过，141.125 秒。
-- `scripts/compatibility.sh`：Python 3.11、3.12、3.13、3.14 各 42/42
+- `scripts/python-matrix.sh`：Python 3.11、3.12、3.13、3.14 各 42/42
   核心测试通过；用时分别为 17.654、16.760、16.848、16.560 秒。
 - `scripts/release-check.sh`：再次通过 93/93 测试（140.108 秒）；成功构建
   wheel 和 sdist、校验包、在全新 Python 3.11 环境安装 0.2.0，并完成
@@ -83,14 +82,14 @@ L0–L3 全部 `completed/pass`；本地 L4 BOM/生命周期/DFM 检查通过，
 ## 独立基准结果
 
 持久化结果：`artifacts/benchmark/benchmark-20260812.json`，SHA-256：
-`3f67506e703d8b0c2b647e060965648703bfa3e05a12273088f9c484d82b4538`。
+`2ef52959b171651e67b5be59eef5394ed77b125293f95095ca996073c22a4bf5`。
 
 - 独立 CC0 语料：90 例、28 类；70 个故障注入、20 个干净对照。
 - 5 次重复，共 450 次确定性评估：70 TP、0 FN、0 FP、20 TN。
 - precision、recall、specificity、目标规则码召回率均为 1.0；误报率 0。
 - 65/65 可修复案例成功；引入回归 0；90/90 案例重复稳定。
-- 平均/中位/p95 规则延迟：0.290597/0.259287/0.420179 ms；确定性墙钟
-  0.533410 秒。
+- 平均/中位/p95 规则延迟：3.487032/2.913661/5.328245 ms；确定性墙钟
+  2.406665 秒。
 - 两次盲化真实 Codex 运行在 24 个分层样本上完成 48 次判断：48/48
   正确，成对一致率 1.0，用时 115.079 和 48.005 秒。
 
@@ -103,9 +102,9 @@ L0–L3 全部 `completed/pass`；本地 L4 BOM/生命周期/DFM 检查通过，
 
 - 31 个内容工件和 3 个单独保留的原始审计工件；离线验证通过。
 - manifest SHA-256：
-  `64b779d1ea1ff744307a2faf803ea0c42b9b9710504b63b93a1742bf4f0cd778`
+  `1f500b0787db8dde9c94e48c275726d702fc3aa670a959baa319da5c82e94b3e`
 - ZIP SHA-256：
-  `d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98`
+  `9711a5921ef410bbf7ac1525b628df5f49ec969e850529d99c525406f2d8dc2a`
 - 两个独立临时目录生成的 manifest 和 ZIP 逐字节相同。
 
 最终模型审查位于
@@ -154,7 +153,7 @@ schema 有效。模型确认本地确定性检查无缺陷，并把制造商选�
 ```bash
 scripts/deploy.sh
 scripts/test.sh
-scripts/compatibility.sh
+scripts/python-matrix.sh
 scripts/benchmark.sh
 scripts/release-check.sh
 copperwright release-verify artifacts/acceptance/release --json

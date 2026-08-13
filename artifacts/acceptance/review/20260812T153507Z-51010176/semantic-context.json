@@ -797,13 +797,13 @@
         }
       ],
       "metadata": {
-        "compiler": "pcb-agent-runtime",
+        "compiler": "copperwright",
         "priorities": [
           "electrical_correctness",
           "manufacturability",
           "compact_sensor_group"
         ],
-        "profile": "attiny402_tmp102_controller_v1",
+        "profile": "low_voltage_i2c_controller_v1",
         "requirements_hash": "fdaac09383c8e1ed7e7a5a85c91811acce6b81213e7508b830c0ce83216f9d80",
         "source": {
           "acquired_at": "2026-08-12",
@@ -1063,7 +1063,7 @@
           "locator": "data/blocks/catalog.json#attiny402_core@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "pcb-agent-runtime bundled block catalog"
+          "source": "copperwright bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1073,7 +1073,7 @@
           "locator": "data/blocks/catalog.json#gpio_status_led@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "pcb-agent-runtime bundled block catalog"
+          "source": "copperwright bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1083,7 +1083,7 @@
           "locator": "data/blocks/catalog.json#qwiic_power_input@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "pcb-agent-runtime bundled block catalog"
+          "source": "copperwright bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1093,7 +1093,7 @@
           "locator": "data/blocks/catalog.json#tmp102_i2c_sensor@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "pcb-agent-runtime bundled block catalog"
+          "source": "copperwright bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1177,7 +1177,7 @@
         }
       ],
       "revision": "1.0",
-      "schema": "pcb-agent-ir",
+      "schema": "copperwright-ir",
       "scope": {
         "domains": [
           "i2c",
@@ -1562,7 +1562,7 @@
         ],
         "kicad_version": "10.0.5-10.0.5~ubuntu26.04.1",
         "mode": "inspect_board",
-        "schema": "pcb-agent-pcbnew-result",
+        "schema": "copperwright-pcbnew-result",
         "tracks": [
           {
             "drill_mm": 0.3,
@@ -3745,7 +3745,7 @@
         "compact_sensor_group"
       ],
       "revision": "1.0",
-      "schema": "pcb-agent-requirements",
+      "schema": "copperwright-requirements",
       "scope": {
         "domains": [
           "i2c",
@@ -3767,7 +3767,7 @@
       },
       "version": 1
     },
-    "schema": "pcb-agent-managed-review-context",
+    "schema": "copperwright-managed-review-context",
     "semantic_rule_evaluation": {
       "findings": [],
       "method": "deterministic_typed_ir_rules_without_approximate_geometry",
@@ -3775,7 +3775,7 @@
     },
     "synchronization": {
       "drift": [],
-      "kicad_compatibility": "10.0.5-10.0.5~ubuntu26.04.1",
+      "kicad_support": "10.0.5-10.0.5~ubuntu26.04.1",
       "manifest_state": "synchronized",
       "state": "synchronized"
     },

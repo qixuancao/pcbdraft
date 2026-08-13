@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from pcb_agent.api import handle_request
+from copperwright.api import handle_request
 from tests.requirements_factory import controller_requirements_dict
 
 
@@ -44,7 +44,7 @@ class JsonRpcApiTests(unittest.TestCase):
             }
         )
         self.assertNotIn("error", response)
-        self.assertEqual(response["result"]["design"]["schema"], "pcb-agent-ir")
+        self.assertEqual(response["result"]["design"]["schema"], "copperwright-ir")
         self.assertEqual(len(response["result"]["content_hash"]), 64)
 
     def test_protocol_rejects_unknown_methods_and_parameters(self) -> None:

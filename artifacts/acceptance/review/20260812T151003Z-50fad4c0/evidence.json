@@ -99,7 +99,7 @@
       {
         "kind": "file",
         "mode": 420,
-        "relative_path": "project.pcb-agent.json",
+        "relative_path": "project.copperwright.json",
         "sha256": "723ab293bc56406b33aef158f4549d83f1aebd058baa022732ede3d47bd564b0",
         "size": 78095
       },

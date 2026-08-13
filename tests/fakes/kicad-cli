@@ -78,7 +78,7 @@ if f"{gate.upper()}_TOOL_FAIL" in text:
 
 errors = marker(text, f"{gate.upper()}_ERROR")
 warnings = marker(text, f"{gate.upper()}_WARNING")
-if gate == "drc" and os.environ.get("PCB_AGENT_FAKE_APPLY_REGRESSION") == "1":
+if gate == "drc" and os.environ.get("COPPERWRIGHT_FAKE_APPLY_REGRESSION") == "1":
     errors += 1
 violations = [
     {"severity": "error", "type": f"fake_{gate}_error", "description": "fake error"}

@@ -96,7 +96,7 @@
     "manufacturability"
   ],
   "revision": "1.0",
-  "schema": "pcb-agent-requirements",
+  "schema": "copperwright-requirements",
   "scope": {
     "domains": [
       "ldo",

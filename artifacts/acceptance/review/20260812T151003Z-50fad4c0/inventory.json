@@ -46,7 +46,7 @@
     {
       "kind": "file",
       "mode": 420,
-      "relative_path": "project.pcb-agent.json",
+      "relative_path": "project.copperwright.json",
       "sha256": "723ab293bc56406b33aef158f4549d83f1aebd058baa022732ede3d47bd564b0",
       "size": 78095
     },
@@ -71,6 +71,6 @@
     "special_file": 0,
     "total_byte_limit": 0
   },
-  "root": "/mnt/2T/pcb-agent-runtime/examples/attiny_sensor_controller/project",
+  "root": "/mnt/2T/copperwright/examples/attiny_sensor_controller/project",
   "total_hashed_bytes": 264902
 }

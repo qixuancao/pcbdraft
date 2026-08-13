@@ -1,7 +1,7 @@
 {
   "design": {
-    "board_sha256": "52eaf193e02272f93493c491e2028dc93c6494ee276383b5692767ec009dcd5e",
-    "content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d",
+    "board_sha256": "1be8ec8d8adab7dc55cff389cdce80c7308eae0ba0775f4640cf2ee338aa0587",
+    "content_hash": "8330d3b74ae722d0ec7ef38b8045e934f14abea8d3847b0ee8c3c98aac70fa5e",
     "id": "copperwright_uart_ldo_controller"
   },
   "levels": [
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.pcb-agent.json"
+            "project.copperwright.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -31,7 +31,7 @@
           "id": "l0.semantic_ir",
           "level": "L0",
           "metrics": {
-            "content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d"
+            "content_hash": "8330d3b74ae722d0ec7ef38b8045e934f14abea8d3847b0ee8c3c98aac70fa5e"
           },
           "outcome": "pass",
           "state": "completed",
@@ -738,7 +738,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "pcb-agent-validation",
+  "schema": "copperwright-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

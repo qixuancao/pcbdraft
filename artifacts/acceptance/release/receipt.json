@@ -1,134 +1,151 @@
 {
-  "archive_sha256": "d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98",
+  "archive_sha256": "9711a5921ef410bbf7ac1525b628df5f49ec969e850529d99c525406f2d8dc2a",
   "audit_artifacts": [
     {
       "path": "validation/drc.raw.json",
-      "sha256": "36432b050481d82447d1a09d87c5b4011ad3b89cd413244d03addf25b64a6aba",
+      "sha256": "42125fc420260e96edcb76145f2ecdd30e182a51fa51aa7fef88d1ef2b0c3317",
       "size": 673
     },
     {
       "path": "validation/erc.raw.json",
-      "sha256": "b92e83d9df6de221d7defc9283ce187dc028d997f92084b1a0c25d37686768d0",
+      "sha256": "a3813a099319c7688bed91f0a76f9611258dcb8ab97cd111f0d3f2e4b522eaba",
       "size": 724
     },
     {
       "path": "validation/receipt.json",
-      "sha256": "13088221950a4316599375d0b4876a77a907eb41c87da89f2a4f5f9b91bc859e",
-      "size": 1162
+      "sha256": "6ea9f608841f62f28215d1b71c823b91262dd7cf663eaa38072156db2dc0bdca",
+      "size": 1140
     }
   ],
   "candidate_ready": true,
-  "completed_at": "2026-08-12T15:45:29Z",
-  "created_at": "2026-08-12T15:45:22Z",
-  "design_content_hash": "4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2",
-  "manifest_sha256": "64b779d1ea1ff744307a2faf803ea0c42b9b9710504b63b93a1742bf4f0cd778",
+  "completed_at": "2026-08-13T06:13:53Z",
+  "created_at": "2026-08-13T06:13:45Z",
+  "design_content_hash": "b75625e0bbd759c42f20e24d6ca91bcfca64fa9b8efb1dde6b6f5cefe54d8a0f",
+  "manifest_sha256": "1f500b0787db8dde9c94e48c275726d702fc3aa670a959baa319da5c82e94b3e",
   "normalization": [
     {
       "content_sha256": "b7da42832d45bc44f91348fc87aa0378c194e8f35a5a66dcb01a90e89c323dfa",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "4b6974b5fa841f7e0788d4f84209393b1124e1a1e94b002150232a89f313f8d7",
-      "path": "board.step"
+      "original_sha256": "1a580975ed731ca187565237cb8008e01d4f24bd5d9a86874b1fdacaa31fbb21",
+      "path": "board.step",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "24d9ef4b621b0826bcac22caca2ef6f495cf2f8ef7de5caa1feb01bbf77e6bbb",
+      "content_sha256": "c39bae14ecb8cfd218c532f519ee618441c7885cf0920e829c52803a9adb636e",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "0b869ea34ad7e856df5f1f7a318b3ea5256c0b7c08b0ed4c62cbcc4a8e94c5e5",
-      "path": "board_stats.json"
+      "original_sha256": "c6198f108cd72676d915b5b17817bb2133dbb88322b856e7d9041982a3f33ee1",
+      "path": "board_stats.json",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "b77e669f8a9811d041a952728dadc410d04a46692fbdc792e2ee543e928f323a",
+      "content_sha256": "cd25f9e6ee8a1160d7d8caf0caeb0173c9656b9b65583d408f5701f826996905",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "217ac2913b251fa90fa9ffdd4c6dcd88626a82955f9dea17fe3186d8c446a357",
-      "path": "drill/attiny_sensor_controller.drl"
+      "original_sha256": "7f31de328c115fe9daecfe34256d5bed7e8e70916611f644ade0ed3a194f261c",
+      "path": "drill/attiny_sensor_controller.drl",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
       "content_sha256": "da85bd24363dfce36647d37bec4aa761ee8b752e21804368c1299570bbad0925",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "172103b110ddc7c4e999441dbb73aaad0bbcf31b81033d9e93921a3cac33a3d9",
-      "path": "drill/drill_report.rpt"
+      "original_sha256": "d0d6dc3d2c744db7dc83c8f93d962a9bce89ff851498bb3d49cde3086093f7fd",
+      "path": "drill/drill_report.rpt",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "732c91afd20af70b80eb7faf1d413ef8f58217477cdf056cf4a23d3484b319a2",
+      "content_sha256": "aa0158aa2f716d4aeb854ee2ec69e2fb217c3e02764853ba4a52dca8ea96dcca",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "60f8c6bd0583bbb385f59e64bec640cc91ca493df80bfb98a16f78a532b47705",
-      "path": "gerber/attiny_sensor_controller-B_Cu.gbl"
+      "original_sha256": "bab07488db1d8b9f855b8e63adbe7d28d0cd339c333606bd500fe000f83389ad",
+      "path": "gerber/attiny_sensor_controller-B_Cu.gbl",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
       "content_sha256": "f896a6ab99406f098fe05a9497ec7b6f449b35e312049b8858e119a5973deae6",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "f8a8072b2bdc483d17d4a6255e1c1ed85495a35b6f6820866f21bd5059a06415",
-      "path": "gerber/attiny_sensor_controller-B_Mask.gbs"
+      "original_sha256": "4731f3d9abf42e57a12b235ed5e047be4e5ffcf2d61d0df6327064c4872f9d84",
+      "path": "gerber/attiny_sensor_controller-B_Mask.gbs",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
       "content_sha256": "371f7cae17fd6aaf738400b6524da840b236086b44120b115d588cdb629f7ef4",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "0124549b6e2a7bb4c338015337f388e85aa9559c155f3251bc7198f4a9df7fb3",
-      "path": "gerber/attiny_sensor_controller-B_Silkscreen.gbo"
+      "original_sha256": "8aa40a1b4dd87892847e4230d65037cfc973c1fdc8d12a8b318db9a67d47658d",
+      "path": "gerber/attiny_sensor_controller-B_Silkscreen.gbo",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
       "content_sha256": "fd7c65b984b437a6accd4c4431433021ed372a2324bb13df68d1ed56c1a7ce25",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "7fb7a08c602eff4706b842d9c2629b4bc1502bc34935df761aefc59b74e656d4",
-      "path": "gerber/attiny_sensor_controller-Edge_Cuts.gm1"
+      "original_sha256": "a8fdfd1772c32adca97a547daf07c00a83b262164a38b1347faf055079a90c44",
+      "path": "gerber/attiny_sensor_controller-Edge_Cuts.gm1",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "5baa28dac3cf5880b3a5559a64c95a4d195a1f1da90667918171d6762fd4c90f",
+      "content_sha256": "0188f504abcb96bf4f68749741de10023fc3bef9ef89b5af25ea0b49a0d6ff48",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "468f607663c0f705979b521ae8d3335f9fbc6deb8999390686aa51809b03741f",
-      "path": "gerber/attiny_sensor_controller-F_Cu.gtl"
+      "original_sha256": "61839282cd150e8b5c082c722117e8de524b9702c9d9d3316e94dee49b0a0427",
+      "path": "gerber/attiny_sensor_controller-F_Cu.gtl",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "de61a077a223ddf9eadbd2892ee9d6196128b2ea760dcb8253d6b2384959b9db",
+      "content_sha256": "5c4e8cd94536db76ed2813eb29d4847649a2a2a5acb73b5b3527cb8c4aa94d47",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "006d05f887a6f5e71a5fe51bd8cd7e1010296df2b57670d02b9ed62df8c74c0d",
-      "path": "gerber/attiny_sensor_controller-F_Mask.gts"
+      "original_sha256": "8376e62c4e814b9a362c78258c9eae9e68eb3f69973d56a6c24b15269498ae75",
+      "path": "gerber/attiny_sensor_controller-F_Mask.gts",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "9ea8e03f3f2967371aea7b2bed32511e37c8dbf5803fe5b83fb810ea672862cb",
+      "content_sha256": "7f0ec16ec15ab6c521af43b47f09dd955952f7c854c99e2d8cfa1f45a13f53d5",
       "creation_time_fields_normalized": 3,
-      "original_sha256": "101c7ed5df287314029e5d13302e3a46845a0bbb1805d1a52f3f2b2f49f70c97",
-      "path": "gerber/attiny_sensor_controller-F_Silkscreen.gto"
+      "original_sha256": "51397a43818c59c9dfb4f8fe7ad84a2fe5aca2cc510e3fac3fe0ddbe3c32d6c5",
+      "path": "gerber/attiny_sensor_controller-F_Silkscreen.gto",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
       "content_sha256": "9b7cdfc3c349a07989b4fe1aa10b685bcac7230602bcbfb40c164417ca67038a",
       "creation_time_fields_normalized": 2,
-      "original_sha256": "606fd28237f1a0559d1d83fcc0b013727ae7336453c74692f2365dd39edda002",
-      "path": "gerber/attiny_sensor_controller-job.gbrjob"
+      "original_sha256": "d5906a13a8b0a9fc9979913f5e7cb48e42fd7df087e84fc06010fc3ff392abce",
+      "path": "gerber/attiny_sensor_controller-job.gbrjob",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "d404ae8fb13b5970ddb3fb1bd62eca84083fec33cbe482d18d07626aa3f22cde",
+      "content_sha256": "ca6ac95e266b708c7eccd5d5436e624e495a01e86ebf9fb2579d3b95a9392f2e",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "955d1ff09302646f20458d42c1e8a81c9f8dd15ca4b2e199aea8bbd09a2b21a5",
-      "path": "schematic.pdf"
+      "original_sha256": "10091e94ec468448748dde560085803edd63d32e77d347853851ba558ca69aa5",
+      "path": "schematic.pdf",
+      "svg_trailing_whitespace_fields_normalized": 0
     },
     {
-      "content_sha256": "e59d29f077da255af0515913a512e75c175661a29e61a1597e01694506722ead",
+      "content_sha256": "844a0215bc9823ccaa51beb23874962845b7c4311cc4eeb2e50a37b3702810d8",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "0d6f9e485d1f90175c06b47cad7a4f72d1294069343b108219fbe94df69caa45",
-      "path": "svg/attiny_sensor_controller-Edge_Cuts.svg"
+      "original_sha256": "a248d20d75dae7218554001bbe85a286d6a0ae01957c3261c0bf643975a41bc5",
+      "path": "svg/attiny_sensor_controller-Edge_Cuts.svg",
+      "svg_trailing_whitespace_fields_normalized": 22
     },
     {
-      "content_sha256": "1dc1fa4d85f3a000085512fd0a26180e9b921c0226f07761f9106c278541505a",
+      "content_sha256": "cd9bbb01f31bee8ab3c56bf65686c8fe497d8b344c92bec7e0cc01f96cbce843",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "ac0b96c846820c2f7b23ec392b1a848b02aa27ad1d82d3f01ab330939e889238",
-      "path": "svg/attiny_sensor_controller-F_Cu.svg"
+      "original_sha256": "2fe57a11aaa1e7ac7d971badfe5a52af0fe85f5ecd581c77cb66c0eaa3f6015b",
+      "path": "svg/attiny_sensor_controller-F_Cu.svg",
+      "svg_trailing_whitespace_fields_normalized": 107
     },
     {
-      "content_sha256": "fe459e431c8e01100517c0ce768a5450577bb0f1001a1628573a0b5d08de92a0",
+      "content_sha256": "5fcfa885d711032a51e7d2896eddbd120dc417acd37e74c28f0ee001c595e554",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "da3c875cd4c2eb78f486e38c3082b352dee0c6bb1b5e0a139658fcd5704add44",
-      "path": "svg/attiny_sensor_controller-F_Mask.svg"
+      "original_sha256": "b75924c5c2acef13ef393b4b8edf2eac9862c36b619f7da5a0c2d5d329743277",
+      "path": "svg/attiny_sensor_controller-F_Mask.svg",
+      "svg_trailing_whitespace_fields_normalized": 55
     },
     {
-      "content_sha256": "6041a0cb66733a3cdcd124b8a382c96aa95d457159682793230d033f096fbe9b",
+      "content_sha256": "0209607a8c8407423e9e7d32bb4d2c765c866665c119207d3d3dd509f50f93fa",
       "creation_time_fields_normalized": 1,
-      "original_sha256": "e2f7a4b3c8a01a9dc8676e170e07c6e3e122ba96538c658584a57f8741fbfb81",
-      "path": "svg/attiny_sensor_controller-F_Silkscreen.svg"
+      "original_sha256": "c7662c254f63c7e70fcbb41f548995c39502f6d84b2ae3451fd89e42a0acb5fb",
+      "path": "svg/attiny_sensor_controller-F_Silkscreen.svg",
+      "svg_trailing_whitespace_fields_normalized": 34
     }
   ],
   "production_ready": false,
-  "project": "/mnt/2T/pcb-agent-runtime/examples/attiny_sensor_controller/project",
-  "schema": "pcb-agent-release-receipt",
+  "project": "examples/attiny_sensor_controller/project",
+  "schema": "copperwright-release-receipt",
   "status": "complete",
   "tool_runs": [
     {
@@ -143,7 +160,7 @@
         "F.Cu,B.Cu,F.Mask,B.Mask,F.SilkS,B.SilkS,Edge.Cuts",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.268,
+      "duration_seconds": 0.309,
       "exit_code": 0,
       "name": "gerbers",
       "status": "completed"
@@ -161,7 +178,7 @@
         "<RELEASE>/manufacturing/drill/drill_report.rpt",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.165,
+      "duration_seconds": 0.168,
       "exit_code": 0,
       "name": "drill",
       "status": "completed"
@@ -183,7 +200,7 @@
         "--exclude-dnp",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.166,
+      "duration_seconds": 0.174,
       "exit_code": 0,
       "name": "positions",
       "status": "completed"
@@ -198,7 +215,7 @@
         "<RELEASE>/manufacturing/connectivity.d356",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.161,
+      "duration_seconds": 0.184,
       "exit_code": 0,
       "name": "connectivity",
       "status": "completed"
@@ -217,7 +234,7 @@
         "mm",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.169,
+      "duration_seconds": 0.221,
       "exit_code": 0,
       "name": "board_stats",
       "status": "completed"
@@ -236,7 +253,7 @@
         "Reference,Value,Footprint,Manufacturer,MPN,Part_ID,Lifecycle,Trust,Quantity",
         "<PROJECT>/attiny_sensor_controller.kicad_sch"
       ],
-      "duration_seconds": 0.22,
+      "duration_seconds": 0.236,
       "exit_code": 0,
       "name": "bom",
       "status": "completed"
@@ -251,7 +268,7 @@
         "<RELEASE>/manufacturing/schematic.pdf",
         "<PROJECT>/attiny_sensor_controller.kicad_sch"
       ],
-      "duration_seconds": 0.222,
+      "duration_seconds": 0.277,
       "exit_code": 0,
       "name": "schematic_pdf",
       "status": "completed"
@@ -270,7 +287,7 @@
         "--fit-page-to-board",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.246,
+      "duration_seconds": 0.347,
       "exit_code": 0,
       "name": "board_svg",
       "status": "completed"
@@ -292,7 +309,7 @@
         "basic",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.473,
+      "duration_seconds": 0.679,
       "exit_code": 0,
       "name": "board_render",
       "status": "completed"
@@ -309,7 +326,7 @@
         "<RELEASE>/manufacturing/board.step",
         "<PROJECT>/attiny_sensor_controller.kicad_pcb"
       ],
-      "duration_seconds": 0.18,
+      "duration_seconds": 0.211,
       "exit_code": 0,
       "name": "step",
       "status": "completed"

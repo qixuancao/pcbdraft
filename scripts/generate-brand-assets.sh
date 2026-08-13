@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 BRAND_DIR="$REPO_DIR/docs/assets/brand"
-WEB_MARK="$REPO_DIR/src/pcb_agent/web/copperwright-mark-128.png"
+WEB_MARK="$REPO_DIR/src/copperwright/web/copperwright-mark-128.png"
 SOURCE="$BRAND_DIR/copperwright-mark-v1-source.png"
 SOURCE_SHA256=eb9a60f013b0e9413ee58442779884e2fed67f8080b105038367412b406b4004
 MODE=${1:-write}

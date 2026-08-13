@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pcb_agent.managed import generate_managed_project, open_managed_project
-from pcb_agent.requirements import RequirementsSpec
-from pcb_agent.sync import (
+from copperwright.managed import generate_managed_project, open_managed_project
+from copperwright.requirements import RequirementsSpec
+from copperwright.sync import (
     apply_kicad_import,
     preview_kicad_import,
     undo_kicad_import,
@@ -24,7 +24,7 @@ def _real_kicad_available() -> bool:
 @unittest.skipUnless(_real_kicad_available(), "real KiCad CLI/pcbnew unavailable")
 class BidirectionalSyncTests(unittest.TestCase):
     def test_native_pose_preview_apply_and_undo_are_transactional(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="pcb-agent-sync-test-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="copperwright-sync-test-") as temporary:
             root = Path(temporary) / "project"
             generated = generate_managed_project(
                 RequirementsSpec.from_dict(controller_requirements_dict()), root

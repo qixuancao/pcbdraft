@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from pcb_agent.errors import ValidationError
-from pcb_agent.placement import (
+from copperwright.errors import ValidationError
+from copperwright.placement import (
     GroupConstraint,
     NearConstraint,
     PlacementItem,

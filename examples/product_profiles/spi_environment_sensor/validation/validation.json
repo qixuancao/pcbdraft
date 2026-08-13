@@ -1,7 +1,7 @@
 {
   "design": {
-    "board_sha256": "e1cd3b82552bccb01246ba2c33b198149bfcf9683ed97a64f89d3b836cdbeb7a",
-    "content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+    "board_sha256": "2900bfe0bb7be83978a948324c62f241d8b6d1997069475ddc973f26b5832a58",
+    "content_hash": "7ee307abb58b16fcc5c7043149df544686a26851abc720cd4e6b7d395719b9bf",
     "id": "copperwright_spi_environment_sensor"
   },
   "levels": [
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.pcb-agent.json"
+            "project.copperwright.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -31,7 +31,7 @@
           "id": "l0.semantic_ir",
           "level": "L0",
           "metrics": {
-            "content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7"
+            "content_hash": "7ee307abb58b16fcc5c7043149df544686a26851abc720cd4e6b7d395719b9bf"
           },
           "outcome": "pass",
           "state": "completed",
@@ -641,7 +641,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "pcb-agent-validation",
+  "schema": "copperwright-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

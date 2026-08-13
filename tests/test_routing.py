@@ -3,8 +3,8 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from pcb_agent.errors import ValidationError
-from pcb_agent.routing import GridRouter, RouteSegment, RoutingKeepout, RoutingPad
+from copperwright.errors import ValidationError
+from copperwright.routing import GridRouter, RouteSegment, RoutingKeepout, RoutingPad
 
 
 def _router(**overrides: Any) -> GridRouter:

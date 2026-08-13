@@ -1,7 +1,7 @@
 {
   "design": {
-    "board_sha256": "39cfe2cc1ada9090e0ad80a669bf2d9fc86d3c751ae9e1f98482ba0549338186",
-    "content_hash": "4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2",
+    "board_sha256": "941461c59c57f753bfab946b3e38c047c6bac45f7ae9bec8eef753d66436f61c",
+    "content_hash": "b75625e0bbd759c42f20e24d6ca91bcfca64fa9b8efb1dde6b6f5cefe54d8a0f",
     "id": "attiny_sensor_controller"
   },
   "levels": [
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.pcb-agent.json"
+            "project.copperwright.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -31,7 +31,7 @@
           "id": "l0.semantic_ir",
           "level": "L0",
           "metrics": {
-            "content_hash": "4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2"
+            "content_hash": "b75625e0bbd759c42f20e24d6ca91bcfca64fa9b8efb1dde6b6f5cefe54d8a0f"
           },
           "outcome": "pass",
           "state": "completed",
@@ -242,8 +242,8 @@
             "capacitance_f": 1e-07,
             "distance_metric": "minimum_relevant_copper_pad_edge_gap",
             "distance_mm_by_net": {
-              "3V3": 1.41449,
-              "GND": 1.41449
+              "3V3": 1.840659,
+              "GND": 1.840659
             },
             "geometry_evidence": "native_footprint_pad_rectangles",
             "maximum_mm": 3.0
@@ -363,18 +363,18 @@
               "I2C_SCL": {
                 "length_by_width_mm": {
                   "0.2": 1.287503,
-                  "0.25": 28.9
+                  "0.25": 29.5
                 },
-                "length_mm": 30.187503,
+                "length_mm": 30.787503,
                 "neckdown_length_mm": 1.287503,
                 "neckdown_limit_mm": 2.25
               },
               "I2C_SDA": {
                 "length_by_width_mm": {
                   "0.2": 2.087503,
-                  "0.25": 35.0
+                  "0.25": 35.7
                 },
-                "length_mm": 37.087503,
+                "length_mm": 37.787503,
                 "neckdown_length_mm": 2.087503,
                 "neckdown_limit_mm": 2.25
               }
@@ -382,7 +382,7 @@
             "reference_plane": {
               "evidence": [
                 {
-                  "area_mm2": 1215.059312,
+                  "area_mm2": 1215.141137,
                   "filled": true,
                   "layer": "B.Cu",
                   "net": "/GND",
@@ -412,18 +412,18 @@
               "3V3": {
                 "length_by_width_mm": {
                   "0.2": 1.087503,
-                  "0.25": 49.1
+                  "0.25": 49.6
                 },
-                "length_mm": 50.187503,
+                "length_mm": 50.687503,
                 "neckdown_length_mm": 1.087503,
                 "neckdown_limit_mm": 2.25
               },
               "GND": {
                 "length_by_width_mm": {
                   "0.2": 4.275006,
-                  "0.25": 49.4
+                  "0.25": 49.2
                 },
-                "length_mm": 53.675006,
+                "length_mm": 53.475006,
                 "neckdown_length_mm": 4.275006,
                 "neckdown_limit_mm": 4.5
               }
@@ -483,7 +483,7 @@
           },
           "outcome": "pass",
           "state": "completed",
-          "summary": "The Qwiic connector is the sole populated rail source and UPDI VTREF is sense-only."
+          "summary": "The declared component is the sole populated 3V3 source and UPDI VTREF is sense-only."
         },
         {
           "blocks_candidate": true,
@@ -674,7 +674,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "pcb-agent-validation",
+  "schema": "copperwright-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

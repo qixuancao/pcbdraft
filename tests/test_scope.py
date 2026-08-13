@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from pcb_agent.ir import Design, Scope
-from pcb_agent.scope import evaluate_scope
+from copperwright.ir import Design, Scope
+from copperwright.scope import evaluate_scope
 from tests.design_factory import minimal_design_dict
 
 

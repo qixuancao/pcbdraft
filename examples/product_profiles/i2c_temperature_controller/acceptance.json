@@ -1,6 +1,6 @@
 {
   "candidate_ready": true,
-  "design_content_hash": "7febeb85cd376b1ef20112fc038983edc0d7f64206c2f2e38021bd8a851393a1",
+  "design_content_hash": "5ce0faeded134f02b8adce95ec1d66919b7a9bef259ea026e2a61eac3fb7d722",
   "levels": [
     {
       "level": "L0",
@@ -43,7 +43,7 @@
       "state": "human_required"
     }
   ],
-  "preview_design_content_hash": "7febeb85cd376b1ef20112fc038983edc0d7f64206c2f2e38021bd8a851393a1",
+  "preview_design_content_hash": "5ce0faeded134f02b8adce95ec1d66919b7a9bef259ea026e2a61eac3fb7d722",
   "production_claimed": false,
   "production_ready": false,
   "profile": "low_voltage_i2c_controller_v1",
@@ -51,12 +51,12 @@
     "board": "copperwright_i2c_temperature_controller.kicad_pcb",
     "ir": "design.pcbir.json",
     "kicad_project": "copperwright_i2c_temperature_controller.kicad_pro",
-    "manifest": "project.pcb-agent.json",
+    "manifest": "project.copperwright.json",
     "requirements": "requirements.pcbreq.json",
     "schematic": "copperwright_i2c_temperature_controller.kicad_sch",
     "worker_receipt": "copperwright_i2c_temperature_controller.worker-result.json"
   },
   "schema": "copperwright-product-example-acceptance",
-  "validation_report_sha256": "0644699d33d536d75eede3ab849c58cd7955dc933ab6af4b3aa354f874e7cbe9",
+  "validation_report_sha256": "fc6baf2e2c17470d39db1c6244927bd1c410cde8680d239bde86ccdb513c10d6",
   "version": 1
 }

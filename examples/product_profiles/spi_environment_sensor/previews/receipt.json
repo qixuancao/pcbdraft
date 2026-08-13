@@ -1,6 +1,6 @@
 {
-  "created_at": "2026-08-13T02:39:57Z",
-  "design_content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+  "created_at": "2026-08-13T05:47:44Z",
+  "design_content_hash": "7ee307abb58b16fcc5c7043149df544686a26851abc720cd4e6b7d395719b9bf",
   "files": {
     "board_render": {
       "bytes": 13710,
@@ -10,23 +10,23 @@
     "board_svg": {
       "bytes": 28427,
       "path": "board.svg",
-      "sha256": "8e78b664dc605cb4efe107a20cc1fa163fdeb5a327cffed9d4fce1df6b1fab98"
+      "sha256": "5e4c24ed3c705397481ddb3a93984cc301170a13d53b3681c92cc8db88c2fdcc"
     },
     "schematic_pdf": {
       "bytes": 64765,
       "path": "schematic.pdf",
-      "sha256": "59997c2438643887faf47c34e2318e6659eb35940dab2d30bf9ec710f7fb644a"
+      "sha256": "54be3f8ba997907d377cf28c585112241332d888fb5d4fc9ecc29f133fa6ac59"
     },
     "schematic_svg": {
       "bytes": 245604,
       "path": "schematic-svg/copperwright_spi_environment_sensor.svg",
-      "sha256": "3c117cfa815c79bf453fbb179af4366f53380fccdb6812472b098f67a3c83935"
+      "sha256": "32499b3db0bcef13c76a0345793c97aa217179690a03f1b138b57855e2828f25"
     }
   },
   "schema": "copperwright-preview-bundle",
   "tool_runs": [
     {
-      "duration_seconds": 0.273,
+      "duration_seconds": 0.253,
       "exit_code": 0,
       "failure": null,
       "name": "schematic_svg",
@@ -34,7 +34,7 @@
       "timed_out": false
     },
     {
-      "duration_seconds": 0.255,
+      "duration_seconds": 0.238,
       "exit_code": 0,
       "failure": null,
       "name": "schematic_pdf",
@@ -42,7 +42,7 @@
       "timed_out": false
     },
     {
-      "duration_seconds": 0.277,
+      "duration_seconds": 0.313,
       "exit_code": 0,
       "failure": null,
       "name": "board_svg",
@@ -50,7 +50,7 @@
       "timed_out": false
     },
     {
-      "duration_seconds": 0.54,
+      "duration_seconds": 0.528,
       "exit_code": 0,
       "failure": null,
       "name": "board_render",

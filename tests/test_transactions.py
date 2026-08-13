@@ -6,12 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pcb_agent.errors import PcbAgentError, ValidationError
-from pcb_agent.io import atomic_write_bytes, atomic_write_json
-from pcb_agent.ir import Design, load_design, save_design
-from pcb_agent.locking import ResourceLock
-from pcb_agent.operations import ChangeSet
-from pcb_agent.transactions import (
+from copperwright.errors import CopperWrightError, ValidationError
+from copperwright.io import atomic_write_bytes, atomic_write_json
+from copperwright.ir import Design, load_design, save_design
+from copperwright.locking import ResourceLock
+from copperwright.operations import ChangeSet
+from copperwright.transactions import (
     apply_transaction,
     prepare_transaction,
     recover_transaction,
@@ -23,7 +23,7 @@ from tests.design_factory import minimal_design_dict
 def metadata_change(design: Design, change_id: str = "metadata_change") -> ChangeSet:
     return ChangeSet.from_dict(
         {
-            "schema": "pcb-agent-change-set",
+            "schema": "copperwright-change-set",
             "version": 1,
             "id": change_id,
             "base_hash": design.content_hash(),
@@ -151,7 +151,7 @@ class SemanticTransactionTests(unittest.TestCase):
             locks = root / "locks"
             with (
                 ResourceLock(resource, locks),
-                self.assertRaisesRegex(PcbAgentError, "locked"),
+                self.assertRaisesRegex(CopperWrightError, "locked"),
             ):
                 ResourceLock(resource, locks, timeout=0.02).acquire()
 

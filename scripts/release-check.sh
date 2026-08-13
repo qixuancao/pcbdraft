@@ -27,9 +27,8 @@ tar -tzf "$SDIST" >/dev/null
 uv venv --python 3.11 "$CHECK_ROOT/venv"
 uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
 "$CHECK_ROOT/venv/bin/copperwright" --version
-"$CHECK_ROOT/venv/bin/pcb-agent" --version
 "$CHECK_ROOT/venv/bin/python" -c \
-    'from pcb_agent.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
+    'from copperwright.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 
 COPPERWRIGHT_EXE="$CHECK_ROOT/venv/bin/copperwright" \
 COPPERWRIGHT_PYTHON="$CHECK_ROOT/venv/bin/python" \

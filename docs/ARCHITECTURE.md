@@ -56,10 +56,10 @@ rule execution, file publication, and release identity.
 
 ## Application service and providers
 
-`pcb_agent.application.ApplicationService` is the only product business layer.
+`copperwright.application.ApplicationService` is the only product business layer.
 It owns project creation/opening, normalized conversations, design review,
 confirmation, jobs, semantic transactions, validation, previews, and releases.
-`pcb_agent.chat` formats that service for terminals; `pcb_agent.webapp` exposes a
+`copperwright.chat` formats that service for terminals; `copperwright.webapp` exposes a
 bounded internal HTTP/SSE projection. Neither client reimplements engineering
 logic.
 
@@ -81,7 +81,7 @@ still selects the verified profile and builds every engineering artifact.
 
 ## Semantic authority
 
-`pcb_agent.ir` defines immutable records for:
+`copperwright.ir` defines immutable records for:
 
 - requirements and acceptance statements;
 - provenance records with source, method, date, and confidence;
@@ -146,7 +146,7 @@ design.pcbir.json
 <design>.kicad_pcb
 <design>.kicad_pro
 <design>.worker-result.json
-project.pcb-agent.json
+project.copperwright.json
 ```
 
 The manifest records hashes, generator results, semantic native snapshots, design
@@ -169,11 +169,9 @@ engineering project:
     releases/<id>/           # candidate bundle and verification receipt
 ```
 
-Application schema v1 is the CopperWright 1.0 format. An intact 0.2.0 managed
-project can be imported without rewriting its engineering evidence: CopperWright
-validates it, copies it into a new application project, records the migration
-source/hash, and starts a readable conversation record. Unknown future application
-schemas and drifted legacy projects fail closed.
+Application schema v1 is the CopperWright 1.0 format. It records authoritative
+application state beside the managed design. Unknown application schemas and
+drifted managed projects fail closed.
 
 ## Transactions and synchronization
 
@@ -189,10 +187,9 @@ changes are representable today. A pose edit becomes a normal typed change set,
 is previewed, compiled from IR again, fully validated, and then published. Any
 other native change is rejected to avoid silently discarding user work.
 
-The legacy unmanaged `patch/apply` workflow is retained for compatibility. It
-limits model output to unique bounded text replacements in private staging, runs
-gates before and after, backs up source files, and rolls back regressions. It is
-not used by managed generation.
+The unmanaged `patch/apply` workflow limits model output to unique bounded text
+replacements in private staging, runs gates before and after, backs up source
+files, and rolls back regressions. It is not used by managed generation.
 
 The review workflow detects an intact managed manifest and strictly reparses its
 requirements, IR, part and block contracts, synchronization hashes, and generation

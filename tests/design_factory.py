@@ -7,7 +7,7 @@ from typing import Any
 
 def minimal_design_dict() -> dict[str, Any]:
     return {
-        "schema": "pcb-agent-ir",
+        "schema": "copperwright-ir",
         "version": 1,
         "design_id": "minimal_control",
         "name": "Minimal control fixture",

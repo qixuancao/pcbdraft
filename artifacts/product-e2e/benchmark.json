@@ -1,8 +1,8 @@
 {
   "base_fixture": {
     "baseline_findings": [],
-    "design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
-    "requirements": "src/pcb_agent/data/benchmark/acceptance_requirements.json"
+    "design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
+    "requirements": "src/copperwright/data/benchmark/acceptance_requirements.json"
   },
   "cases": [
     {
@@ -43,20 +43,20 @@
       "id": "f001",
       "label": "fault",
       "latency_ns": [
-        2986359,
-        3024490,
-        2914804,
-        3034139,
-        3020083
+        2902651,
+        3122153,
+        3260692,
+        4692271,
+        4741734
       ],
       "model_eligible": true,
       "notes": "SDA pull-up loses its supply connection.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "c4b0383303406ccd7d87f41c363b54ac9abc0961feace634b4e883b7638bd7a4",
+        "change_set_hash": "fe7fac4cefebff13df874254a9e3d89d12eb1bd796b4202abcf8293bba9d7de4",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -99,20 +99,20 @@
       "id": "f002",
       "label": "fault",
       "latency_ns": [
-        3027426,
-        2917850,
-        2840214,
-        2968976,
-        2920796
+        3018037,
+        3725485,
+        4680319,
+        4152047,
+        4686460
       ],
       "model_eligible": true,
       "notes": "SCL pull-up loses its supply connection.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "53a1fef47d481ef78796f684b86c7199da9d841dcdaaac02eeffa621f4c69bb7",
+        "change_set_hash": "c055ecaba3509f15462d7a7dab33f3260992bee36a51b3abf8e998eca4bdec5e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -165,20 +165,20 @@
       "id": "f003",
       "label": "fault",
       "latency_ns": [
-        2922198,
-        2923170,
-        2895618,
-        3057121,
-        2907421
+        4712729,
+        4703723,
+        4711668,
+        3056099,
+        2955390
       ],
       "model_eligible": true,
       "notes": "SDA pull-up is absent from the signal.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "81b2cd5c933137972e2af875ec1a960ac9fd72f10f5b9ec0dd7b8bb3d43e58ef",
+        "change_set_hash": "fa32821df10404633065049cdfadca8b38b32e8f636bde210c187b3a763bcba5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -231,20 +231,20 @@
       "id": "f004",
       "label": "fault",
       "latency_ns": [
-        2887093,
-        2800569,
-        2886702,
-        4062220,
-        3898282
+        2994402,
+        2968674,
+        2903973,
+        3070285,
+        2890247
       ],
       "model_eligible": true,
       "notes": "SCL pull-up is absent from the signal.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "3a201db0aa204c17929ca6757648cef272a813e164b4838988447cf360a718a0",
+        "change_set_hash": "4cbd003502ffac2621a52dbb4e6e65e1a8950f8f07cde0fe8d21d066bf70b243",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -280,20 +280,20 @@
       "id": "f005",
       "label": "fault",
       "latency_ns": [
-        2826869,
-        2804387,
-        2925445,
-        2767187,
-        2726631
+        2862996,
+        2850112,
+        2826317,
+        2811670,
+        2863287
       ],
       "model_eligible": true,
       "notes": "SDA pull-up is changed from 4.7 kOhm to 1 kOhm.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "95afda151d99683bd98271597e79ea858bab9f5c01165ecabd34a12c0c9b4e8c",
+        "change_set_hash": "076eba383d892f0bf1642566219f84a853740c7bbea866be55c1b3082da61647",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -329,20 +329,20 @@
       "id": "f006",
       "label": "fault",
       "latency_ns": [
-        2955751,
-        2806280,
-        2809236,
-        2752569,
-        2801632
+        2836787,
+        2797323,
+        2795239,
+        2892963,
+        2788776
       ],
       "model_eligible": true,
       "notes": "SCL pull-up is changed from 4.7 kOhm to 1 kOhm.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "66dc4f2a396394858fe19b28c36208225fe22d91575694170718e43ce7624a2b",
+        "change_set_hash": "29ebc1f88fa2069fe93d305e729899a4681fa6c3ec31fbf2a6210cc2f1d32508",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -378,20 +378,20 @@
       "id": "f007",
       "label": "fault",
       "latency_ns": [
-        2783998,
-        2754423,
-        2756146,
-        2843490,
-        2792214
+        2816118,
+        2842538,
+        2786853,
+        2788887,
+        2798836
       ],
       "model_eligible": true,
       "notes": "The I2C pull-up contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "777ae27049ea52c244d65fc325be87b5b2fda0649fd91d0c7a8c207285fb7de3",
+        "change_set_hash": "ed52a6330595425f0bf35409d26aeca9908d2de0c3f8c1d2f1bebf739ef479bf",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -427,20 +427,20 @@
       "id": "f008",
       "label": "fault",
       "latency_ns": [
-        3462192,
-        4422566,
-        2798356,
-        2805259,
-        2967644
+        2840894,
+        2800749,
+        2797023,
+        2789809,
+        2783297
       ],
       "model_eligible": true,
       "notes": "Controller SDA leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "103f41d28fca3bad3c2c162bd790850d29757e629845e3e63d8ea7e49da2d20e",
+        "change_set_hash": "ddcf880782573b2fafa740bdfb76f7c9eadf514f2bfe196f75848112284d7f17",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -483,20 +483,20 @@
       "id": "f009",
       "label": "fault",
       "latency_ns": [
-        2858559,
-        2960300,
-        2765454,
-        2868407,
-        2781023
+        3227521,
+        2868416,
+        4062879,
+        4323338,
+        4307238
       ],
       "model_eligible": true,
       "notes": "Sensor SDA leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "fae2e17ec55dd0e67bff2174e257bd1e1cdc480a679c47578449c67b37917beb",
+        "change_set_hash": "58ddc7761b31e7cecfba29c99e99e1d36fd75426d3e89e62ba0f90b97f1d6084",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -539,20 +539,20 @@
       "id": "f010",
       "label": "fault",
       "latency_ns": [
-        2789199,
-        3748680,
-        3160185,
-        2748512,
-        3009572
+        4550295,
+        4001614,
+        4669518,
+        4689786,
+        4715033
       ],
       "model_eligible": true,
       "notes": "External SDA leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "7c88f11985c6e90be31a38467091d90774fa9fd5b374519da094b943fbbafbad",
+        "change_set_hash": "41dfb0d57d2c520a9baa1295ab83aedce5faaeccd8df8cd12900af760dd2e0a5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -588,20 +588,20 @@
       "id": "f011",
       "label": "fault",
       "latency_ns": [
-        2929803,
-        2924282,
-        2784239,
-        2816199,
-        3023038
+        2873846,
+        2823522,
+        2824374,
+        2819064,
+        2815637
       ],
       "model_eligible": true,
       "notes": "Controller SCL leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "dfec15976bb1ef489572aca04860b01d3103ce78dd8f510d09784f2bd9524d36",
+        "change_set_hash": "bf47f38655574e8bbd8be33d024249f83ac22df34f2cdb64dca35cd20432a1dc",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -644,20 +644,20 @@
       "id": "f012",
       "label": "fault",
       "latency_ns": [
-        3012929,
-        2839623,
-        2970368,
-        2827280,
-        3033197
+        2863848,
+        2828362,
+        2904524,
+        2825296,
+        2827660
       ],
       "model_eligible": true,
       "notes": "Sensor SCL leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "9602c1ff92c0ff752f479b6dc4a4055bec0cd07f25f5e320ecb9f66be067a462",
+        "change_set_hash": "c656935fd4438b5a5a15612cb048e614a7ad17e87101032b7cdc27f7de531c6b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -700,20 +700,20 @@
       "id": "f013",
       "label": "fault",
       "latency_ns": [
-        4515641,
-        4658780,
-        3011056,
-        3003702,
-        2872105
+        2844141,
+        2812481,
+        2820356,
+        2862976,
+        2823562
       ],
       "model_eligible": true,
       "notes": "External SCL leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b6a53274f8c0bfb8d507e74050c85805c9e621dfb723a35c21efeac4e08fc35d",
+        "change_set_hash": "aacd155b9a63a36341d62d3189a180e9685e431c5164ccea892abbb9bd4437ef",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -756,20 +756,20 @@
       "id": "f014",
       "label": "fault",
       "latency_ns": [
-        3078522,
-        3798304,
-        2918611,
-        2783077,
-        2993712
+        2852306,
+        2918901,
+        2790300,
+        2776233,
+        2782966
       ],
       "model_eligible": true,
       "notes": "MCU capacitor loses supply.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "07bc9cc811710781aabe80f1fc7b1957394af1040dce09f92a1021eb733c8650",
+        "change_set_hash": "933a08831e237c38003f85b23d56067d68c8bb63f66732f9c45856bd7d803882",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -812,20 +812,20 @@
       "id": "f015",
       "label": "fault",
       "latency_ns": [
-        2814706,
-        2891160,
-        3986657,
-        2916688,
-        2888555
+        2865069,
+        2836617,
+        2814244,
+        2858328,
+        2825856
       ],
       "model_eligible": true,
       "notes": "MCU capacitor loses return.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "7203eae700f33aa7d1506c4fa67ebeacb217f8323351e17559db1aa28c7c1fc2",
+        "change_set_hash": "ac00b7dab599674cf7b4dd056e9eff6784824e1e7b15e80a05467ebd19c9da51",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -868,20 +868,20 @@
       "id": "f016",
       "label": "fault",
       "latency_ns": [
-        2945953,
-        2931566,
-        2926497,
-        2809527,
-        2847749
+        2844781,
+        2841796,
+        2812341,
+        2796852,
+        2771264
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor loses supply.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "73a8af4301ba560af298dd46189d890e51d8da936367b1a056a62270e751c0ca",
+        "change_set_hash": "84b0abb349fe9f3da47c4a6911f960c146da01fd56f1fd5af2c9c0abaf32e3c6",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -924,20 +924,20 @@
       "id": "f017",
       "label": "fault",
       "latency_ns": [
-        2857898,
-        2789379,
-        2782115,
-        2795610,
-        2792545
+        2967422,
+        2835434,
+        2776784,
+        2755194,
+        2805077
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor loses return.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2a5bda589b0c8106396d99442de1dee6ff8a28e5155f5e863c9e9376223d9adc",
+        "change_set_hash": "dd26a9b3776e692f36852798df2e719c8c8c6fec32c9a469d2c54d512b8ce4bf",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -973,20 +973,20 @@
       "id": "f018",
       "label": "fault",
       "latency_ns": [
-        2864340,
-        2795941,
-        2793347,
-        2787745,
-        2735167
+        2815888,
+        2789107,
+        2823422,
+        2817450,
+        2812551
       ],
       "model_eligible": true,
       "notes": "MCU capacitor is moved far from U1.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "f9c7334be50b735d3177dab702cabd4cbde1aa38eb030a7321c4988377d6fa4d",
+        "change_set_hash": "a4156ae4ece855f9ed5c249070ca2d97e28352b25776b2e5a078c0d6419f9e03",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1022,20 +1022,20 @@
       "id": "f019",
       "label": "fault",
       "latency_ns": [
-        2829424,
-        2789178,
-        2838671,
-        2809286,
-        2798045
+        2842558,
+        2810236,
+        2773839,
+        2763079,
+        2920655
       ],
       "model_eligible": true,
       "notes": "MCU capacitor is moved to the opposite board corner.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e26ed453a405be491d13dad07dc1eabe6fea899ca27ff2fd08f5dff6bdd66de0",
+        "change_set_hash": "39d59d7a7a7ad38ff58cab3415b7abadcee7bdc7e9c2bc77437354b016e416c2",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1082,20 +1082,20 @@
       "id": "f020",
       "label": "fault",
       "latency_ns": [
-        2855563,
-        2861664,
-        2850894,
-        2829915,
-        2828973
+        2908582,
+        2770021,
+        2773437,
+        2807101,
+        2805979
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor is moved far from U2.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "a0e9012316a01aaa6cabd33fbf1bdb0728240c3268f623b4daa363e993f31851",
+        "change_set_hash": "53a5ea0f69d7f98666b5147195025fee37d3a83302bae7a008227e029b622f8f",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1142,20 +1142,20 @@
       "id": "f021",
       "label": "fault",
       "latency_ns": [
-        2888796,
-        2841336,
-        2779390,
-        2778388,
-        2833001
+        2853779,
+        3261424,
+        2892351,
+        2986347,
+        2919522
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor is moved away from U2.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "d1daefd1b5ec1aab889dd0596c647b377577995d9d914905fd106d61ced2cbdd",
+        "change_set_hash": "f724c43e86144bf49994f05d60e4c7834fb7827bc1f4401bc57dc8d119c9bb81",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1191,20 +1191,20 @@
       "id": "f022",
       "label": "fault",
       "latency_ns": [
-        2803075,
-        2919413,
-        2765965,
-        2770764,
-        2749323
+        2802763,
+        2779620,
+        2795569,
+        2889936,
+        3102716
       ],
       "model_eligible": true,
       "notes": "MCU decoupling placement/value contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "54099388e5f8414ece733bd9b85a8fc8e85cf491ce3b2d43138a549a8e2bcb97",
+        "change_set_hash": "89418002e964902cbba88f76d698deef0c5150f1037c2db59bf646d9bedd9e6a",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1240,20 +1240,20 @@
       "id": "f023",
       "label": "fault",
       "latency_ns": [
-        2810638,
-        2765584,
-        2765233,
-        2804247,
-        2782416
+        2808243,
+        2810457,
+        2835444,
+        2825555,
+        2765823
       ],
       "model_eligible": true,
       "notes": "Sensor decoupling placement/value contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "3b6e840de6ae63eb84a5cad52e648031904f81a8b1c07b9c9f29a14709c1a3b3",
+        "change_set_hash": "adf7ee06681469b5e97fb7c99a529f37253de463c23488d9c45cc719cfc67bbe",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1289,20 +1289,20 @@
       "id": "f024",
       "label": "fault",
       "latency_ns": [
-        2844191,
-        2804167,
-        2852307,
-        2790361,
-        2793477
+        2806119,
+        2770292,
+        2773819,
+        2917478,
+        3286040
       ],
       "model_eligible": true,
       "notes": "MCU capacitor is replaced by a resistor.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2568198d56271fbbf8aa14429ff11ea2377aed7f8e17e6cf1bcb9d0d4206028b",
+        "change_set_hash": "02fb7662078de89a52d22abd7c2f3ca0026ba5ff07d61469b3fe50bd3d5555ed",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1338,20 +1338,20 @@
       "id": "f025",
       "label": "fault",
       "latency_ns": [
-        2880881,
-        2832971,
-        2821779,
-        2766416,
-        2764402
+        5390422,
+        5360045,
+        5408346,
+        5317525,
+        3320055
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor is replaced by a resistor.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "11013b5315d45778af8b14e00c1a14609a712cd24b98add27c705039d5b4b3ba",
+        "change_set_hash": "2520a11c67647de80f8704efcdc414862971e1bd9385bb34eb8b252334550f07",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1388,20 +1388,20 @@
       "id": "f026",
       "label": "fault",
       "latency_ns": [
-        2844422,
-        2823392,
-        2961983,
-        2766656,
-        2803065
+        5385603,
+        5363621,
+        5311854,
+        5185357,
+        3478682
       ],
       "model_eligible": true,
       "notes": "Installed LED resistor no longer matches its declared value.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "449e8e49dd3db1d3f5cfef898b93092ca9ace3373bbc43f59cca6fb97c6615c0",
+        "change_set_hash": "53be99ff6ca65b62201af66db310ec8f23d98a86556203ac87c235a7d2dfd411",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1437,20 +1437,20 @@
       "id": "f027",
       "label": "fault",
       "latency_ns": [
-        2904194,
-        2826959,
-        2810629,
-        2801762,
-        2847247
+        2852567,
+        2818081,
+        2886290,
+        2811459,
+        2847267
       ],
       "model_eligible": true,
       "notes": "LED current-limit contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "6f27fde5808d2afc0174015dd242917d14de80e804ebe09b1032889bd35540ef",
+        "change_set_hash": "b220289a1711247c05ee916a3e4e0a2e39959f98c16c0c19e400a73b5997987f",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1494,20 +1494,20 @@
       "id": "f028",
       "label": "fault",
       "latency_ns": [
-        2850193,
-        2855613,
-        2853739,
-        3039188,
-        2811700
+        3934488,
+        3504610,
+        2772366,
+        2966431,
+        2975167
       ],
       "model_eligible": true,
       "notes": "LED is disconnected from the series resistor.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "855289f48c9b54835eab17842a381c5eba3e7c2bbe269ea8ab77ce5235c03c93",
+        "change_set_hash": "58091c5964438ba2cd3c6775edde7d1147fb0c84ef138661cbf354590df16c50",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1551,20 +1551,20 @@
       "id": "f029",
       "label": "fault",
       "latency_ns": [
-        2947736,
-        2842589,
-        2811641,
-        2801551,
-        2754503
+        2898543,
+        2830715,
+        2837468,
+        2904924,
+        2829233
       ],
       "model_eligible": true,
       "notes": "Resistor is disconnected from the LED.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "a07dd16ea48b92afca5b13c8a1c0ee0e364603c3654e4a06e1f26b6a6bead027",
+        "change_set_hash": "6223bbb95390a9ecf8d03dcca57ba1703dad2cdbf75a3beaba5fd05615889598",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1601,20 +1601,20 @@
       "id": "f030",
       "label": "fault",
       "latency_ns": [
-        3302713,
-        3739634,
-        4051960,
-        3838218,
-        3496237
+        3377732,
+        3164332,
+        5203891,
+        5476142,
+        3560436
       ],
       "model_eligible": true,
       "notes": "SDA pull-up is spread away from the sensor group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2989e08e72447adb55ab0b744d2b5842871d5ded232ece4c93b4141eba8b713c",
+        "change_set_hash": "1a61a227d59a2a07c8b60aaccec305c0ae113e10ddfc71aadd8ab42ea6eb9fc1",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1651,20 +1651,20 @@
       "id": "f031",
       "label": "fault",
       "latency_ns": [
-        4696110,
-        4689838,
-        4675491,
-        4688405,
-        4676003
+        3195440,
+        2965809,
+        2931384,
+        2815206,
+        3188317
       ],
       "model_eligible": true,
       "notes": "SCL pull-up is spread away from the sensor group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "131f19b39ca0e7327261e5620114196dbfb1489d901d6f8b4e77a1704e16e696",
+        "change_set_hash": "98acb2bc4d590e2d8975a6b65227a2fceb760410dd155b51bc6e6f684b15e1cf",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1711,20 +1711,20 @@
       "id": "f032",
       "label": "fault",
       "latency_ns": [
-        4694467,
-        4695769,
-        4712871,
-        4604759,
-        4643281
+        2976900,
+        2856013,
+        4004941,
+        4734190,
+        3376400
       ],
       "model_eligible": true,
       "notes": "Sensor IC is spread away from its interface group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "548344d329311ea9b2f6e8fe6d4dad0e0e5e18cdea3c48fd72c979015876c5eb",
+        "change_set_hash": "c131ce0364256755b7a4bdef312d90eee43c65e4698e6fb51f19007dcd6a9157",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1772,20 +1772,20 @@
       "id": "f033",
       "label": "fault",
       "latency_ns": [
-        4694918,
-        4673618,
-        4657728,
-        4671333,
-        4668468
+        2843820,
+        2880649,
+        2803664,
+        2867364,
+        2963284
       ],
       "model_eligible": true,
       "notes": "External bus connector is spread from the sensor group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "81e8aa68f0b8348b3fae24de665e2db2fe0d03827d751d3636552f59051a2496",
+        "change_set_hash": "a6afa1cc7b86f07a51d325d5debcec93720b1c040b530d2eedaac7e7cd43e996",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1822,20 +1822,20 @@
       "id": "f034",
       "label": "fault",
       "latency_ns": [
-        4694657,
-        4694567,
-        4672455,
-        4662987,
-        4675191
+        2856233,
+        2811549,
+        2829132,
+        2787504,
+        2888684
       ],
       "model_eligible": true,
       "notes": "Qwiic connector is moved too far from the right edge.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "cc56300501143c0c3e9f19e482b35ebc0ee36e996957b4ba3509ec8b04829798",
+        "change_set_hash": "03fe4847da173ef865a312ea13083a20e5025c9ea24a5b2ac5839d08c6ecaa55",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1872,20 +1872,20 @@
       "id": "f035",
       "label": "fault",
       "latency_ns": [
-        4658479,
-        4640125,
-        5056166,
-        4670322,
-        3650786
+        2841917,
+        2917879,
+        2838661,
+        2723083,
+        2751166
       ],
       "model_eligible": true,
       "notes": "Qwiic connector is inaccessible near board center.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "1abefda9eab3cba3cc9082c3d0f4c54f5b37edf778fcf1d775cc3fef859dc01d",
+        "change_set_hash": "d61db273286d0ee9bd2ce9730387a56080fa3b64af76e24f0514f5e67726836e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1922,20 +1922,20 @@
       "id": "f036",
       "label": "fault",
       "latency_ns": [
-        4170302,
-        3763869,
-        3807010,
-        3596745,
-        2887563
+        2800538,
+        2819073,
+        2759822,
+        2753480,
+        2996807
       ],
       "model_eligible": true,
       "notes": "UPDI header is moved too far from the left edge.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "aad168558fbe1b2f8921a366e7b0dbfdac0ffa5e3d7351598940ba147d8c5447",
+        "change_set_hash": "ca249fd9bcbf245f04737f0e8eac1d7f8935a690ccd3b6bd0888115d2a0a0c87",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1972,20 +1972,20 @@
       "id": "f037",
       "label": "fault",
       "latency_ns": [
-        3819092,
-        4669369,
-        4025200,
-        2868978,
-        2813654
+        2813954,
+        2899064,
+        2766925,
+        2819955,
+        2755724
       ],
       "model_eligible": true,
       "notes": "UPDI header is inaccessible near board center.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "af62ac842b967c8f389ddbf5200fc069005e3d2a25f5ff10268598f477e02ce8",
+        "change_set_hash": "ab21c88c681b3646241616d72ef638b9be87eed16fe9d7aacb308b6c9f3a1fa4",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2021,20 +2021,20 @@
       "id": "f038",
       "label": "fault",
       "latency_ns": [
-        3214788,
-        4658589,
-        4669430,
-        3183629,
-        2869910
+        2825485,
+        2930523,
+        2784218,
+        2821188,
+        2825265
       ],
       "model_eligible": false,
       "notes": "Manufacturing track limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "bf5eaab2c8e92b33a47e623552afc1f4f99571a061b6c035a44e58ff70b927ea",
+        "change_set_hash": "57ab7637f62adcabdf64ea6fc561504cc2389814177cb186478107fe4df61201",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2070,20 +2070,20 @@
       "id": "f039",
       "label": "fault",
       "latency_ns": [
-        3554606,
-        2827090,
-        2954069,
-        2882294,
-        2866304
+        2823873,
+        2906799,
+        2900497,
+        2858487,
+        2759411
       ],
       "model_eligible": false,
       "notes": "Manufacturing clearance limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "9da347d32cf322b5f0a939f2257b33b97d5a96c1b7804502dc0cfdcc70b6921b",
+        "change_set_hash": "34d54c59d932e995659664697ac09a585e4b356df6f185878ccfa2300bbccfe3",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2119,20 +2119,20 @@
       "id": "f040",
       "label": "fault",
       "latency_ns": [
-        3050940,
-        2996688,
-        2972923,
-        2851265,
-        3166317
+        2924943,
+        2880148,
+        4215936,
+        3827226,
+        2967032
       ],
       "model_eligible": false,
       "notes": "Manufacturing drill limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "6120018118b9a6c79208d042f767a89bcc8698f6b66c561ab42ac0fb50fc68dd",
+        "change_set_hash": "2da7ca27a9106dc055d866065d31e942100925df430384610ba44da8cd395d64",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2168,20 +2168,20 @@
       "id": "f041",
       "label": "fault",
       "latency_ns": [
-        2988372,
-        3578431,
-        3127954,
-        2821840,
-        2934902
+        3189920,
+        2886960,
+        2816409,
+        2793105,
+        2790169
       ],
       "model_eligible": false,
       "notes": "Manufacturing edge limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e707c58c75ce3dc266f07b5d13156ca5e01c7b548d11df7aee828c59230d73e7",
+        "change_set_hash": "2b36e25f98d14f165ff2a5c25ca21a60e09dc999139f491f915932e0d764c6cc",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2217,20 +2217,20 @@
       "id": "f042",
       "label": "fault",
       "latency_ns": [
-        2841197,
-        2827050,
-        2873336,
-        2824434,
-        2876983
+        2871522,
+        2799076,
+        2828902,
+        2851584,
+        2986508
       ],
       "model_eligible": false,
       "notes": "Manufacturing rule contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "58533fd19aef3b5dadd2b19fefe60cd1abd896bfb97db5d131625aa0c130cc97",
+        "change_set_hash": "18feaaf40fbcbc79047063fe052bf21dbdb89e5c217141427e46dab8891eb018",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2263,20 +2263,20 @@
       "id": "f043",
       "label": "fault",
       "latency_ns": [
-        2977031,
-        2835325,
-        2782305,
-        2802403,
-        2789109
+        2915976,
+        2895356,
+        2875610,
+        2812010,
+        2798195
       ],
       "model_eligible": false,
       "notes": "Nominal I2C width is below board minimum.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "a9837afedd746c7300426729b56738a24237fd72aed8858b13ca2a93ae88f966",
+        "change_set_hash": "947be0dd0087716168be2d42c078042225add6c80ef938e0519a6407ce91ede7",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2309,20 +2309,20 @@
       "id": "f044",
       "label": "fault",
       "latency_ns": [
-        2856024,
-        2818483,
-        2941484,
-        2865181,
-        2843471
+        2858217,
+        2826899,
+        2815237,
+        2825335,
+        3038385
       ],
       "model_eligible": false,
       "notes": "I2C neckdown width is below board minimum.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "5bdd8673669bef6909bb839c11a169ddbf0ee5d3e53ada274c62ff0e73504c7e",
+        "change_set_hash": "6b8a570ea5094beccadf64e4fe7b5e1e7bd7078dc3c13916bce41be7d6381e93",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2355,20 +2355,20 @@
       "id": "f045",
       "label": "fault",
       "latency_ns": [
-        2930594,
-        2824154,
-        2819695,
-        2796152,
-        2791723
+        2819384,
+        2988943,
+        2813644,
+        2808634,
+        2813032
       ],
       "model_eligible": false,
       "notes": "I2C maximum length is non-positive.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "5129e4f2bd012d1fa663298a1bc03d2091c433bff58413ff3162cd8ea0a49883",
+        "change_set_hash": "3d67b733df60d49f0c4f5024fff6190f321ef133d9c24c07805ab307a2d8217b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2405,20 +2405,20 @@
       "id": "f046",
       "label": "fault",
       "latency_ns": [
-        2825176,
-        2831127,
-        2818914,
-        3094962,
-        2883386
+        2844120,
+        2799316,
+        2854991,
+        2801411,
+        2883885
       ],
       "model_eligible": false,
       "notes": "I2C routing contract is deleted while power routing remains.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "9adfe120665c6c6b3b5fb1a4cf32826298c00f76f572fe6729762b9eaa4b3cce",
+        "change_set_hash": "a446344f26fff290197427486bec3cd60d506b34b549b09e5ffa5663ce93f470",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2461,20 +2461,20 @@
       "id": "f047",
       "label": "fault",
       "latency_ns": [
-        2827541,
-        2871132,
-        2754463,
-        2718135,
-        2712464
+        2863847,
+        2928178,
+        2932837,
+        2838099,
+        2804246
       ],
       "model_eligible": true,
       "notes": "Sensor points to an unknown canonical part identity.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "a3a7623966029adb8c3eaef9e66b3a32be47fb5b5827933b7ec5ce756c0411f5",
+        "change_set_hash": "6e011ece190b06b2666606477e63b44c6b3591cbb8b9f6648869685d568ba834",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2507,20 +2507,20 @@
       "id": "f048",
       "label": "fault",
       "latency_ns": [
-        2815538,
-        2781714,
-        2788397,
-        2793106,
-        3027657
+        2828271,
+        2802142,
+        2799366,
+        2778537,
+        2829242
       ],
       "model_eligible": true,
       "notes": "Required UPDI header signal is left unconnected.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e666531afee72a75f2ebbca2dd2becb6b61fd3cccdc943ac9ecf8016c8f246fa",
+        "change_set_hash": "46830fc5deec431eba58cb16ebe5ae9f8533609b2901dbf65dee9678046d437b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2594,11 +2594,11 @@
       "id": "f049",
       "label": "fault",
       "latency_ns": [
-        2893464,
-        3002439,
-        2847809,
-        2811751,
-        2795119
+        2855913,
+        2881410,
+        3074623,
+        2881180,
+        2825585
       ],
       "model_eligible": true,
       "notes": "Declared rail maximum exceeds the TMP102 supply rating.",
@@ -2638,20 +2638,20 @@
       "id": "f050",
       "label": "fault",
       "latency_ns": [
-        2885169,
-        2849933,
-        2874739,
-        2824124,
-        2813264
+        2955811,
+        2880970,
+        2923299,
+        2834131,
+        2817390
       ],
       "model_eligible": false,
       "notes": "Two components share the same schematic reference.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e89cfc5571c8d5b2a3a28b02a82c679aada3510339071ff4e8538fafaec0930b",
+        "change_set_hash": "88f8c1d8a62ea8e56038bb7235a533044f3738a93398f11eee6ce78397ea3c0c",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2699,11 +2699,11 @@
       "id": "f051",
       "label": "fault",
       "latency_ns": [
-        2864670,
-        2834934,
-        2830086,
-        2856886,
-        2852677
+        2924692,
+        3023368,
+        2832599,
+        2831647,
+        2829823
       ],
       "model_eligible": false,
       "notes": "Mains design must be rejected instead of silently accepted.",
@@ -2746,11 +2746,11 @@
       "id": "f052",
       "label": "fault",
       "latency_ns": [
-        3071249,
-        2774802,
-        2762439,
-        2784500,
-        2852107
+        2905456,
+        2894364,
+        2888253,
+        2932727,
+        2900606
       ],
       "model_eligible": false,
       "notes": "RF design is outside the automated scope.",
@@ -2793,11 +2793,11 @@
       "id": "f053",
       "label": "fault",
       "latency_ns": [
-        3008631,
-        2881132,
-        2805249,
-        2830055,
-        2810158
+        3002949,
+        3244191,
+        3834871,
+        5293620,
+        5117219
       ],
       "model_eligible": false,
       "notes": "DDR design is outside the automated scope.",
@@ -2840,11 +2840,11 @@
       "id": "f054",
       "label": "fault",
       "latency_ns": [
-        2832610,
-        3318302,
-        2796432,
-        2779811,
-        2793297
+        2916987,
+        2891559,
+        2856063,
+        2910476,
+        3489102
       ],
       "model_eligible": false,
       "notes": "Safety-critical use must remain an explicit rejection.",
@@ -2887,20 +2887,20 @@
       "id": "f055",
       "label": "fault",
       "latency_ns": [
-        2867786,
-        2901650,
-        2829293,
-        2787525,
-        2817612
+        2924030,
+        2867114,
+        3243300,
+        5337171,
+        2975848
       ],
       "model_eligible": false,
       "notes": "One-layer generation is outside the supported 2-4 layer scope.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "a2c764a15eae7f52699c0679baea8fbc1e455ba701b9bd72edbc8afa6b1cc8b1",
+        "change_set_hash": "1c6df944686ff6bbb1c15c3a92906389bb41655bc31feca253bd0eca19b8aa29",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2936,20 +2936,20 @@
       "id": "f056",
       "label": "fault",
       "latency_ns": [
-        2926987,
-        2942827,
-        2949931,
-        2854331,
-        3038817
+        2929792,
+        2945691,
+        2833821,
+        3015522,
+        2972953
       ],
       "model_eligible": false,
       "notes": "Five-layer generation is outside the supported 2-4 layer scope.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "efcc1b977b7c44dee8b06ca37291680914b9de51abdc5d614f7c97472fe91e87",
+        "change_set_hash": "4513a6cbecbe24199fc03bd88f27709f359f459278531cdf530d8a3c275bb972",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2992,20 +2992,20 @@
       "id": "f057",
       "label": "fault",
       "latency_ns": [
-        2859891,
-        3073292,
-        2807573,
-        2789770,
-        2818474
+        2961130,
+        2909944,
+        2873325,
+        2815076,
+        2822290
       ],
       "model_eligible": false,
       "notes": "Board clearance exceeds the SOT-563 pad gap.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "cbdb8da83d36f5c4dad442719410d6682c551df735ae70acf6f4a8129157364d",
+        "change_set_hash": "bd0d5c8e8c56920e7a8f1970220cb8ff56c48c345f4d5fc4e17add75760e5d4e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3048,20 +3048,20 @@
       "id": "f058",
       "label": "fault",
       "latency_ns": [
-        2862686,
-        2844051,
-        2865452,
-        2861444,
-        2976370
+        3399674,
+        3609117,
+        2885959,
+        3109729,
+        2994643
       ],
       "model_eligible": true,
       "notes": "Required sensor supply pin is left unconnected.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "bf86d467f08ea8ff4990525ca3907d55f3b2d7cc20e5dda6c8ad85e017420789",
+        "change_set_hash": "fa980101ccd7f42868fe7e2bea20ad807be8b6289ab3ee1811affaf891073e4b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3098,20 +3098,20 @@
       "id": "f059",
       "label": "fault",
       "latency_ns": [
-        2923431,
-        2958987,
-        2874649,
-        2834965,
-        2855864
+        4048943,
+        2908672,
+        3627652,
+        4023355,
+        2882272
       ],
       "model_eligible": false,
       "notes": "The I2C budget is changed to a capacitance that violates the declared RC and interface contract.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e5c38595e26e3968aea732105e6e0029329db5da525137b13a2a4f1375e98461",
+        "change_set_hash": "bc3967f90a0cfcfe1e77a2da822dc5879f8c914aff13e6434b234a4e1962b778",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3148,20 +3148,20 @@
       "id": "f060",
       "label": "fault",
       "latency_ns": [
-        2984265,
-        3078171,
-        3000445,
-        2932658,
-        3063274
+        2906808,
+        2926846,
+        3243110,
+        2884266,
+        2889075
       ],
       "model_eligible": false,
       "notes": "The recorded I2C rise-time calculation is falsified.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "875af5bd3a7a546cf07cdaaa50d62bd1fa7f0eb99f0eb7d37e06c112d52d8871",
+        "change_set_hash": "2953b7d5904a05e257ed9e78c5898efacfd9c7ca547b3471b42da17807542110",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3197,20 +3197,20 @@
       "id": "f061",
       "label": "fault",
       "latency_ns": [
-        3009563,
-        2847688,
-        2767387,
-        2796702,
-        2908332
+        2989834,
+        4497255,
+        5288460,
+        5219511,
+        4582304
       ],
       "model_eligible": false,
       "notes": "The required I2C electrical-budget contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e011a35cc1834a5a49695f930c13f781b3d196012ad5367b6b8a869c536c7c18",
+        "change_set_hash": "60071017115a704bad771ef01276438d932ee7844dd0117765ec8c0b9aae74e5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3253,20 +3253,20 @@
       "id": "f062",
       "label": "fault",
       "latency_ns": [
-        2859921,
-        2870401,
-        2801181,
-        3008320,
-        2804147
+        2890698,
+        2841836,
+        2833150,
+        2849791,
+        2830665
       ],
       "model_eligible": true,
       "notes": "UPDI target-voltage sense is disconnected from the powered target rail.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b61a3f881ba1500a0e5343ef8a3d5bc7dd8f9cb17eef5697ae1c25786286a2d0",
+        "change_set_hash": "a125c83b9b418c62a08f41ccaa65681f4d27419745edf10a22300a9d67a3f7e5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3302,20 +3302,20 @@
       "id": "f063",
       "label": "fault",
       "latency_ns": [
-        2935393,
-        2871443,
-        2943128,
-        3515383,
-        2978535
+        2874858,
+        2877984,
+        2824735,
+        2824233,
+        2831537
       ],
       "model_eligible": false,
       "notes": "The single-source and UPDI sense-only policy is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "c9f7ce4fca4799efd229d642cd80f09b78b35dae35d12113e36b0208c4000cb6",
+        "change_set_hash": "85736b4e173673d8f621dab071b7ba03680000c5e9771ba03a53d6ec933e566e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3351,20 +3351,20 @@
       "id": "f064",
       "label": "fault",
       "latency_ns": [
-        3894074,
-        2838772,
-        2832960,
-        4011985,
-        4723000
+        2832289,
+        2803424,
+        2829233,
+        2907630,
+        2838730
       ],
       "model_eligible": false,
       "notes": "The programming header contract is changed to allow simultaneous external sources.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "bb52e1f155e7b509c94fb874aa6cd934a32bd79b73937392bf5a2481ea3d2371",
+        "change_set_hash": "2386145f54b625157571d01e144144e476dbd08470d3d346a093949bde7f8b95",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3402,20 +3402,20 @@
       "id": "f065",
       "label": "fault",
       "latency_ns": [
-        4643922,
-        4621369,
-        4618805,
-        4858344,
-        4632260
+        2816017,
+        2815747,
+        2834352,
+        2773678,
+        2771835
       ],
       "model_eligible": false,
       "notes": "The power contract incorrectly uses nominal rather than maximum rail voltage.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "d3864beb421741bc1a85c9c4307a526bdbc8268044111cd943e8dff76a733d57",
+        "change_set_hash": "f941fca5f291806d51a20d6e23a3211f536b9766deeccd9472df98bc2ee2a592",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3453,20 +3453,20 @@
       "id": "f066",
       "label": "fault",
       "latency_ns": [
-        4677706,
-        3971299,
-        3251697,
-        5522422,
-        6180709
+        2871011,
+        2831858,
+        2821628,
+        2842397,
+        2817931
       ],
       "model_eligible": false,
       "notes": "The power budget records a voltage basis inconsistent with the simultaneous maximum envelope.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2ed6546afcb1397e1bf83e0ab612326ebc33f74e6cac92d34818016d47fc2455",
+        "change_set_hash": "ade69be5ed9deb2d1c8947ffd0d4253dfafe8ea622ec4e485c47e1cb3b7f7bcd",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3504,20 +3504,20 @@
       "id": "f067",
       "label": "fault",
       "latency_ns": [
-        4750673,
-        4942522,
-        4530529,
-        4520831,
-        3800848
+        2890939,
+        2900987,
+        2925894,
+        2775171,
+        2733433
       ],
       "model_eligible": false,
       "notes": "The power-budget envelope policy is weakened to a nominal-only interpretation.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "f8b7f4dbf1157f069d247a1ecdd25cdec6a82c002d2399248cb45bfcbfa51279",
+        "change_set_hash": "1a169c0a129bac04de203259de4e2650465d07afb7379cfb18cc31cbaa3aa6a6",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3550,20 +3550,20 @@
       "id": "f068",
       "label": "fault",
       "latency_ns": [
-        2824154,
-        2839673,
-        2832870,
-        3878775,
-        4611771
+        2940531,
+        2867184,
+        2809416,
+        2822180,
+        2913942
       ],
       "model_eligible": false,
       "notes": "The continuous-reference contract is changed to require no GND stitching vias.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "1e7254f3030a9c6876e414fa09ab84c29a98ac94cee2e0f255feea5d0ac8008b",
+        "change_set_hash": "671435901c7516ebb57cc5d3b3bfd062a438c31d1a4b91f6e32ccead95bd5944",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3599,20 +3599,20 @@
       "id": "f069",
       "label": "fault",
       "latency_ns": [
-        2894666,
-        2789820,
-        2872765,
-        2810028,
-        2880350
+        2846305,
+        2813804,
+        2963806,
+        2777696,
+        2847988
       ],
       "model_eligible": false,
       "notes": "The MCU decoupling metric is changed from native copper-pad gap to an ambiguous component origin.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "8d089ae352d52cf65331537b257fa2097a7048e8af0f97d0a0629ecea3910d90",
+        "change_set_hash": "8608d51889d2668a2521e935a36cca32077b14c3ebefddc99ef8e511a664541b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3648,20 +3648,20 @@
       "id": "f070",
       "label": "fault",
       "latency_ns": [
-        2949880,
-        2809597,
-        2792796,
-        3640087,
-        2838722
+        2944008,
+        2834072,
+        2838790,
+        2819444,
+        2882352
       ],
       "model_eligible": false,
       "notes": "The sensor decoupling contract replaces native pad rectangles with approximate placement evidence.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e36ce57b3fd394b3f210e4e0efb1a2257900e7a75a07b0344c99d1cc8c62d536",
+        "change_set_hash": "7d990ac5e35298d2746d7dc3b533976ede8d67555f70f8345c820231f53f7418",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3683,11 +3683,11 @@
       "id": "c001",
       "label": "clean",
       "latency_ns": [
-        2794588,
-        2726340,
-        2715851,
-        2832650,
-        2724367
+        2982541,
+        2815316,
+        2856674,
+        2819283,
+        2811129
       ],
       "model_eligible": true,
       "notes": "Benign metadata does not alter contracts.",
@@ -3716,11 +3716,11 @@
       "id": "c002",
       "label": "clean",
       "latency_ns": [
-        2779871,
-        2772928,
-        2757690,
-        2758982,
-        2796993
+        2850753,
+        2867034,
+        2776984,
+        2898864,
+        2894475
       ],
       "model_eligible": true,
       "notes": "Ownership metadata is electrically inert.",
@@ -3749,11 +3749,11 @@
       "id": "c003",
       "label": "clean",
       "latency_ns": [
-        4278946,
-        4572318,
-        4561357,
-        4557690,
-        4558130
+        2846615,
+        2822560,
+        2901999,
+        2866552,
+        2806249
       ],
       "model_eligible": false,
       "notes": "Numeric metadata is electrically inert.",
@@ -3782,11 +3782,11 @@
       "id": "c004",
       "label": "clean",
       "latency_ns": [
-        4609868,
-        4610910,
-        3067000,
-        2780312,
-        2771746
+        2832458,
+        2856754,
+        2780101,
+        2757638,
+        2960589
       ],
       "model_eligible": false,
       "notes": "Nested JSON metadata is electrically inert.",
@@ -3815,11 +3815,11 @@
       "id": "c005",
       "label": "clean",
       "latency_ns": [
-        2814326,
-        2813545,
-        2759102,
-        2736139,
-        2752289
+        4197001,
+        4906604,
+        4893529,
+        4890093,
+        4904148
       ],
       "model_eligible": true,
       "notes": "Revision label does not alter the circuit.",
@@ -3848,11 +3848,11 @@
       "id": "c006",
       "label": "clean",
       "latency_ns": [
-        2808715,
-        2781524,
-        2762147,
-        2819285,
-        2803967
+        4928324,
+        4913927,
+        4927622,
+        4897116,
+        4939174
       ],
       "model_eligible": false,
       "notes": "Prototype revision label is benign.",
@@ -3881,11 +3881,11 @@
       "id": "c007",
       "label": "clean",
       "latency_ns": [
-        2874739,
-        2728053,
-        2760865,
-        2762398,
-        2746068
+        4945306,
+        4944394,
+        4933875,
+        4931981,
+        4923205
       ],
       "model_eligible": true,
       "notes": "Equivalent requirement wording does not alter topology.",
@@ -3914,11 +3914,11 @@
       "id": "c008",
       "label": "clean",
       "latency_ns": [
-        2772607,
-        2745557,
-        2778168,
-        2893455,
-        2893795
+        4916692,
+        4903507,
+        4951087,
+        4912475,
+        4927904
       ],
       "model_eligible": true,
       "notes": "Equivalent sensor intent wording is benign.",
@@ -3947,11 +3947,11 @@
       "id": "c009",
       "label": "clean",
       "latency_ns": [
-        2784810,
-        2761526,
-        2801471,
-        2764832,
-        2761707
+        4926611,
+        4938293,
+        4916062,
+        4926420,
+        4912504
       ],
       "model_eligible": true,
       "notes": "Equivalent release wording is benign.",
@@ -3980,11 +3980,11 @@
       "id": "c010",
       "label": "clean",
       "latency_ns": [
-        2874379,
-        2791042,
-        2779060,
-        2770433,
-        2789118
+        4937682,
+        4960584,
+        4923806,
+        4898999,
+        4916372
       ],
       "model_eligible": false,
       "notes": "In-place LED rotation does not violate current intent.",
@@ -4013,11 +4013,11 @@
       "id": "c011",
       "label": "clean",
       "latency_ns": [
-        2942517,
-        2790581,
-        2778508,
-        2836467,
-        2804958
+        4965023,
+        4981314,
+        4952921,
+        4949915,
+        4932812
       ],
       "model_eligible": false,
       "notes": "In-place resistor rotation is semantically benign.",
@@ -4046,11 +4046,11 @@
       "id": "c012",
       "label": "clean",
       "latency_ns": [
-        2791963,
-        2786063,
-        2846977,
-        2874418,
-        2835055
+        4921882,
+        4955585,
+        4932542,
+        4947971,
+        4915119
       ],
       "model_eligible": false,
       "notes": "In-place sensor rotation preserves tested semantic contracts.",
@@ -4079,11 +4079,11 @@
       "id": "c013",
       "label": "clean",
       "latency_ns": [
-        2813053,
-        2976410,
-        2786193,
-        2885149,
-        2751287
+        5001963,
+        4940296,
+        4932342,
+        5010900,
+        4947370
       ],
       "model_eligible": false,
       "notes": "In-place capacitor rotation preserves semantic distance.",
@@ -4112,11 +4112,11 @@
       "id": "c014",
       "label": "clean",
       "latency_ns": [
-        2857717,
-        2799377,
-        2869329,
-        2917289,
-        3035572
+        4941559,
+        4938974,
+        5856747,
+        4921792,
+        4884542
       ],
       "model_eligible": false,
       "notes": "Rationale wording is not an electrical mutation.",
@@ -4145,11 +4145,11 @@
       "id": "c015",
       "label": "clean",
       "latency_ns": [
-        2841887,
-        2910646,
-        2980548,
-        2788687,
-        2854982
+        4920499,
+        4909980,
+        4880725,
+        4909699,
+        4857261
       ],
       "model_eligible": false,
       "notes": "Routing rationale wording is benign.",
@@ -4178,11 +4178,11 @@
       "id": "c016",
       "label": "clean",
       "latency_ns": [
-        2781724,
-        2761045,
-        2748913,
-        2829595,
-        2850173
+        4887407,
+        5050012,
+        5045404,
+        4825942,
+        4870335
       ],
       "model_eligible": false,
       "notes": "Manufacturing rationale wording is benign.",
@@ -4211,11 +4211,11 @@
       "id": "c017",
       "label": "clean",
       "latency_ns": [
-        2776554,
-        2825737,
-        2816349,
-        2770082,
-        2762168
+        4902686,
+        4918896,
+        4904810,
+        4891524,
+        4987415
       ],
       "model_eligible": false,
       "notes": "Optional unavailable analysis declaration is honest and benign.",
@@ -4244,11 +4244,11 @@
       "id": "c018",
       "label": "clean",
       "latency_ns": [
-        2779961,
-        2745256,
-        2765675,
-        2745657,
-        2785180
+        4918205,
+        4921000,
+        4907635,
+        4890203,
+        3103869
       ],
       "model_eligible": false,
       "notes": "Input collection order must not change semantic findings.",
@@ -4277,11 +4277,11 @@
       "id": "c019",
       "label": "clean",
       "latency_ns": [
-        2767488,
-        2758311,
-        2746008,
-        2748802,
-        2752619
+        5217146,
+        5439514,
+        4765759,
+        4830109,
+        3599860
       ],
       "model_eligible": true,
       "notes": "A valid service-net label change preserves connectivity.",
@@ -4310,11 +4310,11 @@
       "id": "c020",
       "label": "clean",
       "latency_ns": [
-        2853470,
-        2812823,
-        2723355,
-        2717755,
-        2819175
+        2838300,
+        3269049,
+        2973945,
+        2968023,
+        3085684
       ],
       "model_eligible": true,
       "notes": "Documented variant metadata is not a fault.",
@@ -4332,9 +4332,9 @@
     "id": "independent-low-voltage-control-v1",
     "license": "CC0-1.0",
     "methodology": "Hand-authored from generic low-voltage MCU, I2C electrical-budget, power-envelope, source-ownership, reference-plane, decoupling-geometry, LED, component-contract, board-rule, and scope invariants. No competitor fixture, output, or annotation was used. Fault and clean controls are transformations of a separately authored CC0 acceptance design.",
-    "sha256": "5f43ba7e98faeac9406dfa404f587dc3207ab2c1753a8d2c1e12ed5132e25bee"
+    "sha256": "20abd06860de3c07f92625675f4820244fcdc4c6f1fd1063ece5bf87efd35e29"
   },
-  "created_at": "2026-08-13T03:45:20Z",
+  "created_at": "2026-08-13T06:08:45Z",
   "engine": {
     "kicad": "10.0.5-10.0.5~ubuntu26.04.1",
     "name": "CopperWright deterministic semantic intent registry",
@@ -4361,10 +4361,10 @@
       "targeted_code_recall": 1.0
     },
     "latency": {
-      "benchmark_wall_seconds": 2.176641,
-      "mean_ms": 3.119323,
-      "median_ms": 2.851686,
-      "p95_ms": 4.671333,
+      "benchmark_wall_seconds": 2.282393,
+      "mean_ms": 3.394265,
+      "median_ms": 2.890818,
+      "p95_ms": 4.987415,
       "samples": 450
     },
     "repair": {
@@ -4386,6 +4386,6 @@
     "reason": "No model repetitions were requested for this deterministic run.",
     "state": "unavailable"
   },
-  "schema": "pcb-agent-benchmark-result",
+  "schema": "copperwright-benchmark-result",
   "version": 1
 }

@@ -1,8 +1,7 @@
 # CopperWright persisted verification artifacts
 
-These artifacts are selected real acceptance evidence, not test mocks.
-They were created before the CopperWright rename and intentionally retain their
-recorded `pcb-agent-runtime` names and paths.
+These artifacts are selected real acceptance evidence, not test mocks. They are
+regenerated under the CopperWright package, schema, and path namespace.
 
 ## `acceptance/release`
 
@@ -17,8 +16,8 @@ copperwright release-verify artifacts/acceptance/release --json
 
 Expected hashes:
 
-- manifest: `64b779d1ea1ff744307a2faf803ea0c42b9b9710504b63b93a1742bf4f0cd778`
-- ZIP: `d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98`
+- manifest: `1f500b0787db8dde9c94e48c275726d702fc3aa670a959baa319da5c82e94b3e`
+- ZIP: `9711a5921ef410bbf7ac1525b628df5f49ec969e850529d99c525406f2d8dc2a`
 
 `engineering_candidate=true` and `production=false`. Board-only STEP is used for
 content reproducibility; component 3D model references remain in the source board.

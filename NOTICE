@@ -3,8 +3,8 @@ Copyright 2026 CopperWright contributors
 
 The runtime source and documentation are licensed under Apache License 2.0.
 
-Bundled records under src/pcb_agent/data/ are independently authored data
-dedicated under CC0-1.0; see src/pcb_agent/data/LICENSE.md.
+Bundled records under src/copperwright/data/ are independently authored data
+dedicated under CC0-1.0; see src/copperwright/data/LICENSE.md.
 
 The runtime depends on kicad-sch-api 0.5.6, distributed separately under the MIT
 License. See https://github.com/circuit-synth/kicad-sch-api.

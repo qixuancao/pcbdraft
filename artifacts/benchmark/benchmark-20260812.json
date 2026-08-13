@@ -1,8 +1,8 @@
 {
   "base_fixture": {
     "baseline_findings": [],
-    "design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
-    "requirements": "/mnt/2T/pcb-agent-runtime/src/pcb_agent/data/benchmark/acceptance_requirements.json"
+    "design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
+    "requirements": "src/copperwright/data/benchmark/acceptance_requirements.json"
   },
   "cases": [
     {
@@ -43,20 +43,20 @@
       "id": "f001",
       "label": "fault",
       "latency_ns": [
-        436479,
-        402446,
-        383220,
-        383310,
-        375405
+        5471615,
+        5410049,
+        5510127,
+        5384641,
+        5395732
       ],
       "model_eligible": true,
       "notes": "SDA pull-up loses its supply connection.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "f2034670fa39e07a1144c8c2acfab7bf8bda4cdd7d59d86aab9213f29e57fb04",
+        "change_set_hash": "fe7fac4cefebff13df874254a9e3d89d12eb1bd796b4202abcf8293bba9d7de4",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -99,20 +99,20 @@
       "id": "f002",
       "label": "fault",
       "latency_ns": [
-        278213,
-        270789,
-        251212,
-        251723,
-        248968
+        5393378,
+        4827014,
+        4621859,
+        3520260,
+        2826177
       ],
       "model_eligible": true,
       "notes": "SCL pull-up loses its supply connection.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "0f31679c6510b5650b72a1204f7fb888a0f5daafee3d89924919a5e0b4b50389",
+        "change_set_hash": "c055ecaba3509f15462d7a7dab33f3260992bee36a51b3abf8e998eca4bdec5e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -165,20 +165,20 @@
       "id": "f003",
       "label": "fault",
       "latency_ns": [
-        282120,
-        261531,
-        252434,
-        246944,
-        257824
+        6185204,
+        4760780,
+        4726615,
+        4673285,
+        4700296
       ],
       "model_eligible": true,
       "notes": "SDA pull-up is absent from the signal.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "15ca2d143acc87ba067c848ab7b7c668c5c14ce2e09464f2750609d0c642e97b",
+        "change_set_hash": "fa32821df10404633065049cdfadca8b38b32e8f636bde210c187b3a763bcba5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -231,20 +231,20 @@
       "id": "f004",
       "label": "fault",
       "latency_ns": [
-        281919,
-        258235,
-        249168,
-        243226,
-        249789
+        2921927,
+        2954578,
+        2937596,
+        2997879,
+        3376530
       ],
       "model_eligible": true,
       "notes": "SCL pull-up is absent from the signal.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "be12e2ee29bcfef5544eb842a8c218349965594088f52571cd86dae79500a777",
+        "change_set_hash": "4cbd003502ffac2621a52dbb4e6e65e1a8950f8f07cde0fe8d21d066bf70b243",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -280,20 +280,20 @@
       "id": "f005",
       "label": "fault",
       "latency_ns": [
-        267392,
-        249939,
-        241273,
-        243708,
-        241083
+        2974005,
+        4151946,
+        2875139,
+        2902631,
+        2810708
       ],
       "model_eligible": true,
       "notes": "SDA pull-up is changed from 4.7 kOhm to 1 kOhm.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "dbe00febc711eddaa0ca79ebb677642b561b9d0c16d31011ed685c5941c3d2b2",
+        "change_set_hash": "076eba383d892f0bf1642566219f84a853740c7bbea866be55c1b3082da61647",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -329,20 +329,20 @@
       "id": "f006",
       "label": "fault",
       "latency_ns": [
-        266160,
-        250350,
-        241453,
-        244850,
-        236754
+        2890618,
+        2792062,
+        2878094,
+        2795429,
+        2789297
       ],
       "model_eligible": true,
       "notes": "SCL pull-up is changed from 4.7 kOhm to 1 kOhm.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e651d528e5208c001146a727a0e6946647d6d31cb10da5dceb68629920a18a29",
+        "change_set_hash": "29ebc1f88fa2069fe93d305e729899a4681fa6c3ec31fbf2a6210cc2f1d32508",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -378,20 +378,20 @@
       "id": "f007",
       "label": "fault",
       "latency_ns": [
-        256842,
-        239349,
-        230113,
-        241644,
-        225654
+        2895557,
+        2800939,
+        2872313,
+        2914803,
+        2788506
       ],
       "model_eligible": true,
       "notes": "The I2C pull-up contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "8f792a25267167b4b695c6b1fd6320da32ff1770b30cfe864e2e03539f953301",
+        "change_set_hash": "ed52a6330595425f0bf35409d26aeca9908d2de0c3f8c1d2f1bebf739ef479bf",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -427,20 +427,20 @@
       "id": "f008",
       "label": "fault",
       "latency_ns": [
-        265949,
-        248036,
-        254007,
-        247945,
-        237596
+        4322236,
+        2846735,
+        2816298,
+        4716727,
+        3850310
       ],
       "model_eligible": true,
       "notes": "Controller SDA leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "4e90d3f67dfeb4a8e5318242ab3932d1cb8705a8b892aff7481f8a2186b4dd9a",
+        "change_set_hash": "ddcf880782573b2fafa740bdfb76f7c9eadf514f2bfe196f75848112284d7f17",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -483,20 +483,20 @@
       "id": "f009",
       "label": "fault",
       "latency_ns": [
-        273544,
-        254638,
-        252414,
-        241333,
-        239419
+        4634392,
+        3963803,
+        3622342,
+        4660471,
+        2806029
       ],
       "model_eligible": true,
       "notes": "Sensor SDA leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "c76180f4ab5d7b1e8a686d415152cf4ca10fdc019f13d06c6ae396089de04def",
+        "change_set_hash": "58ddc7761b31e7cecfba29c99e99e1d36fd75426d3e89e62ba0f90b97f1d6084",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -539,20 +539,20 @@
       "id": "f010",
       "label": "fault",
       "latency_ns": [
-        270558,
-        268645,
-        310774,
-        259157,
-        250310
+        2873676,
+        2925133,
+        2845312,
+        3331426,
+        2887011
       ],
       "model_eligible": true,
       "notes": "External SDA leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e76b4e33b9bd9d1e1a776d816e46e89746006d2de5060e114cb394abab95da4c",
+        "change_set_hash": "41dfb0d57d2c520a9baa1295ab83aedce5faaeccd8df8cd12900af760dd2e0a5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -588,20 +588,20 @@
       "id": "f011",
       "label": "fault",
       "latency_ns": [
-        268915,
-        250591,
-        238769,
-        235713,
-        234070
+        2852777,
+        2884025,
+        2792634,
+        2908241,
+        2942445
       ],
       "model_eligible": true,
       "notes": "Controller SCL leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "47d77cc682cc5375f9a5d716cd6caabc8bdf30d8b49d110cbccfe0eebff31711",
+        "change_set_hash": "bf47f38655574e8bbd8be33d024249f83ac22df34f2cdb64dca35cd20432a1dc",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -644,20 +644,20 @@
       "id": "f012",
       "label": "fault",
       "latency_ns": [
-        271079,
-        252945,
-        242084,
-        239299,
-        241703
+        4167015,
+        2911917,
+        3477971,
+        3800215,
+        3031212
       ],
       "model_eligible": true,
       "notes": "Sensor SCL leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "8e8d190509730480b8a712de11f8aa588027218e82204c50561fde3521fbdd60",
+        "change_set_hash": "c656935fd4438b5a5a15612cb048e614a7ad17e87101032b7cdc27f7de531c6b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -700,20 +700,20 @@
       "id": "f013",
       "label": "fault",
       "latency_ns": [
-        435758,
-        391926,
-        316845,
-        358684,
-        311204
+        3199167,
+        6070459,
+        6068765,
+        4230013,
+        5337362
       ],
       "model_eligible": true,
       "notes": "External SCL leaves the declared interface.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "ae633b03f7a120ecbce80cd2d15c2edc8ea9ea37a3f63ecb356d8239e47e96c3",
+        "change_set_hash": "aacd155b9a63a36341d62d3189a180e9685e431c5164ccea892abbb9bd4437ef",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -730,11 +730,11 @@
         "part.required_pin_unconnected"
       ],
       "finding_digests": [
-        "8334d56608958912d4eafe524c4890ba7ca0bdf679c8644305709a2d53238a54",
-        "8334d56608958912d4eafe524c4890ba7ca0bdf679c8644305709a2d53238a54",
-        "8334d56608958912d4eafe524c4890ba7ca0bdf679c8644305709a2d53238a54",
-        "8334d56608958912d4eafe524c4890ba7ca0bdf679c8644305709a2d53238a54",
-        "8334d56608958912d4eafe524c4890ba7ca0bdf679c8644305709a2d53238a54"
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5"
       ],
       "findings": [
         {
@@ -742,7 +742,7 @@
           "details": {
             "maximum_distance_mm": 3.0
           },
-          "message": "capacitor and device do not share every declared rail",
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
           "object_id": "decouple_mcu",
           "severity": "error"
         },
@@ -756,20 +756,20 @@
       "id": "f014",
       "label": "fault",
       "latency_ns": [
-        444595,
-        428465,
-        435749,
-        418345,
-        420800
+        2927517,
+        3052812,
+        2813052,
+        2837729,
+        2890187
       ],
       "model_eligible": true,
       "notes": "MCU capacitor loses supply.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "12166ad77ee4794047141a878fa556f8f46c44c1f119186beb2955537fbf66eb",
+        "change_set_hash": "933a08831e237c38003f85b23d56067d68c8bb63f66732f9c45856bd7d803882",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -786,11 +786,11 @@
         "part.required_pin_unconnected"
       ],
       "finding_digests": [
-        "d05a1bdfc6f97da3cd47f0e566b4b90efd80bc0d606a37f40eb15b47e93eb0b6",
-        "d05a1bdfc6f97da3cd47f0e566b4b90efd80bc0d606a37f40eb15b47e93eb0b6",
-        "d05a1bdfc6f97da3cd47f0e566b4b90efd80bc0d606a37f40eb15b47e93eb0b6",
-        "d05a1bdfc6f97da3cd47f0e566b4b90efd80bc0d606a37f40eb15b47e93eb0b6",
-        "d05a1bdfc6f97da3cd47f0e566b4b90efd80bc0d606a37f40eb15b47e93eb0b6"
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77"
       ],
       "findings": [
         {
@@ -798,7 +798,7 @@
           "details": {
             "maximum_distance_mm": 3.0
           },
-          "message": "capacitor and device do not share every declared rail",
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
           "object_id": "decouple_mcu",
           "severity": "error"
         },
@@ -812,20 +812,20 @@
       "id": "f015",
       "label": "fault",
       "latency_ns": [
-        283773,
-        321884,
-        343375,
-        270669,
-        256252
+        3808392,
+        2927857,
+        2866072,
+        2983682,
+        2924351
       ],
       "model_eligible": true,
       "notes": "MCU capacitor loses return.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "cd423be43dccf15a01c889a027972481a7a5b954aeddeff8d3f72e94c8c1a6a5",
+        "change_set_hash": "ac00b7dab599674cf7b4dd056e9eff6784824e1e7b15e80a05467ebd19c9da51",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -842,11 +842,11 @@
         "part.required_pin_unconnected"
       ],
       "finding_digests": [
-        "1c929db6694ed3990bcd7aeb4da4b3705c336f72bc171928ac62ccc4f86775a3",
-        "1c929db6694ed3990bcd7aeb4da4b3705c336f72bc171928ac62ccc4f86775a3",
-        "1c929db6694ed3990bcd7aeb4da4b3705c336f72bc171928ac62ccc4f86775a3",
-        "1c929db6694ed3990bcd7aeb4da4b3705c336f72bc171928ac62ccc4f86775a3",
-        "1c929db6694ed3990bcd7aeb4da4b3705c336f72bc171928ac62ccc4f86775a3"
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5"
       ],
       "findings": [
         {
@@ -854,7 +854,7 @@
           "details": {
             "maximum_distance_mm": 2.0
           },
-          "message": "capacitor and device do not share every declared rail",
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
           "object_id": "decouple_sensor",
           "severity": "error"
         },
@@ -868,20 +868,20 @@
       "id": "f016",
       "label": "fault",
       "latency_ns": [
-        443333,
-        336512,
-        359586,
-        322326,
-        296397
+        5158146,
+        5297257,
+        5380253,
+        5201247,
+        5291706
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor loses supply.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e1de70ba976748c838533c62e0797a0d206296b017a694d1bb6a556fc5a57129",
+        "change_set_hash": "84b0abb349fe9f3da47c4a6911f960c146da01fd56f1fd5af2c9c0abaf32e3c6",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -898,11 +898,11 @@
         "part.required_pin_unconnected"
       ],
       "finding_digests": [
-        "0e6136e0b4191908651a90f0ac24800c1161e0c1d9f5f65d6880bbb9a998d8a8",
-        "0e6136e0b4191908651a90f0ac24800c1161e0c1d9f5f65d6880bbb9a998d8a8",
-        "0e6136e0b4191908651a90f0ac24800c1161e0c1d9f5f65d6880bbb9a998d8a8",
-        "0e6136e0b4191908651a90f0ac24800c1161e0c1d9f5f65d6880bbb9a998d8a8",
-        "0e6136e0b4191908651a90f0ac24800c1161e0c1d9f5f65d6880bbb9a998d8a8"
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e"
       ],
       "findings": [
         {
@@ -910,7 +910,7 @@
           "details": {
             "maximum_distance_mm": 2.0
           },
-          "message": "capacitor and device do not share every declared rail",
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
           "object_id": "decouple_sensor",
           "severity": "error"
         },
@@ -924,20 +924,20 @@
       "id": "f017",
       "label": "fault",
       "latency_ns": [
-        450286,
-        431250,
-        416442,
-        370135,
-        356640
+        2942165,
+        3070996,
+        2826928,
+        3091835,
+        2899074
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor loses return.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "090e48dbe2bceb151626df396d283e68db344c0b944cc7115a5990117d2858c8",
+        "change_set_hash": "dd26a9b3776e692f36852798df2e719c8c8c6fec32c9a469d2c54d512b8ce4bf",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -953,11 +953,11 @@
         "intent.decoupling"
       ],
       "finding_digests": [
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af"
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b"
       ],
       "findings": [
         {
@@ -965,7 +965,7 @@
           "details": {
             "maximum_distance_mm": 3.0
           },
-          "message": "component-origin distance exceeds the declared bound",
+          "message": "native supply-pad distance exceeds the declared bound",
           "object_id": "decouple_mcu",
           "severity": "error"
         }
@@ -973,20 +973,20 @@
       "id": "f018",
       "label": "fault",
       "latency_ns": [
-        308108,
-        506452,
-        420179,
-        408317,
-        411282
+        2966650,
+        4003217,
+        4756892,
+        5076482,
+        4635054
       ],
       "model_eligible": true,
       "notes": "MCU capacitor is moved far from U1.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "9766d13c287281a464f63b43ea4603ba6cf95bbfc2102cbdf577ca4f90696b63",
+        "change_set_hash": "a4156ae4ece855f9ed5c249070ca2d97e28352b25776b2e5a078c0d6419f9e03",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1002,11 +1002,11 @@
         "intent.decoupling"
       ],
       "finding_digests": [
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af",
-        "93bfa420c318b8d97222e28e88bbb7a4e618c7d12eca773617da928b9346d8af"
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b"
       ],
       "findings": [
         {
@@ -1014,7 +1014,7 @@
           "details": {
             "maximum_distance_mm": 3.0
           },
-          "message": "component-origin distance exceeds the declared bound",
+          "message": "native supply-pad distance exceeds the declared bound",
           "object_id": "decouple_mcu",
           "severity": "error"
         }
@@ -1022,20 +1022,20 @@
       "id": "f019",
       "label": "fault",
       "latency_ns": [
-        342774,
-        319831,
-        267813,
-        378020,
-        471095
+        2911106,
+        3576105,
+        3554906,
+        5168935,
+        5263534
       ],
       "model_eligible": true,
       "notes": "MCU capacitor is moved to the opposite board corner.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b6f7d71e420b2b6ef8140b2e3f0fb7c12e20669ace8dd79726529c9b2ef125b9",
+        "change_set_hash": "39d59d7a7a7ad38ff58cab3415b7abadcee7bdc7e9c2bc77437354b016e416c2",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1052,11 +1052,11 @@
         "intent.functional_group"
       ],
       "finding_digests": [
-        "11538234bfc1c8b3c18c451ae4958c19fa095465ea715c4c141c125788f4b974",
-        "11538234bfc1c8b3c18c451ae4958c19fa095465ea715c4c141c125788f4b974",
-        "11538234bfc1c8b3c18c451ae4958c19fa095465ea715c4c141c125788f4b974",
-        "11538234bfc1c8b3c18c451ae4958c19fa095465ea715c4c141c125788f4b974",
-        "11538234bfc1c8b3c18c451ae4958c19fa095465ea715c4c141c125788f4b974"
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12"
       ],
       "findings": [
         {
@@ -1064,7 +1064,7 @@
           "details": {
             "maximum_distance_mm": 2.0
           },
-          "message": "component-origin distance exceeds the declared bound",
+          "message": "native supply-pad distance exceeds the declared bound",
           "object_id": "decouple_sensor",
           "severity": "error"
         },
@@ -1082,20 +1082,20 @@
       "id": "f020",
       "label": "fault",
       "latency_ns": [
-        284834,
-        269677,
-        255310,
-        247505,
-        245311
+        3103668,
+        3282834,
+        3015322,
+        4155994,
+        4770427
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor is moved far from U2.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "de1d43d7fa401eb058863ce6e4b2def8d09cb2a5168f103a70990ee5c22ab4b2",
+        "change_set_hash": "53a5ea0f69d7f98666b5147195025fee37d3a83302bae7a008227e029b622f8f",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1112,11 +1112,11 @@
         "intent.functional_group"
       ],
       "finding_digests": [
-        "b1aa264d08a468feac24ded49e23e16b035ed174a0d7e6779da509ff2ded5294",
-        "b1aa264d08a468feac24ded49e23e16b035ed174a0d7e6779da509ff2ded5294",
-        "b1aa264d08a468feac24ded49e23e16b035ed174a0d7e6779da509ff2ded5294",
-        "b1aa264d08a468feac24ded49e23e16b035ed174a0d7e6779da509ff2ded5294",
-        "b1aa264d08a468feac24ded49e23e16b035ed174a0d7e6779da509ff2ded5294"
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc"
       ],
       "findings": [
         {
@@ -1124,7 +1124,7 @@
           "details": {
             "maximum_distance_mm": 2.0
           },
-          "message": "component-origin distance exceeds the declared bound",
+          "message": "native supply-pad distance exceeds the declared bound",
           "object_id": "decouple_sensor",
           "severity": "error"
         },
@@ -1142,20 +1142,20 @@
       "id": "f021",
       "label": "fault",
       "latency_ns": [
-        284314,
-        259698,
-        248657,
-        242755,
-        251422
+        2882142,
+        3089712,
+        2976700,
+        2973172,
+        3018488
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor is moved away from U2.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b08f2bcb7fa725c27289cbecc36ec2359c4a8a082937e7f8110ad54f9a0019be",
+        "change_set_hash": "f724c43e86144bf49994f05d60e4c7834fb7827bc1f4401bc57dc8d119c9bb81",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1191,20 +1191,20 @@
       "id": "f022",
       "label": "fault",
       "latency_ns": [
-        317626,
-        260169,
-        246884,
-        258255,
-        246683
+        2878345,
+        2940121,
+        2921426,
+        3029619,
+        2867344
       ],
       "model_eligible": true,
       "notes": "MCU decoupling placement/value contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "1830eaff0d6161b16bdfbae554d7ae674c935e0554261bc4e47d7651f24e12b6",
+        "change_set_hash": "89418002e964902cbba88f76d698deef0c5150f1037c2db59bf646d9bedd9e6a",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1240,20 +1240,20 @@
       "id": "f023",
       "label": "fault",
       "latency_ns": [
-        265448,
-        247104,
-        254207,
-        297228,
-        317006
+        2781162,
+        2823702,
+        2865040,
+        2811148,
+        2854029
       ],
       "model_eligible": true,
       "notes": "Sensor decoupling placement/value contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "411d6874c1a2d6f7cf8a96091f62f632e54a761cbba01992ba43e7755c8faae4",
+        "change_set_hash": "adf7ee06681469b5e97fb7c99a529f37253de463c23488d9c45cc719cfc67bbe",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1289,20 +1289,20 @@
       "id": "f024",
       "label": "fault",
       "latency_ns": [
-        1175678,
-        264637,
-        254979,
-        234881,
-        383820
+        2838130,
+        2846746,
+        3692473,
+        4626097,
+        4065575
       ],
       "model_eligible": true,
       "notes": "MCU capacitor is replaced by a resistor.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "183e08e9e811d687162e9a61ce30e2bd6046735d5961a0da8b813fbdd89992ce",
+        "change_set_hash": "02fb7662078de89a52d22abd7c2f3ca0026ba5ff07d61469b3fe50bd3d5555ed",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1338,20 +1338,20 @@
       "id": "f025",
       "label": "fault",
       "latency_ns": [
-        259277,
-        411342,
-        279445,
-        248447,
-        238599
+        2833711,
+        2907479,
+        2778447,
+        2854359,
+        2748731
       ],
       "model_eligible": true,
       "notes": "Sensor capacitor is replaced by a resistor.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "1f1b7de1c991eefcc6ae00f871b44f590cdd14ccd670fef591532cae53d733f4",
+        "change_set_hash": "2520a11c67647de80f8704efcdc414862971e1bd9385bb34eb8b252334550f07",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1388,20 +1388,20 @@
       "id": "f026",
       "label": "fault",
       "latency_ns": [
-        275648,
-        265238,
-        248848,
-        240963,
-        248657
+        2808293,
+        2979274,
+        2809435,
+        2802633,
+        3071217
       ],
       "model_eligible": true,
       "notes": "Installed LED resistor no longer matches its declared value.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b99c948bc818001fa3d306332723f69fd1abdac84155653ada8e3ced75f402f0",
+        "change_set_hash": "53be99ff6ca65b62201af66db310ec8f23d98a86556203ac87c235a7d2dfd411",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1437,20 +1437,20 @@
       "id": "f027",
       "label": "fault",
       "latency_ns": [
-        259317,
-        247525,
-        233419,
-        226365,
-        225213
+        2887963,
+        2874438,
+        2900686,
+        2824043,
+        2849932
       ],
       "model_eligible": true,
       "notes": "LED current-limit contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "00d9f8912afc422eceed94699c052f8c42cd746bdd442fbc8759382eed94409d",
+        "change_set_hash": "b220289a1711247c05ee916a3e4e0a2e39959f98c16c0c19e400a73b5997987f",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1494,20 +1494,20 @@
       "id": "f028",
       "label": "fault",
       "latency_ns": [
-        290706,
-        259458,
-        251412,
-        247976,
-        343285
+        2827620,
+        2818522,
+        2826006,
+        2830495,
+        2893654
       ],
       "model_eligible": true,
       "notes": "LED is disconnected from the series resistor.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "385c7a9b2f5e2d6042a0976e0ffff89f279f7dd00c951f4e522adfb540b153b5",
+        "change_set_hash": "58091c5964438ba2cd3c6775edde7d1147fb0c84ef138661cbf354590df16c50",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1551,20 +1551,20 @@
       "id": "f029",
       "label": "fault",
       "latency_ns": [
-        281980,
-        279275,
-        250571,
-        273614,
-        239560
+        2849651,
+        2839162,
+        2807271,
+        2790530,
+        2764150
       ],
       "model_eligible": true,
       "notes": "Resistor is disconnected from the LED.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "cc597d87ceefc6f52573b2c238c15bf3c1e1fed79b8a6c9b945e6dd5eb4b4f96",
+        "change_set_hash": "6223bbb95390a9ecf8d03dcca57ba1703dad2cdbf75a3beaba5fd05615889598",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1601,20 +1601,20 @@
       "id": "f030",
       "label": "fault",
       "latency_ns": [
-        276960,
-        267192,
-        258485,
-        243086,
-        264366
+        2849441,
+        2849170,
+        2878205,
+        2824033,
+        2787203
       ],
       "model_eligible": true,
       "notes": "SDA pull-up is spread away from the sensor group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b5d60c45d171df8e9e401f67fb912c8ea9b14449fbbea8448a1671517c419e97",
+        "change_set_hash": "1a61a227d59a2a07c8b60aaccec305c0ae113e10ddfc71aadd8ab42ea6eb9fc1",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1651,20 +1651,20 @@
       "id": "f031",
       "label": "fault",
       "latency_ns": [
-        281088,
-        297489,
-        251222,
-        251262,
-        275888
+        2917498,
+        2835374,
+        2844221,
+        2814164,
+        2909513
       ],
       "model_eligible": true,
       "notes": "SCL pull-up is spread away from the sensor group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "f0aec4ffb8665c89151ff91e5f2624fab2eb8c471d38ba4b9796e46880c7ceb9",
+        "change_set_hash": "98acb2bc4d590e2d8975a6b65227a2fceb760410dd155b51bc6e6f684b15e1cf",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1681,11 +1681,11 @@
         "intent.functional_group"
       ],
       "finding_digests": [
-        "029881af22f1c059efbd930db4b8574d152ec82e719c77669476cdefb1db02d7",
-        "029881af22f1c059efbd930db4b8574d152ec82e719c77669476cdefb1db02d7",
-        "029881af22f1c059efbd930db4b8574d152ec82e719c77669476cdefb1db02d7",
-        "029881af22f1c059efbd930db4b8574d152ec82e719c77669476cdefb1db02d7",
-        "029881af22f1c059efbd930db4b8574d152ec82e719c77669476cdefb1db02d7"
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2"
       ],
       "findings": [
         {
@@ -1693,7 +1693,7 @@
           "details": {
             "maximum_distance_mm": 2.0
           },
-          "message": "component-origin distance exceeds the declared bound",
+          "message": "native supply-pad distance exceeds the declared bound",
           "object_id": "decouple_sensor",
           "severity": "error"
         },
@@ -1711,20 +1711,20 @@
       "id": "f032",
       "label": "fault",
       "latency_ns": [
-        276249,
-        253355,
-        242405,
-        240712,
-        247655
+        2845643,
+        2896840,
+        2773839,
+        2777425,
+        2761786
       ],
       "model_eligible": true,
       "notes": "Sensor IC is spread away from its interface group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "6dfa66dc75c76b413400bd2f517a3f73d6a43724136dcb46c01a9f3cbd60e3f2",
+        "change_set_hash": "c131ce0364256755b7a4bdef312d90eee43c65e4698e6fb51f19007dcd6a9157",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1772,20 +1772,20 @@
       "id": "f033",
       "label": "fault",
       "latency_ns": [
-        272472,
-        255449,
-        244519,
-        255399,
-        258175
+        2823141,
+        2789618,
+        2951382,
+        2793846,
+        2786924
       ],
       "model_eligible": true,
       "notes": "External bus connector is spread from the sensor group.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "0804285d38d1cbfb98da4f62225806dd1d01baf5906d67096100126b972d9459",
+        "change_set_hash": "a6afa1cc7b86f07a51d325d5debcec93720b1c040b530d2eedaac7e7cd43e996",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1822,20 +1822,20 @@
       "id": "f034",
       "label": "fault",
       "latency_ns": [
-        271420,
-        255399,
-        252724,
-        241654,
-        239820
+        2874667,
+        2840414,
+        3855891,
+        4015370,
+        2879787
       ],
       "model_eligible": true,
       "notes": "Qwiic connector is moved too far from the right edge.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2204c6ec92de368230a2328d004027fbe5f8f2fad7d4f942d09f5733b2f188ad",
+        "change_set_hash": "03fe4847da173ef865a312ea13083a20e5025c9ea24a5b2ac5839d08c6ecaa55",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1872,20 +1872,20 @@
       "id": "f035",
       "label": "fault",
       "latency_ns": [
-        265038,
-        249840,
-        248366,
-        237887,
-        235372
+        2959006,
+        2770813,
+        2787003,
+        3033837,
+        3133814
       ],
       "model_eligible": true,
       "notes": "Qwiic connector is inaccessible near board center.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "8543e933e54cc0f1c1879d1f7fba1733855b851a73ea594cea95687700efb4f0",
+        "change_set_hash": "d61db273286d0ee9bd2ce9730387a56080fa3b64af76e24f0514f5e67726836e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1922,20 +1922,20 @@
       "id": "f036",
       "label": "fault",
       "latency_ns": [
-        264537,
-        253587,
-        252775,
-        243457,
-        236414
+        3135327,
+        2892231,
+        3311849,
+        2811399,
+        2890998
       ],
       "model_eligible": true,
       "notes": "UPDI header is moved too far from the left edge.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "d35765c84a5458658a1e4c6e61a490ff1e27d6f69d41307e29bbb7bf8839545c",
+        "change_set_hash": "ca249fd9bcbf245f04737f0e8eac1d7f8935a690ccd3b6bd0888115d2a0a0c87",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -1972,20 +1972,20 @@
       "id": "f037",
       "label": "fault",
       "latency_ns": [
-        266320,
-        253606,
-        243939,
-        240421,
-        234200
+        3957642,
+        2966029,
+        2762207,
+        2769220,
+        2849180
       ],
       "model_eligible": true,
       "notes": "UPDI header is inaccessible near board center.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "9b1a60861fff5db520b851c01f245f562f661db30fd8e83d0e54327c891eb690",
+        "change_set_hash": "ab21c88c681b3646241616d72ef638b9be87eed16fe9d7aacb308b6c9f3a1fa4",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2021,20 +2021,20 @@
       "id": "f038",
       "label": "fault",
       "latency_ns": [
-        264016,
-        257784,
-        252384,
-        244429,
-        236193
+        2893784,
+        2943287,
+        2735497,
+        2872975,
+        2882172
       ],
       "model_eligible": false,
       "notes": "Manufacturing track limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "6eb00501896785171d203c6ff8d99ec40de61714e74ac10d3a2b19674c797106",
+        "change_set_hash": "57ab7637f62adcabdf64ea6fc561504cc2389814177cb186478107fe4df61201",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2070,20 +2070,20 @@
       "id": "f039",
       "label": "fault",
       "latency_ns": [
-        267352,
-        250521,
-        254829,
-        292339,
-        264146
+        2921956,
+        2873306,
+        3598967,
+        2933459,
+        2949889
       ],
       "model_eligible": false,
       "notes": "Manufacturing clearance limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "36caf1f17d39a02243a876d97b751a51d3542f3b4a3762ea7d01f640ffcb5cad",
+        "change_set_hash": "34d54c59d932e995659664697ac09a585e4b356df6f185878ccfa2300bbccfe3",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2119,20 +2119,20 @@
       "id": "f040",
       "label": "fault",
       "latency_ns": [
-        309161,
-        279234,
-        250069,
-        242215,
-        252945
+        2931484,
+        3087307,
+        2821368,
+        4180420,
+        3317960
       ],
       "model_eligible": false,
       "notes": "Manufacturing drill limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "ff22f9b9eeb3520448fcbdbd3c6304f4febd6ecf7ca922c9c42c96bc4dbb149b",
+        "change_set_hash": "2da7ca27a9106dc055d866065d31e942100925df430384610ba44da8cd395d64",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2168,20 +2168,20 @@
       "id": "f041",
       "label": "fault",
       "latency_ns": [
-        275267,
-        251783,
-        243226,
-        238548,
-        247325
+        3159082,
+        3051941,
+        2831928,
+        2838991,
+        2915204
       ],
       "model_eligible": false,
       "notes": "Manufacturing edge limit conflicts with board rules.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "f8a034b2969f1c343b314db4ab67753160d8a0ccc3a48a2c490d4e574b79431b",
+        "change_set_hash": "2b36e25f98d14f165ff2a5c25ca21a60e09dc999139f491f915932e0d764c6cc",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2217,20 +2217,20 @@
       "id": "f042",
       "label": "fault",
       "latency_ns": [
-        275697,
-        252264,
-        240732,
-        244339,
-        244960
+        3739692,
+        2879106,
+        2876811,
+        3419652,
+        3251255
       ],
       "model_eligible": false,
       "notes": "Manufacturing rule contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "7ab7c39f4ad9f5f477abb0ee12fb4abd86efcb1fc75472614da3a54dd65034b0",
+        "change_set_hash": "18feaaf40fbcbc79047063fe052bf21dbdb89e5c217141427e46dab8891eb018",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2263,20 +2263,20 @@
       "id": "f043",
       "label": "fault",
       "latency_ns": [
-        266671,
-        249980,
-        242826,
-        243567,
-        270959
+        4113625,
+        2795840,
+        2876702,
+        2801741,
+        2808293
       ],
       "model_eligible": false,
       "notes": "Nominal I2C width is below board minimum.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "fdd3b3864f846ef6e4aaa1dbe7a64754f93a382c52d1e2b8621fb1928e7c934a",
+        "change_set_hash": "947be0dd0087716168be2d42c078042225add6c80ef938e0519a6407ce91ede7",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2309,20 +2309,20 @@
       "id": "f044",
       "label": "fault",
       "latency_ns": [
-        665089,
-        509216,
-        410120,
-        382478,
-        357662
+        2795259,
+        2837979,
+        2865270,
+        2868346,
+        2808022
       ],
       "model_eligible": false,
       "notes": "I2C neckdown width is below board minimum.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "447a3626da0f9ea4d0860a439bb6e7a2e40a26282e790a8b1e2af0beac449b9f",
+        "change_set_hash": "6b8a570ea5094beccadf64e4fe7b5e1e7bd7078dc3c13916bce41be7d6381e93",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2355,20 +2355,20 @@
       "id": "f045",
       "label": "fault",
       "latency_ns": [
-        455666,
-        449444,
-        432983,
-        447851,
-        470904
+        2865841,
+        2773227,
+        2750805,
+        2771424,
+        2827940
       ],
       "model_eligible": false,
       "notes": "I2C maximum length is non-positive.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2a810d0f8a277f2ee21811a4593475be8b1c84a4f56a9c899b5b8ae5d32f3b25",
+        "change_set_hash": "3d67b733df60d49f0c4f5024fff6190f321ef133d9c24c07805ab307a2d8217b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2405,20 +2405,20 @@
       "id": "f046",
       "label": "fault",
       "latency_ns": [
-        273664,
-        255550,
-        243979,
-        318258,
-        250000
+        2784399,
+        2869468,
+        2771273,
+        2724546,
+        2725417
       ],
       "model_eligible": false,
       "notes": "I2C routing contract is deleted while power routing remains.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "92f64699a1a65de57edd08014bd597610986096bc0ad3697889002f12a40a12e",
+        "change_set_hash": "a446344f26fff290197427486bec3cd60d506b34b549b09e5ffa5663ce93f470",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2461,20 +2461,20 @@
       "id": "f047",
       "label": "fault",
       "latency_ns": [
-        277552,
-        272111,
-        284494,
-        274115,
-        247826
+        2908321,
+        2757808,
+        2840985,
+        3761112,
+        3805526
       ],
       "model_eligible": true,
       "notes": "Sensor points to an unknown canonical part identity.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "8c3bad27b40aa7fbcf8fe60a8d40d075fa7d64f2d0c0029a9b262097c8c64ba2",
+        "change_set_hash": "6e011ece190b06b2666606477e63b44c6b3591cbb8b9f6648869685d568ba834",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2507,20 +2507,20 @@
       "id": "f048",
       "label": "fault",
       "latency_ns": [
-        405101,
-        389011,
-        369894,
-        370626,
-        376988
+        2857015,
+        4900261,
+        4911723,
+        4940217,
+        4878070
       ],
       "model_eligible": true,
       "notes": "Required UPDI header signal is left unconnected.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "b4b86c1ec324a7082555272343732af298c25737fd144e663d97ee956f0a0042",
+        "change_set_hash": "46830fc5deec431eba58cb16ebe5ae9f8533609b2901dbf65dee9678046d437b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2594,11 +2594,11 @@
       "id": "f049",
       "label": "fault",
       "latency_ns": [
-        458161,
-        415560,
-        424146,
-        397427,
-        387037
+        5036738,
+        4955665,
+        4952469,
+        4933885,
+        4927243
       ],
       "model_eligible": true,
       "notes": "Declared rail maximum exceeds the TMP102 supply rating.",
@@ -2638,20 +2638,20 @@
       "id": "f050",
       "label": "fault",
       "latency_ns": [
-        392357,
-        388580,
-        385303,
-        398378,
-        398779
+        5028292,
+        4965764,
+        4950456,
+        4931410,
+        4915781
       ],
       "model_eligible": false,
       "notes": "Two components share the same schematic reference.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "423696e7d588310ff85b1146daaefd2c61c332a3d4753398c7fc67c6d449c6e3",
+        "change_set_hash": "88f8c1d8a62ea8e56038bb7235a533044f3738a93398f11eee6ce78397ea3c0c",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2699,11 +2699,11 @@
       "id": "f051",
       "label": "fault",
       "latency_ns": [
-        321774,
-        263835,
-        311825,
-        253807,
-        247084
+        4986263,
+        4950786,
+        4948241,
+        4944965,
+        5000961
       ],
       "model_eligible": false,
       "notes": "Mains design must be rejected instead of silently accepted.",
@@ -2746,11 +2746,11 @@
       "id": "f052",
       "label": "fault",
       "latency_ns": [
-        265278,
-        258205,
-        324660,
-        274525,
-        253777
+        4957279,
+        4897908,
+        4985552,
+        4925408,
+        4953331
       ],
       "model_eligible": false,
       "notes": "RF design is outside the automated scope.",
@@ -2793,11 +2793,11 @@
       "id": "f053",
       "label": "fault",
       "latency_ns": [
-        323388,
-        477607,
-        331412,
-        258926,
-        252043
+        4981333,
+        4961235,
+        4937742,
+        4938233,
+        4938634
       ],
       "model_eligible": false,
       "notes": "DDR design is outside the automated scope.",
@@ -2840,11 +2840,11 @@
       "id": "f054",
       "label": "fault",
       "latency_ns": [
-        283853,
-        254528,
-        245591,
-        259718,
-        254228
+        4967598,
+        4964543,
+        4958111,
+        4925058,
+        4946378
       ],
       "model_eligible": false,
       "notes": "Safety-critical use must remain an explicit rejection.",
@@ -2887,20 +2887,20 @@
       "id": "f055",
       "label": "fault",
       "latency_ns": [
-        259627,
-        246503,
-        249860,
-        265789,
-        284544
+        4974301,
+        4943833,
+        4929115,
+        4914047,
+        4900823
       ],
       "model_eligible": false,
       "notes": "One-layer generation is outside the supported 2-4 layer scope.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "2afa2f8ef20630ce5f49f994ce4f0ec4d27179cfe938ca390ea53e0a276160de",
+        "change_set_hash": "1c6df944686ff6bbb1c15c3a92906389bb41655bc31feca253bd0eca19b8aa29",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2936,20 +2936,20 @@
       "id": "f056",
       "label": "fault",
       "latency_ns": [
-        266861,
-        260489,
-        296326,
-        259367,
-        245791
+        5001451,
+        4962839,
+        4976655,
+        4940567,
+        4941348
       ],
       "model_eligible": false,
       "notes": "Five-layer generation is outside the supported 2-4 layer scope.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "9d8b94284cc1f98d6084484de884a50e00fb44ee3bc6b3295e6c7ba89d72db00",
+        "change_set_hash": "4513a6cbecbe24199fc03bd88f27709f359f459278531cdf530d8a3c275bb972",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -2992,20 +2992,20 @@
       "id": "f057",
       "label": "fault",
       "latency_ns": [
-        325572,
-        296617,
-        312256,
-        254227,
-        283723
+        4871056,
+        4872639,
+        4919087,
+        4944424,
+        4950065
       ],
       "model_eligible": false,
       "notes": "Board clearance exceeds the SOT-563 pad gap.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "31dcaf56d649b59264b60fef1fd89bcf6a9ba1860d3280249f4b856a200fc522",
+        "change_set_hash": "bd0d5c8e8c56920e7a8f1970220cb8ff56c48c345f4d5fc4e17add75760e5d4e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3022,11 +3022,11 @@
         "part.required_pin_unconnected"
       ],
       "finding_digests": [
-        "bf4836bd9f2b0a7942116caae775ed2ac27ef0f886ef5f8578ddc462c81d75ca",
-        "bf4836bd9f2b0a7942116caae775ed2ac27ef0f886ef5f8578ddc462c81d75ca",
-        "bf4836bd9f2b0a7942116caae775ed2ac27ef0f886ef5f8578ddc462c81d75ca",
-        "bf4836bd9f2b0a7942116caae775ed2ac27ef0f886ef5f8578ddc462c81d75ca",
-        "bf4836bd9f2b0a7942116caae775ed2ac27ef0f886ef5f8578ddc462c81d75ca"
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d"
       ],
       "findings": [
         {
@@ -3034,7 +3034,7 @@
           "details": {
             "maximum_distance_mm": 2.0
           },
-          "message": "capacitor and device do not share every declared rail",
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
           "object_id": "decouple_sensor",
           "severity": "error"
         },
@@ -3048,20 +3048,20 @@
       "id": "f058",
       "label": "fault",
       "latency_ns": [
-        276148,
-        258466,
-        246503,
-        264677,
-        245772
+        2840233,
+        2891389,
+        2913842,
+        2809957,
+        6337661
       ],
       "model_eligible": true,
       "notes": "Required sensor supply pin is left unconnected.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "965d10f7c77b8dc6f914a392314cd67b3a33bff0a62162ff75761a5ec062076a",
+        "change_set_hash": "fa980101ccd7f42868fe7e2bea20ad807be8b6289ab3ee1811affaf891073e4b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3098,20 +3098,20 @@
       "id": "f059",
       "label": "fault",
       "latency_ns": [
-        283282,
-        316825,
-        260308,
-        275377,
-        292820
+        2931575,
+        3520580,
+        3381069,
+        5270316,
+        5069159
       ],
       "model_eligible": false,
       "notes": "The I2C budget is changed to a capacitance that violates the declared RC and interface contract.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "7e58d2fcdc8c9364c0e14c452f4a441a09b69d3680ceb617a2d2679be499dcfb",
+        "change_set_hash": "bc3967f90a0cfcfe1e77a2da822dc5879f8c914aff13e6434b234a4e1962b778",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3148,20 +3148,20 @@
       "id": "f060",
       "label": "fault",
       "latency_ns": [
-        274686,
-        259637,
-        248246,
-        255691,
-        244830
+        3067089,
+        6678130,
+        2921286,
+        6515083,
+        4916202
       ],
       "model_eligible": false,
       "notes": "The recorded I2C rise-time calculation is falsified.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "22f5bf6725800cd0d83669e6d7452227a2c9447ce71286263260dfd0b875599d",
+        "change_set_hash": "2953b7d5904a05e257ed9e78c5898efacfd9c7ca547b3471b42da17807542110",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3197,20 +3197,20 @@
       "id": "f061",
       "label": "fault",
       "latency_ns": [
-        270168,
-        331383,
-        373241,
-        369174,
-        374073
+        4941489,
+        5757642,
+        5430467,
+        5530675,
+        5283721
       ],
       "model_eligible": false,
       "notes": "The required I2C electrical-budget contract is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "c3144d7ba85caafc43d207d8cb9049d178a2ea3e0fd4470d4f72f933e9d1cedd",
+        "change_set_hash": "60071017115a704bad771ef01276438d932ee7844dd0117765ec8c0b9aae74e5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3253,20 +3253,20 @@
       "id": "f062",
       "label": "fault",
       "latency_ns": [
-        271660,
-        276069,
-        253906,
-        245170,
-        241123
+        5328245,
+        5325861,
+        5358742,
+        5353082,
+        3794796
       ],
       "model_eligible": true,
       "notes": "UPDI target-voltage sense is disconnected from the powered target rail.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "d3a9afb8e72254c04bf8e82ff386d680af1868c1aec51a5232cb4a0b90fa5e10",
+        "change_set_hash": "a125c83b9b418c62a08f41ccaa65681f4d27419745edf10a22300a9d67a3f7e5",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3302,20 +3302,20 @@
       "id": "f063",
       "label": "fault",
       "latency_ns": [
-        282331,
-        253186,
-        291277,
-        261261,
-        290595
+        3181144,
+        2987820,
+        4235733,
+        2841576,
+        2828612
       ],
       "model_eligible": false,
       "notes": "The single-source and UPDI sense-only policy is deleted.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "cd5c2a640f7318a2f48dd6935cc24bbca44f87a110053601a1c445bc104a5866",
+        "change_set_hash": "85736b4e173673d8f621dab071b7ba03680000c5e9771ba03a53d6ec933e566e",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3351,20 +3351,20 @@
       "id": "f064",
       "label": "fault",
       "latency_ns": [
-        284965,
-        261100,
-        259297,
-        241764,
-        240903
+        3321907,
+        2818142,
+        2876311,
+        2907370,
+        2938979
       ],
       "model_eligible": false,
       "notes": "The programming header contract is changed to allow simultaneous external sources.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "fb8286e831969a2be9fb4cfc1ac36993c26072a93ccd18e3430c1658df8ddd08",
+        "change_set_hash": "2386145f54b625157571d01e144144e476dbd08470d3d346a093949bde7f8b95",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3402,20 +3402,20 @@
       "id": "f065",
       "label": "fault",
       "latency_ns": [
-        410521,
-        376727,
-        380675,
-        379773,
-        366829
+        3387200,
+        3015983,
+        2844401,
+        2995104,
+        2820476
       ],
       "model_eligible": false,
       "notes": "The power contract incorrectly uses nominal rather than maximum rail voltage.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "e4313e0258743134da96ef9b4be5f0ac8a6bf5353f08414de4ef4e811a8dd0b7",
+        "change_set_hash": "f941fca5f291806d51a20d6e23a3211f536b9766deeccd9472df98bc2ee2a592",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3453,20 +3453,20 @@
       "id": "f066",
       "label": "fault",
       "latency_ns": [
-        396545,
-        387708,
-        372891,
-        377218,
-        368261
+        2833691,
+        2819144,
+        3352004,
+        2839491,
+        2855592
       ],
       "model_eligible": false,
       "notes": "The power budget records a voltage basis inconsistent with the simultaneous maximum envelope.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "da99c0b46c69d6a806d7f299716f90508b668d8e4805d59cf882e682aecfa042",
+        "change_set_hash": "ade69be5ed9deb2d1c8947ffd0d4253dfafe8ea622ec4e485c47e1cb3b7f7bcd",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3504,20 +3504,20 @@
       "id": "f067",
       "label": "fault",
       "latency_ns": [
-        397787,
-        385814,
-        375295,
-        371218,
-        380194
+        2826778,
+        2873616,
+        2772916,
+        2793104,
+        2869438
       ],
       "model_eligible": false,
       "notes": "The power-budget envelope policy is weakened to a nominal-only interpretation.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "7f355108ac04f99b1294f72d48035d90681335ecf769842ce0f002c0d7a32344",
+        "change_set_hash": "1a169c0a129bac04de203259de4e2650465d07afb7379cfb18cc31cbaa3aa6a6",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3550,20 +3550,20 @@
       "id": "f068",
       "label": "fault",
       "latency_ns": [
-        394581,
-        377489,
-        376386,
-        365516,
-        359565
+        2825035,
+        2781362,
+        2864879,
+        2878425,
+        2890086
       ],
       "model_eligible": false,
       "notes": "The continuous-reference contract is changed to require no GND stitching vias.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "8e1d74d473687265a472b9a1b45defbd3a0668359294d3c0282b022656ca0fd3",
+        "change_set_hash": "671435901c7516ebb57cc5d3b3bfd062a438c31d1a4b91f6e32ccead95bd5944",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3599,20 +3599,20 @@
       "id": "f069",
       "label": "fault",
       "latency_ns": [
-        398478,
-        375956,
-        365126,
-        370355,
-        361499
+        2810708,
+        2893404,
+        2799647,
+        2789438,
+        2791352
       ],
       "model_eligible": false,
       "notes": "The MCU decoupling metric is changed from native copper-pad gap to an ambiguous component origin.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "f07d8cb73ce1be79705ec6cccbe27eae4ef1099657c67a123847c9030aa99259",
+        "change_set_hash": "8608d51889d2668a2521e935a36cca32077b14c3ebefddc99ef8e511a664541b",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3648,20 +3648,20 @@
       "id": "f070",
       "label": "fault",
       "latency_ns": [
-        392127,
-        395623,
-        372730,
-        364745,
-        371367
+        2847748,
+        2788246,
+        2805147,
+        2884587,
+        2887593
       ],
       "model_eligible": false,
       "notes": "The sensor decoupling contract replaces native pad rectangles with approximate placement evidence.",
       "repair": {
         "attempted": true,
-        "change_set_hash": "ed6664b1f7bd7de0e1427bbc3a63beaac7ddbe7f87494659da7abdd1bf73b68a",
+        "change_set_hash": "7d990ac5e35298d2746d7dc3b533976ede8d67555f70f8345c820231f53f7418",
         "eligible": true,
         "introduced_regressions": [],
-        "repaired_design_hash": "b4f343beda6740abfcd1706d7f179e8320c434a530127a77d4775397db2bbd4b",
+        "repaired_design_hash": "3048e7054b728c3b744edff212d6d0d8e5a626eea185dbcfe6361adda716b3d1",
         "success": true
       },
       "repeatable": true
@@ -3683,11 +3683,11 @@
       "id": "c001",
       "label": "clean",
       "latency_ns": [
-        386767,
-        372640,
-        370776,
-        361689,
-        358653
+        2997188,
+        2904744,
+        2806770,
+        2799797,
+        2784799
       ],
       "model_eligible": true,
       "notes": "Benign metadata does not alter contracts.",
@@ -3716,11 +3716,11 @@
       "id": "c002",
       "label": "clean",
       "latency_ns": [
-        339829,
-        315303,
-        299553,
-        239731,
-        239560
+        2826207,
+        2798906,
+        3072839,
+        2876923,
+        2819414
       ],
       "model_eligible": true,
       "notes": "Ownership metadata is electrically inert.",
@@ -3749,11 +3749,11 @@
       "id": "c003",
       "label": "clean",
       "latency_ns": [
-        258926,
-        253777,
-        238027,
-        234530,
-        233168
+        2801410,
+        2846475,
+        2780230,
+        2826227,
+        2825826
       ],
       "model_eligible": false,
       "notes": "Numeric metadata is electrically inert.",
@@ -3782,11 +3782,11 @@
       "id": "c004",
       "label": "clean",
       "latency_ns": [
-        255390,
-        248496,
-        239650,
-        234461,
-        233438
+        2765924,
+        2837999,
+        2810758,
+        2874438,
+        2771044
       ],
       "model_eligible": false,
       "notes": "Nested JSON metadata is electrically inert.",
@@ -3815,11 +3815,11 @@
       "id": "c005",
       "label": "clean",
       "latency_ns": [
-        252775,
-        247094,
-        238938,
-        283542,
-        300595
+        2823983,
+        2870350,
+        2785089,
+        2820165,
+        4629102
       ],
       "model_eligible": true,
       "notes": "Revision label does not alter the circuit.",
@@ -3848,11 +3848,11 @@
       "id": "c006",
       "label": "clean",
       "latency_ns": [
-        269115,
-        248396,
-        244178,
-        240451,
-        244359
+        4121569,
+        3121531,
+        2831246,
+        3034438,
+        2898873
       ],
       "model_eligible": false,
       "notes": "Prototype revision label is benign.",
@@ -3881,11 +3881,11 @@
       "id": "c007",
       "label": "clean",
       "latency_ns": [
-        261310,
-        240752,
-        236654,
-        235242,
-        237596
+        2854119,
+        2956231,
+        2809685,
+        2854490,
+        3055156
       ],
       "model_eligible": true,
       "notes": "Equivalent requirement wording does not alter topology.",
@@ -3914,11 +3914,11 @@
       "id": "c008",
       "label": "clean",
       "latency_ns": [
-        254628,
-        241032,
-        232777,
-        235132,
-        240893
+        2828592,
+        2782424,
+        3117043,
+        3019810,
+        2774870
       ],
       "model_eligible": true,
       "notes": "Equivalent sensor intent wording is benign.",
@@ -3947,11 +3947,11 @@
       "id": "c009",
       "label": "clean",
       "latency_ns": [
-        251853,
-        238618,
-        234901,
-        238949,
-        232045
+        2956041,
+        2777796,
+        2931104,
+        2908612,
+        3863705
       ],
       "model_eligible": true,
       "notes": "Equivalent release wording is benign.",
@@ -3980,11 +3980,11 @@
       "id": "c010",
       "label": "clean",
       "latency_ns": [
-        250220,
-        239329,
-        296126,
-        278783,
-        250240
+        2978272,
+        2795559,
+        2763649,
+        2923419,
+        2809726
       ],
       "model_eligible": false,
       "notes": "In-place LED rotation does not violate current intent.",
@@ -4013,11 +4013,11 @@
       "id": "c011",
       "label": "clean",
       "latency_ns": [
-        259688,
-        243307,
-        245561,
-        237335,
-        236825
+        2921796,
+        2927938,
+        2770743,
+        2802362,
+        2810468
       ],
       "model_eligible": false,
       "notes": "In-place resistor rotation is semantically benign.",
@@ -4046,11 +4046,11 @@
       "id": "c012",
       "label": "clean",
       "latency_ns": [
-        254488,
-        241363,
-        242215,
-        234250,
-        230283
+        2842778,
+        2913480,
+        2801310,
+        2865861,
+        2832730
       ],
       "model_eligible": false,
       "notes": "In-place sensor rotation preserves tested semantic contracts.",
@@ -4079,11 +4079,11 @@
       "id": "c013",
       "label": "clean",
       "latency_ns": [
-        257023,
-        243547,
-        244369,
-        235432,
-        232287
+        2980467,
+        2939279,
+        2811539,
+        2780581,
+        2934791
       ],
       "model_eligible": false,
       "notes": "In-place capacitor rotation preserves semantic distance.",
@@ -4112,11 +4112,11 @@
       "id": "c014",
       "label": "clean",
       "latency_ns": [
-        252525,
-        240251,
-        241964,
-        233619,
-        232837
+        3348498,
+        4772862,
+        2923900,
+        2895477,
+        2848950
       ],
       "model_eligible": false,
       "notes": "Rationale wording is not an electrical mutation.",
@@ -4145,11 +4145,11 @@
       "id": "c015",
       "label": "clean",
       "latency_ns": [
-        310773,
-        319260,
-        253145,
-        241493,
-        236384
+        2825917,
+        2851224,
+        2858838,
+        2751406,
+        2879096
       ],
       "model_eligible": false,
       "notes": "Routing rationale wording is benign.",
@@ -4178,11 +4178,11 @@
       "id": "c016",
       "label": "clean",
       "latency_ns": [
-        283643,
-        259969,
-        248998,
-        236834,
-        244258
+        2835574,
+        2769651,
+        2898663,
+        2795149,
+        2884076
       ],
       "model_eligible": false,
       "notes": "Manufacturing rationale wording is benign.",
@@ -4211,11 +4211,11 @@
       "id": "c017",
       "label": "clean",
       "latency_ns": [
-        266150,
-        245060,
-        240272,
-        234040,
-        256572
+        4517473,
+        4648279,
+        4597333,
+        4408378,
+        5976432
       ],
       "model_eligible": false,
       "notes": "Optional unavailable analysis declaration is honest and benign.",
@@ -4244,11 +4244,11 @@
       "id": "c018",
       "label": "clean",
       "latency_ns": [
-        258736,
-        242475,
-        235432,
-        239520,
-        233879
+        5919495,
+        5665388,
+        4591011,
+        4754387,
+        4622270
       ],
       "model_eligible": false,
       "notes": "Input collection order must not change semantic findings.",
@@ -4277,11 +4277,11 @@
       "id": "c019",
       "label": "clean",
       "latency_ns": [
-        254298,
-        241895,
-        232978,
-        237276,
-        233078
+        4673466,
+        4510610,
+        2836136,
+        2780992,
+        2827349
       ],
       "model_eligible": true,
       "notes": "A valid service-net label change preserves connectivity.",
@@ -4310,11 +4310,11 @@
       "id": "c020",
       "label": "clean",
       "latency_ns": [
-        267101,
-        251402,
-        241042,
-        242305,
-        233268
+        2790400,
+        2837478,
+        2754843,
+        2842036,
+        2753611
       ],
       "model_eligible": true,
       "notes": "Documented variant metadata is not a fault.",
@@ -4332,12 +4332,12 @@
     "id": "independent-low-voltage-control-v1",
     "license": "CC0-1.0",
     "methodology": "Hand-authored from generic low-voltage MCU, I2C electrical-budget, power-envelope, source-ownership, reference-plane, decoupling-geometry, LED, component-contract, board-rule, and scope invariants. No competitor fixture, output, or annotation was used. Fault and clean controls are transformations of a separately authored CC0 acceptance design.",
-    "sha256": "5f43ba7e98faeac9406dfa404f587dc3207ab2c1753a8d2c1e12ed5132e25bee"
+    "sha256": "20abd06860de3c07f92625675f4820244fcdc4c6f1fd1063ece5bf87efd35e29"
   },
-  "created_at": "2026-08-12T15:55:09Z",
+  "created_at": "2026-08-13T06:08:42Z",
   "engine": {
     "kicad": "10.0.5-10.0.5~ubuntu26.04.1",
-    "name": "pcb-agent deterministic semantic intent registry",
+    "name": "CopperWright deterministic semantic intent registry",
     "python": "3.14.4",
     "version": 1
   },
@@ -4361,10 +4361,10 @@
       "targeted_code_recall": 1.0
     },
     "latency": {
-      "benchmark_wall_seconds": 0.53341,
-      "mean_ms": 0.290597,
-      "median_ms": 0.259287,
-      "p95_ms": 0.420179,
+      "benchmark_wall_seconds": 2.406665,
+      "mean_ms": 3.487032,
+      "median_ms": 2.913661,
+      "p95_ms": 5.328245,
       "samples": 450
     },
     "repair": {
@@ -4382,583 +4382,10 @@
     }
   },
   "model_consistency": {
-    "accuracy": {
-      "confusion_matrix": {
-        "false_negative": 0,
-        "false_positive": 0,
-        "true_negative": 16,
-        "true_positive": 32
-      },
-      "correct": 48,
-      "predictions": 48,
-      "rate": 1.0
-    },
-    "agreement": {
-      "pairwise_mean": 1.0,
-      "per_case": [
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c001",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c002",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c005",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c007",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c008",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c009",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c019",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 2,
-          "consensus_rate": 1.0,
-          "fault_votes": 0,
-          "id": "c020",
-          "label": "clean"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f002",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f003",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f009",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f013",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f015",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f018",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f019",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f021",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f028",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f029",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f030",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f032",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f033",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f037",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f049",
-          "label": "fault"
-        },
-        {
-          "clean_votes": 0,
-          "consensus_rate": 1.0,
-          "fault_votes": 2,
-          "id": "f058",
-          "label": "fault"
-        }
-      ],
-      "unanimous_cases": 24,
-      "unanimous_rate": 1.0
-    },
-    "artifacts": "/mnt/2T/pcb-agent-runtime/artifacts/benchmark/benchmark-20260812.json.model-runs",
-    "completed_runs": 2,
     "deterministic_results_are_not_reported_as_model_results": true,
-    "failures": [],
-    "model": "gpt-5.6-sol",
-    "reasoning_effort": "max",
-    "requested_runs": 2,
-    "runs": [
-      {
-        "duration_seconds": 115.079,
-        "result_sha256": "1d3dd4614d8cac9b84bb2b0de0e80872bd848e96b6613138ef27b4200f391336",
-        "results": [
-          {
-            "category": "metadata",
-            "confidence": 1,
-            "fault": false,
-            "id": "c001",
-            "rationale": "Adds review metadata only; no electrical or design contract changes."
-          },
-          {
-            "category": "metadata",
-            "confidence": 1,
-            "fault": false,
-            "id": "c002",
-            "rationale": "Adds ownership metadata only."
-          },
-          {
-            "category": "revision",
-            "confidence": 1,
-            "fault": false,
-            "id": "c005",
-            "rationale": "Changes only the revision identifier."
-          },
-          {
-            "category": "requirement_wording",
-            "confidence": 0.99,
-            "fault": false,
-            "id": "c007",
-            "rationale": "Rephrases the controller objective without changing its acceptance criteria or connectivity."
-          },
-          {
-            "category": "requirement_wording",
-            "confidence": 0.99,
-            "fault": false,
-            "id": "c008",
-            "rationale": "Equivalent wording retains local temperature acquisition over the declared I2C bus."
-          },
-          {
-            "category": "requirement_wording",
-            "confidence": 0.99,
-            "fault": false,
-            "id": "c009",
-            "rationale": "Changes descriptive wording while manufacturing acceptance criteria and constraints remain intact."
-          },
-          {
-            "category": "net_label",
-            "confidence": 1,
-            "fault": false,
-            "id": "c019",
-            "rationale": "Only the net name changes; its ID, intent, endpoints, and UPDI contract remain unchanged."
-          },
-          {
-            "category": "metadata",
-            "confidence": 1,
-            "fault": false,
-            "id": "c020",
-            "rationale": "Adds build-variant metadata only."
-          },
-          {
-            "category": "i2c_pullup",
-            "confidence": 1,
-            "fault": true,
-            "id": "f002",
-            "rationale": "Disconnecting R2 pin 1 from 3V3 removes the required SCL pull-up path."
-          },
-          {
-            "category": "i2c_pullup",
-            "confidence": 1,
-            "fault": true,
-            "id": "f003",
-            "rationale": "Disconnecting R1 pin 2 from SDA removes the required SDA pull-up path."
-          },
-          {
-            "category": "interface_open",
-            "confidence": 1,
-            "fault": true,
-            "id": "f009",
-            "rationale": "TMP102B required SDA pin 6 becomes disconnected from the I2C data net."
-          },
-          {
-            "category": "interface_open",
-            "confidence": 1,
-            "fault": true,
-            "id": "f013",
-            "rationale": "The Qwiic connector's required SCL pin becomes disconnected, breaking the external bus contract."
-          },
-          {
-            "category": "decoupling_open",
-            "confidence": 1,
-            "fault": true,
-            "id": "f015",
-            "rationale": "C1 loses its ground connection and can no longer decouple the MCU supply."
-          },
-          {
-            "category": "decoupling_placement",
-            "confidence": 0.99,
-            "fault": true,
-            "id": "f018",
-            "rationale": "Moving C1 to (2,2) places it about 19.8 mm from U1, violating the declared 3 mm local-decoupling intent."
-          },
-          {
-            "category": "decoupling_placement",
-            "confidence": 0.99,
-            "fault": true,
-            "id": "f019",
-            "rationale": "Moving C1 to (40,28) places it about 26.4 mm from U1, violating the declared 3 mm local-decoupling intent."
-          },
-          {
-            "category": "decoupling_placement",
-            "confidence": 0.99,
-            "fault": true,
-            "id": "f021",
-            "rationale": "Moving C2 to (42,28) places it about 17 mm from U2, violating the sensor's 2 mm decoupling limit."
-          },
-          {
-            "category": "led_open",
-            "confidence": 1,
-            "fault": true,
-            "id": "f028",
-            "rationale": "Disconnecting the LED anode opens the status-indicator current path."
-          },
-          {
-            "category": "led_open",
-            "confidence": 1,
-            "fault": true,
-            "id": "f029",
-            "rationale": "Disconnecting R3 from the LED-anode net opens the current-limited indicator path."
-          },
-          {
-            "category": "functional_group",
-            "confidence": 1,
-            "fault": true,
-            "id": "f030",
-            "rationale": "R1 at (2,2) is over 40 mm from J1, exceeding the sensor group's 18 mm maximum diameter."
-          },
-          {
-            "category": "placement_intent",
-            "confidence": 1,
-            "fault": true,
-            "id": "f032",
-            "rationale": "Moving U2 to (3,15) separates it about 28 mm from C2 and 37.5 mm from J1, violating decoupling and sensor-group limits."
-          },
-          {
-            "category": "edge_placement",
-            "confidence": 1,
-            "fault": true,
-            "id": "f033",
-            "rationale": "J1 at x=12 is 33 mm from the board's right edge, exceeding the allowed 2 mm edge distance."
-          },
-          {
-            "category": "edge_placement",
-            "confidence": 1,
-            "fault": true,
-            "id": "f037",
-            "rationale": "J2 at x=25 is 25 mm from the left edge, exceeding the allowed 4 mm edge distance."
-          },
-          {
-            "category": "voltage_scope",
-            "confidence": 1,
-            "fault": true,
-            "id": "f049",
-            "rationale": "A 5.6 V domain maximum exceeds the 3.465 V scope and power constraint, the TMP102B's 4.0 V absolute maximum, and the MCU's 5.5 V operating maximum."
-          },
-          {
-            "category": "power_open",
-            "confidence": 1,
-            "fault": true,
-            "id": "f058",
-            "rationale": "Disconnecting TMP102B supply pin 5 leaves a required power pin unpowered."
-          }
-        ]
-      },
-      {
-        "duration_seconds": 48.005,
-        "result_sha256": "8f0d924a32ee96a5b3894acfb2b8c0fec4870b1272a1974e3a4c10af821abc50",
-        "results": [
-          {
-            "category": "metadata",
-            "confidence": 1.0,
-            "fault": false,
-            "id": "c001",
-            "rationale": "Adds only a review-note metadata field; circuitry and constraints are unchanged."
-          },
-          {
-            "category": "metadata",
-            "confidence": 1.0,
-            "fault": false,
-            "id": "c002",
-            "rationale": "Adds only ownership metadata; the design semantics are unchanged."
-          },
-          {
-            "category": "revision_label",
-            "confidence": 1.0,
-            "fault": false,
-            "id": "c005",
-            "rationale": "Changes only the revision identifier and creates no design defect."
-          },
-          {
-            "category": "equivalent_wording",
-            "confidence": 0.99,
-            "fault": false,
-            "id": "c007",
-            "rationale": "Rewords the controller requirement without weakening its declared acceptance contract."
-          },
-          {
-            "category": "equivalent_wording",
-            "confidence": 0.99,
-            "fault": false,
-            "id": "c008",
-            "rationale": "Rewords the temperature requirement while preserving the same I2C sensing intent."
-          },
-          {
-            "category": "equivalent_wording",
-            "confidence": 0.99,
-            "fault": false,
-            "id": "c009",
-            "rationale": "Changes requirement wording only; manufacturing acceptance criteria remain intact."
-          },
-          {
-            "category": "net_label",
-            "confidence": 1.0,
-            "fault": false,
-            "id": "c019",
-            "rationale": "Renames the UPDI net without changing its endpoints, connectivity, or function."
-          },
-          {
-            "category": "metadata",
-            "confidence": 1.0,
-            "fault": false,
-            "id": "c020",
-            "rationale": "Adds only build-variant metadata; no electrical or physical contract changes."
-          },
-          {
-            "category": "pullup_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f002",
-            "rationale": "Disconnecting R2 pin 1 from 3V3 removes the required SCL pull-up supply connection."
-          },
-          {
-            "category": "pullup_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f003",
-            "rationale": "Disconnecting R1 pin 2 from SDA removes the required SDA pull-up connection."
-          },
-          {
-            "category": "interface_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f009",
-            "rationale": "TMP102B SDA pin 6 is required; disconnecting it breaks sensor communication."
-          },
-          {
-            "category": "interface_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f013",
-            "rationale": "Disconnecting J1 pin 4 breaks the required externally exposed I2C SCL connection."
-          },
-          {
-            "category": "decoupling_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f015",
-            "rationale": "Disconnecting C1 from ground makes the MCU bypass capacitor ineffective and violates its decoupling contract."
-          },
-          {
-            "category": "decoupling_placement",
-            "confidence": 0.99,
-            "fault": true,
-            "id": "f018",
-            "rationale": "Moving C1 to (2,2) places it far from U1 at (17,15), violating the required local 3 mm MCU decoupling intent."
-          },
-          {
-            "category": "decoupling_placement",
-            "confidence": 0.99,
-            "fault": true,
-            "id": "f019",
-            "rationale": "Moving C1 to (40,28) places it far from U1 at (17,15), violating the required local 3 mm MCU decoupling intent."
-          },
-          {
-            "category": "decoupling_placement",
-            "confidence": 0.99,
-            "fault": true,
-            "id": "f021",
-            "rationale": "Moving C2 to (42,28) places it far from U2 at (31,15), violating the required local 2 mm sensor decoupling intent."
-          },
-          {
-            "category": "indicator_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f028",
-            "rationale": "Disconnecting the LED anode opens the status-indicator current path."
-          },
-          {
-            "category": "indicator_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f029",
-            "rationale": "Disconnecting R3 from the LED-anode net opens the status-indicator current path."
-          },
-          {
-            "category": "group_placement",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f030",
-            "rationale": "Moving R1 to (2,2) puts it over 40 mm from J1, exceeding the sensor group's 18 mm maximum diameter."
-          },
-          {
-            "category": "group_placement",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f032",
-            "rationale": "Moving U2 to (3,15) puts it 37.5 mm from J1 and also separates it from C2, violating grouping and local-decoupling intent."
-          },
-          {
-            "category": "edge_placement",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f033",
-            "rationale": "Moving the fixed Qwiic connector from the right edge to x=12 violates its required right-edge accessibility placement."
-          },
-          {
-            "category": "edge_placement",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f037",
-            "rationale": "Moving the fixed UPDI header to x=25 violates its required placement within 4 mm of the left edge."
-          },
-          {
-            "category": "overvoltage_contract",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f049",
-            "rationale": "Allowing 5.6 V exceeds the TMP102B 4.0 V absolute maximum and 3.6 V operating maximum."
-          },
-          {
-            "category": "power_disconnect",
-            "confidence": 1.0,
-            "fault": true,
-            "id": "f058",
-            "rationale": "Disconnecting required TMP102B supply pin 5 leaves the sensor unpowered."
-          }
-        ]
-      }
-    ],
-    "sample": {
-      "case_ids": [
-        "c001",
-        "c002",
-        "c005",
-        "c007",
-        "c008",
-        "c009",
-        "c019",
-        "c020",
-        "f002",
-        "f003",
-        "f009",
-        "f013",
-        "f015",
-        "f018",
-        "f019",
-        "f021",
-        "f028",
-        "f029",
-        "f030",
-        "f032",
-        "f033",
-        "f037",
-        "f049",
-        "f058"
-      ],
-      "clean": 8,
-      "fault": 16,
-      "selection": "sha256-stratified, at most 16 fault and 8 clean model-eligible cases"
-    },
-    "service_tier": "default",
-    "state": "completed"
+    "reason": "No model repetitions were requested for this deterministic run.",
+    "state": "unavailable"
   },
-  "schema": "pcb-agent-benchmark-result",
+  "schema": "copperwright-benchmark-result",
   "version": 1
 }

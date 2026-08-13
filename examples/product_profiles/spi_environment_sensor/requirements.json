@@ -73,7 +73,7 @@
     "compact_spi_sensor_group"
   ],
   "revision": "1.0",
-  "schema": "pcb-agent-requirements",
+  "schema": "copperwright-requirements",
   "scope": {
     "domains": [
       "low_voltage_mcu",

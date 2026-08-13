@@ -8,10 +8,10 @@ import time
 import unittest
 from pathlib import Path
 
-from pcb_agent.managed import generate_managed_project
-from pcb_agent.project import discover_project
-from pcb_agent.requirements import RequirementsSpec
-from pcb_agent.semantic import (
+from copperwright.managed import generate_managed_project
+from copperwright.project import discover_project
+from copperwright.requirements import RequirementsSpec
+from copperwright.semantic import (
     PROMPT_CONTEXT_LIMIT,
     _fit_prompt_context,
     _managed_semantic_context,

@@ -12,10 +12,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 
-from pcb_agent.application import ApplicationService
-from pcb_agent.errors import ValidationError
-from pcb_agent.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
-from pcb_agent.providers import (
+from copperwright.application import ApplicationService
+from copperwright.errors import ValidationError
+from copperwright.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
+from copperwright.providers import (
     BuiltinIntentProvider,
     OpenAICompatibleIntentProvider,
     OpenAICompatibleSettings,
@@ -23,7 +23,7 @@ from pcb_agent.providers import (
     interpretation_schema,
     validate_interpretation,
 )
-from pcb_agent.webapp import create_app_server
+from copperwright.webapp import create_app_server
 
 
 class ApplicationConversationTests(unittest.TestCase):
@@ -460,7 +460,7 @@ class BrowserSecurityTests(unittest.TestCase):
     def test_static_browser_shell_has_safe_setup_and_actionable_validation(
         self,
     ) -> None:
-        web = files("pcb_agent").joinpath("web")
+        web = files("copperwright").joinpath("web")
         html = web.joinpath("index.html").read_text(encoding="utf-8")
         script = web.joinpath("app.js").read_text(encoding="utf-8")
         self.assertIn('id="setup-dialog"', html)

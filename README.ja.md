@@ -243,7 +243,7 @@ copperwright release-verify /tmp/controller-release --json
 
 ## セマンティックトランザクション
 
-Agent は型付きの `pcb-agent-change-set` を出力し、KiCad テキストを編集する
+Agent は型付きの `copperwright-change-set` を出力し、KiCad テキストを編集する
 代わりにトランザクションコマンドを使用します。
 
 ```bash
@@ -264,7 +264,7 @@ copperwright semantic-recover /tmp/tx
 ```bash
 copperwright sync /tmp/controller --json
 copperwright sync /tmp/controller --apply --json
-copperwright sync-undo /tmp/.pcb-agent-transactions/sync-...
+copperwright sync-undo /tmp/.copperwright-transactions/sync-...
 ```
 
 取り込むのは位置・姿勢の変更だけです。未知のボードバイト列、フットプリント変更、
@@ -355,26 +355,21 @@ MODEL_RUNS=2 scripts/benchmark.sh
 現在の測定結果と制約は [BENCHMARK.md](BENCHMARK.md) にあります。このベンチマーク
 は回帰コーパスであり、すべての PCB 障害を網羅するという主張ではありません。
 
-## 互換名
+## 製品識別子
 
-配布パッケージと主要コマンドは `copperwright` です。インストールされる
-`pcb-agent` コマンドは、同等の互換エイリアスとして残します。リスクがあるだけで
-価値のないモジュール移行を避けるため、内部 Python モジュールも `pcb_agent`
-のままです。
-
-安定したディスク上およびプロトコル上の識別子も変更しません。これには
-`pcb-agent-*` schema、`project.pcb-agent.json`、`.pcb-agent-*`
-トランザクション/ロックディレクトリ、`PCB_AGENT_*` テスト/設定名前空間が
-含まれます。名称変更前に作成されコミットされたエンジニアリングレシートと
-ベンチマーク成果物には、記録どおり `pcb-agent-runtime` を残します。
-CopperWright は履歴エビデンスを新しく見せるために書き換えません。
+CopperWright の配布、Python インポート、実行コマンドはすべて `copperwright` であり、
+公開 CLI と Python パッケージはこれだけです。ディスク上およびプロトコル上の識別子も
+同じ名前空間を使います。`copperwright-*` schema、`project.copperwright.json`、
+`.copperwright-*` トランザクション/ロックディレクトリ、`COPPERWRIGHT_*`
+テスト/設定名前空間、およびコミット済みのエンジニアリングレシートと
+ベンチマーク成果物はすべて CopperWright 識別子を使用します。
 
 ## 開発とリリースのチェック
 
 ```bash
 scripts/test.sh
 scripts/smoke.sh                 # real KiCad demo; no model by default
-scripts/compatibility.sh         # Python 3.11–3.14 core matrix
+scripts/python-matrix.sh         # Python 3.11–3.14 core matrix
 scripts/chat-e2e.sh              # scriptable terminal product journey
 uv run python scripts/browser-e2e.py  # real Firefox journey and restart
 uv run python scripts/generate-product-examples.py
@@ -408,7 +403,7 @@ stdin で渡します。このポリシーは OS サンドボックスではあ�
 
 ランタイムのソースとドキュメントは Apache-2.0 です。[LICENSE](LICENSE)を
 参照してください。同梱の部品/ブロックカタログと独立ベンチマークデータは、
-[`src/pcb_agent/data/LICENSE.md`](src/pcb_agent/data/LICENSE.md) に記載のとおり
+[`src/copperwright/data/LICENSE.md`](src/copperwright/data/LICENSE.md) に記載のとおり
 CC0-1.0 です。生成されたサンプル設計では、KiCad ライブラリの
 CC-BY-SA 4.0 design exception に基づいて公式 KiCad ライブラリ素材を使用します。
 依存関係と帰属の注記は [NOTICE](NOTICE) にあります。

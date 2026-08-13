@@ -25,7 +25,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
 ]
 dependencies = [
-    # Pinned because generated KiCad syntax is part of the compatibility contract.
+    # Pinned because generated KiCad syntax is part of the output contract.
     "kicad-sch-api==0.5.6",
 ]
 
@@ -39,8 +39,7 @@ Changelog = "https://github.com/qixuancao/copperwright/blob/main/CHANGELOG.md"
 dev = ["build>=1.2", "ruff>=0.12"]
 
 [project.scripts]
-copperwright = "pcb_agent.cli:main"
-pcb-agent = "pcb_agent.cli:main"
+copperwright = "copperwright.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -49,4 +48,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcb_agent = ["data/**/*.json", "data/**/*.md", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]
+copperwright = ["data/**/*.json", "data/**/*.md", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]

@@ -7,8 +7,8 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from pcb_agent.api import capabilities
-from pcb_agent.cli import build_parser
+from copperwright.api import capabilities
+from copperwright.cli import build_parser
 
 ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / "docs" / "assets" / "brand"
@@ -22,22 +22,19 @@ def png_dimensions(path: Path) -> tuple[int, int]:
 
 
 class CopperWrightBrandingTests(unittest.TestCase):
-    def test_distribution_and_both_cli_entry_points_are_declared(self) -> None:
+    def test_distribution_and_canonical_cli_entry_point_are_declared(self) -> None:
         document = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         project = document["project"]
         self.assertEqual(project["name"], "copperwright")
-        self.assertEqual(project["scripts"]["copperwright"], "pcb_agent.cli:main")
-        self.assertEqual(project["scripts"]["pcb-agent"], "pcb_agent.cli:main")
+        self.assertEqual(project["scripts"]["copperwright"], "copperwright.cli:main")
         self.assertEqual(build_parser(prog="copperwright").prog, "copperwright")
-        self.assertEqual(build_parser(prog="pcb-agent").prog, "pcb-agent")
 
-    def test_api_advertises_current_brand_and_compatibility_surface(self) -> None:
+    def test_api_advertises_current_brand_and_module_surface(self) -> None:
         product = capabilities()["product"]
         self.assertEqual(product["name"], "CopperWright")
         self.assertEqual(product["distribution"], "copperwright")
         self.assertEqual(product["primary_cli"], "copperwright")
-        self.assertEqual(product["compatibility_clis"], ["pcb-agent"])
-        self.assertEqual(product["python_module"], "pcb_agent")
+        self.assertEqual(product["python_module"], "copperwright")
 
     def test_source_mark_is_preserved_and_derivative_dimensions_are_exact(self) -> None:
         source = BRAND / "copperwright-mark-v1-source.png"
@@ -76,8 +73,7 @@ class CopperWrightBrandingTests(unittest.TestCase):
                 "low_voltage_uart_ldo_controller_v1",
                 "copperwright app",
                 "copperwright chat",
-                "pcb-agent",
-                "pcb_agent",
+                "copperwright",
                 "Apache-2.0",
                 "CC0-1.0",
                 "CC-BY-SA 4.0",

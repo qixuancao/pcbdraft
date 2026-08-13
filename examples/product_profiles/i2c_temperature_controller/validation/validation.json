@@ -1,7 +1,7 @@
 {
   "design": {
-    "board_sha256": "7955c6363e44f26b54f97a5ac6f9d981d4ccdeccd9521568854272e024d52c3b",
-    "content_hash": "7febeb85cd376b1ef20112fc038983edc0d7f64206c2f2e38021bd8a851393a1",
+    "board_sha256": "1590e8cabcf3246007c4d554c7b1728e7cdfc1d270961e8f1037636dcf2bb268",
+    "content_hash": "5ce0faeded134f02b8adce95ec1d66919b7a9bef259ea026e2a61eac3fb7d722",
     "id": "copperwright_i2c_temperature_controller"
   },
   "levels": [
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.pcb-agent.json"
+            "project.copperwright.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -31,7 +31,7 @@
           "id": "l0.semantic_ir",
           "level": "L0",
           "metrics": {
-            "content_hash": "7febeb85cd376b1ef20112fc038983edc0d7f64206c2f2e38021bd8a851393a1"
+            "content_hash": "5ce0faeded134f02b8adce95ec1d66919b7a9bef259ea026e2a61eac3fb7d722"
           },
           "outcome": "pass",
           "state": "completed",
@@ -674,7 +674,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "pcb-agent-validation",
+  "schema": "copperwright-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

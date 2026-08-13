@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pcb_agent.benchmark import _select_model_cases, load_corpus, run_benchmark
-from pcb_agent.errors import ValidationError
+from copperwright.benchmark import _select_model_cases, load_corpus, run_benchmark
+from copperwright.errors import ValidationError
 
 
 class IndependentBenchmarkTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class IndependentBenchmarkTests(unittest.TestCase):
             output = Path(temporary) / "benchmark.json"
             real_which = shutil.which
             with patch(
-                "pcb_agent.benchmark.shutil.which",
+                "copperwright.benchmark.shutil.which",
                 side_effect=lambda name: None if name == "codex" else real_which(name),
             ):
                 result = run_benchmark(output, repetitions=2, model_runs=2)

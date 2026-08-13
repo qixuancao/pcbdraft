@@ -13,11 +13,11 @@ historical report and its artifact hashes remain unchanged.
 
 | ID | Analysis / completion requirement | Implementation | Verification | Status |
 |---|---|---|---|---|
-| R01 | Model-independent semantic circuit/PCB IR | `pcb_agent.ir` | `tests/test_ir.py` strict round trip | implemented |
+| R01 | Model-independent semantic circuit/PCB IR | `copperwright.ir` | `tests/test_ir.py` strict round trip | implemented |
 | R02 | Requirements, typed interfaces, power domains, modules, budgets, intent, constraints, risk, verification, provenance | IR records and compiler output | IR/requirements tests and checked-in `design.pcbir.json` | implemented |
 | R03 | Readable, versionable, comparable, compilable deterministic identity | canonical JSON and `Design.content_hash()` | reordered-input byte/hash equality | implemented |
-| R04 | Explicit bounded low-voltage scope; reject unsupported/high-risk work | `pcb_agent.scope`, profile declaration | scope/requirements/API tests | implemented |
-| R05 | Canonical part identity graph | `pcb_agent.parts`, CC0 part catalog | `tests/test_parts.py` | implemented |
+| R04 | Explicit bounded low-voltage scope; reject unsupported/high-risk work | `copperwright.scope`, profile declaration | scope/requirements/API tests | implemented |
+| R05 | Canonical part identity graph | `copperwright.parts`, CC0 part catalog | `tests/test_parts.py` | implemented |
 | R06 | Manufacturer/MPN/package, symbol, footprint, exact pin/pad map | `PartRecord`, `PinDefinition` | real KiCad library resolution and native parity | implemented |
 | R07 | Ratings, lifecycle/source, sourcing, BOM, manufacturing, models | part contracts | part/requirements/validation/release tests | implemented |
 | R08 | Separate extracted/rule/human/production trust and provenance | trust enums and per-record evidence | catalog schema/trust tests | implemented |
@@ -46,12 +46,12 @@ historical report and its artifact hashes remain unchanged.
 | R31 | Receipts, evidence bundles, rollback/recovery | validation/release/transaction receipts and backups | transaction/integration/release tests | implemented |
 | R32 | Byte-reproducible content releases | normalized content/audit split and deterministic ZIP | two-release byte/hash equality test | implemented |
 | R33 | Offline release verification and tamper detection | `release-verify`, `release.verify` | exact inventory/hash/ZIP and tamper tests | implemented |
-| R34 | KiCad compatibility testing | fail-closed KiCad 10 policy; exact 10.0.5 marker | compatibility/doctor/real generation tests | implemented |
+| R34 | KiCad support testing | fail-closed KiCad 10 policy; exact 10.0.5 marker | kicad-support/doctor/real generation tests | implemented |
 | R35 | Bounded execution and hostile-project safety | process/JSON/tree/archive/model bounds and link/path checks | security/process/integration/transaction tests | implemented |
 | R36 | License-clear independent fault corpus | 90-case CC0 corpus, 70 faults + 20 controls | corpus integrity/license tests | implemented |
 | R37 | Detection and false-positive metrics | `benchmark.py` confusion/target metrics | persisted result: 70 TP, 0 FN, 0 FP, 20 TN | implemented |
 | R38 | Repair success and introduced regressions | production typed change sets and post-repair rules | persisted result: 65/65, 0 regressions | implemented |
-| R39 | Repeatability and latency | finding digests and monotonic timing | 90/90 stable; mean 0.290597 ms over 450 | implemented |
+| R39 | Repeatability and latency | finding digests and monotonic timing | 90/90 stable; mean 3.487032 ms over 450 | implemented |
 | R40 | Model consistency across repetitions | blinded optional Codex runner | 2 runs, 48/48 correct, agreement 1.0 | implemented |
 | R41 | Initial low-voltage MCU/sensor/control acceptance fixture | ATtiny402/TMP102 3.3 V 2-layer project; real 4-layer test variant | checked-in example, release, real review | implemented |
 | R42 | Unsupported domains fail explicitly | profile/global policy split in API/compiler | historical 0.2 SPI rejection plus current USB/buck/RS-232/high-risk rejection tests; supported SPI now passes its complete v1 chain | implemented |
@@ -66,7 +66,7 @@ results. It added the following traced surfaces on top of them:
 
 | Product area | Current implementation | Verification |
 |---|---|---|
-| Shared application authority | `application.py`, `jobs.py`, versioned private project format | application, restart, migration, concurrency tests |
+| Shared application authority | `application.py`, `jobs.py`, versioned private project format | application, restart, and concurrency tests |
 | Natural-language providers | `providers.py`: authenticated Codex, OpenAI-compatible, builtin offline | strict-schema, real Codex, local endpoint, redaction tests |
 | Terminal/browser clients | `chat.py`, `webapp.py`, packaged `web/` assets | clean-install chat E2E and real clean-HOME Firefox E2E |
 | Semantic conversational modification | application-owned staged generate/validate/apply/discard/undo path | both product E2Es verify distinct hashes and exact undo restoration |
@@ -83,12 +83,12 @@ in [`PRODUCT_REPORT_ZH.md`](PRODUCT_REPORT_ZH.md); the older
 
 - Managed example: `examples/attiny_sensor_controller/project/`
 - Design content hash:
-  `4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2`
+  `b75625e0bbd759c42f20e24d6ca91bcfca64fa9b8efb1dde6b6f5cefe54d8a0f`
 - Candidate release: `artifacts/acceptance/release/`
 - Release manifest hash:
-  `64b779d1ea1ff744307a2faf803ea0c42b9b9710504b63b93a1742bf4f0cd778`
+  `1f500b0787db8dde9c94e48c275726d702fc3aa670a959baa319da5c82e94b3e`
 - Release ZIP hash:
-  `d70f582c8f428df45e2c6a6aa56dc8ffeac368185849329b3d15f17df3c88d98`
+  `9711a5921ef410bbf7ac1525b628df5f49ec969e850529d99c525406f2d8dc2a`
 - Real final Codex review: `artifacts/acceptance/review/20260812T154551Z-8f8b4876/`
 - Benchmark: `artifacts/benchmark/benchmark-20260812.json`
 - Final Chinese completion report: `docs/FINAL_REPORT_ZH.md`
@@ -99,7 +99,7 @@ in [`PRODUCT_REPORT_ZH.md`](PRODUCT_REPORT_ZH.md); the older
 scripts/test.sh
 scripts/benchmark.sh
 scripts/smoke.sh
-scripts/compatibility.sh
+scripts/python-matrix.sh
 scripts/release-check.sh
 copperwright release-verify artifacts/acceptance/release --json
 ```

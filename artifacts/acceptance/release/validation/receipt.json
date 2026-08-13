@@ -1,31 +1,31 @@
 {
   "candidate_ready": true,
-  "completed_at": "2026-08-12T15:45:26Z",
-  "design_content_hash": "4e47cdfcea912f74c1e5ae4beded97f6fec8411b9e0fbbcc12ee4a6ff61eb1d2",
+  "completed_at": "2026-08-13T06:13:50Z",
+  "design_content_hash": "b75625e0bbd759c42f20e24d6ca91bcfca64fa9b8efb1dde6b6f5cefe54d8a0f",
   "production_ready": false,
-  "project": "/mnt/2T/pcb-agent-runtime/examples/attiny_sensor_controller/project",
+  "project": "examples/attiny_sensor_controller/project",
   "report": "validation.json",
-  "report_sha256": "c8aa38bb285ba2b041378f42921a0392d22da89bc1cd07921e0ec073ba3bb20d",
-  "schema": "pcb-agent-validation-receipt",
-  "started_at": "2026-08-12T15:45:22Z",
+  "report_sha256": "86a79ed3eed04da7d8287e368991e67426c927ec81195ecfc616e5b60148ac36",
+  "schema": "copperwright-validation-receipt",
+  "started_at": "2026-08-13T06:13:45Z",
   "status": "complete",
   "tool_runs": {
     "drc": {
-      "duration_seconds": 1.86,
+      "duration_seconds": 2.431,
       "failure": null,
       "normalized_report": "drc.json",
       "raw_report": "drc.raw.json",
-      "raw_sha256": "36432b050481d82447d1a09d87c5b4011ad3b89cd413244d03addf25b64a6aba",
-      "reported_at": "2026-08-12T23:45:26",
+      "raw_sha256": "42125fc420260e96edcb76145f2ecdd30e182a51fa51aa7fef88d1ef2b0c3317",
+      "reported_at": "2026-08-13T14:13:49",
       "status": "completed"
     },
     "erc": {
-      "duration_seconds": 1.684,
+      "duration_seconds": 2.396,
       "failure": null,
       "normalized_report": "erc.json",
       "raw_report": "erc.raw.json",
-      "raw_sha256": "b92e83d9df6de221d7defc9283ce187dc028d997f92084b1a0c25d37686768d0",
-      "reported_at": "2026-08-12T23:45:24",
+      "raw_sha256": "a3813a099319c7688bed91f0a76f9611258dcb8ab97cd111f0d3f2e4b522eaba",
+      "reported_at": "2026-08-13T14:13:47",
       "status": "completed"
     }
   },

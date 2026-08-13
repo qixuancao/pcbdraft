@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pcb_agent.errors import ValidationError
-from pcb_agent.ir import Design, load_design, save_design
+from copperwright.errors import ValidationError
+from copperwright.ir import Design, load_design, save_design
 from tests.design_factory import minimal_design_dict
 
 

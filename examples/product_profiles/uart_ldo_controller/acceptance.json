@@ -1,6 +1,6 @@
 {
   "candidate_ready": true,
-  "design_content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d",
+  "design_content_hash": "8330d3b74ae722d0ec7ef38b8045e934f14abea8d3847b0ee8c3c98aac70fa5e",
   "levels": [
     {
       "level": "L0",
@@ -43,7 +43,7 @@
       "state": "human_required"
     }
   ],
-  "preview_design_content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d",
+  "preview_design_content_hash": "8330d3b74ae722d0ec7ef38b8045e934f14abea8d3847b0ee8c3c98aac70fa5e",
   "production_claimed": false,
   "production_ready": false,
   "profile": "low_voltage_uart_ldo_controller_v1",
@@ -51,12 +51,12 @@
     "board": "copperwright_uart_ldo_controller.kicad_pcb",
     "ir": "design.pcbir.json",
     "kicad_project": "copperwright_uart_ldo_controller.kicad_pro",
-    "manifest": "project.pcb-agent.json",
+    "manifest": "project.copperwright.json",
     "requirements": "requirements.pcbreq.json",
     "schematic": "copperwright_uart_ldo_controller.kicad_sch",
     "worker_receipt": "copperwright_uart_ldo_controller.worker-result.json"
   },
   "schema": "copperwright-product-example-acceptance",
-  "validation_report_sha256": "fb5d37f5006b6bd9d5d05a570789a869ef0ce697698a46e45ebb9dfa4d9f9c6d",
+  "validation_report_sha256": "e34dd63a4a2eb2c75204a90e551ad0265539e05ef5db3a5fb32ecccd4dde893d",
   "version": 1
 }

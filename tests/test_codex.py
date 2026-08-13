@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from pcb_agent.codex import build_codex_argv, patch_schema
+from copperwright.codex import build_codex_argv, patch_schema
 
 
 class CodexArgvTests(unittest.TestCase):

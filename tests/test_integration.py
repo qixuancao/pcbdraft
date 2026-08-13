@@ -9,8 +9,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pcb_agent.errors import PcbAgentError, TransactionRejected, ValidationError
-from pcb_agent.workflows import run_apply, run_patch, run_review
+from copperwright.errors import CopperWrightError, TransactionRejected, ValidationError
+from copperwright.workflows import run_apply, run_patch, run_review
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKES = ROOT / "tests" / "fakes"
@@ -190,10 +190,10 @@ class OfflineEndToEndTests(unittest.TestCase):
                 kicad_executable=str(FAKES / "kicad-cli"),
                 codex_executable=str(FAKES / "codex"),
             )
-            previous = os.environ.get("PCB_AGENT_FAKE_APPLY_REGRESSION")
-            os.environ["PCB_AGENT_FAKE_APPLY_REGRESSION"] = "1"
+            previous = os.environ.get("COPPERWRIGHT_FAKE_APPLY_REGRESSION")
+            os.environ["COPPERWRIGHT_FAKE_APPLY_REGRESSION"] = "1"
             try:
-                with self.assertRaisesRegex(PcbAgentError, "restored"):
+                with self.assertRaisesRegex(CopperWrightError, "restored"):
                     run_apply(
                         str(run_dir),
                         kicad_executable=str(FAKES / "kicad-cli"),
@@ -201,9 +201,9 @@ class OfflineEndToEndTests(unittest.TestCase):
                     )
             finally:
                 if previous is None:
-                    os.environ.pop("PCB_AGENT_FAKE_APPLY_REGRESSION", None)
+                    os.environ.pop("COPPERWRIGHT_FAKE_APPLY_REGRESSION", None)
                 else:
-                    os.environ["PCB_AGENT_FAKE_APPLY_REGRESSION"] = previous
+                    os.environ["COPPERWRIGHT_FAKE_APPLY_REGRESSION"] = previous
             self.assertEqual(board.read_bytes(), original)
             receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["status"], "rolled_back")
@@ -215,12 +215,12 @@ class OfflineEndToEndTests(unittest.TestCase):
             project = make_project(root)
             environment = os.environ.copy()
             environment["PATH"] = f"{FAKES}{os.pathsep}{environment.get('PATH', '')}"
-            sentinel = "pcb-agent-secret-sentinel-do-not-record"
-            environment["PCB_AGENT_TEST_SECRET"] = sentinel
+            sentinel = "copperwright-secret-sentinel-do-not-record"
+            environment["COPPERWRIGHT_TEST_SECRET"] = sentinel
             result = subprocess.run(
                 [
                     sys.executable,
-                    str(ROOT / "pcb-agent"),
+                    str(ROOT / "copperwright"),
                     "review",
                     str(project),
                     "--output",
@@ -250,7 +250,7 @@ class OfflineEndToEndTests(unittest.TestCase):
             root = Path(temporary)
             project = make_project(root)
             output = project / "runs"
-            with self.assertRaisesRegex(PcbAgentError, "outside"):
+            with self.assertRaisesRegex(CopperWrightError, "outside"):
                 run_review(
                     str(project),
                     output_parent=str(output),

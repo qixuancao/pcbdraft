@@ -9,18 +9,18 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from pcb_agent.io import (
+from copperwright.io import (
     atomic_write_json,
     atomic_write_text,
     load_json_limited,
     make_directory,
 )
-from pcb_agent.managed import generate_managed_project, open_managed_project
-from pcb_agent.previews import generate_previews
-from pcb_agent.profiles import build_requirements, get_product_profile
-from pcb_agent.project import sha256_file
-from pcb_agent.requirements import compile_requirements
-from pcb_agent.validation import validate_managed_project
+from copperwright.managed import generate_managed_project, open_managed_project
+from copperwright.previews import generate_previews
+from copperwright.profiles import build_requirements, get_product_profile
+from copperwright.project import sha256_file
+from copperwright.requirements import compile_requirements
+from copperwright.validation import validate_managed_project
 
 REPO = Path(__file__).resolve().parent.parent
 

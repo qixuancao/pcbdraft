@@ -23,7 +23,7 @@ Origin, CSRF tokens, request sizes, project IDs, and artifact paths. It must not
 placed behind a public reverse proxy. Use the terminal JSON interface or the
 newline JSON-RPC API below for external automation.
 
-The supported Python seam is `pcb_agent.application.ApplicationService`. Methods
+The supported Python seam is `copperwright.application.ApplicationService`. Methods
 return plain JSON-compatible projections and enforce the same confirmation,
 locking, provider, and transaction semantics. Callers must not edit the private
 application workspace directly.
@@ -31,9 +31,8 @@ application workspace directly.
 ## Deterministic JSON-RPC interface
 
 `copperwright api` serves newline-delimited JSON-RPC 2.0 over stdin/stdout. The
-legacy `pcb-agent api` spelling is equivalent. The service has no
-network listener and performs no authentication. The caller is responsible for
-process isolation and filesystem permissions.
+service has no network listener and performs no authentication. The caller is
+responsible for process isolation and filesystem permissions.
 
 ## Framing and errors
 

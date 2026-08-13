@@ -7,7 +7,7 @@ from typing import Any
 
 def controller_requirements_dict() -> dict[str, Any]:
     return {
-        "schema": "pcb-agent-requirements",
+        "schema": "copperwright-requirements",
         "version": 1,
         "design_id": "attiny_sensor_controller",
         "name": "ATtiny temperature controller",

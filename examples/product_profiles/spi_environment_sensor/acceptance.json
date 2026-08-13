@@ -1,6 +1,6 @@
 {
   "candidate_ready": true,
-  "design_content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+  "design_content_hash": "7ee307abb58b16fcc5c7043149df544686a26851abc720cd4e6b7d395719b9bf",
   "levels": [
     {
       "level": "L0",
@@ -43,7 +43,7 @@
       "state": "human_required"
     }
   ],
-  "preview_design_content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+  "preview_design_content_hash": "7ee307abb58b16fcc5c7043149df544686a26851abc720cd4e6b7d395719b9bf",
   "production_claimed": false,
   "production_ready": false,
   "profile": "low_voltage_spi_environment_v1",
@@ -51,12 +51,12 @@
     "board": "copperwright_spi_environment_sensor.kicad_pcb",
     "ir": "design.pcbir.json",
     "kicad_project": "copperwright_spi_environment_sensor.kicad_pro",
-    "manifest": "project.pcb-agent.json",
+    "manifest": "project.copperwright.json",
     "requirements": "requirements.pcbreq.json",
     "schematic": "copperwright_spi_environment_sensor.kicad_sch",
     "worker_receipt": "copperwright_spi_environment_sensor.worker-result.json"
   },
   "schema": "copperwright-product-example-acceptance",
-  "validation_report_sha256": "911306755012331a8c983dd5e85cefc4f31a164486593c1dc3ae0a592c28fb05",
+  "validation_report_sha256": "be2d47605eb46a78617787329e3babc13a6d50faff7b5605025e2fce556f2a01",
   "version": 1
 }

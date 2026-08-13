@@ -1,6 +1,6 @@
 # CopperWright benchmark report
 
-Measured on 2026-08-12. The machine-readable result is
+Measured on 2026-08-13. The machine-readable result is
 [`artifacts/benchmark/benchmark-20260812.json`](artifacts/benchmark/benchmark-20260812.json).
 
 ## Independent corpus result
@@ -22,8 +22,8 @@ The deterministic semantic engine ran each case five times (450 evaluations):
 | Repairable cases attempted/succeeded | 65 / 65 |
 | Repairs introducing a new finding | 0 |
 | Stable cases across five repetitions | 90 / 90 |
-| Mean / median / p95 rule latency | 0.290597 / 0.259287 / 0.420179 ms |
-| Deterministic benchmark wall time | 0.533410 s |
+| Mean / median / p95 rule latency | 3.487032 / 2.913661 / 5.328245 ms |
+| Deterministic benchmark wall time | 2.406665 s |
 
 These numbers show regression performance on this bounded corpus, not population
 accuracy for arbitrary electronics. The clean controls are variations of the same
@@ -88,7 +88,7 @@ BENCHMARK_OUTPUT=/tmp/benchmark-model.json MODEL_RUNS=2 scripts/benchmark.sh
 ```
 
 The corpus and methodology are in
-[`src/pcb_agent/data/benchmark`](src/pcb_agent/data/benchmark).
+[`src/copperwright/data/benchmark`](src/copperwright/data/benchmark).
 
 ## Historical competitor smoke
 

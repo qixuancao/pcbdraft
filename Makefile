@@ -1,4 +1,4 @@
-.PHONY: install test benchmark smoke compatibility release-check
+.PHONY: install test benchmark smoke python-matrix release-check
 
 install:
 	scripts/deploy.sh
@@ -12,8 +12,8 @@ benchmark:
 smoke:
 	scripts/smoke.sh
 
-compatibility:
-	scripts/compatibility.sh
+python-matrix:
+	scripts/python-matrix.sh
 
 release-check:
 	scripts/release-check.sh

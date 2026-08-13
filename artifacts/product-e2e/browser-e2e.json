@@ -3,14 +3,14 @@
   "clean_home": true,
   "loopback_only": true,
   "primary_flow": {
-    "applied_hash": "adcf7f68584ed50be31fb1953c11a620f903e727e32cbf7809404e9625169a80",
+    "applied_hash": "2966634f19a44f8bba3758a01273cf1677b9050315a2e88ae0225ba61eac60e2",
     "candidate_ready": true,
     "clarification": "Should this board use 2 or 4 copper layers?",
     "offline_release_verified": true,
-    "original_hash": "0c7b198169c3438fb9b9cbcda50e62b6dd93d4c9f285db80c4117aa23289c118",
+    "original_hash": "e1ac4515d3c5c14d1134e5ee49b496f1f70c5f22059a2ea852ccf7e5c86029dc",
     "production_ready": false,
-    "project_id": "browser-greenhouse-4e26687c",
-    "release_archive_bytes": 196452,
+    "project_id": "browser-greenhouse-2f34717d",
+    "release_archive_bytes": 193182,
     "undo_restored_original_hash": true,
     "unsupported_scope_visible": true,
     "validation_levels": 8
@@ -20,7 +20,7 @@
     "active_job": false,
     "design": true,
     "messages": 11,
-    "project_id": "browser-greenhouse-4e26687c",
+    "project_id": "browser-greenhouse-2f34717d",
     "release_verified": true,
     "selected_from_project_list": true,
     "status": "released"

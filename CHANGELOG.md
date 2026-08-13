@@ -21,18 +21,16 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   real KiCad ERC/DRC, L0–L7 gates, examples, and independent tests. Their verified
   envelope is explicitly limited to 45 mm × 30 mm and 2/4 copper layers.
 - Added real clean-HOME terminal and Firefox WebDriver product E2E acceptance,
-  restart/reopen checks, provider compatibility tests, and managed 0.2 project
-  migration.
+  restart/reopen checks, provider contract tests, and managed-project coverage.
 - USB 2.0, buck, high-speed, RF, mains, high-power, medical, aviation, and
   safety-critical design remain explicitly unsupported; no physical or
   production sign-off is claimed.
 
 ## 0.2.0 — 2026-08-13 (first CopperWright release)
 
-- Adopted CopperWright branding, durable mark/icon/social-preview assets, the
-  `copperwright` distribution name, and a primary `copperwright` CLI.
-- Retained `pcb-agent` as a CLI alias and kept internal modules, schemas, on-disk
-  compatibility names, and historical evidence stable.
+- Established the CopperWright brand, durable mark/icon/social-preview assets,
+  the `copperwright` distribution name, CLI, package, schemas, and on-disk
+  namespaces.
 
 - Added strict semantic circuit/PCB IR, trusted parts, and verified block registry.
 - Added semantic transactions, preview/diff, locking, rollback, undo, and recovery.

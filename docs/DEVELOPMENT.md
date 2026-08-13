@@ -31,7 +31,7 @@ templates. It preserves valid existing user tables and never disables ERC or DRC
 scripts/test.sh
 scripts/benchmark.sh
 scripts/smoke.sh
-scripts/compatibility.sh
+scripts/python-matrix.sh
 scripts/generate-brand-assets.sh --check
 scripts/chat-e2e.sh /tmp/copperwright-chat-e2e
 uv run python scripts/browser-e2e.py --output /tmp/copperwright-browser-e2e
@@ -62,7 +62,7 @@ tracked assets.
 
 ## Adding a part
 
-Part data is CC0 and lives in `src/pcb_agent/data/parts/catalog.json`. A record must
+Part data is CC0 and lives in `src/copperwright/data/parts/catalog.json`. A record must
 identify an exact orderable variant and include:
 
 - canonical ID, manufacturer, MPN, package, symbol, and footprint;

@@ -9,17 +9,19 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from pcb_agent.application import ApplicationService
-from pcb_agent.errors import ValidationError
-from pcb_agent.external_evidence import load_external_evidence, record_external_evidence
-from pcb_agent.managed import generate_managed_project
-from pcb_agent.profiles import build_requirements
-from pcb_agent.release import (
+from copperwright.errors import ValidationError
+from copperwright.external_evidence import (
+    load_external_evidence,
+    record_external_evidence,
+)
+from copperwright.managed import generate_managed_project
+from copperwright.profiles import build_requirements
+from copperwright.release import (
     build_manufacturing_release,
     verify_manufacturing_release,
 )
-from pcb_agent.requirements import RequirementsSpec
-from pcb_agent.validation import validate_managed_project
+from copperwright.requirements import RequirementsSpec
+from copperwright.validation import validate_managed_project
 from tests.requirements_factory import controller_requirements_dict
 
 
@@ -44,7 +46,7 @@ def _real_kicad_available() -> bool:
 class ManagedPipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.temporary = tempfile.TemporaryDirectory(prefix="pcb-agent-managed-test-")
+        cls.temporary = tempfile.TemporaryDirectory(prefix="copperwright-managed-test-")
         cls.parent = Path(cls.temporary.name)
         cls.spec = RequirementsSpec.from_dict(controller_requirements_dict())
         cls.generated = generate_managed_project(cls.spec, cls.parent / "project")
@@ -68,30 +70,6 @@ class ManagedPipelineTests(unittest.TestCase):
         self.assertEqual(
             first.manifest["native_snapshots"],
             second.project.manifest["native_snapshots"],
-        )
-
-    def test_existing_managed_project_migrates_without_state_loss(self) -> None:
-        service = ApplicationService(
-            self.parent / "application", provider_name="builtin"
-        )
-        imported = service.import_managed_project(
-            "Imported 0.2 managed design", self.generated.project.root
-        )
-        project_id = imported["project"]["id"]
-        self.assertEqual(imported["project"]["status"], "generated")
-        self.assertEqual(
-            imported["design"]["content_hash"],
-            self.generated.project.design.content_hash(),
-        )
-        self.assertEqual(
-            imported["state"]["migration"]["from"],
-            "CopperWright managed project 0.2.x",
-        )
-        self.assertEqual(
-            ApplicationService(
-                self.parent / "application", provider_name="builtin"
-            ).open_project(project_id)["design"]["content_hash"],
-            self.generated.project.design.content_hash(),
         )
 
     def test_four_layer_generation_and_real_validation_pass(self) -> None:

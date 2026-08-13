@@ -74,9 +74,9 @@ fabrication, bring-up, EMC, and measured physical results remain external gates.
 - A versioned CLI, Python API, and bounded newline-delimited JSON-RPC 2.0 API.
 - A 90-case independent CC0 error-injection corpus with detection, false-positive,
   repair, regression, repeatability, latency, and optional blinded model metrics.
-- The original reviewer/safe-patcher workflow remains available for unmanaged
-  projects, but raw text replacement is a legacy compatibility path, not the
-  primary mutation model.
+- The reviewer/safe-patcher workflow remains available for unmanaged projects
+  through bounded text replacement; managed semantic projects use typed change
+  sets.
 
 See [specification traceability](docs/SPEC_TRACEABILITY.md) for the requirement,
 implementation, and test mapping. Exact product verification and remaining gates
@@ -116,7 +116,7 @@ layer subset of the analysis's 2–4-layer target.
 - Python 3.11 or newer
 - KiCad 10.x CLI, symbols, footprints, and system `pcbnew` Python bindings
 - Git for diagnostics and development
-- Optional: an authenticated Codex CLI for conversational intent, `review`, legacy
+- Optional: an authenticated Codex CLI for conversational intent, `review`,
   `patch`, and the live model-consistency benchmark
 - Optional: an OpenAI-compatible Chat Completions endpoint configured only through
   `COPPERWRIGHT_OPENAI_BASE_URL`, `COPPERWRIGHT_OPENAI_MODEL`, and an API-key
@@ -245,7 +245,7 @@ The committed reference outputs are in:
 
 ## Semantic transactions
 
-Agents should emit a typed `pcb-agent-change-set`, then use the transaction
+Agents should emit a typed `copperwright-change-set`, then use the transaction
 commands rather than editing KiCad text:
 
 ```bash
@@ -266,7 +266,7 @@ To import a reviewed native KiCad footprint move:
 ```bash
 copperwright sync /tmp/controller --json
 copperwright sync /tmp/controller --apply --json
-copperwright sync-undo /tmp/.pcb-agent-transactions/sync-...
+copperwright sync-undo /tmp/.copperwright-transactions/sync-...
 ```
 
 Only pose changes are imported. Unknown board bytes, footprint changes, new or
@@ -355,25 +355,21 @@ MODEL_RUNS=2 scripts/benchmark.sh
 Current measured results and limitations are in [BENCHMARK.md](BENCHMARK.md).
 The benchmark is a regression corpus, not a claim about all PCB failures.
 
-## Compatibility names
+## Product identity
 
-The distribution and primary command are `copperwright`. The installed
-`pcb-agent` command remains an equivalent compatibility alias. The internal Python
-module stays `pcb_agent` to avoid a risky, value-free module migration.
-
-Stable on-disk and protocol identifiers—including `pcb-agent-*` schemas,
-`project.pcb-agent.json`, `.pcb-agent-*` transaction/lock directories, and the
-`PCB_AGENT_*` test/config namespace—also remain unchanged. Checked-in engineering
-receipts and benchmark artifacts created before the rename retain
-`pcb-agent-runtime` exactly as recorded; CopperWright does not rewrite historical
-evidence to make it look newer.
+CopperWright is distributed, imported, and invoked as `copperwright`; it is the
+only public CLI and Python package. Its on-disk and protocol identifiers use the
+same namespace, including `copperwright-*` schemas,
+`project.copperwright.json`, `.copperwright-*` transaction/lock directories, and
+the `COPPERWRIGHT_*` test/config namespace. Checked-in engineering receipts and
+benchmark artifacts use these CopperWright identifiers as well.
 
 ## Development and release checks
 
 ```bash
 scripts/test.sh
 scripts/smoke.sh                 # real KiCad demo; no model by default
-scripts/compatibility.sh         # Python 3.11–3.14 core matrix
+scripts/python-matrix.sh         # Python 3.11–3.14 core matrix
 scripts/chat-e2e.sh              # scriptable terminal product journey
 uv run python scripts/browser-e2e.py  # real Firefox journey and restart
 uv run python scripts/generate-product-examples.py
@@ -404,7 +400,7 @@ disclose. See [SECURITY.md](SECURITY.md).
 
 Runtime source and documentation are Apache-2.0; see [LICENSE](LICENSE). The bundled
 part/block catalogs and independent benchmark data are CC0-1.0 as documented in
-[`src/pcb_agent/data/LICENSE.md`](src/pcb_agent/data/LICENSE.md). Generated example
+[`src/copperwright/data/LICENSE.md`](src/copperwright/data/LICENSE.md). Generated example
 designs use official KiCad library material under the KiCad libraries' CC-BY-SA 4.0
 design exception. Dependency and attribution notes are in [NOTICE](NOTICE).
 The bounded public-project study and actual reuse decisions are recorded in

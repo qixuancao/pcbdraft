@@ -1,7 +1,7 @@
 # PCB design review
 
 Run: 20260812T145905Z-823aab11<br>
-Project: /mnt/2T/pcb-agent-runtime/examples/attiny\_sensor\_controller/project<br>
+Project: /mnt/2T/copperwright/examples/attiny\_sensor\_controller/project<br>
 Schematic: attiny\_sensor\_controller.kicad\_sch<br>
 Board: attiny\_sensor\_controller.kicad\_pcb
 
