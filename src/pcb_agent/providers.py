@@ -214,7 +214,8 @@ def _provider_prompt(context: ProviderContext) -> str:
         "BME280 board-local four-wire SPI environmental board with a power header and UPDI; "
         "and low_voltage_uart_ldo_controller_v1, a regulated 5 V-input ATtiny402 "
         "controller with AP2112K 3.3 V LDO, 3.3 V CMOS UART, UPDI, and LED. All are "
-        "2- or 4-layer non-safety-critical prototypes. Reject USB, buck, mains, high "
+        "45 mm by 30 mm, 2- or 4-layer non-safety-critical prototypes. Reject "
+        "other board dimensions, USB, buck, mains, high "
         "power, RF, medical, aviation, safety-critical, DDR, PCIe, SerDes, and any "
         "other profile. "
         "Use null and missing_fields for material facts that need a focused question. "
@@ -556,7 +557,7 @@ class BuiltinIntentProvider:
                 "assumptions": assumptions.get(profile, [])
                 + [
                     "Low-voltage, non-safety-critical prototype use",
-                    "Default 45 mm × 30 mm board unless dimensions are specified",
+                    "Verified 45 mm × 30 mm board envelope",
                 ]
                 if profile != "unsupported"
                 else [],

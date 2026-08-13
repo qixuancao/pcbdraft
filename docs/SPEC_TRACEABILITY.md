@@ -54,10 +54,30 @@ historical report and its artifact hashes remain unchanged.
 | R39 | Repeatability and latency | finding digests and monotonic timing | 90/90 stable; mean 0.290597 ms over 450 | implemented |
 | R40 | Model consistency across repetitions | blinded optional Codex runner | 2 runs, 48/48 correct, agreement 1.0 | implemented |
 | R41 | Initial low-voltage MCU/sensor/control acceptance fixture | ATtiny402/TMP102 3.3 V 2-layer project; real 4-layer test variant | checked-in example, release, real review | implemented |
-| R42 | Unsupported domains fail explicitly | profile/global policy split in API/compiler | SPI policy-domain rejection and mains high-risk rejection | implemented |
+| R42 | Unsupported domains fail explicitly | profile/global policy split in API/compiler | historical 0.2 SPI rejection plus current USB/buck/RS-232/high-risk rejection tests; supported SPI now passes its complete v1 chain | implemented |
 | R43 | Install/deploy/test/benchmark/docs/CI packaging | `pyproject.toml`, scripts, Makefile, docs, GitHub workflow | clean wheel/sdist/install and release check | implemented |
 | R44 | Open-source licensing | Apache-2.0 source, CC0 data, KiCad/dependency notice | package license/member inspection | implemented |
 | R45 | Physical manufacture, qualified sign-off, live sourcing, EMC and measured L7 | evidence import/gates only | candidate remains `production=false`; no fabricated evidence | external gate |
+
+## CopperWright 1.0 product extension
+
+The v1 application work did not redefine or overwrite the historical runtime
+results. It added the following traced surfaces on top of them:
+
+| Product area | Current implementation | Verification |
+|---|---|---|
+| Shared application authority | `application.py`, `jobs.py`, versioned private project format | application, restart, migration, concurrency tests |
+| Natural-language providers | `providers.py`: authenticated Codex, OpenAI-compatible, builtin offline | strict-schema, real Codex, local endpoint, redaction tests |
+| Terminal/browser clients | `chat.py`, `webapp.py`, packaged `web/` assets | clean-install chat E2E and real clean-HOME Firefox E2E |
+| Semantic conversational modification | application-owned staged generate/validate/apply/discard/undo path | both product E2Es verify distinct hashes and exact undo restoration |
+| Product profiles | I2C/TMP102, SPI/BME280, UART/AP2112K LDO | three committed native projects with real ERC/DRC and previews |
+| Product release | candidate export and offline verification from both clients | terminal/browser E2E and runtime release hard gate |
+| Unsupported scope | other board envelopes, USB 2.0, buck, RS-232 voltage levels, and high-risk domains | provider/profile/scope tests and browser unsupported state |
+
+The complete application requirement matrix is
+[`PRODUCT_ACCEPTANCE.md`](PRODUCT_ACCEPTANCE.md). Exact new evidence is summarized
+in [`PRODUCT_REPORT_ZH.md`](PRODUCT_REPORT_ZH.md); the older
+[`FINAL_REPORT_ZH.md`](FINAL_REPORT_ZH.md) remains the R01–R44 historical record.
 
 ## Persisted acceptance evidence
 

@@ -11,24 +11,38 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-<p align="center"><strong>面向 KiCad、以证据为基础的 PCB 自动化。</strong></p>
+<p align="center"><strong>用自然语言设计 PCB，由确定性的 KiCad 工程流程落地。</strong></p>
 
-CopperWright 是一个采用 Apache-2.0 许可、与模型无关的运行时，可将边界明确的
-电子设计需求转化为可审查、可验证、可逆的 KiCad 项目。KiCad 仍负责原理图/PCB、
-几何计算、规则检查和制造后端；CopperWright 在此基础上加入语义意图、可信元件
-契约、事务、确定性算法、证据关卡以及面向 Agent 的 API。
+CopperWright 是一款本地优先、采用 Apache-2.0 许可的应用，可将一次对话转化为
+可审查、可验证、可逆的 KiCad 项目。你可以通过 `copperwright chat` 启动引导式
+终端会话，也可以用 `copperwright app` 打开仅监听本机回环地址的浏览器工作台。
+KiCad 仍负责原理图/PCB、几何计算、规则检查和制造后端；AI 可以解释设计意图，
+而元件、拓扑、布局、布线、输出、验证和发布身份始终由确定性的 CopperWright
+代码负责。
 
-仓库内提交的验收设计是一块真实布线的 ATtiny402/TMP102 控制器。其 KiCad ERC
-和 DRC 均无违规，制造候选包也可复现，但我们有意不将其称为生产就绪：合格的
-人工审查、实时采购、制造、上电调试、EMC 以及实测物理结果仍属于外部关卡。
+有边界的 v1 支持三种真实布线设计：ATtiny402/TMP102 I2C、ATtiny402/BME280
+SPI，以及带 AP2112K 3.3 V LDO 的 5 V 输入 ATtiny402 UART 控制器。三者均通过
+适用的真实 KiCad ERC/DRC 和 CopperWright 候选关卡。我们仍不会把它们称为生产
+就绪：合格的人工审查、实时采购、制造、上电调试、EMC 和实测物理结果都属于
+外部关卡。
 
-> **产品状态：**历史 R01–R44 报告证明的是下述有边界的工程运行时；仅凭该报告
-> 不能证明端到端用户应用已经完成。只有共享应用服务、对话式 `chat` 工作流、
-> 本地浏览器 `app`、持久化项目、安全的对话式修改、预览和多配置文件验收均已实现
-> 并完成实测，CopperWright v1 才算完整。参见[产品验收](docs/PRODUCT_ACCEPTANCE.md)。
+> **产品状态：**CopperWright 1.0.0 是一款完整但范围有界的应用，并非通用 PCB
+> 自动驾驶工具。共享服务、终端/浏览器旅程、持久化、语义修改、三种配置文件和
+> 发布路径的实测证据见[产品验收记录](docs/PRODUCT_ACCEPTANCE.md)。较早的
+> [R01–R44 报告](docs/FINAL_REPORT_ZH.md)作为历史运行时证据原样保留。
 
 ## 已实现功能
 
+- `copperwright chat` 与 `copperwright app` 共用唯一权威应用服务；它管理私有的
+  持久化项目、对话、决策、作业、结构化事件、重启恢复和逐项目并发锁。
+- 在产生工程副作用前，先提出聚焦的澄清问题，并展示易读的设计简报、假设、BOM、
+  接口、约束、范围判断，最后要求用户明确确认。
+- 响应式、可用键盘操作的本地浏览器界面，包含进度/取消/重试状态、真实原理图/
+  PCB/3D 预览、工件直接路径、L0–L7 发现、在 KiCad 中打开以及候选包导出。
+- 支持已认证的本地 Codex、通过环境变量配置的 OpenAI 兼容端点和离线确定性
+  提供方。浏览器不接收密钥，项目对话也不存储密钥。
+- 对话式语义修改支持预览/应用/放弃/撤销；暂存设计通过候选验证且用户确认前，
+  当前 KiCad 文件不会被改动。
 - 严格的语义电路/PCB IR，涵盖类型化接口、电源域、需求、功能块、约束、分析、
   风险和来源信息。
 - 确定性的规范 JSON 与内容哈希，不受输入顺序影响。
@@ -54,26 +68,29 @@ CopperWright 是一个采用 Apache-2.0 许可、与模型无关的运行时，�
 - 原有的审查器/安全补丁工作流仍可用于非托管项目，但原始文本替换只是旧版
   兼容路径，不是主要变更模型。
 
-需求、实现和测试之间的映射见[规格追踪表](docs/SPEC_TRACEABILITY.md)。实际交付
-的验证结果及剩余外部关卡记录在[最终中文报告](docs/FINAL_REPORT_ZH.md)中。
+需求、实现和测试之间的映射见[规格追踪表](docs/SPEC_TRACEABILITY.md)。产品的
+精确验证结果和剩余关卡记录在 [v1 中文报告](docs/PRODUCT_REPORT_ZH.md)中；历史
+运行时报告保持不变。
 
 ## 支持范围
 
-内置生成器配置文件有意保持狭窄且边界明确：
+内置配置文件有意保持狭窄且边界明确：
 
 | 契约 | 当前支持 |
 |---|---|
-| 配置文件 | `low_voltage_i2c_controller_v1` |
-| 电路 | 外部稳压 3.3 V ATtiny402 + TMP102 + I2C/Qwiic + UPDI + LED |
+| I2C | `low_voltage_i2c_controller_v1`：稳压 3.3 V 输入、ATtiny402、TMP102、Qwiic、UPDI、LED |
+| SPI | `low_voltage_spi_environment_v1`：稳压 3.3 V 输入、ATtiny402、板载 BME280、四线 SPI 模式 0、1 MHz、UPDI |
+| UART/LDO | `low_voltage_uart_ldo_controller_v1`：稳压 5 V 输入、AP2112K 3.3 V LDO、ATtiny402、3.3 V CMOS UART、UPDI、LED |
 | 铜层堆叠 | 2 层或 4 层 |
+| 电路板外形 | 45 mm × 30 mm |
 | 用途 | 原型或非安全关键的低压传感/控制 |
 | KiCad | 主版本 10；精确验收版本为 10.0.5 |
 | Python | 3.11+ |
 
-SPI、UART、基础 USB 2.0、LDO 和简单 buck 已被识别为策略域，但尚无内置生成
-配置文件。包含这些名称的请求会在生成前被拒绝，而不会被悄悄映射到 I2C
-夹具。DDR、PCIe、SerDes、RF、市电、高功率、医疗、航空及安全关键工作会被
-自动范围关卡明确拒绝。
+USB 2.0 和 buck 转换已被识别，但 v1 尚无在本地完整验证过的电气/布局链，因此
+仍不支持。RS-232 电平也不属于受支持的 3.3 V CMOS UART。其他电路板尺寸不会
+被悄悄应用到固定且经过验证的布局/布线契约。DDR、PCIe、SerDes、
+RF、市电、高功率、医疗、航空及安全关键工作会被明确拒绝，而不是被悄悄近似。
 
 在测试主机上，KiCad 自身无法重新载入通过 KiCad 10 Python API 生成的奇数三铜层
 电路板，因此原生契约采用分析目标 2–4 层中的常见 2/4 层子集。
@@ -84,7 +101,10 @@ SPI、UART、基础 USB 2.0、LDO 和简单 buck 已被识别为策略域，但�
 - Python 3.11 或更新版本
 - KiCad 10.x CLI、符号库、封装库和系统 `pcbnew` Python 绑定
 - 用于诊断和开发的 Git
-- 可选：已认证的 Codex CLI，用于 `review`、旧版 `patch` 和实时模型一致性基准测试
+- 可选：已认证的 Codex CLI，用于对话式意图、`review`、旧版 `patch` 和实时模型
+  一致性基准测试
+- 可选：OpenAI 兼容的 Chat Completions 端点，只能通过
+  `COPPERWRIGHT_OPENAI_BASE_URL`、`COPPERWRIGHT_OPENAI_MODEL` 和 API 密钥环境变量配置
 
 KiCad 10.0.5 是本地精确验收的版本。其他 10.x 版本会报告为主版本相同但未经
 精确测试；其他主版本会以失败关闭。Ubuntu 用户可采用 KiCad 官方
@@ -96,6 +116,7 @@ KiCad 10.0.5 是本地精确验收的版本。其他 10.x 版本会报告为主�
 
 ```bash
 scripts/deploy.sh
+scripts/prepare-kicad-environment.sh
 uv run copperwright doctor --json
 ```
 
@@ -108,11 +129,63 @@ uv pip install --python /tmp/copperwright-venv/bin/python dist/*.whl
 /tmp/copperwright-venv/bin/copperwright --version
 ```
 
-`doctor.ok` 表示确定性核心可用。Codex 可用性会单独报告为
-`ai_review_available`；生成、验证、发布、校验或确定性基准测试均不需要付费或
-私有凭据。
+`doctor.ok` 表示确定性核心可用。离线提供方、生成、验证、发布、校验和确定性
+基准测试均不需要付费或私有凭据。
 
-## 端到端快速上手
+## 对话式快速上手
+
+启动浏览器应用（按设计仅监听本机回环地址）：
+
+```bash
+copperwright app
+# 如果浏览器没有自动打开，请访问 http://127.0.0.1:8765
+```
+
+新建项目，回答铜层问题，检查设计简报、BOM 和约束，再确认生成。随后可以说
+“Change this board to 4 layers”，先查看经过验证的语义差异，再选择 Apply；Undo
+会精确恢复此前的权威状态。Export candidate 会生成并离线校验制造候选包。
+
+通过 SSH 也能完成同一套流程：
+
+```bash
+copperwright chat
+# /new Greenhouse sensor
+# Describe: Create a BME280 SPI environmental sensor controller
+# Reply: 2 layers
+# /confirm
+# Change this board to 4 layers
+# /confirm
+# /undo
+# /release
+```
+
+脚本化自动化可使用 `--new`、`--project`、`--message`、`--yes`、`--undo`、
+`--validate`、`--release`、`--list` 和 `--json`；详见 `copperwright chat --help`。
+
+![CopperWright 浏览器项目视图](artifacts/product-e2e/copperwright-app-visuals.png)
+
+## 提供方与密钥
+
+`--provider auto` 会依次选择已安装且完成认证的 Codex CLI、已配置的 OpenAI 兼容
+端点和离线分类器。也可以用 `--provider codex`、`--provider openai-compatible`
+或 `--provider builtin` 明确选择。
+
+```bash
+# 在 CopperWright 之外完成认证；令牌不会复制到项目中。
+codex login
+copperwright app --provider codex
+
+# 或使用 OpenAI 兼容端点启动。不要把这些配置写入项目文件。
+COPPERWRIGHT_OPENAI_BASE_URL=https://provider.example/v1 \
+COPPERWRIGHT_OPENAI_MODEL=model-id \
+OPENAI_API_KEY='<secret>' \
+copperwright app --provider openai-compatible
+```
+
+浏览器不提供凭据输入框。模型输出受到 schema、大小和范围约束，并会规范化和
+范围检查；用户确认前不能产生工程副作用。提供方逻辑从不选择元件或编辑 KiCad。
+
+## 确定性运行时快速上手
 
 所有输出路径都只能新建。请使用新路径，或自行移除之前的一次性输出。
 
@@ -138,7 +211,11 @@ copperwright release-verify /tmp/controller-release --json
 
 已提交的参考输出位于：
 
+- [`examples/product_profiles`](examples/product_profiles) — 当前三种 v1 配置文件的
+  原生项目、验证和预览
 - [`examples/attiny_sensor_controller`](examples/attiny_sensor_controller)
+- [`artifacts/product-e2e`](artifacts/product-e2e) — clean-HOME 浏览器/终端产品流程
+  证据和截图
 - [`artifacts/acceptance/release`](artifacts/acceptance/release)
 - [`artifacts/acceptance/review`](artifacts/acceptance/review)
 - [`artifacts/benchmark/benchmark-20260812.json`](artifacts/benchmark/benchmark-20260812.json)
@@ -190,11 +267,11 @@ copperwright sync-undo /tmp/.pcb-agent-transactions/sync-...
 制造厂证据、L6 审查和 L7 物理证据。运行时会复制并哈希所提供的证据，但将其
 标记为 `externally_supplied_not_independently_verified`；运行时绝不会自行签署。
 
-对于内置配置文件，功率包络采用单一同时最大值契约
-（`3.465 V × 0.1 A = 0.3465 W`，电源上限增加 +5%，且留有低于传感器 3.6 V
-工作上限的余量）；I2C 限定为 200 pF、使用 4.7 kOhm 上拉且不允许外部上拉；
-UPDI VTREF 仅用于感测；去耦距离在相关原生铜焊盘矩形之间测量。I2C 布线契约
-要求填充的 GND 参考平面和至少两个确定性 GND 缝合过孔。
+I2C 配置文件将总线限定为 200 pF、使用 4.7 kOhm 上拉且不允许外部上拉。SPI
+配置文件将单个板载 BME280 固定为四线模式 0、1 MHz，并验证 CS 上拉。UART/LDO
+配置文件会检查 AP2112K 输入/输出、负载、旁路、稳定性、使能，以及 3.3 V CMOS
+8-N-1（不是 RS-232）契约。去耦距离在相关原生铜焊盘矩形之间测量；所有布线契约
+都要求填充的 GND 参考平面和确定性 GND 缝合过孔。
 
 托管项目审查会接收经过严格解析的需求、IR、可信元件和功能块记录、生成回执及
 原生语义导出。如果任何受跟踪文件发生漂移，这些意图记录会被标记为非权威，而
@@ -205,6 +282,7 @@ UPDI VTREF 仅用于感测；去耦距离在相关原生铜焊盘矩形之间测
 运行 `copperwright --help` 和 `copperwright COMMAND --help` 查看权威 CLI。
 主要命令组包括：
 
+- 产品：`chat`、`app`
 - 设计：`compile`、`generate`、`inspect`、`parts`
 - 验证/发布：`validate`、`release`、`release-verify`、`evidence-record`
 - 同步/事务：`sync`、`sync-undo`、`sync-recover`、`semantic-preview`、
@@ -260,7 +338,10 @@ MODEL_RUNS=2 scripts/benchmark.sh
 scripts/test.sh
 scripts/smoke.sh                 # real KiCad demo; no model by default
 scripts/compatibility.sh         # Python 3.11–3.14 core matrix
-scripts/release-check.sh         # tests, wheel/sdist, clean install, E2E release
+scripts/chat-e2e.sh              # scriptable terminal product journey
+uv run python scripts/browser-e2e.py  # real Firefox journey and restart
+uv run python scripts/generate-product-examples.py
+scripts/release-check.sh         # full clean-install product/release hard gate
 ```
 
 当本地存在兼容工具链时，`scripts/test.sh` 会自动运行真实 KiCad 测试；否则通过
@@ -288,5 +369,8 @@ multi-agent、网络和特权工具，并通过 stdin 传入提示。该策略�
 [`src/pcb_agent/data/LICENSE.md`](src/pcb_agent/data/LICENSE.md)。生成的示例设计
 使用 KiCad 官方库材料，适用 KiCad 库的 CC-BY-SA 4.0 design exception。依赖和
 归属说明见 [NOTICE](NOTICE)。
+对公开项目的有界研究及实际复用决策记录在
+[`docs/OPEN_SOURCE_REUSE.md`](docs/OPEN_SOURCE_REUSE.md)中；没有复制所研究项目的
+代码或资源。
 
 本项目不提供任何担保或工程认证。请始终根据产品、司法辖区和风险开展合格审查。

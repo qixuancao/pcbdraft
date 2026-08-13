@@ -254,7 +254,7 @@
       "no_connect_count": 3,
       "path": "copperwright_uart_ldo_controller.kicad_sch",
       "root_uuid": "c3500274-f1ce-57dd-a9c3-99b54d12746e",
-      "sha256": "080b2832c1128a7182042b1bd24dd40e169a32f4abbf57bb74eca2d238c81c38"
+      "sha256": "23f41f9bdb41eb9a408a266f3ae33de70470557daba593efa6312012cfbbf779"
     }
   },
   "hashes": {
@@ -262,7 +262,7 @@
     "ir": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d",
     "kicad_project": "75e9b884dea1efe7d42ba9b1e516ba3457db2a0cb267cdcfd04e2cb4c37c2332",
     "requirements": "7be50fd7a123af0811e360585e34676e1de5172e6ea2973b0395907b271fcded",
-    "schematic": "080b2832c1128a7182042b1bd24dd40e169a32f4abbf57bb74eca2d238c81c38",
+    "schematic": "23f41f9bdb41eb9a408a266f3ae33de70470557daba593efa6312012cfbbf779",
     "worker_receipt": "7582f643395cd8bb5c447c50cf1b29596851bc90febef5859ee0c511fca3f276"
   },
   "native_snapshots": {
@@ -2113,7 +2113,7 @@
       "version": 1
     }
   },
-  "runtime_version": "0.2.0",
+  "runtime_version": "1.0.0",
   "schema": "pcb-agent-managed-project",
   "sync": {
     "authority": "semantic_ir",

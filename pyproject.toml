@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "copperwright"
-version = "0.2.0"
-description = "CopperWright: agent-safe, evidence-driven semantic PCB design for KiCad"
+version = "1.0.0"
+description = "CopperWright: local conversational PCB design with deterministic KiCad engineering"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -13,8 +13,9 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "CopperWright contributors"}]
 keywords = ["pcb", "kicad", "eda", "agent", "electronics", "automation"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
+    "Environment :: Web Environment",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -27,6 +28,12 @@ dependencies = [
     # Pinned because generated KiCad syntax is part of the compatibility contract.
     "kicad-sch-api==0.5.6",
 ]
+
+[project.urls]
+Homepage = "https://github.com/qixuancao/copperwright"
+Repository = "https://github.com/qixuancao/copperwright.git"
+Issues = "https://github.com/qixuancao/copperwright/issues"
+Changelog = "https://github.com/qixuancao/copperwright/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["build>=1.2", "ruff>=0.12"]

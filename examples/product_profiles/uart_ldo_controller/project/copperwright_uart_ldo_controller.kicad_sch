@@ -1,7 +1,7 @@
 (kicad_sch
 	(version 20250114)
 	(generator "copperwright")
-	(generator_version "0.2.0")
+	(generator_version "1.0.0")
 	(uuid "c3500274-f1ce-57dd-a9c3-99b54d12746e")
 	(paper "A4")
 	(title_block

@@ -121,7 +121,7 @@ def generate_schematic(
     schematic = Schematic.create(
         name=target.stem,
         generator="copperwright",
-        generator_version="0.2.0",
+        generator_version="1.0.0",
         uuid=root_uuid,
     )
     # The pinned backend exposes no public title-block setter.

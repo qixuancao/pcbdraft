@@ -178,8 +178,13 @@ def run_benchmark(
     base = compile_requirements(
         RequirementsSpec.from_dict(spec_document), graph=graph, check_libraries=True
     )
-    bounds, kicad_version = _footprint_bounds(base, graph)
-    base_findings = evaluate_semantic_rules(base, graph, footprint_bounds=bounds)
+    bounds, inspections, kicad_version = _footprint_evidence(base, graph)
+    base_findings = evaluate_semantic_rules(
+        base,
+        graph,
+        footprint_bounds=bounds,
+        footprint_inspections=inspections,
+    )
     if base_findings:
         raise ValidationError(
             "benchmark base fixture is not a clean negative control: "
@@ -187,7 +192,9 @@ def run_benchmark(
         )
 
     started = time.perf_counter()
-    case_results = [_run_case(case, base, graph, bounds, repetitions) for case in cases]
+    case_results = [
+        _run_case(case, base, graph, bounds, inspections, repetitions) for case in cases
+    ]
     duration = time.perf_counter() - started
     metrics = _metrics(case_results, repetitions, duration)
     model_consistency = (
@@ -236,9 +243,13 @@ def run_benchmark(
     return BenchmarkRun(target, result)
 
 
-def _footprint_bounds(
+def _footprint_evidence(
     design: Design, graph: PartGraph
-) -> tuple[dict[str, tuple[float, float, float, float]], str]:
+) -> tuple[
+    dict[str, tuple[float, float, float, float]],
+    dict[str, Any],
+    str,
+]:
     components = tuple(
         component
         for component in design.components
@@ -256,6 +267,7 @@ def _footprint_bounds(
             )
             for component_id, inspection in inspections.items()
         },
+        inspections,
         version,
     )
 
@@ -265,13 +277,19 @@ def _run_case(
     base: Design,
     graph: PartGraph,
     bounds: dict[str, tuple[float, float, float, float]],
+    inspections: dict[str, Any],
     repetitions: int,
 ) -> dict[str, Any]:
     design = _inject(base, case.injection)
     runs: list[tuple[tuple[RuleFinding, ...], int]] = []
     for _index in range(repetitions):
         start = time.perf_counter_ns()
-        findings = evaluate_semantic_rules(design, graph, footprint_bounds=bounds)
+        findings = evaluate_semantic_rules(
+            design,
+            graph,
+            footprint_bounds=bounds,
+            footprint_inspections=inspections,
+        )
         runs.append((findings, time.perf_counter_ns() - start))
     first = runs[0][0]
     digests = [
@@ -283,7 +301,7 @@ def _run_case(
     codes = sorted({finding.code for finding in first})
     expected_hit = all(code in codes for code in case.expected_codes)
     detected = bool(first)
-    repair = _repair(case, base, design, graph, bounds)
+    repair = _repair(case, base, design, graph, bounds, inspections)
     return {
         "id": case.id,
         "label": case.label,
@@ -407,6 +425,7 @@ def _repair(
     faulty: Design,
     graph: PartGraph,
     bounds: dict[str, tuple[float, float, float, float]],
+    inspections: dict[str, Any],
 ) -> dict[str, Any]:
     if not case.repairable:
         return {
@@ -416,10 +435,20 @@ def _repair(
             "introduced_regressions": None,
         }
     change_set = _repair_change_set(case, base, faulty)
-    before = evaluate_semantic_rules(faulty, graph, footprint_bounds=bounds)
+    before = evaluate_semantic_rules(
+        faulty,
+        graph,
+        footprint_bounds=bounds,
+        footprint_inspections=inspections,
+    )
     try:
         repaired = apply_change_set(faulty, change_set)
-        after = evaluate_semantic_rules(repaired, graph, footprint_bounds=bounds)
+        after = evaluate_semantic_rules(
+            repaired,
+            graph,
+            footprint_bounds=bounds,
+            footprint_inspections=inspections,
+        )
         introduced = sorted(
             {finding.code for finding in after} - {finding.code for finding in before}
         )

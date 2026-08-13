@@ -110,16 +110,29 @@ class WebDriver:
 
     def __init__(self, executable: str) -> None:
         self.port = available_port()
+        help_result = subprocess.run(
+            [executable, "--help"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        driver_args = [
+            executable,
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(self.port),
+            "--log",
+            "fatal",
+        ]
+        if "--allow-system-access" in help_result.stdout:
+            # Required by geckodriver 0.37.1+ for browser-UI automation and safe
+            # to request on 0.37.0. The driver remains bound to loopback.
+            driver_args.append("--allow-system-access")
         self.process = subprocess.Popen(
-            [
-                executable,
-                "--host",
-                "127.0.0.1",
-                "--port",
-                str(self.port),
-                "--log",
-                "fatal",
-            ],
+            driver_args,
             cwd=REPO,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
@@ -489,6 +502,13 @@ def primary_browser_flow(
             "applied semantic hash",
         )
         applied_hash = applied["design"]["content_hash"]
+        browser.wait(
+            "const panel = document.querySelector('#job-panel'); "
+            "const title = document.querySelector('#job-title')?.textContent || ''; "
+            "return panel.classList.contains('hidden') || "
+            "title.includes('completed');",
+            "stable post-transaction UI",
+        )
 
         browser.execute(
             "[...document.querySelectorAll('.tab')]"
@@ -551,6 +571,42 @@ def primary_browser_flow(
         )
         if len(report.get("levels", [])) != 8 or len(archive) < 1000:
             raise RuntimeError("browser validation/release artifacts are incomplete")
+
+        browser.execute("document.querySelector('#new-project').click();")
+        browser.wait(
+            "return document.querySelector('#new-project-dialog').open;",
+            "unsupported-project dialog",
+        )
+        browser.execute(
+            "document.querySelector('#new-project-name').value = 'Unsupported USB'; "
+            "document.querySelector('#new-project-request').value = "
+            "'Create a USB-C mains-powered medical board'; "
+            "document.querySelector('#new-project-form').requestSubmit();"
+        )
+        browser.wait(
+            "return document.querySelector('#project-eyebrow').textContent"
+            ".startsWith('unsupported');",
+            "explicit unsupported scope",
+        )
+        unsupported_visible = browser.execute(
+            "const brief = document.querySelector('#tab-brief'); "
+            "return !brief.classList.contains('hidden') && "
+            "document.querySelector('[data-tab=brief]').getAttribute('aria-selected') === 'true' && "
+            "brief.textContent.includes('Rejected') && "
+            "brief.textContent.includes('outside the supported');"
+        )
+        if not unsupported_visible:
+            raise RuntimeError("unsupported scope was not clearly visible")
+        browser.screenshot(output / "copperwright-app-unsupported.png")
+        browser.execute(
+            "[...document.querySelectorAll('.project-button')]"
+            f".find((item) => item.dataset.projectId === {json.dumps(project_id)}).click();"
+        )
+        browser.wait(
+            "return document.querySelector('#project-eyebrow').textContent"
+            ".startsWith('released');",
+            "return to released project",
+        )
         return {
             "project_id": project_id,
             "clarification": question,
@@ -562,6 +618,7 @@ def primary_browser_flow(
             "offline_release_verified": True,
             "validation_levels": len(report["levels"]),
             "release_archive_bytes": len(archive),
+            "unsupported_scope_visible": True,
         }
 
 
@@ -575,14 +632,25 @@ def reopen_browser_flow(
         browser.navigate(base_url)
         expected = json.dumps(project_id)
         browser.wait(
+            "return [...document.querySelectorAll('.project-button')]"
+            f".some((item) => item.dataset.projectId === {expected});",
+            "persisted project in restart list",
+            timeout=30,
+        )
+        browser.execute(
+            "[...document.querySelectorAll('.project-button')]"
+            f".find((item) => item.dataset.projectId === {expected}).click();"
+        )
+        browser.wait(
             "return document.querySelector('.project-button.active')?.dataset.projectId === "
             f"{expected};",
-            "persisted project reopen",
+            "persisted project selection",
             timeout=30,
         )
         view = project_view(base_url, project_id)
         result = {
             "project_id": view["project"]["id"],
+            "selected_from_project_list": True,
             "status": view["project"]["status"],
             "messages": len(view["conversation"]["messages"]),
             "design": bool(view["design"]),

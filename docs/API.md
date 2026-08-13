@@ -1,4 +1,34 @@
-# CopperWright agent API reference
+# CopperWright application and agent API reference
+
+## Conversational application interface
+
+`copperwright chat` is the stable product interface for terminals and automation.
+Interactive commands cover `/new`, `/open`, `/projects`, `/status`, `/confirm`,
+`/discard`, `/validate`, `/undo`, `/release`, and `/quit`. Noninteractive callers
+can combine `--new` or `--project` with `--message`, `--yes`, `--undo`,
+`--validate`, `--release`, `--list`, and `--json`. The JSON result is the same
+public project projection used by the browser and includes proposal, authoritative
+design identity, current transaction, artifacts, and structured events.
+
+```bash
+copperwright chat --workspace /tmp/copperwright-work \
+  --provider builtin --new "Environment sensor" \
+  --message "Create a BME280 SPI controller" --json
+```
+
+`copperwright app` serves the same `ApplicationService` on `127.0.0.1` by default.
+Its `/api/*` routes and SSE stream are a versioned internal browser transport, not
+a general remote API. The server refuses non-loopback binds and validates Host,
+Origin, CSRF tokens, request sizes, project IDs, and artifact paths. It must not be
+placed behind a public reverse proxy. Use the terminal JSON interface or the
+newline JSON-RPC API below for external automation.
+
+The supported Python seam is `pcb_agent.application.ApplicationService`. Methods
+return plain JSON-compatible projections and enforce the same confirmation,
+locking, provider, and transaction semantics. Callers must not edit the private
+application workspace directly.
+
+## Deterministic JSON-RPC interface
 
 `copperwright api` serves newline-delimited JSON-RPC 2.0 over stdin/stdout. The
 legacy `pcb-agent api` spelling is equivalent. The service has no

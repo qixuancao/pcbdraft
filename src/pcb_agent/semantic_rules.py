@@ -44,6 +44,7 @@ def evaluate_semantic_rules(
     *,
     placements: dict[str, dict[str, Any]] | None = None,
     footprint_bounds: dict[str, tuple[float, float, float, float]] | None = None,
+    footprint_inspections: dict[str, Any] | None = None,
     routing: dict[str, Any] | None = None,
     approximate_geometry: bool = True,
 ) -> tuple[RuleFinding, ...]:
@@ -89,6 +90,7 @@ def evaluate_semantic_rules(
                     graph,
                     constraint,
                     position_map,
+                    footprint_inspections=footprint_inspections,
                     approximate_geometry=approximate_geometry,
                 )
             elif constraint.kind == "interface_pullups":
@@ -268,6 +270,7 @@ def _decoupling_finding(
     constraint: Any,
     placements: dict[str, dict[str, Any]],
     *,
+    footprint_inspections: dict[str, Any] | None,
     approximate_geometry: bool,
 ) -> RuleFinding | None:
     components = _target_components(design, constraint.targets)
@@ -310,6 +313,25 @@ def _decoupling_finding(
         cap_position = placements.get(capacitor.id)
         device_position = placements.get(device.id)
         if (
+            footprint_inspections is not None
+            and cap_position is not None
+            and device_position is not None
+        ):
+            distances = _native_decoupling_pad_distances(
+                design,
+                graph,
+                capacitor,
+                device,
+                nets,
+                cap_position,
+                device_position,
+                footprint_inspections,
+            )
+            if len(distances) != len(nets):
+                reasons.append("native supply-pad geometry is incomplete")
+            elif any(distance > maximum + 1e-9 for distance in distances.values()):
+                reasons.append("native supply-pad distance exceeds the declared bound")
+        elif (
             approximate_geometry
             and not (
                 capacitor.placement is not None
@@ -334,6 +356,73 @@ def _decoupling_finding(
         "; ".join(reasons),
         maximum_distance_mm=maximum,
     )
+
+
+def _native_decoupling_pad_distances(
+    design: Design,
+    graph: PartGraph,
+    capacitor: Any,
+    device: Any,
+    nets: list[Any],
+    capacitor_position: dict[str, Any],
+    device_position: dict[str, Any],
+    inspections: dict[str, Any],
+) -> dict[str, float]:
+    """Measure declared rail gaps from native KiCad footprint pad rectangles."""
+
+    positions: dict[tuple[str, str], tuple[float, float, float, float]] = {}
+    for component, origin in (
+        (capacitor, capacitor_position),
+        (device, device_position),
+    ):
+        inspection = inspections.get(component.id)
+        if inspection is None:
+            continue
+        part = graph.get(component.part_id)
+        for pin in part.pins:
+            matching = [
+                pad for pad in inspection.pads if pad.number == pin.footprint_pad
+            ]
+            if len(matching) != 1:
+                continue
+            pad = matching[0]
+            positions[(component.id, pin.number)] = (
+                float(origin["x_mm"]) + pad.x_mm,
+                float(origin["y_mm"]) + pad.y_mm,
+                pad.width_mm / 2,
+                pad.height_mm / 2,
+            )
+
+    distances: dict[str, float] = {}
+    for net in nets:
+        capacitor_pads = [
+            positions[(endpoint.component, endpoint.pin)]
+            for endpoint in net.endpoints
+            if endpoint.component == capacitor.id
+            and (endpoint.component, endpoint.pin) in positions
+        ]
+        device_pads = [
+            positions[(endpoint.component, endpoint.pin)]
+            for endpoint in net.endpoints
+            if endpoint.component == device.id
+            and (endpoint.component, endpoint.pin) in positions
+        ]
+        if capacitor_pads and device_pads:
+            distances[net.id] = min(
+                _rectangle_gap(first, second)
+                for first in capacitor_pads
+                for second in device_pads
+            )
+    return distances
+
+
+def _rectangle_gap(
+    first: tuple[float, float, float, float],
+    second: tuple[float, float, float, float],
+) -> float:
+    delta_x = max(0.0, abs(first[0] - second[0]) - first[2] - second[2])
+    delta_y = max(0.0, abs(first[1] - second[1]) - first[3] - second[3])
+    return math.hypot(delta_x, delta_y)
 
 
 def _pullup_finding(

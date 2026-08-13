@@ -11,29 +11,44 @@
   <a href="README.ko.md">한국어</a>
 </p>
 
-<p align="center"><strong>エビデンスに基づく KiCad 向け PCB 自動化。</strong></p>
+<p align="center"><strong>対話から PCB を設計し、決定論的な KiCad 工程で仕上げます。</strong></p>
 
-CopperWright は Apache-2.0 ライセンスのモデル非依存ランタイムです。範囲を
-明確に定めた電子回路要件から、レビュー可能・検証可能・可逆な KiCad プロジェクト
-を生成します。回路図/PCB、ジオメトリ、ルールチェック、製造バックエンドには
-引き続き KiCad を使用し、CopperWright がセマンティックな意図、信頼済み部品
-契約、トランザクション、決定論的アルゴリズム、エビデンスゲート、Agent 向け
-API を追加します。
+CopperWright はローカルファーストの Apache-2.0 アプリケーションです。会話から、
+レビュー可能・検証可能・可逆な KiCad プロジェクトを作成します。ガイド付きの
+ターミナル作業は `copperwright chat`、ループバックだけで動くブラウザ作業台は
+`copperwright app` で開始できます。回路図/PCB、ジオメトリ、ルールチェック、
+製造バックエンドは引き続き KiCad が担当します。AI は意図を解釈できますが、
+部品、トポロジ、配置、配線、出力、検証、リリース ID は決定論的な
+CopperWright コードが管理します。
 
-リポジトリに収録した受け入れ設計は、実際に配線された ATtiny402/TMP102
-コントローラです。KiCad ERC と DRC に違反はなく、製造候補も再現可能ですが、
-意図的に本番対応とは呼んでいません。資格を持つ担当者によるレビュー、最新の
-調達情報、製造、立ち上げ、EMC、実測による物理結果は、引き続き外部ゲートです。
+範囲を限定した v1 は、実配線済みの三つの設計をサポートします：
+ATtiny402/TMP102 I2C、ATtiny402/BME280 SPI、AP2112K 3.3 V LDO を備えた
+5 V 入力の ATtiny402 UART コントローラです。いずれも、適用可能な実 KiCad
+ERC/DRC と CopperWright の候補ゲートを通過します。ただし本番対応とは呼びません。
+資格を持つ担当者によるレビュー、最新の調達情報、製造、立ち上げ、EMC、実測に
+よる物理結果は外部ゲートです。
 
-> **製品ステータス：**過去の R01–R44 レポートが証明するのは、以下に示す範囲を
-> 限定したエンジニアリングランタイムです。それだけで完成したエンドユーザー
-> アプリケーションを証明するものではありません。共通アプリケーションサービス、
-> 対話型 `chat`、ローカルブラウザ `app`、永続プロジェクト、安全な対話型変更、
-> プレビュー、複数プロファイルの受け入れを実装・実測して初めて CopperWright v1
-> は完成です。[製品受け入れ](docs/PRODUCT_ACCEPTANCE.md)を参照してください。
+> **製品ステータス：**CopperWright 1.0.0 は、完成した範囲限定アプリケーション
+> であり、汎用 PCB 自動設計ツールではありません。共通サービス、ターミナル/
+> ブラウザの操作経路、永続化、セマンティック変更、三つのプロファイル、リリース
+> 経路の実測結果は[製品受け入れ記録](docs/PRODUCT_ACCEPTANCE.md)にあります。
+> 以前の [R01–R44 レポート](docs/FINAL_REPORT_ZH.md)は、歴史的なランタイム
+> エビデンスとして変更せず保存しています。
 
 ## 実装済み機能
 
+- `copperwright chat` と `copperwright app` が共有する唯一の権威あるアプリケーション
+  サービス。非公開の永続プロジェクト、会話、判断、ジョブ、構造化イベント、再起動
+  復旧、プロジェクト単位の同時実行ロックを管理します。
+- 工学的な副作用の前に、焦点を絞った確認質問、読みやすい設計概要、仮定、BOM、
+  インターフェース、制約、対応範囲の判断を示し、明示的な確認を求めます。
+- レスポンシブでキーボード操作可能なローカルブラウザ UI。進捗/キャンセル/再試行、
+  実際の回路図/PCB/3D プレビュー、成果物の直接パス、L0–L7 の検出事項、KiCad で
+  開く操作、候補のエクスポートを備えます。
+- 認証済みローカル Codex、環境変数で設定する OpenAI 互換、オフライン決定論的
+  プロバイダをサポート。ブラウザはシークレットを受け取らず、会話にも保存しません。
+- 対話型のセマンティック変更をプレビュー/適用/破棄/undo できます。ステージした
+  設計が候補検証を通り、ユーザーが確認するまで現在の KiCad ファイルは変えません。
 - 型付きインターフェース、電源ドメイン、要件、ブロック、制約、解析、リスク、
   来歴を含む厳密なセマンティック回路/PCB IR。
 - 入力順序に依存しない決定論的な正規 JSON とコンテンツハッシュ。
@@ -62,27 +77,30 @@ API を追加します。
   ただし生テキスト置換はレガシー互換パスであり、主要な変更モデルではありません。
 
 要件、実装、テストの対応は[仕様トレーサビリティ](docs/SPEC_TRACEABILITY.md)を
-参照してください。実際に提供した検証結果と残っている外部ゲートは
-[最終中国語レポート](docs/FINAL_REPORT_ZH.md)に記録されています。
+参照してください。製品の正確な検証結果と残りのゲートは
+[v1 中国語レポート](docs/PRODUCT_REPORT_ZH.md)に記録し、歴史的ランタイム
+レポートは変更せず保存しています。
 
 ## サポート範囲
 
-同梱のジェネレータプロファイルは、意図的に狭く明確な範囲に限定しています。
+同梱プロファイルは、意図的に狭く明確な範囲に限定しています。
 
 | 契約 | 現在のサポート |
 |---|---|
-| プロファイル | `low_voltage_i2c_controller_v1` |
-| 回路 | 外部安定化 3.3 V ATtiny402 + TMP102 + I2C/Qwiic + UPDI + LED |
+| I2C | `low_voltage_i2c_controller_v1`：安定化 3.3 V 入力、ATtiny402、TMP102、Qwiic、UPDI、LED |
+| SPI | `low_voltage_spi_environment_v1`：安定化 3.3 V 入力、ATtiny402、基板上 BME280、4 線 SPI mode 0、1 MHz、UPDI |
+| UART/LDO | `low_voltage_uart_ldo_controller_v1`：安定化 5 V 入力、AP2112K 3.3 V LDO、ATtiny402、3.3 V CMOS UART、UPDI、LED |
 | 銅箔スタックアップ | 2 層または 4 層 |
+| ボード外形 | 45 mm × 30 mm |
 | 用途 | プロトタイプ、または安全性が重要でない低電圧センシング/制御 |
 | KiCad | メジャー 10、厳密な受け入れテストは 10.0.5 |
 | Python | 3.11+ |
 
-SPI、UART、基本的な USB 2.0、LDO、単純な buck はポリシードメインとして認識
-されますが、同梱の生成プロファイルはまだありません。これらを指定した要求は、
-I2C フィクスチャへ黙って置き換えず、生成前に拒否します。DDR、PCIe、SerDes、
-RF、商用電源、高電力、医療、航空、安全性が重要な用途は、自動スコープゲートで
-明示的に拒否されます。
+USB 2.0 と buck 変換は認識されますが、v1 にはローカルで完全に検証された電気/
+レイアウトの一連の契約がないため未対応です。RS-232 電圧は、対応する 3.3 V
+CMOS UART ではありません。固定された検証済みの配置/配線契約に、別のボード
+寸法を黙って適用することもありません。DDR、PCIe、SerDes、RF、商用電源、高電力、医療、
+航空、安全性が重要な用途は、黙って近似せず明示的に拒否します。
 
 テスト環境では、KiCad 10 Python API で生成した奇数の 3 銅層ボードを KiCad
 自身が再読み込みできません。そのためネイティブ契約では、解析対象である 2–4 層
@@ -94,8 +112,10 @@ RF、商用電源、高電力、医療、航空、安全性が重要な用途は
 - Python 3.11 以降
 - KiCad 10.x CLI、シンボル、フットプリント、システムの `pcbnew` Python バインディング
 - 診断と開発に使用する Git
-- 任意：`review`、レガシー `patch`、ライブモデル整合性ベンチマークに使用する、
-  認証済み Codex CLI
+- 任意：対話型の意図解釈、`review`、レガシー `patch`、ライブモデル整合性
+  ベンチマークに使用する認証済み Codex CLI
+- 任意：`COPPERWRIGHT_OPENAI_BASE_URL`、`COPPERWRIGHT_OPENAI_MODEL`、API キーの
+  環境変数だけで設定する OpenAI 互換 Chat Completions エンドポイント
 
 ローカルで厳密に受け入れ確認したバージョンは KiCad 10.0.5 です。他の 10.x
 バージョンは同じメジャーとして報告しますが、厳密なテスト済みとは扱いません。
@@ -108,6 +128,7 @@ RF、商用電源、高電力、医療、航空、安全性が重要な用途は
 
 ```bash
 scripts/deploy.sh
+scripts/prepare-kicad-environment.sh
 uv run copperwright doctor --json
 ```
 
@@ -120,11 +141,69 @@ uv pip install --python /tmp/copperwright-venv/bin/python dist/*.whl
 /tmp/copperwright-venv/bin/copperwright --version
 ```
 
-`doctor.ok` は決定論的コアが利用可能であることを示します。Codex の利用可否は
-`ai_review_available` として別に報告されます。生成、検証、リリース、検証ツール、
-決定論的ベンチマークに有料または非公開の認証情報は不要です。
+`doctor.ok` は決定論的コアが利用可能であることを示します。オフラインプロバイダ、
+生成、検証、リリース、検証ツール、決定論的ベンチマークに有料または非公開の
+認証情報は不要です。
 
-## エンドツーエンドのクイックスタート
+## 対話型クイックスタート
+
+ブラウザアプリケーションを起動します（設計上、ループバックのみで待ち受けます）：
+
+```bash
+copperwright app
+# ブラウザが自動で開かない場合は http://127.0.0.1:8765 を開きます
+```
+
+プロジェクトを作成し、レイヤー数の質問に答え、設計概要/BOM/制約を確認してから
+生成を承認します。次に「Change this board to 4 layers」と依頼すると、Apply を
+選ぶ前に検証済みのセマンティック diff を確認できます。Undo は以前の権威ある
+状態を正確に復元します。Export candidate は製造候補を作成し、オフライン検証も
+行います。
+
+SSH でも同じライフサイクルを利用できます：
+
+```bash
+copperwright chat
+# /new Greenhouse sensor
+# Describe: Create a BME280 SPI environmental sensor controller
+# Reply: 2 layers
+# /confirm
+# Change this board to 4 layers
+# /confirm
+# /undo
+# /release
+```
+
+スクリプトからは `--new`、`--project`、`--message`、`--yes`、`--undo`、
+`--validate`、`--release`、`--list`、`--json` を使えます。詳しくは
+`copperwright chat --help` を参照してください。
+
+![CopperWright ブラウザのプロジェクト表示](artifacts/product-e2e/copperwright-app-visuals.png)
+
+## プロバイダとシークレット
+
+`--provider auto` は、インストール済みで認証済みの Codex CLI、設定済みの
+OpenAI 互換エンドポイント、オフライン分類器の順に選択します。
+`--provider codex`、`--provider openai-compatible`、`--provider builtin` で
+明示的に指定することもできます。
+
+```bash
+# CopperWright の外で認証します。トークンはプロジェクトへコピーされません。
+codex login
+copperwright app --provider codex
+
+# または OpenAI 互換エンドポイントを使います。プロジェクトファイルには書かないでください。
+COPPERWRIGHT_OPENAI_BASE_URL=https://provider.example/v1 \
+COPPERWRIGHT_OPENAI_MODEL=model-id \
+OPENAI_API_KEY='<secret>' \
+copperwright app --provider openai-compatible
+```
+
+ブラウザに認証情報の入力欄はありません。モデル出力は schema とサイズで制限し、
+正規化とスコープ確認を行います。ユーザーの確認前に工学的な副作用を起こせません。
+プロバイダロジックが部品を選択したり KiCad を編集したりすることもありません。
+
+## 決定論的ランタイムのクイックスタート
 
 すべての出力パスは新規作成専用です。新しいパスを使うか、以前の使い捨て出力を
 自分で削除してください。
@@ -153,7 +232,11 @@ copperwright release-verify /tmp/controller-release --json
 
 コミット済みの参照出力：
 
+- [`examples/product_profiles`](examples/product_profiles) — 現在の三つの v1
+  プロファイルのネイティブプロジェクト、検証、プレビュー
 - [`examples/attiny_sensor_controller`](examples/attiny_sensor_controller)
+- [`artifacts/product-e2e`](artifacts/product-e2e) — clean-HOME のブラウザ/チャット
+  製品フローのエビデンスとスクリーンショット
 - [`artifacts/acceptance/release`](artifacts/acceptance/release)
 - [`artifacts/acceptance/review`](artifacts/acceptance/review)
 - [`artifacts/benchmark/benchmark-20260812.json`](artifacts/benchmark/benchmark-20260812.json)
@@ -209,13 +292,13 @@ L7 物理エビデンスも必要です。ランタイムは提供されたエ�
 ハッシュ化しますが、`externally_supplied_not_independently_verified` と
 ラベル付けし、自ら署名することはありません。
 
-同梱プロファイルの電力範囲は、同時最大値を一つにまとめた契約です
-（`3.465 V × 0.1 A = 0.3465 W`。電源上限に +5% を見込みつつ、センサーの
-動作上限 3.6 V 未満に余裕を確保）。I2C は 200 pF、4.7 kOhm プルアップに
-制限し、外部プルアップは禁止します。UPDI VTREF は検出専用で、デカップリング
-距離は対象となるネイティブ銅パッド矩形間で測定します。I2C 配線契約では、
-塗りつぶし GND 参照プレーンと、少なくとも二つの決定論的 GND スティッチング
-ビアを要求します。
+I2C プロファイルは、バスを 200 pF、4.7 kOhm プルアップに制限し、外部
+プルアップを禁止します。SPI プロファイルは基板上の一つの BME280 を 4 線
+mode 0、1 MHz に固定し、CS プルアップを検証します。UART/LDO プロファイルは
+AP2112K の入出力、負荷、バイパス、安定性、イネーブルと、3.3 V CMOS 8-N-1
+（RS-232 ではない）契約を検証します。デカップリング距離は対象となるネイティブ
+銅パッド矩形間で測定し、すべての配線契約が塗りつぶし GND 参照プレーンと
+決定論的 GND スティッチングビアを要求します。
 
 管理プロジェクトのレビューには、厳密に解析された要件、IR、信頼済み部品/
 ブロックレコード、生成レシート、ネイティブなセマンティックエクスポートが
@@ -228,6 +311,7 @@ L7 物理エビデンスも必要です。ランタイムは提供されたエ�
 正式な CLI 仕様は `copperwright --help` と
 `copperwright COMMAND --help` で確認できます。主なコマンドグループ：
 
+- 製品：`chat`、`app`
 - 設計：`compile`、`generate`、`inspect`、`parts`
 - 検証/リリース：`validate`、`release`、`release-verify`、`evidence-record`
 - 同期/トランザクション：`sync`、`sync-undo`、`sync-recover`、
@@ -291,7 +375,10 @@ CopperWright は履歴エビデンスを新しく見せるために書き換え�
 scripts/test.sh
 scripts/smoke.sh                 # real KiCad demo; no model by default
 scripts/compatibility.sh         # Python 3.11–3.14 core matrix
-scripts/release-check.sh         # tests, wheel/sdist, clean install, E2E release
+scripts/chat-e2e.sh              # scriptable terminal product journey
+uv run python scripts/browser-e2e.py  # real Firefox journey and restart
+uv run python scripts/generate-product-examples.py
+scripts/release-check.sh         # full clean-install product/release hard gate
 ```
 
 互換性のあるローカルツールチェーンが存在する場合、`scripts/test.sh` は実際の
@@ -325,6 +412,9 @@ stdin で渡します。このポリシーは OS サンドボックスではあ�
 CC0-1.0 です。生成されたサンプル設計では、KiCad ライブラリの
 CC-BY-SA 4.0 design exception に基づいて公式 KiCad ライブラリ素材を使用します。
 依存関係と帰属の注記は [NOTICE](NOTICE) にあります。
+公開プロジェクトの限定的な調査と実際の再利用判断は
+[`docs/OPEN_SOURCE_REUSE.md`](docs/OPEN_SOURCE_REUSE.md)に記録しています。
+調査対象プロジェクトのコードやアセットはコピーしていません。
 
 保証やエンジニアリング認証は提供しません。製品、法域、リスクに応じた適格な
 レビューを必ず実施してください。

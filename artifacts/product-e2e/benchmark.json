@@ -1,0 +1,4391 @@
+{
+  "base_fixture": {
+    "baseline_findings": [],
+    "design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+    "requirements": "src/pcb_agent/data/benchmark/acceptance_requirements.json"
+  },
+  "cases": [
+    {
+      "category": "i2c_pullup",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_codes": [
+        "intent.i2c_pullups",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "b6b842e025ffa8a664a92b8457b44a024d332daacdbe07c295d45f36d3a31a72",
+        "b6b842e025ffa8a664a92b8457b44a024d332daacdbe07c295d45f36d3a31a72",
+        "b6b842e025ffa8a664a92b8457b44a024d332daacdbe07c295d45f36d3a31a72",
+        "b6b842e025ffa8a664a92b8457b44a024d332daacdbe07c295d45f36d3a31a72",
+        "b6b842e025ffa8a664a92b8457b44a024d332daacdbe07c295d45f36d3a31a72"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_pullups",
+          "details": {
+            "covered_nets": "net_i2c_scl,net_i2c_sda"
+          },
+          "message": "pullup_r1 is not connected to 3V3",
+          "object_id": "i2c_pullups",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 1 (1) is not assigned to a net",
+          "object_id": "$.components[6]",
+          "severity": "error"
+        }
+      ],
+      "id": "f001",
+      "label": "fault",
+      "latency_ns": [
+        2986359,
+        3024490,
+        2914804,
+        3034139,
+        3020083
+      ],
+      "model_eligible": true,
+      "notes": "SDA pull-up loses its supply connection.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "c4b0383303406ccd7d87f41c363b54ac9abc0961feace634b4e883b7638bd7a4",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_pullup",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_codes": [
+        "intent.i2c_pullups",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "39ac270f56064fbc6bb4604bba1b42f0a64a8c520871169344671c74079c1e6f",
+        "39ac270f56064fbc6bb4604bba1b42f0a64a8c520871169344671c74079c1e6f",
+        "39ac270f56064fbc6bb4604bba1b42f0a64a8c520871169344671c74079c1e6f",
+        "39ac270f56064fbc6bb4604bba1b42f0a64a8c520871169344671c74079c1e6f",
+        "39ac270f56064fbc6bb4604bba1b42f0a64a8c520871169344671c74079c1e6f"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_pullups",
+          "details": {
+            "covered_nets": "net_i2c_scl,net_i2c_sda"
+          },
+          "message": "pullup_r2 is not connected to 3V3",
+          "object_id": "i2c_pullups",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 1 (1) is not assigned to a net",
+          "object_id": "$.components[7]",
+          "severity": "error"
+        }
+      ],
+      "id": "f002",
+      "label": "fault",
+      "latency_ns": [
+        3027426,
+        2917850,
+        2840214,
+        2968976,
+        2920796
+      ],
+      "model_eligible": true,
+      "notes": "SCL pull-up loses its supply connection.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "53a1fef47d481ef78796f684b86c7199da9d841dcdaaac02eeffa621f4c69bb7",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_pullup",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_codes": [
+        "intent.i2c_pullups",
+        "interface.member_unconnected",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "19fcc00106f43554d9d3916bee7fc353e67dc83243e60de01694352523160706",
+        "19fcc00106f43554d9d3916bee7fc353e67dc83243e60de01694352523160706",
+        "19fcc00106f43554d9d3916bee7fc353e67dc83243e60de01694352523160706",
+        "19fcc00106f43554d9d3916bee7fc353e67dc83243e60de01694352523160706",
+        "19fcc00106f43554d9d3916bee7fc353e67dc83243e60de01694352523160706"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_pullups",
+          "details": {
+            "covered_nets": "net_i2c_scl"
+          },
+          "message": "not every declared I2C signal has a pull-up",
+          "object_id": "i2c_pullups",
+          "severity": "error"
+        },
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "pullup_r1:2"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (2) is not assigned to a net",
+          "object_id": "$.components[6]",
+          "severity": "error"
+        }
+      ],
+      "id": "f003",
+      "label": "fault",
+      "latency_ns": [
+        2922198,
+        2923170,
+        2895618,
+        3057121,
+        2907421
+      ],
+      "model_eligible": true,
+      "notes": "SDA pull-up is absent from the signal.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "81b2cd5c933137972e2af875ec1a960ac9fd72f10f5b9ec0dd7b8bb3d43e58ef",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_pullup",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_codes": [
+        "intent.i2c_pullups",
+        "interface.member_unconnected",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "efb1a93a5ff586e7843423a994af8542042a8a6596148665b251962e7a080714",
+        "efb1a93a5ff586e7843423a994af8542042a8a6596148665b251962e7a080714",
+        "efb1a93a5ff586e7843423a994af8542042a8a6596148665b251962e7a080714",
+        "efb1a93a5ff586e7843423a994af8542042a8a6596148665b251962e7a080714",
+        "efb1a93a5ff586e7843423a994af8542042a8a6596148665b251962e7a080714"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_pullups",
+          "details": {
+            "covered_nets": "net_i2c_sda"
+          },
+          "message": "not every declared I2C signal has a pull-up",
+          "object_id": "i2c_pullups",
+          "severity": "error"
+        },
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "pullup_r2:2"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (2) is not assigned to a net",
+          "object_id": "$.components[7]",
+          "severity": "error"
+        }
+      ],
+      "id": "f004",
+      "label": "fault",
+      "latency_ns": [
+        2887093,
+        2800569,
+        2886702,
+        4062220,
+        3898282
+      ],
+      "model_eligible": true,
+      "notes": "SCL pull-up is absent from the signal.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "3a201db0aa204c17929ca6757648cef272a813e164b4838988447cf360a718a0",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_pullup",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_digests": [
+        "22b019b561c9f0d104c78fab64b864670597271337cb3584f9689b23b98799dd",
+        "22b019b561c9f0d104c78fab64b864670597271337cb3584f9689b23b98799dd",
+        "22b019b561c9f0d104c78fab64b864670597271337cb3584f9689b23b98799dd",
+        "22b019b561c9f0d104c78fab64b864670597271337cb3584f9689b23b98799dd",
+        "22b019b561c9f0d104c78fab64b864670597271337cb3584f9689b23b98799dd"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_pullups",
+          "details": {
+            "covered_nets": "net_i2c_scl,net_i2c_sda"
+          },
+          "message": "pullup_r1 value differs from the declared value",
+          "object_id": "i2c_pullups",
+          "severity": "error"
+        }
+      ],
+      "id": "f005",
+      "label": "fault",
+      "latency_ns": [
+        2826869,
+        2804387,
+        2925445,
+        2767187,
+        2726631
+      ],
+      "model_eligible": true,
+      "notes": "SDA pull-up is changed from 4.7 kOhm to 1 kOhm.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "95afda151d99683bd98271597e79ea858bab9f5c01165ecabd34a12c0c9b4e8c",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_pullup",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_codes": [
+        "intent.i2c_pullups"
+      ],
+      "finding_digests": [
+        "016ad365d92f32605e37e187336e3f332f73dfaa9caf138c91556dbfd9895c77",
+        "016ad365d92f32605e37e187336e3f332f73dfaa9caf138c91556dbfd9895c77",
+        "016ad365d92f32605e37e187336e3f332f73dfaa9caf138c91556dbfd9895c77",
+        "016ad365d92f32605e37e187336e3f332f73dfaa9caf138c91556dbfd9895c77",
+        "016ad365d92f32605e37e187336e3f332f73dfaa9caf138c91556dbfd9895c77"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_pullups",
+          "details": {
+            "covered_nets": "net_i2c_scl,net_i2c_sda"
+          },
+          "message": "pullup_r2 value differs from the declared value",
+          "object_id": "i2c_pullups",
+          "severity": "error"
+        }
+      ],
+      "id": "f006",
+      "label": "fault",
+      "latency_ns": [
+        2955751,
+        2806280,
+        2809236,
+        2752569,
+        2801632
+      ],
+      "model_eligible": true,
+      "notes": "SCL pull-up is changed from 4.7 kOhm to 1 kOhm.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "66dc4f2a396394858fe19b28c36208225fe22d91575694170718e43ce7624a2b",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "bfe4f1f81a9b5d85d772434a803b358498d5b5872bd059645f52972320051c13",
+        "bfe4f1f81a9b5d85d772434a803b358498d5b5872bd059645f52972320051c13",
+        "bfe4f1f81a9b5d85d772434a803b358498d5b5872bd059645f52972320051c13",
+        "bfe4f1f81a9b5d85d772434a803b358498d5b5872bd059645f52972320051c13",
+        "bfe4f1f81a9b5d85d772434a803b358498d5b5872bd059645f52972320051c13"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "interface_pullups"
+          },
+          "message": "required interface_pullups constraint is absent",
+          "object_id": "i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f007",
+      "label": "fault",
+      "latency_ns": [
+        2783998,
+        2754423,
+        2756146,
+        2843490,
+        2792214
+      ],
+      "model_eligible": true,
+      "notes": "The I2C pull-up contract is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "777ae27049ea52c244d65fc325be87b5b2fda0649fd91d0c7a8c207285fb7de3",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "interface_connectivity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_digests": [
+        "9e18434390d6d679946fb92f2a3341ee98a9aad4917a350ce0bb1e9848b308df",
+        "9e18434390d6d679946fb92f2a3341ee98a9aad4917a350ce0bb1e9848b308df",
+        "9e18434390d6d679946fb92f2a3341ee98a9aad4917a350ce0bb1e9848b308df",
+        "9e18434390d6d679946fb92f2a3341ee98a9aad4917a350ce0bb1e9848b308df",
+        "9e18434390d6d679946fb92f2a3341ee98a9aad4917a350ce0bb1e9848b308df"
+      ],
+      "findings": [
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "mcu_u1:4"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f008",
+      "label": "fault",
+      "latency_ns": [
+        3462192,
+        4422566,
+        2798356,
+        2805259,
+        2967644
+      ],
+      "model_eligible": true,
+      "notes": "Controller SDA leaves the declared interface.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "103f41d28fca3bad3c2c162bd790850d29757e629845e3e63d8ea7e49da2d20e",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "interface_connectivity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_codes": [
+        "interface.member_unconnected",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "42dc545ebb5c4784059c41aedb5029862844afc92eb5fa3b2b9efb3ef5ae6cc7",
+        "42dc545ebb5c4784059c41aedb5029862844afc92eb5fa3b2b9efb3ef5ae6cc7",
+        "42dc545ebb5c4784059c41aedb5029862844afc92eb5fa3b2b9efb3ef5ae6cc7",
+        "42dc545ebb5c4784059c41aedb5029862844afc92eb5fa3b2b9efb3ef5ae6cc7",
+        "42dc545ebb5c4784059c41aedb5029862844afc92eb5fa3b2b9efb3ef5ae6cc7"
+      ],
+      "findings": [
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "sensor_u2:6"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 6 (SDA) is not assigned to a net",
+          "object_id": "$.components[10]",
+          "severity": "error"
+        }
+      ],
+      "id": "f009",
+      "label": "fault",
+      "latency_ns": [
+        2858559,
+        2960300,
+        2765454,
+        2868407,
+        2781023
+      ],
+      "model_eligible": true,
+      "notes": "Sensor SDA leaves the declared interface.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "fae2e17ec55dd0e67bff2174e257bd1e1cdc480a679c47578449c67b37917beb",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "interface_connectivity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_codes": [
+        "interface.member_unconnected",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "c5a29c7716ce9fb98faa4a162431830f9d793bcfc425837118ed361e576d1e2d",
+        "c5a29c7716ce9fb98faa4a162431830f9d793bcfc425837118ed361e576d1e2d",
+        "c5a29c7716ce9fb98faa4a162431830f9d793bcfc425837118ed361e576d1e2d",
+        "c5a29c7716ce9fb98faa4a162431830f9d793bcfc425837118ed361e576d1e2d",
+        "c5a29c7716ce9fb98faa4a162431830f9d793bcfc425837118ed361e576d1e2d"
+      ],
+      "findings": [
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "qwiic_j1:3"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 3 (SDA) is not assigned to a net",
+          "object_id": "$.components[8]",
+          "severity": "error"
+        }
+      ],
+      "id": "f010",
+      "label": "fault",
+      "latency_ns": [
+        2789199,
+        3748680,
+        3160185,
+        2748512,
+        3009572
+      ],
+      "model_eligible": true,
+      "notes": "External SDA leaves the declared interface.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "7c88f11985c6e90be31a38467091d90774fa9fd5b374519da094b943fbbafbad",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "interface_connectivity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_digests": [
+        "1d97baa5a39cfb7731c4575c2fc067c44e913952f107c0ee5e5a0e9cd1467ab2",
+        "1d97baa5a39cfb7731c4575c2fc067c44e913952f107c0ee5e5a0e9cd1467ab2",
+        "1d97baa5a39cfb7731c4575c2fc067c44e913952f107c0ee5e5a0e9cd1467ab2",
+        "1d97baa5a39cfb7731c4575c2fc067c44e913952f107c0ee5e5a0e9cd1467ab2",
+        "1d97baa5a39cfb7731c4575c2fc067c44e913952f107c0ee5e5a0e9cd1467ab2"
+      ],
+      "findings": [
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "mcu_u1:5"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f011",
+      "label": "fault",
+      "latency_ns": [
+        2929803,
+        2924282,
+        2784239,
+        2816199,
+        3023038
+      ],
+      "model_eligible": true,
+      "notes": "Controller SCL leaves the declared interface.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "dfec15976bb1ef489572aca04860b01d3103ce78dd8f510d09784f2bd9524d36",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "interface_connectivity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_codes": [
+        "interface.member_unconnected",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "afcd750ca8cba7d0819d027b6e5d15c426393c6eeefc308681e329b5b713bb48",
+        "afcd750ca8cba7d0819d027b6e5d15c426393c6eeefc308681e329b5b713bb48",
+        "afcd750ca8cba7d0819d027b6e5d15c426393c6eeefc308681e329b5b713bb48",
+        "afcd750ca8cba7d0819d027b6e5d15c426393c6eeefc308681e329b5b713bb48",
+        "afcd750ca8cba7d0819d027b6e5d15c426393c6eeefc308681e329b5b713bb48"
+      ],
+      "findings": [
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "sensor_u2:1"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 1 (SCL) is not assigned to a net",
+          "object_id": "$.components[10]",
+          "severity": "error"
+        }
+      ],
+      "id": "f012",
+      "label": "fault",
+      "latency_ns": [
+        3012929,
+        2839623,
+        2970368,
+        2827280,
+        3033197
+      ],
+      "model_eligible": true,
+      "notes": "Sensor SCL leaves the declared interface.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "9602c1ff92c0ff752f479b6dc4a4055bec0cd07f25f5e320ecb9f66be067a462",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "interface_connectivity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "interface.member_unconnected"
+      ],
+      "finding_codes": [
+        "interface.member_unconnected",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "68bf0869b7667c308e88a5641e0dd9ba4103d97a8b2e51961b37347c80e52ecd",
+        "68bf0869b7667c308e88a5641e0dd9ba4103d97a8b2e51961b37347c80e52ecd",
+        "68bf0869b7667c308e88a5641e0dd9ba4103d97a8b2e51961b37347c80e52ecd",
+        "68bf0869b7667c308e88a5641e0dd9ba4103d97a8b2e51961b37347c80e52ecd",
+        "68bf0869b7667c308e88a5641e0dd9ba4103d97a8b2e51961b37347c80e52ecd"
+      ],
+      "findings": [
+        {
+          "code": "interface.member_unconnected",
+          "details": {
+            "members": "qwiic_j1:4"
+          },
+          "message": "declared interface members are not connected to interface nets",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 4 (SCL) is not assigned to a net",
+          "object_id": "$.components[8]",
+          "severity": "error"
+        }
+      ],
+      "id": "f013",
+      "label": "fault",
+      "latency_ns": [
+        4515641,
+        4658780,
+        3011056,
+        3003702,
+        2872105
+      ],
+      "model_eligible": true,
+      "notes": "External SCL leaves the declared interface.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "b6a53274f8c0bfb8d507e74050c85805c9e621dfb723a35c21efeac4e08fc35d",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5",
+        "f65ef0a3deb7e4a0f2b8e0779771f3a65de690143284b318855fdcae735f08c5"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 3.0
+          },
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
+          "object_id": "decouple_mcu",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 1 (1) is not assigned to a net",
+          "object_id": "$.components[4]",
+          "severity": "error"
+        }
+      ],
+      "id": "f014",
+      "label": "fault",
+      "latency_ns": [
+        3078522,
+        3798304,
+        2918611,
+        2783077,
+        2993712
+      ],
+      "model_eligible": true,
+      "notes": "MCU capacitor loses supply.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "07bc9cc811710781aabe80f1fc7b1957394af1040dce09f92a1021eb733c8650",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77",
+        "8a88e6367b640c21b7c2d5fb18f39349981d41ead9e627f1126d323fbcfa4d77"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 3.0
+          },
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
+          "object_id": "decouple_mcu",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (2) is not assigned to a net",
+          "object_id": "$.components[4]",
+          "severity": "error"
+        }
+      ],
+      "id": "f015",
+      "label": "fault",
+      "latency_ns": [
+        2814706,
+        2891160,
+        3986657,
+        2916688,
+        2888555
+      ],
+      "model_eligible": true,
+      "notes": "MCU capacitor loses return.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "7203eae700f33aa7d1506c4fa67ebeacb217f8323351e17559db1aa28c7c1fc2",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5",
+        "5989d1a7206e9694af39320abb96cfbdd8bb72c072487a9393e228ea969e15e5"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 1 (1) is not assigned to a net",
+          "object_id": "$.components[9]",
+          "severity": "error"
+        }
+      ],
+      "id": "f016",
+      "label": "fault",
+      "latency_ns": [
+        2945953,
+        2931566,
+        2926497,
+        2809527,
+        2847749
+      ],
+      "model_eligible": true,
+      "notes": "Sensor capacitor loses supply.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "73a8af4301ba560af298dd46189d890e51d8da936367b1a056a62270e751c0ca",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e",
+        "aac3ece42834997448e8680bce02b54a8e9088088d33d7e99d108403fca6725e"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (2) is not assigned to a net",
+          "object_id": "$.components[9]",
+          "severity": "error"
+        }
+      ],
+      "id": "f017",
+      "label": "fault",
+      "latency_ns": [
+        2857898,
+        2789379,
+        2782115,
+        2795610,
+        2792545
+      ],
+      "model_eligible": true,
+      "notes": "Sensor capacitor loses return.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "2a5bda589b0c8106396d99442de1dee6ff8a28e5155f5e863c9e9376223d9adc",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling"
+      ],
+      "finding_digests": [
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 3.0
+          },
+          "message": "native supply-pad distance exceeds the declared bound",
+          "object_id": "decouple_mcu",
+          "severity": "error"
+        }
+      ],
+      "id": "f018",
+      "label": "fault",
+      "latency_ns": [
+        2864340,
+        2795941,
+        2793347,
+        2787745,
+        2735167
+      ],
+      "model_eligible": true,
+      "notes": "MCU capacitor is moved far from U1.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "f9c7334be50b735d3177dab702cabd4cbde1aa38eb030a7321c4988377d6fa4d",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling"
+      ],
+      "finding_digests": [
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b",
+        "91543f78efcc24654e39d337d278f7c31c071c668d109a8330d9c8ace206f52b"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 3.0
+          },
+          "message": "native supply-pad distance exceeds the declared bound",
+          "object_id": "decouple_mcu",
+          "severity": "error"
+        }
+      ],
+      "id": "f019",
+      "label": "fault",
+      "latency_ns": [
+        2829424,
+        2789178,
+        2838671,
+        2809286,
+        2798045
+      ],
+      "model_eligible": true,
+      "notes": "MCU capacitor is moved to the opposite board corner.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e26ed453a405be491d13dad07dc1eabe6fea899ca27ff2fd08f5dff6bdd66de0",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "intent.functional_group"
+      ],
+      "finding_digests": [
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12",
+        "60c67a8e918d9a3b23ffc5bcef9b9183992d2ea1f82acf77bab63984b393bb12"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "native supply-pad distance exceeds the declared bound",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "intent.functional_group",
+          "details": {
+            "diameter_mm": 40.635576,
+            "maximum_mm": 18.0
+          },
+          "message": "functional group diameter exceeds the declared bound",
+          "object_id": "sensor_group",
+          "severity": "error"
+        }
+      ],
+      "id": "f020",
+      "label": "fault",
+      "latency_ns": [
+        2855563,
+        2861664,
+        2850894,
+        2829915,
+        2828973
+      ],
+      "model_eligible": true,
+      "notes": "Sensor capacitor is moved far from U2.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "a0e9012316a01aaa6cabd33fbf1bdb0728240c3268f623b4daa363e993f31851",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "intent.functional_group"
+      ],
+      "finding_digests": [
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc",
+        "1e773f049eef5b009d45ee11aa14bd22bae95cfd305e1754d163d01026a4aacc"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "native supply-pad distance exceeds the declared bound",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "intent.functional_group",
+          "details": {
+            "diameter_mm": 23.430749,
+            "maximum_mm": 18.0
+          },
+          "message": "functional group diameter exceeds the declared bound",
+          "object_id": "sensor_group",
+          "severity": "error"
+        }
+      ],
+      "id": "f021",
+      "label": "fault",
+      "latency_ns": [
+        2888796,
+        2841336,
+        2779390,
+        2778388,
+        2833001
+      ],
+      "model_eligible": true,
+      "notes": "Sensor capacitor is moved away from U2.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "d1daefd1b5ec1aab889dd0596c647b377577995d9d914905fd106d61ced2cbdd",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "8b24dd766a2e3a1ab3ecbb0e02f1ac9efb754f5a43ba0b4e9b58c3ce8f355abd",
+        "8b24dd766a2e3a1ab3ecbb0e02f1ac9efb754f5a43ba0b4e9b58c3ce8f355abd",
+        "8b24dd766a2e3a1ab3ecbb0e02f1ac9efb754f5a43ba0b4e9b58c3ce8f355abd",
+        "8b24dd766a2e3a1ab3ecbb0e02f1ac9efb754f5a43ba0b4e9b58c3ce8f355abd",
+        "8b24dd766a2e3a1ab3ecbb0e02f1ac9efb754f5a43ba0b4e9b58c3ce8f355abd"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "decoupling"
+          },
+          "message": "required decoupling constraint is absent",
+          "object_id": "mcu_c1",
+          "severity": "error"
+        }
+      ],
+      "id": "f022",
+      "label": "fault",
+      "latency_ns": [
+        2803075,
+        2919413,
+        2765965,
+        2770764,
+        2749323
+      ],
+      "model_eligible": true,
+      "notes": "MCU decoupling placement/value contract is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "54099388e5f8414ece733bd9b85a8fc8e85cf491ce3b2d43138a549a8e2bcb97",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "c23082b0fde6c2ebdf53d9b42b6cc778dd086f89e3778cc8c9bb628474f580f5",
+        "c23082b0fde6c2ebdf53d9b42b6cc778dd086f89e3778cc8c9bb628474f580f5",
+        "c23082b0fde6c2ebdf53d9b42b6cc778dd086f89e3778cc8c9bb628474f580f5",
+        "c23082b0fde6c2ebdf53d9b42b6cc778dd086f89e3778cc8c9bb628474f580f5",
+        "c23082b0fde6c2ebdf53d9b42b6cc778dd086f89e3778cc8c9bb628474f580f5"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "decoupling"
+          },
+          "message": "required decoupling constraint is absent",
+          "object_id": "sensor_c2",
+          "severity": "error"
+        }
+      ],
+      "id": "f023",
+      "label": "fault",
+      "latency_ns": [
+        2810638,
+        2765584,
+        2765233,
+        2804247,
+        2782416
+      ],
+      "model_eligible": true,
+      "notes": "Sensor decoupling placement/value contract is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "3b6e840de6ae63eb84a5cad52e648031904f81a8b1c07b9c9f29a14709c1a3b3",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling"
+      ],
+      "finding_digests": [
+        "b47633277f6b4772e5a14ddea7c600e002952a3fc081fc1bcca3aedd8e9444e7",
+        "b47633277f6b4772e5a14ddea7c600e002952a3fc081fc1bcca3aedd8e9444e7",
+        "b47633277f6b4772e5a14ddea7c600e002952a3fc081fc1bcca3aedd8e9444e7",
+        "b47633277f6b4772e5a14ddea7c600e002952a3fc081fc1bcca3aedd8e9444e7",
+        "b47633277f6b4772e5a14ddea7c600e002952a3fc081fc1bcca3aedd8e9444e7"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 3.0
+          },
+          "message": "target set does not identify one capacitor, one device, and two rails",
+          "object_id": "decouple_mcu",
+          "severity": "error"
+        }
+      ],
+      "id": "f024",
+      "label": "fault",
+      "latency_ns": [
+        2844191,
+        2804167,
+        2852307,
+        2790361,
+        2793477
+      ],
+      "model_eligible": true,
+      "notes": "MCU capacitor is replaced by a resistor.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "2568198d56271fbbf8aa14429ff11ea2377aed7f8e17e6cf1bcb9d0d4206028b",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling"
+      ],
+      "finding_digests": [
+        "6bdc9ce35188d345fc7214fb08554550f913c962e5e0e7a3bdab8ec1b9a57628",
+        "6bdc9ce35188d345fc7214fb08554550f913c962e5e0e7a3bdab8ec1b9a57628",
+        "6bdc9ce35188d345fc7214fb08554550f913c962e5e0e7a3bdab8ec1b9a57628",
+        "6bdc9ce35188d345fc7214fb08554550f913c962e5e0e7a3bdab8ec1b9a57628",
+        "6bdc9ce35188d345fc7214fb08554550f913c962e5e0e7a3bdab8ec1b9a57628"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "target set does not identify one capacitor, one device, and two rails",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        }
+      ],
+      "id": "f025",
+      "label": "fault",
+      "latency_ns": [
+        2880881,
+        2832971,
+        2821779,
+        2766416,
+        2764402
+      ],
+      "model_eligible": true,
+      "notes": "Sensor capacitor is replaced by a resistor.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "11013b5315d45778af8b14e00c1a14609a712cd24b98add27c705039d5b4b3ba",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "current_limit",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.current_limit"
+      ],
+      "finding_codes": [
+        "intent.current_limit"
+      ],
+      "finding_digests": [
+        "85e6966683fb2095b6c39f4076ac941fada18eecc05904f11b74fd7adf84d83b",
+        "85e6966683fb2095b6c39f4076ac941fada18eecc05904f11b74fd7adf84d83b",
+        "85e6966683fb2095b6c39f4076ac941fada18eecc05904f11b74fd7adf84d83b",
+        "85e6966683fb2095b6c39f4076ac941fada18eecc05904f11b74fd7adf84d83b",
+        "85e6966683fb2095b6c39f4076ac941fada18eecc05904f11b74fd7adf84d83b"
+      ],
+      "findings": [
+        {
+          "code": "intent.current_limit",
+          "details": {
+            "current_a": 0.000255319,
+            "resistor_power_w": 0.000306383
+          },
+          "message": "installed resistance differs from the declared value",
+          "object_id": "led_current",
+          "severity": "error"
+        }
+      ],
+      "id": "f026",
+      "label": "fault",
+      "latency_ns": [
+        2844422,
+        2823392,
+        2961983,
+        2766656,
+        2803065
+      ],
+      "model_eligible": true,
+      "notes": "Installed LED resistor no longer matches its declared value.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "449e8e49dd3db1d3f5cfef898b93092ca9ace3373bbc43f59cca6fb97c6615c0",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "8b49e3a6c71286df4a6c2a2ddf071d841e02ac7488e26fb28baf2026d356971e",
+        "8b49e3a6c71286df4a6c2a2ddf071d841e02ac7488e26fb28baf2026d356971e",
+        "8b49e3a6c71286df4a6c2a2ddf071d841e02ac7488e26fb28baf2026d356971e",
+        "8b49e3a6c71286df4a6c2a2ddf071d841e02ac7488e26fb28baf2026d356971e",
+        "8b49e3a6c71286df4a6c2a2ddf071d841e02ac7488e26fb28baf2026d356971e"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "current_limit"
+          },
+          "message": "required current_limit constraint is absent",
+          "object_id": "led",
+          "severity": "error"
+        }
+      ],
+      "id": "f027",
+      "label": "fault",
+      "latency_ns": [
+        2904194,
+        2826959,
+        2810629,
+        2801762,
+        2847247
+      ],
+      "model_eligible": true,
+      "notes": "LED current-limit contract is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "6f27fde5808d2afc0174015dd242917d14de80e804ebe09b1032889bd35540ef",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "current_limit",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.current_limit"
+      ],
+      "finding_codes": [
+        "intent.current_limit",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "83d2f2a209c8595ffd9ab3eab37f1f1fd4e8941d8efe61520d84085c07952396",
+        "83d2f2a209c8595ffd9ab3eab37f1f1fd4e8941d8efe61520d84085c07952396",
+        "83d2f2a209c8595ffd9ab3eab37f1f1fd4e8941d8efe61520d84085c07952396",
+        "83d2f2a209c8595ffd9ab3eab37f1f1fd4e8941d8efe61520d84085c07952396",
+        "83d2f2a209c8595ffd9ab3eab37f1f1fd4e8941d8efe61520d84085c07952396"
+      ],
+      "findings": [
+        {
+          "code": "intent.current_limit",
+          "details": {
+            "current_a": 0.0012,
+            "resistor_power_w": 0.00144
+          },
+          "message": "resistor and LED are not connected in series",
+          "object_id": "led_current",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (A) is not assigned to a net",
+          "object_id": "$.components[2]",
+          "severity": "error"
+        }
+      ],
+      "id": "f028",
+      "label": "fault",
+      "latency_ns": [
+        2850193,
+        2855613,
+        2853739,
+        3039188,
+        2811700
+      ],
+      "model_eligible": true,
+      "notes": "LED is disconnected from the series resistor.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "855289f48c9b54835eab17842a381c5eba3e7c2bbe269ea8ab77ce5235c03c93",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "current_limit",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.current_limit"
+      ],
+      "finding_codes": [
+        "intent.current_limit",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "855f9f05d2193a1e34e911187e6060186fcf54b8433096c5682ac1cc670f9466",
+        "855f9f05d2193a1e34e911187e6060186fcf54b8433096c5682ac1cc670f9466",
+        "855f9f05d2193a1e34e911187e6060186fcf54b8433096c5682ac1cc670f9466",
+        "855f9f05d2193a1e34e911187e6060186fcf54b8433096c5682ac1cc670f9466",
+        "855f9f05d2193a1e34e911187e6060186fcf54b8433096c5682ac1cc670f9466"
+      ],
+      "findings": [
+        {
+          "code": "intent.current_limit",
+          "details": {
+            "current_a": 0.0012,
+            "resistor_power_w": 0.00144
+          },
+          "message": "resistor and LED are not connected in series",
+          "object_id": "led_current",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (2) is not assigned to a net",
+          "object_id": "$.components[3]",
+          "severity": "error"
+        }
+      ],
+      "id": "f029",
+      "label": "fault",
+      "latency_ns": [
+        2947736,
+        2842589,
+        2811641,
+        2801551,
+        2754503
+      ],
+      "model_eligible": true,
+      "notes": "Resistor is disconnected from the LED.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "a07dd16ea48b92afca5b13c8a1c0ee0e364603c3654e4a06e1f26b6a6bead027",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "functional_placement",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.functional_group"
+      ],
+      "finding_codes": [
+        "intent.functional_group"
+      ],
+      "finding_digests": [
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6"
+      ],
+      "findings": [
+        {
+          "code": "intent.functional_group",
+          "details": {
+            "diameter_mm": 40.635576,
+            "maximum_mm": 18.0
+          },
+          "message": "functional group diameter exceeds the declared bound",
+          "object_id": "sensor_group",
+          "severity": "error"
+        }
+      ],
+      "id": "f030",
+      "label": "fault",
+      "latency_ns": [
+        3302713,
+        3739634,
+        4051960,
+        3838218,
+        3496237
+      ],
+      "model_eligible": true,
+      "notes": "SDA pull-up is spread away from the sensor group.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "2989e08e72447adb55ab0b744d2b5842871d5ded232ece4c93b4141eba8b713c",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "functional_placement",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.functional_group"
+      ],
+      "finding_codes": [
+        "intent.functional_group"
+      ],
+      "finding_digests": [
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6",
+        "e02388ac51c6739ea4eedd43028a1c52425e33daf6f12e53cd9ef013945478d6"
+      ],
+      "findings": [
+        {
+          "code": "intent.functional_group",
+          "details": {
+            "diameter_mm": 40.635576,
+            "maximum_mm": 18.0
+          },
+          "message": "functional group diameter exceeds the declared bound",
+          "object_id": "sensor_group",
+          "severity": "error"
+        }
+      ],
+      "id": "f031",
+      "label": "fault",
+      "latency_ns": [
+        4696110,
+        4689838,
+        4675491,
+        4688405,
+        4676003
+      ],
+      "model_eligible": true,
+      "notes": "SCL pull-up is spread away from the sensor group.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "131f19b39ca0e7327261e5620114196dbfb1489d901d6f8b4e77a1704e16e696",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "functional_placement",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.functional_group"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "intent.functional_group"
+      ],
+      "finding_digests": [
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2",
+        "c091fdd62c1570378d896dd52b0405d150bac0e90b662efe9c8d7794811f8ec2"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "native supply-pad distance exceeds the declared bound",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "intent.functional_group",
+          "details": {
+            "diameter_mm": 37.5,
+            "maximum_mm": 18.0
+          },
+          "message": "functional group diameter exceeds the declared bound",
+          "object_id": "sensor_group",
+          "severity": "error"
+        }
+      ],
+      "id": "f032",
+      "label": "fault",
+      "latency_ns": [
+        4694467,
+        4695769,
+        4712871,
+        4604759,
+        4643281
+      ],
+      "model_eligible": true,
+      "notes": "Sensor IC is spread away from its interface group.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "548344d329311ea9b2f6e8fe6d4dad0e0e5e18cdea3c48fd72c979015876c5eb",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "functional_placement",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.functional_group"
+      ],
+      "finding_codes": [
+        "intent.edge_placement",
+        "intent.functional_group"
+      ],
+      "finding_digests": [
+        "3a6733241bd82b2e1af363117417b7df2e04f15fcd69cbcfd159958a9e64a956",
+        "3a6733241bd82b2e1af363117417b7df2e04f15fcd69cbcfd159958a9e64a956",
+        "3a6733241bd82b2e1af363117417b7df2e04f15fcd69cbcfd159958a9e64a956",
+        "3a6733241bd82b2e1af363117417b7df2e04f15fcd69cbcfd159958a9e64a956",
+        "3a6733241bd82b2e1af363117417b7df2e04f15fcd69cbcfd159958a9e64a956"
+      ],
+      "findings": [
+        {
+          "code": "intent.edge_placement",
+          "details": {
+            "distance_mm": 29.695,
+            "maximum_mm": 2.0
+          },
+          "message": "component violates its declared edge-access bound",
+          "object_id": "qwiic_edge",
+          "severity": "error"
+        },
+        {
+          "code": "intent.functional_group",
+          "details": {
+            "diameter_mm": 23.537205,
+            "maximum_mm": 18.0
+          },
+          "message": "functional group diameter exceeds the declared bound",
+          "object_id": "sensor_group",
+          "severity": "error"
+        }
+      ],
+      "id": "f033",
+      "label": "fault",
+      "latency_ns": [
+        4694918,
+        4673618,
+        4657728,
+        4671333,
+        4668468
+      ],
+      "model_eligible": true,
+      "notes": "External bus connector is spread from the sensor group.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "81e8aa68f0b8348b3fae24de665e2db2fe0d03827d751d3636552f59051a2496",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "edge_access",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_digests": [
+        "201c723422fbd7e01aeb1b18c4fb4f22bedcae97315160f8e7a9e2a3d5d488e9",
+        "201c723422fbd7e01aeb1b18c4fb4f22bedcae97315160f8e7a9e2a3d5d488e9",
+        "201c723422fbd7e01aeb1b18c4fb4f22bedcae97315160f8e7a9e2a3d5d488e9",
+        "201c723422fbd7e01aeb1b18c4fb4f22bedcae97315160f8e7a9e2a3d5d488e9",
+        "201c723422fbd7e01aeb1b18c4fb4f22bedcae97315160f8e7a9e2a3d5d488e9"
+      ],
+      "findings": [
+        {
+          "code": "intent.edge_placement",
+          "details": {
+            "distance_mm": 11.695,
+            "maximum_mm": 2.0
+          },
+          "message": "component violates its declared edge-access bound",
+          "object_id": "qwiic_edge",
+          "severity": "error"
+        }
+      ],
+      "id": "f034",
+      "label": "fault",
+      "latency_ns": [
+        4694657,
+        4694567,
+        4672455,
+        4662987,
+        4675191
+      ],
+      "model_eligible": true,
+      "notes": "Qwiic connector is moved too far from the right edge.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "cc56300501143c0c3e9f19e482b35ebc0ee36e996957b4ba3509ec8b04829798",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "edge_access",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_digests": [
+        "b848ec8d70ac2a16bc5eeaf7c4ea53589921397fd576aa10212ca801d39440dc",
+        "b848ec8d70ac2a16bc5eeaf7c4ea53589921397fd576aa10212ca801d39440dc",
+        "b848ec8d70ac2a16bc5eeaf7c4ea53589921397fd576aa10212ca801d39440dc",
+        "b848ec8d70ac2a16bc5eeaf7c4ea53589921397fd576aa10212ca801d39440dc",
+        "b848ec8d70ac2a16bc5eeaf7c4ea53589921397fd576aa10212ca801d39440dc"
+      ],
+      "findings": [
+        {
+          "code": "intent.edge_placement",
+          "details": {
+            "distance_mm": 21.695,
+            "maximum_mm": 2.0
+          },
+          "message": "component violates its declared edge-access bound",
+          "object_id": "qwiic_edge",
+          "severity": "error"
+        }
+      ],
+      "id": "f035",
+      "label": "fault",
+      "latency_ns": [
+        4658479,
+        4640125,
+        5056166,
+        4670322,
+        3650786
+      ],
+      "model_eligible": true,
+      "notes": "Qwiic connector is inaccessible near board center.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "1abefda9eab3cba3cc9082c3d0f4c54f5b37edf778fcf1d775cc3fef859dc01d",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "edge_access",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_digests": [
+        "9b53e50258976a4409033b5040121b8aafb2d2e6b52f8cf3a878288f3a296c14",
+        "9b53e50258976a4409033b5040121b8aafb2d2e6b52f8cf3a878288f3a296c14",
+        "9b53e50258976a4409033b5040121b8aafb2d2e6b52f8cf3a878288f3a296c14",
+        "9b53e50258976a4409033b5040121b8aafb2d2e6b52f8cf3a878288f3a296c14",
+        "9b53e50258976a4409033b5040121b8aafb2d2e6b52f8cf3a878288f3a296c14"
+      ],
+      "findings": [
+        {
+          "code": "intent.edge_placement",
+          "details": {
+            "distance_mm": 12.205,
+            "maximum_mm": 4.0
+          },
+          "message": "component violates its declared edge-access bound",
+          "object_id": "updi_edge",
+          "severity": "error"
+        }
+      ],
+      "id": "f036",
+      "label": "fault",
+      "latency_ns": [
+        4170302,
+        3763869,
+        3807010,
+        3596745,
+        2887563
+      ],
+      "model_eligible": true,
+      "notes": "UPDI header is moved too far from the left edge.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "aad168558fbe1b2f8921a366e7b0dbfdac0ffa5e3d7351598940ba147d8c5447",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "edge_access",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_codes": [
+        "intent.edge_placement"
+      ],
+      "finding_digests": [
+        "1219578883042abe7aa31b46a183a97afe242c3bb8e560a48993f2eac4498a35",
+        "1219578883042abe7aa31b46a183a97afe242c3bb8e560a48993f2eac4498a35",
+        "1219578883042abe7aa31b46a183a97afe242c3bb8e560a48993f2eac4498a35",
+        "1219578883042abe7aa31b46a183a97afe242c3bb8e560a48993f2eac4498a35",
+        "1219578883042abe7aa31b46a183a97afe242c3bb8e560a48993f2eac4498a35"
+      ],
+      "findings": [
+        {
+          "code": "intent.edge_placement",
+          "details": {
+            "distance_mm": 23.205,
+            "maximum_mm": 4.0
+          },
+          "message": "component violates its declared edge-access bound",
+          "object_id": "updi_edge",
+          "severity": "error"
+        }
+      ],
+      "id": "f037",
+      "label": "fault",
+      "latency_ns": [
+        3819092,
+        4669369,
+        4025200,
+        2868978,
+        2813654
+      ],
+      "model_eligible": true,
+      "notes": "UPDI header is inaccessible near board center.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "af62ac842b967c8f389ddbf5200fc069005e3d2a25f5ff10268598f477e02ce8",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "manufacturing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_digests": [
+        "e3ed862f4622ccf12154abce778a18ba6c52f1d7e831f667d43284bcbc0fc424",
+        "e3ed862f4622ccf12154abce778a18ba6c52f1d7e831f667d43284bcbc0fc424",
+        "e3ed862f4622ccf12154abce778a18ba6c52f1d7e831f667d43284bcbc0fc424",
+        "e3ed862f4622ccf12154abce778a18ba6c52f1d7e831f667d43284bcbc0fc424",
+        "e3ed862f4622ccf12154abce778a18ba6c52f1d7e831f667d43284bcbc0fc424"
+      ],
+      "findings": [
+        {
+          "code": "intent.manufacturing_rules",
+          "details": {
+            "fields": "min_track_mm"
+          },
+          "message": "manufacturing constraint does not match the board contract",
+          "object_id": "manufacturing",
+          "severity": "error"
+        }
+      ],
+      "id": "f038",
+      "label": "fault",
+      "latency_ns": [
+        3214788,
+        4658589,
+        4669430,
+        3183629,
+        2869910
+      ],
+      "model_eligible": false,
+      "notes": "Manufacturing track limit conflicts with board rules.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "bf5eaab2c8e92b33a47e623552afc1f4f99571a061b6c035a44e58ff70b927ea",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "manufacturing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_digests": [
+        "23379bb4d0bfb9437f40f7a0c620f6d0dcb95f3bedc91b29a2b03c23d2c7c596",
+        "23379bb4d0bfb9437f40f7a0c620f6d0dcb95f3bedc91b29a2b03c23d2c7c596",
+        "23379bb4d0bfb9437f40f7a0c620f6d0dcb95f3bedc91b29a2b03c23d2c7c596",
+        "23379bb4d0bfb9437f40f7a0c620f6d0dcb95f3bedc91b29a2b03c23d2c7c596",
+        "23379bb4d0bfb9437f40f7a0c620f6d0dcb95f3bedc91b29a2b03c23d2c7c596"
+      ],
+      "findings": [
+        {
+          "code": "intent.manufacturing_rules",
+          "details": {
+            "fields": "min_clearance_mm"
+          },
+          "message": "manufacturing constraint does not match the board contract",
+          "object_id": "manufacturing",
+          "severity": "error"
+        }
+      ],
+      "id": "f039",
+      "label": "fault",
+      "latency_ns": [
+        3554606,
+        2827090,
+        2954069,
+        2882294,
+        2866304
+      ],
+      "model_eligible": false,
+      "notes": "Manufacturing clearance limit conflicts with board rules.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "9da347d32cf322b5f0a939f2257b33b97d5a96c1b7804502dc0cfdcc70b6921b",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "manufacturing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_digests": [
+        "6971a51e57fbb35ae5e0266b104a6b6ea47f69b7a2762bc8ce6b57417bd2c01c",
+        "6971a51e57fbb35ae5e0266b104a6b6ea47f69b7a2762bc8ce6b57417bd2c01c",
+        "6971a51e57fbb35ae5e0266b104a6b6ea47f69b7a2762bc8ce6b57417bd2c01c",
+        "6971a51e57fbb35ae5e0266b104a6b6ea47f69b7a2762bc8ce6b57417bd2c01c",
+        "6971a51e57fbb35ae5e0266b104a6b6ea47f69b7a2762bc8ce6b57417bd2c01c"
+      ],
+      "findings": [
+        {
+          "code": "intent.manufacturing_rules",
+          "details": {
+            "fields": "min_drill_mm"
+          },
+          "message": "manufacturing constraint does not match the board contract",
+          "object_id": "manufacturing",
+          "severity": "error"
+        }
+      ],
+      "id": "f040",
+      "label": "fault",
+      "latency_ns": [
+        3050940,
+        2996688,
+        2972923,
+        2851265,
+        3166317
+      ],
+      "model_eligible": false,
+      "notes": "Manufacturing drill limit conflicts with board rules.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "6120018118b9a6c79208d042f767a89bcc8698f6b66c561ab42ac0fb50fc68dd",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "manufacturing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_codes": [
+        "intent.manufacturing_rules"
+      ],
+      "finding_digests": [
+        "2613f6d5b9858f0ddf07e4ad0063512b585c5c0881cef6b2690bd98ee66ddfae",
+        "2613f6d5b9858f0ddf07e4ad0063512b585c5c0881cef6b2690bd98ee66ddfae",
+        "2613f6d5b9858f0ddf07e4ad0063512b585c5c0881cef6b2690bd98ee66ddfae",
+        "2613f6d5b9858f0ddf07e4ad0063512b585c5c0881cef6b2690bd98ee66ddfae",
+        "2613f6d5b9858f0ddf07e4ad0063512b585c5c0881cef6b2690bd98ee66ddfae"
+      ],
+      "findings": [
+        {
+          "code": "intent.manufacturing_rules",
+          "details": {
+            "fields": "edge_clearance_mm"
+          },
+          "message": "manufacturing constraint does not match the board contract",
+          "object_id": "manufacturing",
+          "severity": "error"
+        }
+      ],
+      "id": "f041",
+      "label": "fault",
+      "latency_ns": [
+        2988372,
+        3578431,
+        3127954,
+        2821840,
+        2934902
+      ],
+      "model_eligible": false,
+      "notes": "Manufacturing edge limit conflicts with board rules.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e707c58c75ce3dc266f07b5d13156ca5e01c7b548d11df7aee828c59230d73e7",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "7b71078d6226330ff4a22ce94c49e9b58642e8669f30ac434e7eae41e4f30e15",
+        "7b71078d6226330ff4a22ce94c49e9b58642e8669f30ac434e7eae41e4f30e15",
+        "7b71078d6226330ff4a22ce94c49e9b58642e8669f30ac434e7eae41e4f30e15",
+        "7b71078d6226330ff4a22ce94c49e9b58642e8669f30ac434e7eae41e4f30e15",
+        "7b71078d6226330ff4a22ce94c49e9b58642e8669f30ac434e7eae41e4f30e15"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "manufacturing_rules"
+          },
+          "message": "required manufacturing_rules constraint is absent",
+          "object_id": "board",
+          "severity": "error"
+        }
+      ],
+      "id": "f042",
+      "label": "fault",
+      "latency_ns": [
+        2841197,
+        2827050,
+        2873336,
+        2824434,
+        2876983
+      ],
+      "model_eligible": false,
+      "notes": "Manufacturing rule contract is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "58533fd19aef3b5dadd2b19fefe60cd1abd896bfb97db5d131625aa0c130cc97",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "routing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.routing"
+      ],
+      "finding_codes": [
+        "intent.routing"
+      ],
+      "finding_digests": [
+        "bb3a14e0568e301070db8a3271bf464680955001e5649209697219e69864e3fc",
+        "bb3a14e0568e301070db8a3271bf464680955001e5649209697219e69864e3fc",
+        "bb3a14e0568e301070db8a3271bf464680955001e5649209697219e69864e3fc",
+        "bb3a14e0568e301070db8a3271bf464680955001e5649209697219e69864e3fc",
+        "bb3a14e0568e301070db8a3271bf464680955001e5649209697219e69864e3fc"
+      ],
+      "findings": [
+        {
+          "code": "intent.routing",
+          "message": "nominal width is below the board minimum",
+          "object_id": "routing_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f043",
+      "label": "fault",
+      "latency_ns": [
+        2977031,
+        2835325,
+        2782305,
+        2802403,
+        2789109
+      ],
+      "model_eligible": false,
+      "notes": "Nominal I2C width is below board minimum.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "a9837afedd746c7300426729b56738a24237fd72aed8858b13ca2a93ae88f966",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "routing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.routing"
+      ],
+      "finding_codes": [
+        "intent.routing"
+      ],
+      "finding_digests": [
+        "a9350f5c1264fd742d3290db4cde39f5d6f3364e5567ca792e5f1aee15f89ad7",
+        "a9350f5c1264fd742d3290db4cde39f5d6f3364e5567ca792e5f1aee15f89ad7",
+        "a9350f5c1264fd742d3290db4cde39f5d6f3364e5567ca792e5f1aee15f89ad7",
+        "a9350f5c1264fd742d3290db4cde39f5d6f3364e5567ca792e5f1aee15f89ad7",
+        "a9350f5c1264fd742d3290db4cde39f5d6f3364e5567ca792e5f1aee15f89ad7"
+      ],
+      "findings": [
+        {
+          "code": "intent.routing",
+          "message": "neckdown width is below the board minimum",
+          "object_id": "routing_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f044",
+      "label": "fault",
+      "latency_ns": [
+        2856024,
+        2818483,
+        2941484,
+        2865181,
+        2843471
+      ],
+      "model_eligible": false,
+      "notes": "I2C neckdown width is below board minimum.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "5bdd8673669bef6909bb839c11a169ddbf0ee5d3e53ada274c62ff0e73504c7e",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "routing_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.routing"
+      ],
+      "finding_codes": [
+        "intent.routing"
+      ],
+      "finding_digests": [
+        "8a7579b64bd50f6154e0f0c0c3a7648d81c83225fa6f322020aaf687437bec85",
+        "8a7579b64bd50f6154e0f0c0c3a7648d81c83225fa6f322020aaf687437bec85",
+        "8a7579b64bd50f6154e0f0c0c3a7648d81c83225fa6f322020aaf687437bec85",
+        "8a7579b64bd50f6154e0f0c0c3a7648d81c83225fa6f322020aaf687437bec85",
+        "8a7579b64bd50f6154e0f0c0c3a7648d81c83225fa6f322020aaf687437bec85"
+      ],
+      "findings": [
+        {
+          "code": "intent.routing",
+          "message": "maximum route length is not positive",
+          "object_id": "routing_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f045",
+      "label": "fault",
+      "latency_ns": [
+        2930594,
+        2824154,
+        2819695,
+        2796152,
+        2791723
+      ],
+      "model_eligible": false,
+      "notes": "I2C maximum length is non-positive.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "5129e4f2bd012d1fa663298a1bc03d2091c433bff58413ff3162cd8ea0a49883",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "8bfbb9a9e51164702434a1d9d00905222bf7842607d3d1f83106c07ca962091e",
+        "8bfbb9a9e51164702434a1d9d00905222bf7842607d3d1f83106c07ca962091e",
+        "8bfbb9a9e51164702434a1d9d00905222bf7842607d3d1f83106c07ca962091e",
+        "8bfbb9a9e51164702434a1d9d00905222bf7842607d3d1f83106c07ca962091e",
+        "8bfbb9a9e51164702434a1d9d00905222bf7842607d3d1f83106c07ca962091e"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "routing",
+            "nets": "net_i2c_scl,net_i2c_sda"
+          },
+          "message": "I2C nets lack a routing constraint",
+          "object_id": "sensor_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f046",
+      "label": "fault",
+      "latency_ns": [
+        2825176,
+        2831127,
+        2818914,
+        3094962,
+        2883386
+      ],
+      "model_eligible": false,
+      "notes": "I2C routing contract is deleted while power routing remains.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "9adfe120665c6c6b3b5fb1a4cf32826298c00f76f572fe6729762b9eaa4b3cce",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "part_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "part.unknown"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "part.unknown"
+      ],
+      "finding_digests": [
+        "b9d6090cb48d3e8b91a9d853682d2133bdccd977bc079ee485f2f1c7cae5c90b",
+        "b9d6090cb48d3e8b91a9d853682d2133bdccd977bc079ee485f2f1c7cae5c90b",
+        "b9d6090cb48d3e8b91a9d853682d2133bdccd977bc079ee485f2f1c7cae5c90b",
+        "b9d6090cb48d3e8b91a9d853682d2133bdccd977bc079ee485f2f1c7cae5c90b",
+        "b9d6090cb48d3e8b91a9d853682d2133bdccd977bc079ee485f2f1c7cae5c90b"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "target set does not identify one capacitor, one device, and two rails",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "part.unknown",
+          "message": "canonical part does not exist: unknown.example-part",
+          "object_id": "$.components[10].part_id",
+          "severity": "error"
+        }
+      ],
+      "id": "f047",
+      "label": "fault",
+      "latency_ns": [
+        2827541,
+        2871132,
+        2754463,
+        2718135,
+        2712464
+      ],
+      "model_eligible": true,
+      "notes": "Sensor points to an unknown canonical part identity.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "a3a7623966029adb8c3eaef9e66b3a32be47fb5b5827933b7ec5ce756c0411f5",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "required_connection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "part.required_pin_unconnected"
+      ],
+      "finding_codes": [
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "3e2de5a3488ae09becf63086c4b1e5bcc8d34fa9077e7368fc2b53b0021b1376",
+        "3e2de5a3488ae09becf63086c4b1e5bcc8d34fa9077e7368fc2b53b0021b1376",
+        "3e2de5a3488ae09becf63086c4b1e5bcc8d34fa9077e7368fc2b53b0021b1376",
+        "3e2de5a3488ae09becf63086c4b1e5bcc8d34fa9077e7368fc2b53b0021b1376",
+        "3e2de5a3488ae09becf63086c4b1e5bcc8d34fa9077e7368fc2b53b0021b1376"
+      ],
+      "findings": [
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 1 (UPDI) is not assigned to a net",
+          "object_id": "$.components[11]",
+          "severity": "error"
+        }
+      ],
+      "id": "f048",
+      "label": "fault",
+      "latency_ns": [
+        2815538,
+        2781714,
+        2788397,
+        2793106,
+        3027657
+      ],
+      "model_eligible": true,
+      "notes": "Required UPDI header signal is left unconnected.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e666531afee72a75f2ebbca2dd2becb6b61fd3cccdc943ac9ecf8016c8f246fa",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rating_contract",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "part.overvoltage"
+      ],
+      "finding_codes": [
+        "intent.i2c_electrical_budget",
+        "intent.power_budget",
+        "part.overvoltage"
+      ],
+      "finding_digests": [
+        "d08d295194c7fb523e1b30dab478abb6010a7361d671c21b02964cfc46b41a27",
+        "d08d295194c7fb523e1b30dab478abb6010a7361d671c21b02964cfc46b41a27",
+        "d08d295194c7fb523e1b30dab478abb6010a7361d671c21b02964cfc46b41a27",
+        "d08d295194c7fb523e1b30dab478abb6010a7361d671c21b02964cfc46b41a27",
+        "d08d295194c7fb523e1b30dab478abb6010a7361d671c21b02964cfc46b41a27"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_electrical_budget",
+          "details": {
+            "calculated_rise_time_ns": 796.462,
+            "calculated_sink_current_ma": 1.191489
+          },
+          "message": "recorded sink current does not match the worst-case rail calculation",
+          "object_id": "i2c_electrical_budget",
+          "severity": "error"
+        },
+        {
+          "code": "intent.power_budget",
+          "details": {
+            "declared_current_a": 0.1,
+            "declared_power_w": 0.3465,
+            "expected_power_w": 0.5599999999999999
+          },
+          "message": "power-budget constraint is inconsistent with the declared scope envelope",
+          "object_id": "power_budget",
+          "severity": "error"
+        },
+        {
+          "code": "part.overvoltage",
+          "message": "microchip.attiny402-ssn maximum supply is 5.5 V",
+          "object_id": "$.nets[0]",
+          "severity": "error"
+        },
+        {
+          "code": "part.overvoltage",
+          "message": "ti.tmp102bdrlr maximum supply is 3.6 V",
+          "object_id": "$.nets[0]",
+          "severity": "error"
+        },
+        {
+          "code": "part.overvoltage",
+          "message": "microchip.attiny402-ssn maximum supply is 5.5 V",
+          "object_id": "$.nets[1]",
+          "severity": "error"
+        },
+        {
+          "code": "part.overvoltage",
+          "message": "ti.tmp102bdrlr maximum supply is 3.6 V",
+          "object_id": "$.nets[1]",
+          "severity": "error"
+        }
+      ],
+      "id": "f049",
+      "label": "fault",
+      "latency_ns": [
+        2893464,
+        3002439,
+        2847809,
+        2811751,
+        2795119
+      ],
+      "model_eligible": true,
+      "notes": "Declared rail maximum exceeds the TMP102 supply rating.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "identity",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "ir.duplicate"
+      ],
+      "finding_codes": [
+        "ir.duplicate"
+      ],
+      "finding_digests": [
+        "a735a2e82ee041ce56be786eb649d553ba6a5262ebe0a79e9c5a92068412298e",
+        "a735a2e82ee041ce56be786eb649d553ba6a5262ebe0a79e9c5a92068412298e",
+        "a735a2e82ee041ce56be786eb649d553ba6a5262ebe0a79e9c5a92068412298e",
+        "a735a2e82ee041ce56be786eb649d553ba6a5262ebe0a79e9c5a92068412298e",
+        "a735a2e82ee041ce56be786eb649d553ba6a5262ebe0a79e9c5a92068412298e"
+      ],
+      "findings": [
+        {
+          "code": "ir.duplicate",
+          "message": "duplicate reference: U1",
+          "object_id": "$.components[10].reference",
+          "severity": "error"
+        }
+      ],
+      "id": "f050",
+      "label": "fault",
+      "latency_ns": [
+        2885169,
+        2849933,
+        2874739,
+        2824124,
+        2813264
+      ],
+      "model_eligible": false,
+      "notes": "Two components share the same schematic reference.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e89cfc5571c8d5b2a3a28b02a82c679aada3510339071ff4e8538fafaec0930b",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "scope_rejection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "scope.unsupported"
+      ],
+      "finding_codes": [
+        "intent.power_budget",
+        "scope.unsupported"
+      ],
+      "finding_digests": [
+        "c810734cf1e500122c653ecd42b8d045dcca23b759deaaf08252ccfebbf9d26f",
+        "c810734cf1e500122c653ecd42b8d045dcca23b759deaaf08252ccfebbf9d26f",
+        "c810734cf1e500122c653ecd42b8d045dcca23b759deaaf08252ccfebbf9d26f",
+        "c810734cf1e500122c653ecd42b8d045dcca23b759deaaf08252ccfebbf9d26f",
+        "c810734cf1e500122c653ecd42b8d045dcca23b759deaaf08252ccfebbf9d26f"
+      ],
+      "findings": [
+        {
+          "code": "intent.power_budget",
+          "details": {
+            "declared_current_a": 0.1,
+            "declared_power_w": 0.3465,
+            "expected_power_w": 32.5
+          },
+          "message": "power-budget constraint is inconsistent with the declared scope envelope",
+          "object_id": "power_budget",
+          "severity": "error"
+        },
+        {
+          "code": "scope.unsupported",
+          "details": {
+            "reason_count": 3
+          },
+          "message": "unsupported high-risk domains: mains; declared maximum voltage exceeds the 60 VDC low-voltage boundary; declared power/current exceeds the bounded simple-control scope",
+          "object_id": "attiny_sensor_controller",
+          "severity": "error"
+        }
+      ],
+      "id": "f051",
+      "label": "fault",
+      "latency_ns": [
+        2864670,
+        2834934,
+        2830086,
+        2856886,
+        2852677
+      ],
+      "model_eligible": false,
+      "notes": "Mains design must be rejected instead of silently accepted.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "scope_rejection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "scope.unsupported"
+      ],
+      "finding_codes": [
+        "scope.unsupported"
+      ],
+      "finding_digests": [
+        "8369e80066032cf0079a26460ac4eee46f62a5a414bf85b7b2227aad58a9d4cd",
+        "8369e80066032cf0079a26460ac4eee46f62a5a414bf85b7b2227aad58a9d4cd",
+        "8369e80066032cf0079a26460ac4eee46f62a5a414bf85b7b2227aad58a9d4cd",
+        "8369e80066032cf0079a26460ac4eee46f62a5a414bf85b7b2227aad58a9d4cd",
+        "8369e80066032cf0079a26460ac4eee46f62a5a414bf85b7b2227aad58a9d4cd"
+      ],
+      "findings": [
+        {
+          "code": "scope.unsupported",
+          "details": {
+            "reason_count": 1
+          },
+          "message": "unsupported high-risk domains: rf",
+          "object_id": "attiny_sensor_controller",
+          "severity": "error"
+        }
+      ],
+      "id": "f052",
+      "label": "fault",
+      "latency_ns": [
+        3071249,
+        2774802,
+        2762439,
+        2784500,
+        2852107
+      ],
+      "model_eligible": false,
+      "notes": "RF design is outside the automated scope.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "scope_rejection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "scope.unsupported"
+      ],
+      "finding_codes": [
+        "scope.unsupported"
+      ],
+      "finding_digests": [
+        "1bf243204479f9689c52b577b2b10f1bc8866ea5237b639c8d292dc43f6fd888",
+        "1bf243204479f9689c52b577b2b10f1bc8866ea5237b639c8d292dc43f6fd888",
+        "1bf243204479f9689c52b577b2b10f1bc8866ea5237b639c8d292dc43f6fd888",
+        "1bf243204479f9689c52b577b2b10f1bc8866ea5237b639c8d292dc43f6fd888",
+        "1bf243204479f9689c52b577b2b10f1bc8866ea5237b639c8d292dc43f6fd888"
+      ],
+      "findings": [
+        {
+          "code": "scope.unsupported",
+          "details": {
+            "reason_count": 1
+          },
+          "message": "unsupported high-risk domains: ddr",
+          "object_id": "attiny_sensor_controller",
+          "severity": "error"
+        }
+      ],
+      "id": "f053",
+      "label": "fault",
+      "latency_ns": [
+        3008631,
+        2881132,
+        2805249,
+        2830055,
+        2810158
+      ],
+      "model_eligible": false,
+      "notes": "DDR design is outside the automated scope.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "scope_rejection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "scope.unsupported"
+      ],
+      "finding_codes": [
+        "scope.unsupported"
+      ],
+      "finding_digests": [
+        "482e9302b5c169bf291ea8e69422d38d905369e8078de188f6cee2133ff8e988",
+        "482e9302b5c169bf291ea8e69422d38d905369e8078de188f6cee2133ff8e988",
+        "482e9302b5c169bf291ea8e69422d38d905369e8078de188f6cee2133ff8e988",
+        "482e9302b5c169bf291ea8e69422d38d905369e8078de188f6cee2133ff8e988",
+        "482e9302b5c169bf291ea8e69422d38d905369e8078de188f6cee2133ff8e988"
+      ],
+      "findings": [
+        {
+          "code": "scope.unsupported",
+          "details": {
+            "reason_count": 2
+          },
+          "message": "unsupported high-risk domains: safety_critical; automated generation is limited to prototype/non-safety-critical use",
+          "object_id": "attiny_sensor_controller",
+          "severity": "error"
+        }
+      ],
+      "id": "f054",
+      "label": "fault",
+      "latency_ns": [
+        2832610,
+        3318302,
+        2796432,
+        2779811,
+        2793297
+      ],
+      "model_eligible": false,
+      "notes": "Safety-critical use must remain an explicit rejection.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "scope_rejection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "scope.unsupported"
+      ],
+      "finding_codes": [
+        "scope.unsupported"
+      ],
+      "finding_digests": [
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd"
+      ],
+      "findings": [
+        {
+          "code": "scope.unsupported",
+          "details": {
+            "reason_count": 1
+          },
+          "message": "automated KiCad generation supports 2- or 4-copper-layer stackups",
+          "object_id": "attiny_sensor_controller",
+          "severity": "error"
+        }
+      ],
+      "id": "f055",
+      "label": "fault",
+      "latency_ns": [
+        2867786,
+        2901650,
+        2829293,
+        2787525,
+        2817612
+      ],
+      "model_eligible": false,
+      "notes": "One-layer generation is outside the supported 2-4 layer scope.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "a2c764a15eae7f52699c0679baea8fbc1e455ba701b9bd72edbc8afa6b1cc8b1",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "scope_rejection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "scope.unsupported"
+      ],
+      "finding_codes": [
+        "scope.unsupported"
+      ],
+      "finding_digests": [
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd",
+        "b2f2ecf5610b18c6459fa357c0c7f73f9e7456f2f778161030138089c5791bbd"
+      ],
+      "findings": [
+        {
+          "code": "scope.unsupported",
+          "details": {
+            "reason_count": 1
+          },
+          "message": "automated KiCad generation supports 2- or 4-copper-layer stackups",
+          "object_id": "attiny_sensor_controller",
+          "severity": "error"
+        }
+      ],
+      "id": "f056",
+      "label": "fault",
+      "latency_ns": [
+        2926987,
+        2942827,
+        2949931,
+        2854331,
+        3038817
+      ],
+      "model_eligible": false,
+      "notes": "Five-layer generation is outside the supported 2-4 layer scope.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "efcc1b977b7c44dee8b06ca37291680914b9de51abdc5d614f7c97472fe91e87",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "part_manufacturability",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "part.footprint_clearance_incompatible"
+      ],
+      "finding_codes": [
+        "intent.manufacturing_rules",
+        "part.footprint_clearance_incompatible"
+      ],
+      "finding_digests": [
+        "5f4eedf286cfadaa572363fd06396b01bc725b6d508377dadf48cdd404e04aca",
+        "5f4eedf286cfadaa572363fd06396b01bc725b6d508377dadf48cdd404e04aca",
+        "5f4eedf286cfadaa572363fd06396b01bc725b6d508377dadf48cdd404e04aca",
+        "5f4eedf286cfadaa572363fd06396b01bc725b6d508377dadf48cdd404e04aca",
+        "5f4eedf286cfadaa572363fd06396b01bc725b6d508377dadf48cdd404e04aca"
+      ],
+      "findings": [
+        {
+          "code": "intent.manufacturing_rules",
+          "details": {
+            "fields": "min_clearance_mm"
+          },
+          "message": "manufacturing constraint does not match the board contract",
+          "object_id": "manufacturing",
+          "severity": "error"
+        },
+        {
+          "code": "part.footprint_clearance_incompatible",
+          "message": "board clearance 0.2 mm exceeds the ti.tmp102bdrlr footprint's 0.15 mm minimum pad gap",
+          "object_id": "$.components[10]",
+          "severity": "error"
+        }
+      ],
+      "id": "f057",
+      "label": "fault",
+      "latency_ns": [
+        2859891,
+        3073292,
+        2807573,
+        2789770,
+        2818474
+      ],
+      "model_eligible": false,
+      "notes": "Board clearance exceeds the SOT-563 pad gap.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "cbdb8da83d36f5c4dad442719410d6682c551df735ae70acf6f4a8129157364d",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "required_connection",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "part.required_pin_unconnected"
+      ],
+      "finding_codes": [
+        "intent.decoupling",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d",
+        "0ea9cfe95588f12ae7cc306c88ff92b01777c53d9fa2eeb708f410a50c30345d"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "capacitor and device do not share every declared rail; native supply-pad geometry is incomplete",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 5 (V+) is not assigned to a net",
+          "object_id": "$.components[10]",
+          "severity": "error"
+        }
+      ],
+      "id": "f058",
+      "label": "fault",
+      "latency_ns": [
+        2862686,
+        2844051,
+        2865452,
+        2861444,
+        2976370
+      ],
+      "model_eligible": true,
+      "notes": "Required sensor supply pin is left unconnected.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "bf86d467f08ea8ff4990525ca3907d55f3b2d7cc20e5dda6c8ad85e017420789",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_electrical_budget",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_electrical_budget"
+      ],
+      "finding_codes": [
+        "intent.i2c_electrical_budget"
+      ],
+      "finding_digests": [
+        "de184d7ed3ad2a552c24f9f28a7c6d7208b8900992cb42f02eb1ab7aa551860a",
+        "de184d7ed3ad2a552c24f9f28a7c6d7208b8900992cb42f02eb1ab7aa551860a",
+        "de184d7ed3ad2a552c24f9f28a7c6d7208b8900992cb42f02eb1ab7aa551860a",
+        "de184d7ed3ad2a552c24f9f28a7c6d7208b8900992cb42f02eb1ab7aa551860a",
+        "de184d7ed3ad2a552c24f9f28a7c6d7208b8900992cb42f02eb1ab7aa551860a"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_electrical_budget",
+          "details": {
+            "calculated_rise_time_ns": 1592.924,
+            "calculated_sink_current_ma": 0.737234
+          },
+          "message": "calculated RC rise time exceeds the protocol limit; interface bus_capacitance_pf_max disagrees with the budget; recorded rise time does not match the RC calculation",
+          "object_id": "i2c_electrical_budget",
+          "severity": "error"
+        }
+      ],
+      "id": "f059",
+      "label": "fault",
+      "latency_ns": [
+        2923431,
+        2958987,
+        2874649,
+        2834965,
+        2855864
+      ],
+      "model_eligible": false,
+      "notes": "The I2C budget is changed to a capacitance that violates the declared RC and interface contract.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e5c38595e26e3968aea732105e6e0029329db5da525137b13a2a4f1375e98461",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "i2c_electrical_budget",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.i2c_electrical_budget"
+      ],
+      "finding_codes": [
+        "intent.i2c_electrical_budget"
+      ],
+      "finding_digests": [
+        "78128d062da8583c129a027c536c9443c5ba93cc24a8b8225dbee658817b512e",
+        "78128d062da8583c129a027c536c9443c5ba93cc24a8b8225dbee658817b512e",
+        "78128d062da8583c129a027c536c9443c5ba93cc24a8b8225dbee658817b512e",
+        "78128d062da8583c129a027c536c9443c5ba93cc24a8b8225dbee658817b512e",
+        "78128d062da8583c129a027c536c9443c5ba93cc24a8b8225dbee658817b512e"
+      ],
+      "findings": [
+        {
+          "code": "intent.i2c_electrical_budget",
+          "details": {
+            "calculated_rise_time_ns": 796.462,
+            "calculated_sink_current_ma": 0.737234
+          },
+          "message": "recorded rise time does not match the RC calculation",
+          "object_id": "i2c_electrical_budget",
+          "severity": "error"
+        }
+      ],
+      "id": "f060",
+      "label": "fault",
+      "latency_ns": [
+        2984265,
+        3078171,
+        3000445,
+        2932658,
+        3063274
+      ],
+      "model_eligible": false,
+      "notes": "The recorded I2C rise-time calculation is falsified.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "875af5bd3a7a546cf07cdaaa50d62bd1fa7f0eb99f0eb7d37e06c112d52d8871",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "3b3ea33cf79a305f75a9fc7b11c4cb81b82a83befc078a974a28e09a0a2fc005",
+        "3b3ea33cf79a305f75a9fc7b11c4cb81b82a83befc078a974a28e09a0a2fc005",
+        "3b3ea33cf79a305f75a9fc7b11c4cb81b82a83befc078a974a28e09a0a2fc005",
+        "3b3ea33cf79a305f75a9fc7b11c4cb81b82a83befc078a974a28e09a0a2fc005",
+        "3b3ea33cf79a305f75a9fc7b11c4cb81b82a83befc078a974a28e09a0a2fc005"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "i2c_electrical_budget"
+          },
+          "message": "required i2c_electrical_budget constraint is absent",
+          "object_id": "i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f061",
+      "label": "fault",
+      "latency_ns": [
+        3009563,
+        2847688,
+        2767387,
+        2796702,
+        2908332
+      ],
+      "model_eligible": false,
+      "notes": "The required I2C electrical-budget contract is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e011a35cc1834a5a49695f930c13f781b3d196012ad5367b6b8a869c536c7c18",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "source_ownership",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.source_ownership"
+      ],
+      "finding_codes": [
+        "intent.source_ownership",
+        "part.required_pin_unconnected"
+      ],
+      "finding_digests": [
+        "7dd411171e5c05d2b558c3e8abd69833d578206be11666b484d92e55e86f1aaa",
+        "7dd411171e5c05d2b558c3e8abd69833d578206be11666b484d92e55e86f1aaa",
+        "7dd411171e5c05d2b558c3e8abd69833d578206be11666b484d92e55e86f1aaa",
+        "7dd411171e5c05d2b558c3e8abd69833d578206be11666b484d92e55e86f1aaa",
+        "7dd411171e5c05d2b558c3e8abd69833d578206be11666b484d92e55e86f1aaa"
+      ],
+      "findings": [
+        {
+          "code": "intent.source_ownership",
+          "details": {
+            "physical_sources": "qwiic_j1:2"
+          },
+          "message": "the UPDI voltage-reference pin is not a sense-only rail endpoint",
+          "object_id": "updi_power_policy",
+          "severity": "error"
+        },
+        {
+          "code": "part.required_pin_unconnected",
+          "message": "required pin 2 (VTREF) is not assigned to a net",
+          "object_id": "$.components[11]",
+          "severity": "error"
+        }
+      ],
+      "id": "f062",
+      "label": "fault",
+      "latency_ns": [
+        2859921,
+        2870401,
+        2801181,
+        3008320,
+        2804147
+      ],
+      "model_eligible": true,
+      "notes": "UPDI target-voltage sense is disconnected from the powered target rail.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "b61a3f881ba1500a0e5343ef8a3d5bc7dd8f9cb17eef5697ae1c25786286a2d0",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "constraint_coverage",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_codes": [
+        "intent.required_constraint_missing"
+      ],
+      "finding_digests": [
+        "7a49bb80469d7019a38f432e0cc6e94d2ebc6a709b04386cbe364d58b3ff3ad0",
+        "7a49bb80469d7019a38f432e0cc6e94d2ebc6a709b04386cbe364d58b3ff3ad0",
+        "7a49bb80469d7019a38f432e0cc6e94d2ebc6a709b04386cbe364d58b3ff3ad0",
+        "7a49bb80469d7019a38f432e0cc6e94d2ebc6a709b04386cbe364d58b3ff3ad0",
+        "7a49bb80469d7019a38f432e0cc6e94d2ebc6a709b04386cbe364d58b3ff3ad0"
+      ],
+      "findings": [
+        {
+          "code": "intent.required_constraint_missing",
+          "details": {
+            "constraint_kind": "source_ownership"
+          },
+          "message": "required source_ownership constraint is absent",
+          "object_id": "voltage_sense",
+          "severity": "error"
+        }
+      ],
+      "id": "f063",
+      "label": "fault",
+      "latency_ns": [
+        2935393,
+        2871443,
+        2943128,
+        3515383,
+        2978535
+      ],
+      "model_eligible": false,
+      "notes": "The single-source and UPDI sense-only policy is deleted.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "c9f7ce4fca4799efd229d642cd80f09b78b35dae35d12113e36b0208c4000cb6",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "source_ownership",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.source_ownership"
+      ],
+      "finding_codes": [
+        "intent.source_ownership"
+      ],
+      "finding_digests": [
+        "ce0d8c6bba69da8ba3f9bb87b87ca1171ae4208f37d87fc21136d06e030cc36b",
+        "ce0d8c6bba69da8ba3f9bb87b87ca1171ae4208f37d87fc21136d06e030cc36b",
+        "ce0d8c6bba69da8ba3f9bb87b87ca1171ae4208f37d87fc21136d06e030cc36b",
+        "ce0d8c6bba69da8ba3f9bb87b87ca1171ae4208f37d87fc21136d06e030cc36b",
+        "ce0d8c6bba69da8ba3f9bb87b87ca1171ae4208f37d87fc21136d06e030cc36b"
+      ],
+      "findings": [
+        {
+          "code": "intent.source_ownership",
+          "details": {
+            "physical_sources": "qwiic_j1:2"
+          },
+          "message": "simultaneous external sources are not explicitly forbidden",
+          "object_id": "updi_power_policy",
+          "severity": "error"
+        }
+      ],
+      "id": "f064",
+      "label": "fault",
+      "latency_ns": [
+        3894074,
+        2838772,
+        2832960,
+        4011985,
+        4723000
+      ],
+      "model_eligible": false,
+      "notes": "The programming header contract is changed to allow simultaneous external sources.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "bb52e1f155e7b509c94fb874aa6cd934a32bd79b73937392bf5a2481ea3d2371",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "power_envelope",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.power_budget"
+      ],
+      "finding_codes": [
+        "intent.power_budget"
+      ],
+      "finding_digests": [
+        "dc39f648d27b055e6cacf30ae8f8268fd5c1bd50f5b0941d64a917ca68d23680",
+        "dc39f648d27b055e6cacf30ae8f8268fd5c1bd50f5b0941d64a917ca68d23680",
+        "dc39f648d27b055e6cacf30ae8f8268fd5c1bd50f5b0941d64a917ca68d23680",
+        "dc39f648d27b055e6cacf30ae8f8268fd5c1bd50f5b0941d64a917ca68d23680",
+        "dc39f648d27b055e6cacf30ae8f8268fd5c1bd50f5b0941d64a917ca68d23680"
+      ],
+      "findings": [
+        {
+          "code": "intent.power_budget",
+          "details": {
+            "declared_current_a": 0.1,
+            "declared_power_w": 0.33,
+            "expected_power_w": 0.34650000000000003
+          },
+          "message": "power-budget constraint is inconsistent with the declared scope envelope",
+          "object_id": "power_budget",
+          "severity": "error"
+        }
+      ],
+      "id": "f065",
+      "label": "fault",
+      "latency_ns": [
+        4643922,
+        4621369,
+        4618805,
+        4858344,
+        4632260
+      ],
+      "model_eligible": false,
+      "notes": "The power contract incorrectly uses nominal rather than maximum rail voltage.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "d3864beb421741bc1a85c9c4307a526bdbc8268044111cd943e8dff76a733d57",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "power_envelope",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.power_budget"
+      ],
+      "finding_codes": [
+        "intent.power_budget"
+      ],
+      "finding_digests": [
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e"
+      ],
+      "findings": [
+        {
+          "code": "intent.power_budget",
+          "details": {
+            "declared_current_a": 0.1,
+            "declared_power_w": 0.3465,
+            "expected_power_w": 0.34650000000000003
+          },
+          "message": "power-budget constraint is inconsistent with the declared scope envelope",
+          "object_id": "power_budget",
+          "severity": "error"
+        }
+      ],
+      "id": "f066",
+      "label": "fault",
+      "latency_ns": [
+        4677706,
+        3971299,
+        3251697,
+        5522422,
+        6180709
+      ],
+      "model_eligible": false,
+      "notes": "The power budget records a voltage basis inconsistent with the simultaneous maximum envelope.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "2ed6546afcb1397e1bf83e0ab612326ebc33f74e6cac92d34818016d47fc2455",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "power_envelope",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.power_budget"
+      ],
+      "finding_codes": [
+        "intent.power_budget"
+      ],
+      "finding_digests": [
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e",
+        "c719bf0d1699afbc3e97f8ce2b296891aafa390faef257a1024c69ce0d21010e"
+      ],
+      "findings": [
+        {
+          "code": "intent.power_budget",
+          "details": {
+            "declared_current_a": 0.1,
+            "declared_power_w": 0.3465,
+            "expected_power_w": 0.34650000000000003
+          },
+          "message": "power-budget constraint is inconsistent with the declared scope envelope",
+          "object_id": "power_budget",
+          "severity": "error"
+        }
+      ],
+      "id": "f067",
+      "label": "fault",
+      "latency_ns": [
+        4750673,
+        4942522,
+        4530529,
+        4520831,
+        3800848
+      ],
+      "model_eligible": false,
+      "notes": "The power-budget envelope policy is weakened to a nominal-only interpretation.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "f8b7f4dbf1157f069d247a1ecdd25cdec6a82c002d2399248cb45bfcbfa51279",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "reference_plane",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.routing"
+      ],
+      "finding_codes": [
+        "intent.routing"
+      ],
+      "finding_digests": [
+        "98890ac583daa09a5c6a8ebb7e7664ab1fbcac5881dafa05ff2f5205d04a02c0",
+        "98890ac583daa09a5c6a8ebb7e7664ab1fbcac5881dafa05ff2f5205d04a02c0",
+        "98890ac583daa09a5c6a8ebb7e7664ab1fbcac5881dafa05ff2f5205d04a02c0",
+        "98890ac583daa09a5c6a8ebb7e7664ab1fbcac5881dafa05ff2f5205d04a02c0",
+        "98890ac583daa09a5c6a8ebb7e7664ab1fbcac5881dafa05ff2f5205d04a02c0"
+      ],
+      "findings": [
+        {
+          "code": "intent.routing",
+          "message": "continuous reference plane lacks a positive integer stitching-via contract",
+          "object_id": "routing_i2c",
+          "severity": "error"
+        }
+      ],
+      "id": "f068",
+      "label": "fault",
+      "latency_ns": [
+        2824154,
+        2839673,
+        2832870,
+        3878775,
+        4611771
+      ],
+      "model_eligible": false,
+      "notes": "The continuous-reference contract is changed to require no GND stitching vias.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "1e7254f3030a9c6876e414fa09ab84c29a98ac94cee2e0f255feea5d0ac8008b",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling_geometry",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling"
+      ],
+      "finding_digests": [
+        "aa593345d095f432e41cdafaf51f98cd428e50e7c0270055bf06806e589bd2c7",
+        "aa593345d095f432e41cdafaf51f98cd428e50e7c0270055bf06806e589bd2c7",
+        "aa593345d095f432e41cdafaf51f98cd428e50e7c0270055bf06806e589bd2c7",
+        "aa593345d095f432e41cdafaf51f98cd428e50e7c0270055bf06806e589bd2c7",
+        "aa593345d095f432e41cdafaf51f98cd428e50e7c0270055bf06806e589bd2c7"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 3.0
+          },
+          "message": "distance metric is missing or unsupported",
+          "object_id": "decouple_mcu",
+          "severity": "error"
+        }
+      ],
+      "id": "f069",
+      "label": "fault",
+      "latency_ns": [
+        2894666,
+        2789820,
+        2872765,
+        2810028,
+        2880350
+      ],
+      "model_eligible": false,
+      "notes": "The MCU decoupling metric is changed from native copper-pad gap to an ambiguous component origin.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "8d089ae352d52cf65331537b257fa2097a7048e8af0f97d0a0629ecea3910d90",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "decoupling_geometry",
+      "detected": true,
+      "expected_code_hit": true,
+      "expected_codes": [
+        "intent.decoupling"
+      ],
+      "finding_codes": [
+        "intent.decoupling"
+      ],
+      "finding_digests": [
+        "3238658a27d9d85735acad76a36bbecf1eb0caa17ed76b4e7905fff8794ea033",
+        "3238658a27d9d85735acad76a36bbecf1eb0caa17ed76b4e7905fff8794ea033",
+        "3238658a27d9d85735acad76a36bbecf1eb0caa17ed76b4e7905fff8794ea033",
+        "3238658a27d9d85735acad76a36bbecf1eb0caa17ed76b4e7905fff8794ea033",
+        "3238658a27d9d85735acad76a36bbecf1eb0caa17ed76b4e7905fff8794ea033"
+      ],
+      "findings": [
+        {
+          "code": "intent.decoupling",
+          "details": {
+            "maximum_distance_mm": 2.0
+          },
+          "message": "native geometry evidence contract is missing or unsupported",
+          "object_id": "decouple_sensor",
+          "severity": "error"
+        }
+      ],
+      "id": "f070",
+      "label": "fault",
+      "latency_ns": [
+        2949880,
+        2809597,
+        2792796,
+        3640087,
+        2838722
+      ],
+      "model_eligible": false,
+      "notes": "The sensor decoupling contract replaces native pad rectangles with approximate placement evidence.",
+      "repair": {
+        "attempted": true,
+        "change_set_hash": "e36ce57b3fd394b3f210e4e0efb1a2257900e7a75a07b0344c99d1cc8c62d536",
+        "eligible": true,
+        "introduced_regressions": [],
+        "repaired_design_hash": "c5b5e27111a90738836a5994a4b715bccde0627c1c75e743111a8220bffc8091",
+        "success": true
+      },
+      "repeatable": true
+    },
+    {
+      "category": "metadata_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c001",
+      "label": "clean",
+      "latency_ns": [
+        2794588,
+        2726340,
+        2715851,
+        2832650,
+        2724367
+      ],
+      "model_eligible": true,
+      "notes": "Benign metadata does not alter contracts.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "metadata_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c002",
+      "label": "clean",
+      "latency_ns": [
+        2779871,
+        2772928,
+        2757690,
+        2758982,
+        2796993
+      ],
+      "model_eligible": true,
+      "notes": "Ownership metadata is electrically inert.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "metadata_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c003",
+      "label": "clean",
+      "latency_ns": [
+        4278946,
+        4572318,
+        4561357,
+        4557690,
+        4558130
+      ],
+      "model_eligible": false,
+      "notes": "Numeric metadata is electrically inert.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "metadata_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c004",
+      "label": "clean",
+      "latency_ns": [
+        4609868,
+        4610910,
+        3067000,
+        2780312,
+        2771746
+      ],
+      "model_eligible": false,
+      "notes": "Nested JSON metadata is electrically inert.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "revision_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c005",
+      "label": "clean",
+      "latency_ns": [
+        2814326,
+        2813545,
+        2759102,
+        2736139,
+        2752289
+      ],
+      "model_eligible": true,
+      "notes": "Revision label does not alter the circuit.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "revision_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c006",
+      "label": "clean",
+      "latency_ns": [
+        2808715,
+        2781524,
+        2762147,
+        2819285,
+        2803967
+      ],
+      "model_eligible": false,
+      "notes": "Prototype revision label is benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "requirement_wording",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c007",
+      "label": "clean",
+      "latency_ns": [
+        2874739,
+        2728053,
+        2760865,
+        2762398,
+        2746068
+      ],
+      "model_eligible": true,
+      "notes": "Equivalent requirement wording does not alter topology.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "requirement_wording",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c008",
+      "label": "clean",
+      "latency_ns": [
+        2772607,
+        2745557,
+        2778168,
+        2893455,
+        2893795
+      ],
+      "model_eligible": true,
+      "notes": "Equivalent sensor intent wording is benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "requirement_wording",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c009",
+      "label": "clean",
+      "latency_ns": [
+        2784810,
+        2761526,
+        2801471,
+        2764832,
+        2761707
+      ],
+      "model_eligible": true,
+      "notes": "Equivalent release wording is benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rotation_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c010",
+      "label": "clean",
+      "latency_ns": [
+        2874379,
+        2791042,
+        2779060,
+        2770433,
+        2789118
+      ],
+      "model_eligible": false,
+      "notes": "In-place LED rotation does not violate current intent.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rotation_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c011",
+      "label": "clean",
+      "latency_ns": [
+        2942517,
+        2790581,
+        2778508,
+        2836467,
+        2804958
+      ],
+      "model_eligible": false,
+      "notes": "In-place resistor rotation is semantically benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rotation_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c012",
+      "label": "clean",
+      "latency_ns": [
+        2791963,
+        2786063,
+        2846977,
+        2874418,
+        2835055
+      ],
+      "model_eligible": false,
+      "notes": "In-place sensor rotation preserves tested semantic contracts.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rotation_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c013",
+      "label": "clean",
+      "latency_ns": [
+        2813053,
+        2976410,
+        2786193,
+        2885149,
+        2751287
+      ],
+      "model_eligible": false,
+      "notes": "In-place capacitor rotation preserves semantic distance.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rationale_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c014",
+      "label": "clean",
+      "latency_ns": [
+        2857717,
+        2799377,
+        2869329,
+        2917289,
+        3035572
+      ],
+      "model_eligible": false,
+      "notes": "Rationale wording is not an electrical mutation.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rationale_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c015",
+      "label": "clean",
+      "latency_ns": [
+        2841887,
+        2910646,
+        2980548,
+        2788687,
+        2854982
+      ],
+      "model_eligible": false,
+      "notes": "Routing rationale wording is benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "rationale_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c016",
+      "label": "clean",
+      "latency_ns": [
+        2781724,
+        2761045,
+        2748913,
+        2829595,
+        2850173
+      ],
+      "model_eligible": false,
+      "notes": "Manufacturing rationale wording is benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "analysis_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c017",
+      "label": "clean",
+      "latency_ns": [
+        2776554,
+        2825737,
+        2816349,
+        2770082,
+        2762168
+      ],
+      "model_eligible": false,
+      "notes": "Optional unavailable analysis declaration is honest and benign.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "serialization_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c018",
+      "label": "clean",
+      "latency_ns": [
+        2779961,
+        2745256,
+        2765675,
+        2745657,
+        2785180
+      ],
+      "model_eligible": false,
+      "notes": "Input collection order must not change semantic findings.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "net_label_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c019",
+      "label": "clean",
+      "latency_ns": [
+        2767488,
+        2758311,
+        2746008,
+        2748802,
+        2752619
+      ],
+      "model_eligible": true,
+      "notes": "A valid service-net label change preserves connectivity.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    },
+    {
+      "category": "metadata_control",
+      "detected": false,
+      "expected_code_hit": true,
+      "expected_codes": [],
+      "finding_codes": [],
+      "finding_digests": [
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+        "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
+      ],
+      "findings": [],
+      "id": "c020",
+      "label": "clean",
+      "latency_ns": [
+        2853470,
+        2812823,
+        2723355,
+        2717755,
+        2819175
+      ],
+      "model_eligible": true,
+      "notes": "Documented variant metadata is not a fault.",
+      "repair": {
+        "attempted": false,
+        "eligible": false,
+        "introduced_regressions": null,
+        "success": null
+      },
+      "repeatable": true
+    }
+  ],
+  "corpus": {
+    "cases": 90,
+    "id": "independent-low-voltage-control-v1",
+    "license": "CC0-1.0",
+    "methodology": "Hand-authored from generic low-voltage MCU, I2C electrical-budget, power-envelope, source-ownership, reference-plane, decoupling-geometry, LED, component-contract, board-rule, and scope invariants. No competitor fixture, output, or annotation was used. Fault and clean controls are transformations of a separately authored CC0 acceptance design.",
+    "sha256": "5f43ba7e98faeac9406dfa404f587dc3207ab2c1753a8d2c1e12ed5132e25bee"
+  },
+  "created_at": "2026-08-13T03:45:20Z",
+  "engine": {
+    "kicad": "10.0.5-10.0.5~ubuntu26.04.1",
+    "name": "CopperWright deterministic semantic intent registry",
+    "python": "3.14.4",
+    "version": 1
+  },
+  "metrics": {
+    "case_counts": {
+      "clean": 20,
+      "fault": 70,
+      "total": 90
+    },
+    "confusion_matrix": {
+      "false_negative": 0,
+      "false_positive": 0,
+      "true_negative": 20,
+      "true_positive": 70
+    },
+    "detection": {
+      "false_positive_rate": 0.0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "specificity": 1.0,
+      "targeted_code_recall": 1.0
+    },
+    "latency": {
+      "benchmark_wall_seconds": 2.176641,
+      "mean_ms": 3.119323,
+      "median_ms": 2.851686,
+      "p95_ms": 4.671333,
+      "samples": 450
+    },
+    "repair": {
+      "attempted": 65,
+      "eligible": 65,
+      "introduced_regression_cases": 0,
+      "introduced_regression_rate": 0.0,
+      "succeeded": 65,
+      "success_rate": 1.0
+    },
+    "repeatability": {
+      "rate": 1.0,
+      "repetitions": 5,
+      "stable_cases": 90
+    }
+  },
+  "model_consistency": {
+    "deterministic_results_are_not_reported_as_model_results": true,
+    "reason": "No model repetitions were requested for this deterministic run.",
+    "state": "unavailable"
+  },
+  "schema": "pcb-agent-benchmark-result",
+  "version": 1
+}

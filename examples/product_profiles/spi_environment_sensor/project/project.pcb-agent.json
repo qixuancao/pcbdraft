@@ -217,7 +217,7 @@
       "no_connect_count": 1,
       "path": "copperwright_spi_environment_sensor.kicad_sch",
       "root_uuid": "5b8487e0-a6e3-5f9e-be82-6aa681794dd6",
-      "sha256": "4f7fc724ef4d4d232ee015f4d06e986b4aa36a711fb9a98c2a020f69dd1e7b16"
+      "sha256": "f593672414fc779e6e680a9baacca5fc5bc6711c1719d9ede283a8b53a2c04f7"
     }
   },
   "hashes": {
@@ -225,7 +225,7 @@
     "ir": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
     "kicad_project": "7d6e820c5f817d87ac137848186ffd27aacdece8445c6edfcf22c3f1374b2351",
     "requirements": "8a64d36cc08b9e7f113dba2afa66a1000c0df06f1b4b6180fcb0017726225dc8",
-    "schematic": "4f7fc724ef4d4d232ee015f4d06e986b4aa36a711fb9a98c2a020f69dd1e7b16",
+    "schematic": "f593672414fc779e6e680a9baacca5fc5bc6711c1719d9ede283a8b53a2c04f7",
     "worker_receipt": "71502699c113224f6ecf04f9649fb76d25995ab22b05611f321d96a88b1e7d86"
   },
   "native_snapshots": {
@@ -3095,7 +3095,7 @@
       "version": 1
     }
   },
-  "runtime_version": "0.2.0",
+  "runtime_version": "1.0.0",
   "schema": "pcb-agent-managed-project",
   "sync": {
     "authority": "semantic_ir",

@@ -757,6 +757,7 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
         graph,
         placements=placements,
         footprint_bounds=footprint_bounds,
+        footprint_inspections=inspections,
         routing=project.manifest["generation"]["pcb"]["routing"],
         approximate_geometry=False,
     )

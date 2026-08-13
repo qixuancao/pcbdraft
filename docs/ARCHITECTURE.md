@@ -1,13 +1,28 @@
 # CopperWright architecture
 
-CopperWright is a compiler/runtime around KiCad, not a replacement EDA GUI.
+CopperWright is a local conversational application and deterministic compiler/
+runtime around KiCad, not a replacement EDA GUI. `copperwright chat` and
+`copperwright app` are two clients over one authoritative application service.
 The semantic design is authoritative; native KiCad files are deterministic build
 products with a deliberately narrow, fail-closed import path.
 
 ## Data flow
 
 ```text
-strict requirements
+terminal chat -----------+
+                         |
+loopback browser -- CSRF/origin gate
+                         |
+                         v
+              authoritative application service
+              | projects/conversation/decisions
+              | jobs/events/locks/recovery
+              | confirmation boundary
+                         |
+          provider proposes strict semantic intent
+                         |
+                         v
+strict normalized requirements
         |
         v
 scope policy -> verified block registry -> trusted part graph
@@ -33,10 +48,36 @@ scope policy -> verified block registry -> trusted part graph
  L0-L7 validation -> candidate release -> offline verification
 ```
 
-LLMs may interpret requirements or provide a heuristic review, but they do not
+Providers may ask focused questions and propose requirements or a heuristic
+review, but they do not
 emit route geometry, approve evidence gates, or directly mutate managed KiCad
 files. Deterministic code owns schemas, component identity, topology, geometry,
 rule execution, file publication, and release identity.
+
+## Application service and providers
+
+`pcb_agent.application.ApplicationService` is the only product business layer.
+It owns project creation/opening, normalized conversations, design review,
+confirmation, jobs, semantic transactions, validation, previews, and releases.
+`pcb_agent.chat` formats that service for terminals; `pcb_agent.webapp` exposes a
+bounded internal HTTP/SSE projection. Neither client reimplements engineering
+logic.
+
+Application projects live under a private (`0700`) workspace selected by the user
+or the platform default. Records are atomically replaced, project operations use
+per-project locks, and jobs emit typed append-only events. A restart marks an
+unfinished job and its project as interrupted rather than replaying side effects.
+Cancellation is cooperative at safe boundaries: an atomic engineering operation
+may finish and be recorded as `completed_after_cancel`, but it is never abandoned
+half-published.
+
+Providers implement one `IntentProvider` contract and return an exact bounded
+`IntentInterpretation`. `CodexIntentProvider` invokes an existing authenticated
+Codex CLI under the runtime's restricted policy. `OpenAICompatibleIntentProvider`
+reads its endpoint/model/API-key environment at launch and sends a schema-bound
+Chat Completions request. `BuiltinIntentProvider` supports the exact offline v1
+language. Provider output is normalized and scope-checked; deterministic code
+still selects the verified profile and builds every engineering artifact.
 
 ## Semantic authority
 
@@ -112,6 +153,27 @@ The manifest records hashes, generator results, semantic native snapshots, desig
 identity, and KiCad compatibility. Opening a project validates the tree, manifest,
 paths, schemas, and KiCad major before exposing it. `drift()` names each tracked
 hash mismatch.
+
+The application adds a versioned envelope around (rather than inside) that managed
+engineering project:
+
+```text
+<application-workspace>/
+  projects/<project-id>/
+    project.json
+    conversation.json
+    events/<sequence>.json
+    jobs/*.json
+    design/                  # the managed project above, once confirmed
+    transactions/<id>/       # semantic preview/backup/recovery material
+    releases/<id>/           # candidate bundle and verification receipt
+```
+
+Application schema v1 is the CopperWright 1.0 format. An intact 0.2.0 managed
+project can be imported without rewriting its engineering evidence: CopperWright
+validates it, copies it into a new application project, records the migration
+source/hash, and starts a readable conversation record. Unknown future application
+schemas and drifted legacy projects fail closed.
 
 ## Transactions and synchronization
 

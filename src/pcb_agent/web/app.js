@@ -142,7 +142,7 @@ function renderBrief(view) {
   const scope = card("Scope decision");
   const scopeMetric = node("div", "metric-grid");
   const decision = node("div", "metric");
-  decision.append(node("strong", proposal.scope.decision === "supported" ? "Supported" : "Rejected"), node("span", "", "bounded v1 decision"));
+  decision.append(node("strong", "", proposal.scope.decision === "supported" ? "Supported" : "Rejected"), node("span", "", "bounded v1 decision"));
   const profile = node("div", "metric");
   profile.append(node("strong", "", proposal.proposed_profile), node("span", "", "verified profile"));
   scopeMetric.append(decision, profile);
@@ -324,6 +324,7 @@ function renderConfirmation(view) {
 
 function renderProject(view) {
   state.current = view;
+  if (["draft", "interpreting", "needs_clarification", "awaiting_confirmation", "unsupported", "provider_error"].includes(view.project.status)) selectTab("brief");
   byId("empty-state").classList.add("hidden");
   byId("project-workspace").classList.remove("hidden");
   byId("project-eyebrow").textContent = `${view.project.status.replaceAll("_", " ")} · revision ${view.project.design_revision}`;
@@ -340,6 +341,15 @@ function renderProject(view) {
   renderProjectList();
   renderJob(view);
   window.localStorage.setItem("copperwright-project", view.project.id);
+}
+
+function selectTab(name) {
+  for (const item of document.querySelectorAll(".tab")) {
+    const selected = item.dataset.tab === name;
+    item.classList.toggle("active", selected);
+    item.setAttribute("aria-selected", selected ? "true" : "false");
+  }
+  for (const panel of document.querySelectorAll(".tab-panel")) panel.classList.toggle("hidden", panel.id !== `tab-${name}`);
 }
 
 function activeJob(view = state.current) {
@@ -476,10 +486,7 @@ function bindEvents() {
   });
   byId("cancel-job").addEventListener("click", cancelActiveJob);
   byId("retry-job").addEventListener("click", retryActiveJob);
-  for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => {
-    for (const item of document.querySelectorAll(".tab")) { item.classList.toggle("active", item === tab); item.setAttribute("aria-selected", item === tab ? "true" : "false"); }
-    for (const panel of document.querySelectorAll(".tab-panel")) panel.classList.toggle("hidden", panel.id !== `tab-${tab.dataset.tab}`);
-  });
+  for (const tab of document.querySelectorAll(".tab")) tab.addEventListener("click", () => selectTab(tab.dataset.tab));
 }
 
 async function start() {

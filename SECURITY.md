@@ -38,10 +38,19 @@ their provenance.
   verification;
 - Codex arguments pin model/reasoning/tier and disable network, hooks,
   multi-agent, project config, approval escalation, and privileged tools.
+- the browser binds to loopback only, rejects non-loopback configuration, validates
+  Host and Origin, requires per-process CSRF tokens for writes, sends a restrictive
+  CSP/security headers, limits request bodies, and serves only allow-listed project
+  artifacts;
+- private application workspaces, per-project locks, durable jobs/events, explicit
+  confirmation, and restart recovery prevent browser/terminal races and implicit
+  replay of interrupted side effects;
+- provider output uses an exact bounded schema and is normalized and scope-checked
+  before deterministic code can act on it.
 
 Tests in `tests/test_security.py`, `tests/test_process.py`,
-`tests/test_transactions.py`, and `tests/test_integration.py` exercise these
-boundaries.
+`tests/test_transactions.py`, `tests/test_integration.py`, and
+`tests/test_application.py` exercise these boundaries.
 
 ## Residual risks
 
@@ -68,7 +77,20 @@ substitute for qualified engineering review.
 
 ## Secrets and privacy
 
-The runtime never reads or prints authentication tokens. It reuses Codex's existing
-authenticated CLI state. Receipts record redacted argv and bounded tool versions,
-not the full environment. Do not commit confidential receipts, model events, or
-board designs without reviewing them.
+The Codex provider reuses the CLI's existing authenticated state and never reads or
+prints its token. The OpenAI-compatible provider reads its API key from the named
+runtime environment variable only. CopperWright does not offer a browser credential
+input, copy credentials into subprocess arguments, or persist them in projects,
+conversations, jobs, events, diagnostics, or receipts. User text is redacted for
+common credential forms before provider invocation and durable storage.
+
+Receipts record redacted argv and bounded tool versions, not the full environment.
+The configured model endpoint receives the normalized conversation needed to
+interpret the request; use the offline provider for data that must not leave the
+machine. Do not commit confidential receipts, model events, or board designs
+without reviewing them.
+
+The local web UI is not a multi-user service. Loopback prevents ordinary remote
+access, but another process running as the same OS user may still read the private
+workspace or connect locally. Use separate accounts or a VM when users do not share
+a trust boundary.

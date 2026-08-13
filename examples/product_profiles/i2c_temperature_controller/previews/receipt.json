@@ -1,5 +1,5 @@
 {
-  "created_at": "2026-08-13T02:35:39Z",
+  "created_at": "2026-08-13T02:39:42Z",
   "design_content_hash": "7febeb85cd376b1ef20112fc038983edc0d7f64206c2f2e38021bd8a851393a1",
   "files": {
     "board_render": {
@@ -10,23 +10,23 @@
     "board_svg": {
       "bytes": 38288,
       "path": "board.svg",
-      "sha256": "809237dd27ee487ebdf8fc7242e69ac6cabbc8bf16ba720414038a758f881bbe"
+      "sha256": "7201f8d95380addaf422ac437e53cd2c854ebd86547dd8a48114fc9994a8abf8"
     },
     "schematic_pdf": {
       "bytes": 70359,
       "path": "schematic.pdf",
-      "sha256": "a7a5e529d5841dea5909f424f5495ce3e5616a5b55f19d8fe37804923b6a33e7"
+      "sha256": "4d295a2eaef117681261562dea0e21394c756d92afab240461f00133b29a479b"
     },
     "schematic_svg": {
       "bytes": 249908,
       "path": "schematic-svg/copperwright_i2c_temperature_controller.svg",
-      "sha256": "d644b7ec9c009f7c2b486f2202b9723d675c100ba2b95bc5a7185c983bee6ee9"
+      "sha256": "38d133277c0e56f6416e446ab408095efed6c3a41a8ea20e6f4236b07f667c39"
     }
   },
   "schema": "copperwright-preview-bundle",
   "tool_runs": [
     {
-      "duration_seconds": 0.277,
+      "duration_seconds": 0.235,
       "exit_code": 0,
       "failure": null,
       "name": "schematic_svg",
@@ -34,7 +34,7 @@
       "timed_out": false
     },
     {
-      "duration_seconds": 0.257,
+      "duration_seconds": 0.251,
       "exit_code": 0,
       "failure": null,
       "name": "schematic_pdf",
@@ -42,7 +42,7 @@
       "timed_out": false
     },
     {
-      "duration_seconds": 0.251,
+      "duration_seconds": 0.264,
       "exit_code": 0,
       "failure": null,
       "name": "board_svg",
@@ -50,7 +50,7 @@
       "timed_out": false
     },
     {
-      "duration_seconds": 0.543,
+      "duration_seconds": 0.555,
       "exit_code": 0,
       "failure": null,
       "name": "board_render",

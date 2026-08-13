@@ -43,6 +43,7 @@ I2C_CONTROLLER = ProductProfile(
         "updi",
         "status_indicator",
         "two_or_four_layers",
+        "board_45x30_mm",
     ),
     unavailable_capabilities=(
         "on_board_regulation",
@@ -67,6 +68,7 @@ SPI_ENVIRONMENT = ProductProfile(
         "external_regulated_3v3",
         "updi",
         "two_or_four_layers",
+        "board_45x30_mm",
     ),
     unavailable_capabilities=(
         "on_board_regulation",
@@ -92,6 +94,7 @@ UART_LDO_CONTROLLER = ProductProfile(
         "updi",
         "status_indicator",
         "two_or_four_layers",
+        "board_45x30_mm",
     ),
     unavailable_capabilities=(
         "rs232_voltage_levels",
@@ -147,9 +150,9 @@ def build_requirements(
     get_product_profile(profile_id)
     if layers not in {2, 4}:
         raise ValidationError("verified profiles accept only 2 or 4 copper layers")
-    if not 40 <= width_mm <= 120 or not 28 <= height_mm <= 100:
+    if abs(width_mm - 45.0) > 1e-9 or abs(height_mm - 30.0) > 1e-9:
         raise ValidationError(
-            "this profile requires a 40-120 mm × 28-100 mm board envelope"
+            "verified v1 profiles require the 45 mm × 30 mm board envelope"
         )
     value: dict[str, Any] = {
         "schema": "pcb-agent-requirements",

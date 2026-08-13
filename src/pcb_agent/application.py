@@ -638,6 +638,26 @@ class ApplicationService:
         width = merged["board"].get("width_mm") or 45.0
         height = merged["board"].get("height_mm") or 30.0
         merged["board"] = {"width_mm": float(width), "height_mm": float(height)}
+        if abs(float(width) - 45.0) > 1e-9 or abs(float(height) - 30.0) > 1e-9:
+            reason = (
+                "the bounded v1 profiles are verified only for a 45 mm × 30 mm "
+                "board envelope"
+            )
+            merged["unsupported_reasons"] = [reason]
+            return (
+                {
+                    **merged,
+                    "scope": {
+                        "decision": "unsupported",
+                        "reasons": [reason],
+                        "external_gates": [],
+                    },
+                    "clarifications": [],
+                    "brief": None,
+                    "decisions": {},
+                },
+                None,
+            )
         decisions = {
             "proposed_profile": profile_id,
             "design_name": merged["design_name"],
@@ -1140,17 +1160,18 @@ class ApplicationService:
             clean.casefold(),
         )
         layer_match = re.search(r"\b([24])\s*[- ]?layers?\b", clean.casefold())
-        width = (
-            float(dimensions.group(1)) if dimensions else current_spec.board.width_mm
-        )
-        height = (
-            float(dimensions.group(2)) if dimensions else current_spec.board.height_mm
-        )
-        layers = int(layer_match.group(1)) if layer_match else current_spec.board.layers
-        if not dimensions and not layer_match:
+        if dimensions:
             raise ValidationError(
-                "this verified profile currently supports conversational board-envelope "
-                "and 2/4-layer changes; no supported semantic change was found"
+                "the bounded v1 profiles are verified only for a 45 mm × 30 mm "
+                "board envelope; conversational geometry changes are unsupported"
+            )
+        width = current_spec.board.width_mm
+        height = current_spec.board.height_mm
+        layers = int(layer_match.group(1)) if layer_match else current_spec.board.layers
+        if not layer_match:
+            raise ValidationError(
+                "this verified profile currently supports conversational 2/4-layer "
+                "changes; no supported semantic change was found"
             )
         profile_id = str(managed.design.metadata.get("profile", ""))
         if profile_id == "attiny402_tmp102_controller_v1":

@@ -72,6 +72,24 @@ class ApplicationConversationTests(unittest.TestCase):
             )
             self.assertIsNone(view["design"])
 
+    def test_unverified_board_envelope_is_rejected_before_confirmation(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            view = service.create_project(
+                "Oversized sensor",
+                "Create a 2-layer 60 x 40 mm BME280 SPI environmental board",
+            )
+            self.assertEqual(view["project"]["status"], "unsupported")
+            self.assertEqual(
+                view["conversation"]["proposal"]["scope"]["decision"],
+                "unsupported",
+            )
+            self.assertIn(
+                "45 mm × 30 mm",
+                view["conversation"]["proposal"]["scope"]["reasons"][0],
+            )
+            self.assertIsNone(view["design"])
+
     def test_secrets_are_redacted_before_provider_and_storage(self) -> None:
         sentinel = "test-provider-secret-value-123456789"
         with tempfile.TemporaryDirectory() as temporary:
@@ -281,6 +299,68 @@ class ApplicationConversationTests(unittest.TestCase):
                 runner.shutdown()
             events = restarted.events(project_id)
             self.assertEqual(events[-1]["kind"], "operation.interrupted")
+
+    def test_queued_job_can_be_cancelled_and_retried_without_side_effects(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            blocker_id = service.create_draft("Worker blocker")["project"]["id"]
+            target_id = service.create_draft("Retry target")["project"]["id"]
+            runner = JobRunner(service, workers=1)
+            started = threading.Event()
+            release = threading.Event()
+            original_dispatch = runner._dispatch
+
+            def dispatch(job: dict[str, object]) -> dict[str, object]:
+                if job["project_id"] == blocker_id:
+                    started.set()
+                    self.assertTrue(release.wait(timeout=5))
+                    return service.open_project(blocker_id)
+                return original_dispatch(job)
+
+            runner._dispatch = dispatch  # type: ignore[method-assign]
+            try:
+                runner.submit(blocker_id, "message", {"text": "2 layers"})
+                self.assertTrue(started.wait(timeout=5))
+                queued = runner.submit(
+                    target_id,
+                    "message",
+                    {"text": "Create a 2-layer TMP102 I2C sensor"},
+                )
+                cancelled = runner.cancel(target_id, queued["id"])
+                self.assertEqual(cancelled["status"], "cancel_requested")
+                self.assertEqual(
+                    service.open_project(target_id)["conversation"]["messages"], []
+                )
+                release.set()
+
+                for _ in range(250):
+                    cancelled = runner.get(target_id, queued["id"])
+                    if cancelled["status"] == "cancelled":
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(cancelled["status"], "cancelled")
+                retried = runner.retry(target_id, queued["id"])
+                self.assertEqual(retried["retry_of"], queued["id"])
+                self.assertEqual(retried["attempt"], 2)
+                for _ in range(250):
+                    retried = runner.get(target_id, retried["id"])
+                    if retried["status"] not in {
+                        "queued",
+                        "running",
+                        "cancel_requested",
+                    }:
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(retried["status"], "completed")
+                self.assertEqual(
+                    service.open_project(target_id)["project"]["status"],
+                    "awaiting_confirmation",
+                )
+            finally:
+                release.set()
+                runner.shutdown()
 
 
 class BrowserSecurityTests(unittest.TestCase):

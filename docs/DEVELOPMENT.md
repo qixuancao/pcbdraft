@@ -10,7 +10,10 @@ uv sync --frozen --extra dev
 uv run copperwright doctor --json
 ```
 
-Codex is optional unless changing the AI reviewer or running live model metrics.
+Codex is optional unless exercising the authenticated conversational provider,
+changing the AI reviewer, or running live model metrics. The builtin provider
+supports deterministic offline product development. Firefox plus geckodriver are
+required for the real browser acceptance journey.
 
 On a fresh noninteractive Linux account, initialize KiCad's user library tables
 after installing the KiCad 10 packages:
@@ -30,6 +33,9 @@ scripts/benchmark.sh
 scripts/smoke.sh
 scripts/compatibility.sh
 scripts/generate-brand-assets.sh --check
+scripts/chat-e2e.sh /tmp/copperwright-chat-e2e
+uv run python scripts/browser-e2e.py --output /tmp/copperwright-browser-e2e
+uv run python scripts/generate-product-examples.py --output-root /tmp/copperwright-profiles
 scripts/release-check.sh
 ```
 
@@ -44,9 +50,11 @@ unittest suite, and whitespace validation. Compatible local KiCad enables native
 generation/sync/release cases; otherwise those cases are explicit skips.
 
 `scripts/release-check.sh` additionally builds wheel/sdist, inspects their members,
-installs the wheel into a fresh environment, runs a deterministic benchmark,
+installs the wheel into a fresh environment, runs the complete terminal and real
+Firefox journeys against that installed wheel, runs a deterministic benchmark,
 generates and validates the acceptance project, creates two releases, compares
-content hashes, and verifies the bundle offline.
+content hashes, and verifies the bundle offline. Browser acceptance uses a private
+clean HOME and initializes only the missing KiCad global library tables there.
 
 `scripts/generate-brand-assets.sh --check` regenerates every derived icon and the
 social preview in a private temporary directory and byte-compares them with the
@@ -79,6 +87,32 @@ and independent fault/clean benchmark cases. Only then extend
 
 High-risk domains remain rejected even if a caller supplies syntactically valid
 IR. New risk policy requires explicit review and tests.
+
+After a profile's full native chain passes, regenerate a reviewable copy outside
+the tracked tree first:
+
+```bash
+uv run python scripts/generate-product-examples.py \
+  --output-root /tmp/copperwright-product-profiles
+```
+
+Promoting output into `examples/product_profiles` requires reviewing the native
+project, real ERC/DRC reports, L0–L7 states, preview receipt, source/license
+contract, and all machine-specific paths. A new profile is not advertised merely
+because the provider can classify its name.
+
+## Application and provider changes
+
+Keep business logic in `ApplicationService`; terminal and browser layers should
+only translate input/output and never create a second confirmation, transaction,
+or validation implementation. Persist a job before starting it, publish only at
+an atomic safe boundary, and make restart behavior explicit.
+
+Provider output is untrusted. Extend the shared strict interpretation schema and
+normalizer before adding fields. Never accept credentials in browser forms,
+command arguments, project files, transcripts, or receipts. An OpenAI-compatible
+contract test should use a private local test server and scan the resulting
+workspace for its sentinel secret.
 
 ## Benchmark corpus
 

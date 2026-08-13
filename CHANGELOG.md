@@ -3,6 +3,30 @@
 All notable changes are documented here. The project follows semantic versioning
 for the CLI/API package; individual on-disk schemas are independently versioned.
 
+## 1.0.0 — 2026-08-13
+
+- Added one authoritative application service shared by `copperwright chat` and
+  the loopback-only `copperwright app` browser application.
+- Added focused conversational clarification, human-readable briefs, explicit
+  confirmation, persistent projects/sessions/events/jobs, crash recovery,
+  progress/cancel/retry states, real previews, safe open-in-KiCad actions, and
+  manufacturing-candidate export with offline verification.
+- Added strict authenticated Codex and OpenAI-compatible intent providers plus a
+  deterministic offline provider. Credentials remain outside browser and project
+  records; untrusted model output cannot directly edit engineering files.
+- Added preview/validate/apply/undo semantic conversations with isolated staged
+  validation and authoritative-state hashes.
+- Added fully verified BME280/SPI and AP2112K/UART/LDO profiles alongside the
+  original TMP102/I2C profile, including trusted part/block contracts, routing,
+  real KiCad ERC/DRC, L0–L7 gates, examples, and independent tests. Their verified
+  envelope is explicitly limited to 45 mm × 30 mm and 2/4 copper layers.
+- Added real clean-HOME terminal and Firefox WebDriver product E2E acceptance,
+  restart/reopen checks, provider compatibility tests, and managed 0.2 project
+  migration.
+- USB 2.0, buck, high-speed, RF, mains, high-power, medical, aviation, and
+  safety-critical design remain explicitly unsupported; no physical or
+  production sign-off is claimed.
+
 ## 0.2.0 — 2026-08-13 (first CopperWright release)
 
 - Adopted CopperWright branding, durable mark/icon/social-preview assets, the

@@ -238,7 +238,7 @@
       "no_connect_count": 3,
       "path": "copperwright_i2c_temperature_controller.kicad_sch",
       "root_uuid": "937df40f-17a4-5cd6-876b-740586d81cd2",
-      "sha256": "3d432219cb00c62a34c565212d9eab52c986c5c43bc890120f6ccba6ffc15613"
+      "sha256": "db0824680a3d4d4b67d8cc01458e1b0e947a3be4e3feaa36b211cea2edbcb943"
     }
   },
   "hashes": {
@@ -246,7 +246,7 @@
     "ir": "7febeb85cd376b1ef20112fc038983edc0d7f64206c2f2e38021bd8a851393a1",
     "kicad_project": "82af3cb06c04a72d1902921ccad7f438c602e2b1ff6a0e603fc08b743edb980c",
     "requirements": "09711b4d3e686530841f75804872aca15b472a666a9ae8c6ea740f075b46399c",
-    "schematic": "3d432219cb00c62a34c565212d9eab52c986c5c43bc890120f6ccba6ffc15613",
+    "schematic": "db0824680a3d4d4b67d8cc01458e1b0e947a3be4e3feaa36b211cea2edbcb943",
     "worker_receipt": "57c13fd9cb5f41b4400ebcd66d60c9d46968408931533449c9e5127088c97c64"
   },
   "native_snapshots": {
@@ -3068,7 +3068,7 @@
       "version": 1
     }
   },
-  "runtime_version": "0.2.0",
+  "runtime_version": "1.0.0",
   "schema": "pcb-agent-managed-project",
   "sync": {
     "authority": "semantic_ir",

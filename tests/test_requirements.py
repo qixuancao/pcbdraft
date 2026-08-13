@@ -274,6 +274,19 @@ class RequirementsCompilerTests(unittest.TestCase):
             hashes.add(design.content_hash())
         self.assertEqual(len(hashes), 3)
 
+    def test_product_profiles_reject_unverified_board_geometry(self) -> None:
+        with self.assertRaisesRegex(ValidationError, "45 mm × 30 mm"):
+            build_requirements(
+                "low_voltage_spi_environment_v1",
+                design_name="Unverified envelope",
+                design_id="unverified_envelope",
+                layers=2,
+                width_mm=60,
+                height_mm=40,
+                source_locator="test-product-profile",
+                source_date="2026-08-13",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

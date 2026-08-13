@@ -152,7 +152,9 @@ th { color: #8da198; font-weight: 650; } td { color: #d7e2dc; }
 .level-row { display: grid; grid-template-columns: 32px 1fr auto; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .level-row:last-child { border-bottom: 0; }
 .level-name { font-weight: 800; color: var(--copper-bright); }
-.level-row strong { font-size: .72rem; }.level-row span { color: var(--muted); font-size: .65rem; }
+.level-row strong { display: block; font-size: .72rem; }
+.level-row span { color: var(--muted); font-size: .65rem; }
+.level-row > div span { display: block; margin-top: 3px; }
 .state-pass { color: var(--green) !important; }.state-warn { color: var(--yellow) !important; }.state-fail { color: var(--red) !important; }
 .finding { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .finding:last-child { border-bottom: 0; }

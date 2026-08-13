@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import struct
 import tomllib
 import unittest
@@ -54,6 +55,76 @@ class CopperWrightBrandingTests(unittest.TestCase):
             png_dimensions(BRAND / "copperwright-social-preview-1280x640.png"),
             (1280, 640),
         )
+
+    def test_multilingual_readmes_remain_structurally_aligned(self) -> None:
+        paths = [
+            ROOT / "README.md",
+            ROOT / "README.zh-CN.md",
+            ROOT / "README.ja.md",
+            ROOT / "README.ko.md",
+        ]
+        documents = [path.read_text(encoding="utf-8") for path in paths]
+        expected_navigation = [path.name for path in paths]
+        for document in documents:
+            for name in expected_navigation:
+                self.assertIn(f'href="{name}"', document)
+            self.assertEqual(document.count("\n## "), 15)
+            self.assertIn("docs/assets/brand/copperwright-mark-256.png", document)
+            for literal in (
+                "low_voltage_i2c_controller_v1",
+                "low_voltage_spi_environment_v1",
+                "low_voltage_uart_ldo_controller_v1",
+                "copperwright app",
+                "copperwright chat",
+                "pcb-agent",
+                "pcb_agent",
+                "Apache-2.0",
+                "CC0-1.0",
+                "CC-BY-SA 4.0",
+            ):
+                self.assertIn(literal, document)
+
+        def link_targets(document: str) -> list[str]:
+            return re.findall(r"\]\(([^)]+)\)", document)
+
+        expected_links = link_targets(documents[0])
+        for document in documents[1:]:
+            self.assertEqual(link_targets(document), expected_links)
+        for target in expected_links:
+            if target.startswith(("http://", "https://", "#")):
+                continue
+            local = target.split("#", 1)[0]
+            self.assertTrue((ROOT / local).exists(), f"broken README link: {target}")
+
+        def shell_commands(document: str) -> list[str]:
+            blocks = re.findall(r"```bash\n(.*?)```", document, flags=re.DOTALL)
+            self.assertEqual(len(blocks), 12)
+            return [
+                line
+                for block in blocks
+                for line in block.splitlines()
+                if line and not line.lstrip().startswith("#")
+            ]
+
+        expected_commands = shell_commands(documents[0])
+        for document in documents[1:]:
+            self.assertEqual(shell_commands(document), expected_commands)
+
+        expected_table_shape = [
+            line.count("|")
+            for line in documents[0].splitlines()
+            if line.startswith("|")
+        ]
+        self.assertEqual(len(expected_table_shape), 20)
+        for document in documents[1:]:
+            self.assertEqual(
+                [
+                    line.count("|")
+                    for line in document.splitlines()
+                    if line.startswith("|")
+                ],
+                expected_table_shape,
+            )
 
 
 if __name__ == "__main__":
