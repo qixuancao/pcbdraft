@@ -1,0 +1,62 @@
+{
+  "created_at": "2026-08-13T02:35:54Z",
+  "design_content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+  "files": {
+    "board_render": {
+      "bytes": 13710,
+      "path": "board-top.png",
+      "sha256": "f574f6e3f0ad9c7eb767660a490fe6b8828fa18aa94a9307317c96b950fa4e5a"
+    },
+    "board_svg": {
+      "bytes": 28427,
+      "path": "board.svg",
+      "sha256": "ab18b3f052c53a45bb368fb4313199be02d2ea2c04b1fc516615aec812e0974c"
+    },
+    "schematic_pdf": {
+      "bytes": 64765,
+      "path": "schematic.pdf",
+      "sha256": "67a4aee58aec6eeafdabc6798e132259239fe090e491d20c389db2d27d1f6ca0"
+    },
+    "schematic_svg": {
+      "bytes": 245604,
+      "path": "schematic-svg/copperwright_spi_environment_sensor.svg",
+      "sha256": "0620786a1ccaea5bf1b4baebcfca5ac9d995dd6607f8fe721870ed1ff9f36c94"
+    }
+  },
+  "schema": "copperwright-preview-bundle",
+  "tool_runs": [
+    {
+      "duration_seconds": 0.269,
+      "exit_code": 0,
+      "failure": null,
+      "name": "schematic_svg",
+      "output_limited": false,
+      "timed_out": false
+    },
+    {
+      "duration_seconds": 0.232,
+      "exit_code": 0,
+      "failure": null,
+      "name": "schematic_pdf",
+      "output_limited": false,
+      "timed_out": false
+    },
+    {
+      "duration_seconds": 0.25,
+      "exit_code": 0,
+      "failure": null,
+      "name": "board_svg",
+      "output_limited": false,
+      "timed_out": false
+    },
+    {
+      "duration_seconds": 0.603,
+      "exit_code": 0,
+      "failure": null,
+      "name": "board_render",
+      "output_limited": false,
+      "timed_out": false
+    }
+  ],
+  "version": 1
+}

@@ -1,0 +1,62 @@
+{
+  "candidate_ready": true,
+  "design_content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+  "levels": [
+    {
+      "level": "L0",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "level": "L1",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "level": "L2",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "level": "L3",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "level": "L4",
+      "outcome": "unknown",
+      "state": "unavailable"
+    },
+    {
+      "level": "L5",
+      "outcome": "unknown",
+      "state": "unavailable"
+    },
+    {
+      "level": "L6",
+      "outcome": "unknown",
+      "state": "human_required"
+    },
+    {
+      "level": "L7",
+      "outcome": "unknown",
+      "state": "human_required"
+    }
+  ],
+  "preview_design_content_hash": "963c80da0bca2e37c08aa3f2262cf13664777815f7998a45521cd4ff8bd732b7",
+  "production_claimed": false,
+  "production_ready": false,
+  "profile": "low_voltage_spi_environment_v1",
+  "project_files": {
+    "board": "copperwright_spi_environment_sensor.kicad_pcb",
+    "ir": "design.pcbir.json",
+    "kicad_project": "copperwright_spi_environment_sensor.kicad_pro",
+    "manifest": "project.pcb-agent.json",
+    "requirements": "requirements.pcbreq.json",
+    "schematic": "copperwright_spi_environment_sensor.kicad_sch",
+    "worker_receipt": "copperwright_spi_environment_sensor.worker-result.json"
+  },
+  "schema": "copperwright-product-example-acceptance",
+  "validation_report_sha256": "911306755012331a8c983dd5e85cefc4f31a164486593c1dc3ae0a592c28fb05",
+  "version": 1
+}

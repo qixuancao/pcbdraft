@@ -1,0 +1,755 @@
+{
+  "design": {
+    "board_sha256": "52eaf193e02272f93493c491e2028dc93c6494ee276383b5692767ec009dcd5e",
+    "content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d",
+    "id": "copperwright_uart_ldo_controller"
+  },
+  "levels": [
+    {
+      "checks": [
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "project.pcb-agent.json"
+          ],
+          "id": "l0.manifest_integrity",
+          "level": "L0",
+          "metrics": {
+            "drift": []
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Tracked requirements, IR, KiCad files, and receipts match the synchronization manifest."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l0.semantic_ir",
+          "level": "L0",
+          "metrics": {
+            "content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d"
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Semantic IR parsed, validated, and retained its declared content identity."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "erc.json",
+            "drc.json"
+          ],
+          "id": "l0.kicad_parse",
+          "level": "L0",
+          "metrics": {
+            "drc_failure": null,
+            "erc_failure": null
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "KiCad parsed both native design files."
+        }
+      ],
+      "level": "L0",
+      "name": "file_and_syntax",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json",
+            "bundled part catalog"
+          ],
+          "id": "l1.component_contracts",
+          "level": "L1",
+          "metrics": {
+            "issues": []
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Canonical parts, pins, footprints, ratings, and required connections satisfy their contracts."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "drc.json"
+          ],
+          "id": "l1.kicad_semantic_parity",
+          "level": "L1",
+          "metrics": {
+            "errors": 0,
+            "total": 0,
+            "warnings": 0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "KiCad schematic-to-PCB footprint, field, net, and pad parity passed with no reported violations."
+        }
+      ],
+      "level": "L1",
+      "name": "component_pin_footprint_connectivity",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "erc.json",
+            "drc.json"
+          ],
+          "id": "l2.ignored_rule_policy",
+          "level": "L2",
+          "metrics": {
+            "policy": {
+              "drc": {
+                "missing_declared_not_applicable": [],
+                "unexpected": []
+              },
+              "erc": {
+                "missing_declared_not_applicable": [],
+                "unexpected": []
+              }
+            }
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Every disabled KiCad rule is explicitly classified as not applicable."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "erc.json"
+          ],
+          "id": "l2.not_applicable.erc.simulation_model_issue",
+          "level": "L2",
+          "metrics": {
+            "kicad_rule": "simulation_model_issue"
+          },
+          "outcome": "pass",
+          "state": "not_applicable",
+          "summary": "SPICE models are not required by this low-speed fixture; optional simulation remains separately unavailable at L5."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "erc.json"
+          ],
+          "id": "l2.not_applicable.erc.footprint_filter",
+          "level": "L2",
+          "metrics": {
+            "kicad_rule": "footprint_filter"
+          },
+          "outcome": "pass",
+          "state": "not_applicable",
+          "summary": "The trusted part graph declares the exact symbol, footprint, pin/pad map, and evidence; the generic symbol glob rejects a legitimate JST vendor footprint name."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "drc.json"
+          ],
+          "id": "l2.not_applicable.drc.tuning_profile_track_geometries",
+          "level": "L2",
+          "metrics": {
+            "kicad_rule": "tuning_profile_track_geometries"
+          },
+          "outcome": "pass",
+          "state": "not_applicable",
+          "summary": "No tuned transmission line or differential-pair profile exists in the accepted low-speed scope."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "drc.json"
+          ],
+          "id": "l2.not_applicable.drc.footprint_filters_mismatch",
+          "level": "L2",
+          "metrics": {
+            "kicad_rule": "footprint_filters_mismatch"
+          },
+          "outcome": "pass",
+          "state": "not_applicable",
+          "summary": "Exact part-graph mapping and native schematic-to-PCB parity replace the generic symbol footprint glob for this generated design."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "erc.json"
+          ],
+          "id": "l2.erc",
+          "level": "L2",
+          "metrics": {
+            "errors": 0,
+            "total": 0,
+            "warnings": 0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "KiCad electrical rules passed with no reported violations."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "drc.json"
+          ],
+          "id": "l2.drc_connectivity",
+          "level": "L2",
+          "metrics": {
+            "errors": 0,
+            "total": 0,
+            "warnings": 0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "KiCad geometry, connectivity, and design rules passed with no reported violations."
+        }
+      ],
+      "level": "L2",
+      "name": "erc_drc",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l3.decouple_ldo_input",
+          "level": "L3",
+          "metrics": {
+            "capacitance_f": 1e-06,
+            "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+            "distance_mm_by_net": {
+              "GND": 2.282303,
+              "VIN_5V": 1.1875
+            },
+            "geometry_evidence": "native_footprint_pad_rectangles",
+            "maximum_mm": 4.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Decoupling value and supply/return pad distances meet the declared bound."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l3.decouple_ldo_output",
+          "level": "L3",
+          "metrics": {
+            "capacitance_f": 1e-06,
+            "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+            "distance_mm_by_net": {
+              "3V3": 3.570211,
+              "GND": 2.3125
+            },
+            "geometry_evidence": "native_footprint_pad_rectangles",
+            "maximum_mm": 4.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Decoupling value and supply/return pad distances meet the declared bound."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l3.decouple_mcu",
+          "level": "L3",
+          "metrics": {
+            "capacitance_f": 1e-07,
+            "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+            "distance_mm_by_net": {
+              "3V3": 1.840659,
+              "GND": 1.840659
+            },
+            "geometry_evidence": "native_footprint_pad_rectangles",
+            "maximum_mm": 3.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Decoupling value and supply/return pad distances meet the declared bound."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": true,
+          "evidence": [
+            "generated placement receipt"
+          ],
+          "id": "l3.ldo_group",
+          "level": "L3",
+          "metrics": {
+            "diameter_mm": 6.5,
+            "maximum_mm": 10.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Functional group diameter meets its placement intent."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "semantic IR connectivity",
+            "trusted AP2112K and capacitor ratings"
+          ],
+          "id": "l3.ldo_regulation_budget",
+          "level": "L3",
+          "metrics": {
+            "capacitors": {
+              "net_3v3": {
+                "actual_f": 1e-06,
+                "component": "C3",
+                "minimum_f": 1e-06
+              },
+              "net_vin": {
+                "actual_f": 1e-06,
+                "component": "C2",
+                "minimum_f": 1e-06
+              }
+            },
+            "input_domain_v": [
+              4.75,
+              5.25
+            ],
+            "load_limit_a": 0.1,
+            "output_v": 3.3,
+            "pin_nets": {
+              "1": "net_vin",
+              "2": "net_gnd",
+              "3": "net_vin",
+              "5": "net_3v3"
+            },
+            "trusted_current_limit_a": 0.6,
+            "trusted_input_v": [
+              3.8,
+              6.0
+            ]
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "LDO input, output, load, enable, and capacitor contracts meet trusted ratings."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "trusted part ratings"
+          ],
+          "id": "l3.led_current",
+          "level": "L3",
+          "metrics": {
+            "calculated_current_a": 0.0012,
+            "resistor_power_w": 0.00144
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "LED current and resistor dissipation are within declared ratings."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "copperwright_uart_ldo_controller.kicad_pcb"
+          ],
+          "id": "l3.power_input_edge",
+          "level": "L3",
+          "metrics": {
+            "distance_mm": 3.205,
+            "edge": "bottom",
+            "maximum_mm": 4.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Connector is within the declared bottom edge-access distance."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "generated routing receipt"
+          ],
+          "id": "l3.routing_power",
+          "level": "L3",
+          "metrics": {
+            "nets": {
+              "3V3": {
+                "length_by_width_mm": {
+                  "0.3": 48.7
+                },
+                "length_mm": 48.7,
+                "neckdown_length_mm": 0,
+                "neckdown_limit_mm": 0.0
+              },
+              "GND": {
+                "length_by_width_mm": {
+                  "0.3": 59.2
+                },
+                "length_mm": 59.2,
+                "neckdown_length_mm": 0,
+                "neckdown_limit_mm": 0.0
+              },
+              "VIN_5V": {
+                "length_by_width_mm": {
+                  "0.3": 14.2
+                },
+                "length_mm": 14.2,
+                "neckdown_length_mm": 0,
+                "neckdown_limit_mm": 0.0
+              }
+            }
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "All target nets are routed within length, width, and neckdown bounds."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "generated routing receipt"
+          ],
+          "id": "l3.routing_uart",
+          "level": "L3",
+          "metrics": {
+            "nets": {
+              "UART_RX": {
+                "length_by_width_mm": {
+                  "0.25": 26.7
+                },
+                "length_mm": 26.7,
+                "neckdown_length_mm": 0,
+                "neckdown_limit_mm": 0.0
+              },
+              "UART_TX": {
+                "length_by_width_mm": {
+                  "0.25": 29.4
+                },
+                "length_mm": 29.4,
+                "neckdown_length_mm": 0,
+                "neckdown_limit_mm": 0.0
+              }
+            },
+            "reference_plane": {
+              "evidence": [
+                {
+                  "area_mm2": 1209.639251,
+                  "filled": true,
+                  "layer": "In1.Cu",
+                  "net": "/GND",
+                  "pad_connection": "thermal_relief"
+                }
+              ],
+              "minimum_stitching_vias": 2,
+              "net_id": "net_gnd",
+              "stitching_contract_valid": true,
+              "stitching_via_count": 2
+            }
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "All target nets are routed within length, width, and neckdown bounds."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "copperwright_uart_ldo_controller.kicad_pcb"
+          ],
+          "id": "l3.uart_edge",
+          "level": "L3",
+          "metrics": {
+            "distance_mm": 2.705,
+            "edge": "right",
+            "maximum_mm": 4.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Connector is within the declared right edge-access distance."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "semantic IR interface and power-domain contracts"
+          ],
+          "id": "l3.uart_electrical_budget",
+          "level": "L3",
+          "metrics": {
+            "baud": 115200,
+            "data_bits": 8,
+            "logic": "single_ended_cmos_not_rs232",
+            "parity": "none",
+            "stop_bits": 1,
+            "voltage_v": 3.3
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "UART framing and 3.3 V CMOS-only voltage contract are internally consistent."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": true,
+          "evidence": [
+            "copperwright_uart_ldo_controller.kicad_pcb"
+          ],
+          "id": "l3.updi_edge",
+          "level": "L3",
+          "metrics": {
+            "distance_mm": 2.205,
+            "edge": "left",
+            "maximum_mm": 4.0
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Connector is within the declared left edge-access distance."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "semantic IR endpoint roles"
+          ],
+          "id": "l3.updi_power_policy",
+          "level": "L3",
+          "metrics": {
+            "physical_sources": [
+              "ldo_u2:5"
+            ],
+            "sense_endpoint_count": 1,
+            "simultaneous_external_power_sources": "forbidden"
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "The declared component is the sole populated 3V3 source and UPDI VTREF is sense-only."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json",
+            "trusted part graph",
+            "generation receipts"
+          ],
+          "id": "l3.semantic_intent_registry",
+          "level": "L3",
+          "metrics": {
+            "findings": []
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "All deterministic semantic intent rules passed."
+        }
+      ],
+      "level": "L3",
+      "name": "interface_function_intent",
+      "outcome": "pass",
+      "state": "completed"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "bundled part catalog"
+          ],
+          "id": "l4.bom_lifecycle",
+          "level": "L4",
+          "metrics": {
+            "bom_line_count": 10,
+            "inactive_references": []
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "All populated parts have active catalog lifecycle evidence."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": true,
+          "evidence": [
+            "bundled part catalog sourcing.stock_status=not_checked"
+          ],
+          "id": "l4.live_sourcing",
+          "level": "L4",
+          "outcome": "unknown",
+          "state": "unavailable",
+          "summary": "Live authorized-distributor stock and selected-fabricator capability were not supplied; no current availability or process-capability claim is made."
+        },
+        {
+          "blocks_candidate": true,
+          "blocks_production": true,
+          "evidence": [
+            "drc.json",
+            "design.pcbir.json"
+          ],
+          "id": "l4.manufacturability",
+          "level": "L4",
+          "metrics": {
+            "finish": "hasl_lead_free",
+            "layers": 4,
+            "minimums_mm": {
+              "clearance": 0.1,
+              "drill": 0.3,
+              "track": 0.2
+            }
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Declared fabrication rules and package contracts pass deterministic DFM proxies."
+        }
+      ],
+      "level": "L4",
+      "name": "bom_sourcing_manufacturing",
+      "outcome": "unknown",
+      "state": "unavailable"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": false,
+          "blocks_production": true,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l5.led_current",
+          "level": "L5",
+          "metrics": {
+            "current_a": 0.0012
+          },
+          "outcome": "pass",
+          "state": "completed",
+          "summary": "Declared DC ohms-law analysis completed deterministically."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l5.digital_function",
+          "level": "L5",
+          "metrics": {
+            "analysis_kind": "functional_simulation"
+          },
+          "outcome": "unknown",
+          "state": "unavailable",
+          "summary": "firmware behavior is outside PCB netlist evidence"
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l5.power_budget",
+          "level": "L5",
+          "metrics": {
+            "declared_max_current_a": 0.1,
+            "declared_max_power_w": 0.525
+          },
+          "outcome": "unknown",
+          "state": "heuristic",
+          "summary": "Supply envelope is declared, but trusted maximum-current models for every load are unavailable."
+        },
+        {
+          "blocks_candidate": false,
+          "blocks_production": false,
+          "evidence": [
+            "design.pcbir.json"
+          ],
+          "id": "l5.high_speed_field_thermal",
+          "level": "L5",
+          "outcome": "pass",
+          "state": "not_applicable",
+          "summary": "SI/PI field solving and thermal simulation are outside the declared low-speed, sub-watt acceptance scope; unsupported high-risk domains are rejected earlier."
+        }
+      ],
+      "level": "L5",
+      "name": "simulation_and_physical_analysis",
+      "outcome": "unknown",
+      "state": "unavailable"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": false,
+          "blocks_production": true,
+          "evidence": [],
+          "id": "l6.engineering_review",
+          "level": "L6",
+          "outcome": "unknown",
+          "state": "human_required",
+          "summary": "A qualified human engineering review has not been imported; the runtime does not self-sign designs."
+        }
+      ],
+      "level": "L6",
+      "name": "human_engineering_review",
+      "outcome": "unknown",
+      "state": "human_required"
+    },
+    {
+      "checks": [
+        {
+          "blocks_candidate": false,
+          "blocks_production": true,
+          "evidence": [],
+          "id": "l7.physical_build_test",
+          "level": "L7",
+          "outcome": "unknown",
+          "state": "human_required",
+          "summary": "Fabrication, assembly, bring-up, and measured test evidence require a physical board and have not been imported."
+        }
+      ],
+      "level": "L7",
+      "name": "physical_build_and_test",
+      "outcome": "unknown",
+      "state": "human_required"
+    }
+  ],
+  "readiness": {
+    "engineering_candidate": true,
+    "production": false,
+    "production_claimed": false
+  },
+  "schema": "pcb-agent-validation",
+  "tool_runs": {
+    "drc": {
+      "failure": null,
+      "report": "drc.json",
+      "status": "completed"
+    },
+    "erc": {
+      "failure": null,
+      "report": "erc.json",
+      "status": "completed"
+    }
+  },
+  "version": 1
+}

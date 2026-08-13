@@ -1,0 +1,62 @@
+{
+  "created_at": "2026-08-13T02:37:04Z",
+  "design_content_hash": "f992d7be1466fa17942957ecefe7fc005f5e99ff935a7683514376d346ee624d",
+  "files": {
+    "board_render": {
+      "bytes": 16935,
+      "path": "board-top.png",
+      "sha256": "9f17376a65cf10a5ec29b86ffb2242941c909d88b702f3c8d290860b26994e16"
+    },
+    "board_svg": {
+      "bytes": 31224,
+      "path": "board.svg",
+      "sha256": "5409a760d9d0f8f3783b34a699cdd1ae9d4e5e6c5bd54b9529a49fb770e20ebd"
+    },
+    "schematic_pdf": {
+      "bytes": 68599,
+      "path": "schematic.pdf",
+      "sha256": "aaed479544e767a6728b0801646348d96fc3e5012d85c1f20268eac851865cca"
+    },
+    "schematic_svg": {
+      "bytes": 224382,
+      "path": "schematic-svg/copperwright_uart_ldo_controller.svg",
+      "sha256": "cbeaf1cc4a9c7371f2b463c118fbdd54ea828a5850c25c08b991c6db6b25fbf2"
+    }
+  },
+  "schema": "copperwright-preview-bundle",
+  "tool_runs": [
+    {
+      "duration_seconds": 0.26,
+      "exit_code": 0,
+      "failure": null,
+      "name": "schematic_svg",
+      "output_limited": false,
+      "timed_out": false
+    },
+    {
+      "duration_seconds": 0.295,
+      "exit_code": 0,
+      "failure": null,
+      "name": "schematic_pdf",
+      "output_limited": false,
+      "timed_out": false
+    },
+    {
+      "duration_seconds": 0.267,
+      "exit_code": 0,
+      "failure": null,
+      "name": "board_svg",
+      "output_limited": false,
+      "timed_out": false
+    },
+    {
+      "duration_seconds": 0.727,
+      "exit_code": 0,
+      "failure": null,
+      "name": "board_render",
+      "output_limited": false,
+      "timed_out": false
+    }
+  ],
+  "version": 1
+}
