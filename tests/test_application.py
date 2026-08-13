@@ -12,7 +12,11 @@ from pathlib import Path
 
 from pcb_agent.application import ApplicationService
 from pcb_agent.errors import ValidationError
-from pcb_agent.providers import BuiltinIntentProvider, validate_interpretation
+from pcb_agent.providers import (
+    BuiltinIntentProvider,
+    ProviderContext,
+    validate_interpretation,
+)
 from pcb_agent.webapp import create_app_server
 
 
@@ -106,6 +110,28 @@ class ApplicationConversationTests(unittest.TestCase):
         invalid["side_effect"] = "write KiCad"
         with self.assertRaisesRegex(ValidationError, "intent schema"):
             validate_interpretation(invalid)
+
+    def test_builtin_provider_selects_all_profiles_and_rejects_unverified_usb(
+        self,
+    ) -> None:
+        provider = BuiltinIntentProvider()
+        cases = {
+            "Build a 2-layer TMP102 I2C temperature board": "low_voltage_i2c_controller_v1",
+            "Build a 2-layer BME280 SPI environmental board": "low_voltage_spi_environment_v1",
+            "Build a 2-layer UART controller with 5V input and an AP2112 LDO": "low_voltage_uart_ldo_controller_v1",
+            "Build a USB-C sensor board": "unsupported",
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            for request, expected in cases.items():
+                result = provider.interpret(
+                    ProviderContext(request, "Profile selection", {}),
+                    project_dir=Path(temporary),
+                    run_dir=Path(temporary),
+                    timeout=1,
+                )
+                self.assertEqual(result["proposed_profile"], expected, request)
+                if expected == "unsupported":
+                    self.assertTrue(result["unsupported_reasons"])
 
 
 class BrowserSecurityTests(unittest.TestCase):

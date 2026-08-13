@@ -6,6 +6,7 @@ import math
 import shutil
 import tempfile
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -456,6 +457,11 @@ def _place(
             if len(targets) >= 2 and isinstance(maximum, (int, float)):
                 first = item_by_id[targets[0]]
                 second = item_by_id[targets[1]]
+                if first.fixed and second.fixed:
+                    # Exact native pad geometry is checked after placement.  A
+                    # component-center proxy can falsely reject two deliberately
+                    # fixed parts whose relevant supply pads meet the real bound.
+                    continue
                 # Component-level centers cannot be closer than their physical
                 # rectangles without overlap.  Preserve the electrical bound in
                 # the IR; this coarse placer uses the nearest feasible grid bound,
@@ -733,8 +739,11 @@ def _add_reference_stitching_vias(
         )
         for point in sorted(selected)
     )
+    split_segments = _split_reference_segments(
+        routing.segments, reference_net, tuple(sorted(selected))
+    )
     return RoutingResult(
-        segments=routing.segments,
+        segments=split_segments,
         vias=tuple(sorted((*routing.vias, *stitching))),
         unrouted=routing.unrouted,
         state=routing.state,
@@ -748,6 +757,58 @@ def _add_reference_stitching_vias(
             )
         ),
     )
+
+
+def _split_reference_segments(
+    segments: tuple[RouteSegment, ...],
+    reference_net: str,
+    points: tuple[tuple[float, float], ...],
+) -> tuple[RouteSegment, ...]:
+    """Split reference tracks at stitching vias so native DRC sees centered ends."""
+
+    result: list[RouteSegment] = []
+    for segment in segments:
+        if segment.net != reference_net:
+            result.append(segment)
+            continue
+        delta_x = segment.x2_mm - segment.x1_mm
+        delta_y = segment.y2_mm - segment.y1_mm
+        length_squared = delta_x * delta_x + delta_y * delta_y
+        if length_squared <= 1e-18:
+            result.append(segment)
+            continue
+        cuts: list[tuple[float, float, float]] = []
+        for point in points:
+            if _point_segment_distance(point, segment) > 1e-6:
+                continue
+            fraction = (
+                (point[0] - segment.x1_mm) * delta_x
+                + (point[1] - segment.y1_mm) * delta_y
+            ) / length_squared
+            if 1e-9 < fraction < 1.0 - 1e-9:
+                cuts.append((fraction, point[0], point[1]))
+        if not cuts:
+            result.append(segment)
+            continue
+        vertices = [
+            (segment.x1_mm, segment.y1_mm),
+            *((x_mm, y_mm) for _fraction, x_mm, y_mm in sorted(set(cuts))),
+            (segment.x2_mm, segment.y2_mm),
+        ]
+        result.extend(
+            RouteSegment(
+                segment.net,
+                segment.layer,
+                first[0],
+                first[1],
+                second[0],
+                second[1],
+                segment.width_mm,
+            )
+            for first, second in pairwise(vertices)
+            if first != second
+        )
+    return tuple(sorted(set(result)))
 
 
 def _stitching_candidate_is_clear(

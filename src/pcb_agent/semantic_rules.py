@@ -95,6 +95,12 @@ def evaluate_semantic_rules(
                 finding = _pullup_finding(design, graph, constraint)
             elif constraint.kind == "i2c_electrical_budget":
                 finding = _i2c_electrical_budget_finding(design, constraint)
+            elif constraint.kind == "spi_electrical_budget":
+                finding = _spi_electrical_budget_finding(design, graph, constraint)
+            elif constraint.kind == "uart_electrical_budget":
+                finding = _uart_electrical_budget_finding(design, constraint)
+            elif constraint.kind == "ldo_regulation_budget":
+                finding = _ldo_regulation_budget_finding(design, graph, constraint)
             elif constraint.kind == "source_ownership":
                 finding = _source_ownership_finding(design, constraint)
             elif constraint.kind == "current_limit":
@@ -144,6 +150,16 @@ def _coverage_findings(
     if any(interface.kind == "i2c" for interface in design.interfaces):
         required["interface_pullups"] = "i2c"
         required["i2c_electrical_budget"] = "i2c"
+    if any(interface.kind == "spi" for interface in design.interfaces):
+        required["spi_electrical_budget"] = "spi"
+    if any(interface.kind == "uart" for interface in design.interfaces):
+        required["uart_electrical_budget"] = "uart"
+    if any(
+        graph.get(component.part_id).kind == "ldo_regulator"
+        for component in design.components
+        if component.part_id in {part["id"] for part in graph.to_dict()["parts"]}
+    ):
+        required["ldo_regulation_budget"] = "ldo_regulator"
     if any(
         endpoint.role == "voltage_sense"
         for net in design.nets
@@ -210,8 +226,6 @@ def _coverage_findings(
             )
         )
     for interface in design.interfaces:
-        if interface.kind != "i2c":
-            continue
         interface_nets = {
             net.id for net in design.nets if net.interface == interface.id
         }
@@ -227,7 +241,7 @@ def _coverage_findings(
                 _finding(
                     "intent.required_constraint_missing",
                     interface.id,
-                    "I2C nets lack a routing constraint",
+                    f"{interface.kind.upper()} nets lack a routing constraint",
                     constraint_kind="routing",
                     nets=",".join(sorted(missing_nets)),
                 )
@@ -297,6 +311,12 @@ def _decoupling_finding(
         device_position = placements.get(device.id)
         if (
             approximate_geometry
+            and not (
+                capacitor.placement is not None
+                and capacitor.placement.fixed
+                and device.placement is not None
+                and device.placement.fixed
+            )
             and cap_position is not None
             and device_position is not None
         ):
@@ -446,6 +466,236 @@ def _i2c_electrical_budget_finding(
         "; ".join(sorted(set(reasons))),
         calculated_rise_time_ns=round(calculated_rise_ns, 6),
         calculated_sink_current_ma=round(calculated_sink_ma, 6),
+    )
+
+
+def _spi_electrical_budget_finding(
+    design: Design, graph: PartGraph, constraint: Any
+) -> RuleFinding | None:
+    interfaces = [
+        interface
+        for interface in design.interfaces
+        if interface.kind == "spi" and interface.id in constraint.targets
+    ]
+    reasons: list[str] = []
+    if len(interfaces) != 1:
+        reasons.append("target set does not identify exactly one SPI interface")
+        interface = None
+    else:
+        interface = interfaces[0]
+    clock = int(constraint.params["clock_hz"])
+    clock_limit = int(constraint.params["sensor_clock_limit_hz"])
+    mode = int(constraint.params["mode"])
+    voltage = float(constraint.params["voltage_v"])
+    pullup = float(constraint.params["cs_pullup_ohm"])
+    if clock <= 0 or clock > clock_limit:
+        reasons.append("SPI clock exceeds the declared sensor limit")
+    if mode != 0:
+        reasons.append("SPI mode is not the verified mode 0")
+    if constraint.params.get("topology") != "four_wire_single_peripheral":
+        reasons.append(
+            "SPI topology is outside the verified single-peripheral contract"
+        )
+    sensor = next(
+        (
+            component
+            for component in _target_components(design, constraint.targets)
+            if graph.get(component.part_id).kind == "environmental_sensor"
+        ),
+        None,
+    )
+    resistor = next(
+        (
+            component
+            for component in _target_components(design, constraint.targets)
+            if "resistance_ohm" in graph.get(component.part_id).ratings
+        ),
+        None,
+    )
+    if sensor is None:
+        reasons.append("SPI sensor target is absent")
+    elif clock > int(graph.get(sensor.part_id).ratings.get("max_spi_clock_hz", 0)):
+        reasons.append("SPI clock exceeds the trusted sensor rating")
+    if resistor is None:
+        reasons.append("chip-select pull-up is absent")
+    else:
+        actual_pullup = float(graph.get(resistor.part_id).ratings["resistance_ohm"])
+        resistor_nets = _component_net_ids(design, resistor.id)
+        if abs(actual_pullup - pullup) > 1e-9:
+            reasons.append("chip-select pull-up value differs from the contract")
+        if not {"net_3v3", "net_spi_cs"} <= resistor_nets:
+            reasons.append("chip-select pull-up is not connected between 3V3 and CS")
+    if interface is not None:
+        expected = {
+            "clock_hz": clock,
+            "mode": mode,
+            "voltage_v": voltage,
+            "topology": "four_wire_single_peripheral",
+            "external_connector": False,
+        }
+        for key, expected_value in expected.items():
+            if interface.params.get(key) != expected_value:
+                reasons.append(f"interface {key} disagrees with the SPI budget")
+        domain = next(
+            (
+                domain
+                for domain in design.power_domains
+                if domain.id == interface.power_domain
+            ),
+            None,
+        )
+        if domain is None or not domain.min_v <= voltage <= domain.max_v:
+            reasons.append("SPI logic voltage is outside its power domain")
+    if not reasons:
+        return None
+    return _finding(
+        "intent.spi_electrical_budget",
+        constraint.id,
+        "; ".join(sorted(set(reasons))),
+        clock_hz=clock,
+        sensor_clock_limit_hz=clock_limit,
+    )
+
+
+def _uart_electrical_budget_finding(
+    design: Design, constraint: Any
+) -> RuleFinding | None:
+    interfaces = [
+        interface
+        for interface in design.interfaces
+        if interface.kind == "uart" and interface.id in constraint.targets
+    ]
+    reasons: list[str] = []
+    if len(interfaces) != 1:
+        reasons.append("target set does not identify exactly one UART interface")
+        interface = None
+    else:
+        interface = interfaces[0]
+    expected = {
+        "baud": int(constraint.params["baud"]),
+        "data_bits": int(constraint.params["data_bits"]),
+        "parity": constraint.params["parity"],
+        "stop_bits": int(constraint.params["stop_bits"]),
+        "voltage_v": float(constraint.params["voltage_v"]),
+        "logic": constraint.params["logic"],
+    }
+    if expected["baud"] not in {9600, 19200, 38400, 57600, 115200}:
+        reasons.append("UART baud is outside the verified set")
+    if (
+        expected["data_bits"],
+        expected["parity"],
+        expected["stop_bits"],
+    ) != (8, "none", 1):
+        reasons.append("UART framing is not 8-N-1")
+    if expected["logic"] != "single_ended_cmos_not_rs232":
+        reasons.append("UART voltage-level contract is not 3.3 V CMOS-only")
+    if interface is not None:
+        for key, expected_value in expected.items():
+            if interface.params.get(key) != expected_value:
+                reasons.append(f"interface {key} disagrees with the UART budget")
+        domain = next(
+            (
+                domain
+                for domain in design.power_domains
+                if domain.id == interface.power_domain
+            ),
+            None,
+        )
+        if domain is None or not domain.min_v <= expected["voltage_v"] <= domain.max_v:
+            reasons.append("UART logic voltage is outside its power domain")
+    if not reasons:
+        return None
+    return _finding(
+        "intent.uart_electrical_budget",
+        constraint.id,
+        "; ".join(sorted(set(reasons))),
+        baud=expected["baud"],
+        logic=expected["logic"],
+    )
+
+
+def _ldo_regulation_budget_finding(
+    design: Design, graph: PartGraph, constraint: Any
+) -> RuleFinding | None:
+    targets = _target_components(design, constraint.targets)
+    regulators = [
+        component
+        for component in targets
+        if graph.get(component.part_id).kind == "ldo_regulator"
+    ]
+    capacitors = [
+        component
+        for component in targets
+        if graph.get(component.part_id).kind == "capacitor"
+    ]
+    reasons: list[str] = []
+    if len(regulators) != 1 or len(capacitors) != 2:
+        reasons.append("LDO target set must contain one regulator and two capacitors")
+        regulator = None
+    else:
+        regulator = regulators[0]
+    vin = next((domain for domain in design.power_domains if domain.id == "vin5"), None)
+    vout = next(
+        (domain for domain in design.power_domains if domain.id == "v3v3"), None
+    )
+    if vin is None or vout is None:
+        reasons.append("LDO input or output power domain is absent")
+    if regulator is not None:
+        ratings = graph.get(regulator.part_id).ratings
+        input_rating = ratings.get("input_voltage_v", {})
+        if (
+            vin is None
+            or vin.min_v < float(input_rating.get("min", math.inf))
+            or vin.max_v > float(input_rating.get("max", -math.inf))
+        ):
+            reasons.append("declared input domain exceeds the trusted LDO rating")
+        if (
+            vout is None
+            or abs(vout.nominal_v - float(ratings.get("output_voltage_v", math.inf)))
+            > 1e-9
+        ):
+            reasons.append("declared output domain disagrees with the fixed LDO rating")
+        if float(constraint.params["load_limit_a"]) > float(
+            ratings.get("max_output_current_a", 0)
+        ):
+            reasons.append("declared load exceeds the trusted LDO current rating")
+        pin_nets = {
+            endpoint.pin: net.id
+            for net in design.nets
+            for endpoint in net.endpoints
+            if endpoint.component == regulator.id
+        }
+        if pin_nets.get("1") != "net_vin" or pin_nets.get("3") != "net_vin":
+            reasons.append("LDO enable is not tied to its input rail")
+        if pin_nets.get("5") != "net_3v3" or pin_nets.get("2") != "net_gnd":
+            reasons.append("LDO input/output/return topology is inconsistent")
+    required_caps = {
+        "net_vin": float(constraint.params["input_capacitance_f"]),
+        "net_3v3": float(constraint.params["output_capacitance_f"]),
+    }
+    for rail, minimum in required_caps.items():
+        matches = [
+            capacitor
+            for capacitor in capacitors
+            if {rail, "net_gnd"} <= _component_net_ids(design, capacitor.id)
+        ]
+        if (
+            len(matches) != 1
+            or float(graph.get(matches[0].part_id).ratings.get("capacitance_f", 0))
+            < minimum
+        ):
+            reasons.append(f"{rail} stability/bypass capacitor contract failed")
+    if constraint.params.get("enable_policy") != "tied_to_vin":
+        reasons.append("LDO enable policy is not tied_to_vin")
+    if not reasons:
+        return None
+    return _finding(
+        "intent.ldo_regulation_budget",
+        constraint.id,
+        "; ".join(sorted(set(reasons))),
+        input_min_v=constraint.params.get("input_min_v"),
+        input_max_v=constraint.params.get("input_max_v"),
+        output_v=constraint.params.get("output_v"),
     )
 
 

@@ -210,8 +210,10 @@ class GridRouter:
         self._initialize_obstacles(pads_tuple, tuple(sorted(keepouts)))
         self._seed_terminals = {}
         self.expanded_nodes = 0
+        diagnostics: list[str] = []
 
         seeds = tuple(sorted(seed_segments))
+        accepted_seeds: list[RouteSegment] = []
         for segment in seeds:
             if segment.net not in net_names:
                 raise ValidationError(
@@ -242,11 +244,13 @@ class GridRouter:
                 self._blocked(state, segment.net, segment.width_mm, via=False)
                 for state in path
             ):
-                raise ValidationError(
-                    f"seed segment collides with constrained geometry: {segment.net}"
+                diagnostics.append(
+                    f"{segment.net}: omitted obstructed optional fine-pitch escape and routed from the pad"
                 )
+                continue
             self._reserve(segment.net, path, segment.width_mm)
             self._seed_terminals[pad_anchor] = path[-1]
+            accepted_seeds.append(segment)
 
         by_net: dict[str, list[RoutingPad]] = defaultdict(list)
         for pad in pads_tuple:
@@ -267,9 +271,8 @@ class GridRouter:
                 net,
             ),
         )
-        all_segments: list[RouteSegment] = list(seeds)
+        all_segments: list[RouteSegment] = accepted_seeds
         all_vias: list[RouteVia] = []
-        diagnostics: list[str] = []
         unrouted: list[str] = []
         for net in order:
             width = widths_dict[net]

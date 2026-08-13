@@ -12,6 +12,7 @@ from pathlib import Path
 from pcb_agent.errors import ValidationError
 from pcb_agent.external_evidence import load_external_evidence, record_external_evidence
 from pcb_agent.managed import generate_managed_project
+from pcb_agent.profiles import build_requirements
 from pcb_agent.release import (
     build_manufacturing_release,
     verify_manufacturing_release,
@@ -88,6 +89,58 @@ class ManagedPipelineTests(unittest.TestCase):
         self.assertEqual(zones[0]["net"], "/GND")
         self.assertEqual(zones[0]["layer"], "In1.Cu")
         self.assertTrue(zones[0]["filled"])
+
+    def test_three_materially_distinct_product_profiles_pass_real_kicad_chain(
+        self,
+    ) -> None:
+        expected_checks = {
+            "low_voltage_spi_environment_v1": {
+                "l3.spi_electrical_budget",
+                "l3.routing_spi",
+            },
+            "low_voltage_uart_ldo_controller_v1": {
+                "l3.uart_electrical_budget",
+                "l3.ldo_regulation_budget",
+                "l3.routing_uart",
+            },
+        }
+        for profile_id, required_checks in expected_checks.items():
+            spec = build_requirements(
+                profile_id,
+                design_name=f"Real KiCad {profile_id}",
+                design_id=f"real_{profile_id}",
+                layers=2,
+                width_mm=45,
+                height_mm=30,
+                source_locator="test-managed-product-profile",
+                source_date="2026-08-13",
+            )
+            generated = generate_managed_project(
+                spec, self.parent / f"profile-{profile_id}"
+            )
+            validation = validate_managed_project(
+                generated.project,
+                output=self.parent / f"profile-{profile_id}-validation",
+            )
+            self.assertTrue(validation.candidate_ready, profile_id)
+            levels = {level.level: level for level in validation.levels}
+            for level in ("L0", "L1", "L2", "L3"):
+                self.assertEqual(levels[level].outcome, "pass", profile_id)
+            report = json.loads(validation.report_path.read_text(encoding="utf-8"))
+            checks = {
+                check["id"]: check
+                for level in report["levels"]
+                for check in level["checks"]
+            }
+            self.assertLessEqual(required_checks, set(checks), profile_id)
+            self.assertTrue(
+                all(
+                    checks[check_id]["outcome"] == "pass"
+                    for check_id in required_checks
+                ),
+                profile_id,
+            )
+            self.assertEqual(generated.project.drift(), ())
 
     def test_l0_l7_validation_is_candidate_ready_but_not_production_claimed(
         self,

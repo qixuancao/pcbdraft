@@ -150,8 +150,13 @@ class BlockRegistry:
             raise ValidationError(f"block is not trusted for generation: {block_id}")
         builders = {
             "qwiic_power_input": _qwiic_power_input,
+            "spi_power_input": _spi_power_input,
+            "regulated_5v_input": _regulated_5v_input,
             "attiny402_core": _attiny402_core,
             "tmp102_i2c_sensor": _tmp102_sensor,
+            "bme280_spi_sensor": _bme280_spi_sensor,
+            "ap2112_3v3_ldo": _ap2112_ldo,
+            "uart_service_connector": _uart_service_connector,
             "gpio_status_led": _status_led,
         }
         try:
@@ -261,6 +266,93 @@ def _qwiic_power_input(definition: BlockDefinition) -> BlockInstance:
     return BlockInstance(_block(definition, components), components, ports)
 
 
+def _spi_power_input(definition: BlockDefinition) -> BlockInstance:
+    components = (
+        _component(
+            "spi_j1",
+            "J1",
+            "samtec.tsw-102-07-g-s",
+            "3V3_POWER",
+            definition.id,
+            (40.5, 14.5),
+            fixed=True,
+        ),
+        _component(
+            "flag_3v3",
+            "#FLG01",
+            "kicad.pwr_flag",
+            "PWR_FLAG",
+            definition.id,
+            (20, 20),
+            attributes={"exclude_from_board": True},
+        ),
+        _component(
+            "flag_gnd",
+            "#FLG02",
+            "kicad.pwr_flag",
+            "PWR_FLAG",
+            definition.id,
+            (20, 25),
+            attributes={"exclude_from_board": True},
+        ),
+    )
+    ports = {
+        "gnd": (
+            Endpoint("spi_j1", "2", "source"),
+            Endpoint("flag_gnd", "1", "source"),
+        ),
+        "vcc": (
+            Endpoint("spi_j1", "1", "source"),
+            Endpoint("flag_3v3", "1", "source"),
+        ),
+    }
+    return BlockInstance(_block(definition, components), components, ports)
+
+
+def _regulated_5v_input(definition: BlockDefinition) -> BlockInstance:
+    components = (
+        _component(
+            "power_j1",
+            "J1",
+            "samtec.tsw-102-07-g-s",
+            "5V_INPUT",
+            definition.id,
+            (28, 25),
+            rotation=90,
+            fixed=True,
+        ),
+        _component(
+            "flag_5v",
+            "#FLG01",
+            "kicad.pwr_flag",
+            "PWR_FLAG",
+            definition.id,
+            (20, 20),
+            attributes={"exclude_from_board": True},
+        ),
+        _component(
+            "flag_gnd",
+            "#FLG02",
+            "kicad.pwr_flag",
+            "PWR_FLAG",
+            definition.id,
+            (20, 25),
+            attributes={"exclude_from_board": True},
+        ),
+    )
+    ports = {
+        "vin": (
+            Endpoint("power_j1", "1", "source"),
+            Endpoint("flag_5v", "1", "source"),
+        ),
+        "gnd": (
+            Endpoint("power_j1", "2", "source"),
+            Endpoint("flag_gnd", "1", "source"),
+        ),
+    }
+    return BlockInstance(_block(definition, components), components, ports)
+
+
 def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
     components = (
         _component(
@@ -270,6 +362,7 @@ def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
             "ATtiny402-SS",
             definition.id,
             (17, 15),
+            fixed=True,
         ),
         _component(
             "mcu_c1",
@@ -277,7 +370,8 @@ def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
             "murata.grm188r71c104ka01d",
             "100n",
             definition.id,
-            (17, 12),
+            (17, 10.5),
+            fixed=True,
         ),
         _component(
             "updi_j2",
@@ -303,6 +397,12 @@ def _attiny402_core(definition: BlockDefinition) -> BlockInstance:
         ),
         "i2c_sda": (Endpoint("mcu_u1", "4", "controller"),),
         "i2c_scl": (Endpoint("mcu_u1", "5", "controller"),),
+        "spi_mosi": (Endpoint("mcu_u1", "4", "controller"),),
+        "spi_miso": (Endpoint("mcu_u1", "5", "peripheral"),),
+        "spi_sck": (Endpoint("mcu_u1", "7", "controller"),),
+        "spi_cs": (Endpoint("mcu_u1", "2", "controller"),),
+        "uart_tx": (Endpoint("mcu_u1", "4", "controller"),),
+        "uart_rx": (Endpoint("mcu_u1", "5", "peripheral"),),
         "status_gpio": (Endpoint("mcu_u1", "2", "driver"),),
         "updi": (
             Endpoint("mcu_u1", "6", "programming"),
@@ -370,6 +470,125 @@ def _tmp102_sensor(definition: BlockDefinition) -> BlockInstance:
             Endpoint("sensor_u2", "1", "peripheral"),
             Endpoint("pullup_r2", "2", "pullup"),
         ),
+    }
+    return BlockInstance(_block(definition, components), components, ports)
+
+
+def _bme280_spi_sensor(definition: BlockDefinition) -> BlockInstance:
+    components = (
+        _component(
+            "sensor_u2",
+            "U2",
+            "bosch.bme280",
+            "BME280",
+            definition.id,
+            (30, 10),
+        ),
+        _component(
+            "sensor_c2",
+            "C2",
+            "murata.grm188r71c104ka01d",
+            "100n",
+            definition.id,
+            (30, 14),
+        ),
+        _component(
+            "cs_r1",
+            "R1",
+            "yageo.rc0603fr-0710kl",
+            "10k",
+            definition.id,
+            (34, 10),
+            rotation=90,
+        ),
+    )
+    ports = {
+        "vcc": (
+            Endpoint("sensor_u2", "6", "load"),
+            Endpoint("sensor_u2", "8", "load"),
+            Endpoint("sensor_c2", "1", "decoupling"),
+            Endpoint("cs_r1", "1", "pullup"),
+        ),
+        "gnd": (
+            Endpoint("sensor_u2", "1", "return"),
+            Endpoint("sensor_u2", "7", "return"),
+            Endpoint("sensor_c2", "2", "decoupling"),
+        ),
+        "mosi": (Endpoint("sensor_u2", "3", "peripheral"),),
+        "miso": (Endpoint("sensor_u2", "5", "peripheral"),),
+        "sck": (Endpoint("sensor_u2", "4", "peripheral"),),
+        "cs": (
+            Endpoint("sensor_u2", "2", "peripheral"),
+            Endpoint("cs_r1", "2", "pullup"),
+        ),
+    }
+    return BlockInstance(_block(definition, components), components, ports)
+
+
+def _ap2112_ldo(definition: BlockDefinition) -> BlockInstance:
+    components = (
+        _component(
+            "ldo_u2",
+            "U2",
+            "diodes.ap2112k-3.3trg1",
+            "AP2112K-3.3",
+            definition.id,
+            (27, 15),
+            attributes={"allow_unconnected_pins": ["4"]},
+        ),
+        _component(
+            "ldo_c2",
+            "C2",
+            "murata.grm188r71a105ka61d",
+            "1u",
+            definition.id,
+            (24, 13),
+        ),
+        _component(
+            "ldo_c3",
+            "C3",
+            "murata.grm188r71a105ka61d",
+            "1u",
+            definition.id,
+            (30, 13),
+        ),
+    )
+    ports = {
+        "vin": (
+            Endpoint("ldo_u2", "1", "load"),
+            Endpoint("ldo_u2", "3", "enable"),
+            Endpoint("ldo_c2", "1", "decoupling"),
+        ),
+        "vout": (
+            Endpoint("ldo_u2", "5", "source"),
+            Endpoint("ldo_c3", "1", "decoupling"),
+        ),
+        "gnd": (
+            Endpoint("ldo_u2", "2", "return"),
+            Endpoint("ldo_c2", "2", "decoupling"),
+            Endpoint("ldo_c3", "2", "decoupling"),
+        ),
+    }
+    return BlockInstance(_block(definition, components), components, ports)
+
+
+def _uart_service_connector(definition: BlockDefinition) -> BlockInstance:
+    components = (
+        _component(
+            "uart_j3",
+            "J3",
+            "samtec.tsw-104-07-g-s",
+            "UART_3V3",
+            definition.id,
+            (40.5, 15),
+            fixed=True,
+        ),
+    )
+    ports = {
+        "gnd": (Endpoint("uart_j3", "1", "external"),),
+        "vcc": (Endpoint("uart_j3", "2", "voltage_sense"),),
+        "tx": (Endpoint("uart_j3", "3", "external"),),
+        "rx": (Endpoint("uart_j3", "4", "external"),),
     }
     return BlockInstance(_block(definition, components), components, ports)
 

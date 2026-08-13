@@ -38,25 +38,94 @@ REQUIREMENTS_VERSION = 1
 SUPPORTED_FUNCTIONS = {
     "microcontroller",
     "temperature_sensor",
+    "environmental_sensor",
+    "status_indicator",
+    "i2c_connector",
+    "uart_connector",
+    "updi_programming",
+    "ldo_regulator",
+    "power_input",
+}
+GENERATION_PROFILE_ID = "low_voltage_i2c_controller_v1"
+I2C_PROFILE_FUNCTIONS = {
+    "microcontroller",
+    "temperature_sensor",
     "status_indicator",
     "i2c_connector",
     "updi_programming",
 }
-GENERATION_PROFILE_ID = "low_voltage_i2c_controller_v1"
-GENERATION_PROFILE_DOMAINS = {
-    "low_voltage_mcu",
-    "sensor",
-    "simple_control",
-    "i2c",
+SPI_PROFILE_ID = "low_voltage_spi_environment_v1"
+SPI_PROFILE_FUNCTIONS = {
+    "microcontroller",
+    "environmental_sensor",
+    "power_input",
+    "updi_programming",
 }
-PROFILE_FUNCTION_PARAMETERS: dict[str, dict[str, Any]] = {
-    "microcontroller": {"programming": "updi"},
-    "temperature_sensor": {"accuracy_class": "general_purpose"},
-    "status_indicator": {"color": "green"},
-    "i2c_connector": {"pin_order": ["GND", "3V3", "SDA", "SCL"]},
-    "updi_programming": {
-        "connector_pitch_mm": 2.54,
-        "power_pin_mode": "target_voltage_sense_only",
+UART_LDO_PROFILE_ID = "low_voltage_uart_ldo_controller_v1"
+UART_LDO_PROFILE_FUNCTIONS = {
+    "microcontroller",
+    "status_indicator",
+    "uart_connector",
+    "updi_programming",
+    "ldo_regulator",
+    "power_input",
+}
+PROFILE_FUNCTION_SETS = {
+    GENERATION_PROFILE_ID: I2C_PROFILE_FUNCTIONS,
+    SPI_PROFILE_ID: SPI_PROFILE_FUNCTIONS,
+    UART_LDO_PROFILE_ID: UART_LDO_PROFILE_FUNCTIONS,
+}
+PROFILE_DOMAINS = {
+    GENERATION_PROFILE_ID: {
+        "low_voltage_mcu",
+        "sensor",
+        "simple_control",
+        "i2c",
+    },
+    SPI_PROFILE_ID: {
+        "low_voltage_mcu",
+        "sensor",
+        "simple_control",
+        "spi",
+    },
+    UART_LDO_PROFILE_ID: {
+        "low_voltage_mcu",
+        "simple_control",
+        "uart",
+        "ldo",
+    },
+}
+GENERATION_PROFILE_DOMAINS = PROFILE_DOMAINS[GENERATION_PROFILE_ID]
+PROFILE_FUNCTION_PARAMETERS: dict[str, dict[str, dict[str, Any]]] = {
+    GENERATION_PROFILE_ID: {
+        "microcontroller": {"programming": "updi"},
+        "temperature_sensor": {"accuracy_class": "general_purpose"},
+        "status_indicator": {"color": "green"},
+        "i2c_connector": {"pin_order": ["GND", "3V3", "SDA", "SCL"]},
+        "updi_programming": {
+            "connector_pitch_mm": 2.54,
+            "power_pin_mode": "target_voltage_sense_only",
+        },
+    },
+    SPI_PROFILE_ID: {
+        "microcontroller": {"programming": "updi"},
+        "environmental_sensor": {"part": "BME280", "mode": "spi_4wire"},
+        "power_input": {"nominal_v": 3.3, "polarity": ["3V3", "GND"]},
+        "updi_programming": {
+            "connector_pitch_mm": 2.54,
+            "power_pin_mode": "target_voltage_sense_only",
+        },
+    },
+    UART_LDO_PROFILE_ID: {
+        "microcontroller": {"programming": "updi"},
+        "status_indicator": {"color": "green"},
+        "uart_connector": {"pin_order": ["GND", "3V3", "TX", "RX"]},
+        "updi_programming": {
+            "connector_pitch_mm": 2.54,
+            "power_pin_mode": "target_voltage_sense_only",
+        },
+        "ldo_regulator": {"part": "AP2112K-3.3", "output_v": 3.3},
+        "power_input": {"nominal_v": 5.0, "polarity": ["VIN", "GND"]},
     },
 }
 
@@ -214,25 +283,27 @@ def compile_requirements(
     # A rejected domain such as mains must never look like an ordinary missing
     # feature that a caller could reasonably work around.
     assert_scope_supported(spec.scope)
-    unsupported_profile_domains = set(spec.scope.domains) - GENERATION_PROFILE_DOMAINS
-    if unsupported_profile_domains:
-        raise ValidationError(
-            f"the {GENERATION_PROFILE_ID} bundled generator does not implement domains: "
-            + ", ".join(sorted(unsupported_profile_domains))
-        )
     functions = {entry["kind"]: entry for entry in spec.functions}
-    required = SUPPORTED_FUNCTIONS
-    missing = required - set(functions)
-    if missing:
-        raise ValidationError(
-            "the built-in low-voltage controller profile requires functions: "
-            + ", ".join(sorted(missing))
-        )
     if len(functions) != len(spec.functions):
         raise ValidationError(
-            "the built-in profile accepts one instance of each supported function"
+            "a verified profile accepts only one instance of each function kind"
         )
-    _validate_profile_functions(functions)
+    profile_id = _select_profile(set(functions))
+    unsupported_profile_domains = set(spec.scope.domains) - PROFILE_DOMAINS[profile_id]
+    if unsupported_profile_domains:
+        raise ValidationError(
+            f"the {profile_id} bundled generator does not implement domains: "
+            + ", ".join(sorted(unsupported_profile_domains))
+        )
+    _validate_profile_functions(profile_id, functions)
+    if profile_id == SPI_PROFILE_ID:
+        return _compile_spi_profile(
+            spec, functions, resolved_graph, resolved_registry, check_libraries
+        )
+    if profile_id == UART_LDO_PROFILE_ID:
+        return _compile_uart_ldo_profile(
+            spec, functions, resolved_graph, resolved_registry, check_libraries
+        )
 
     instances = [
         resolved_registry.instantiate("qwiic_power_input"),
@@ -433,7 +504,7 @@ def compile_requirements(
         ),
         metadata={
             "compiler": "copperwright",
-            "profile": "attiny402_tmp102_controller_v1",
+            "profile": GENERATION_PROFILE_ID,
             "priorities": list(spec.priorities),
             "requirements_hash": _sha256(spec.canonical_bytes()),
             "source": spec.source,
@@ -447,13 +518,867 @@ def compile_requirements(
     return design
 
 
+def _profile_requirements(spec: RequirementsSpec) -> tuple[Requirement, ...]:
+    return tuple(
+        Requirement(
+            id=f"req_{function['id']}",
+            text=function["intent"],
+            acceptance=_function_acceptance(function["kind"]),
+            risk="low",
+            provenance=("user_requirements",),
+        )
+        for function in spec.functions
+    ) + (
+        Requirement(
+            id="req_manufacturing",
+            text="Produce a fabricable, assembly-ready two-to-four-layer design candidate.",
+            acceptance=(
+                "ERC and DRC contain no errors.",
+                "BOM records resolve to active canonical parts with source evidence.",
+                "Gerber, drill, placement, and manifest artifacts are reproducible.",
+            ),
+            risk="medium",
+            provenance=("user_requirements",),
+        ),
+    )
+
+
+def _finalize_profile_design(
+    design: Design, graph: PartGraph, *, check_libraries: bool
+) -> Design:
+    normalized = Design.from_dict(design.to_dict())
+    assert_supported(normalized)
+    graph.assert_design(normalized, check_libraries=check_libraries)
+    return normalized
+
+
+def _manufacturing_constraint(spec: RequirementsSpec) -> Constraint:
+    return Constraint(
+        "manufacturing",
+        "manufacturing_rules",
+        ("board",),
+        {
+            "min_track_mm": spec.board.min_track_mm,
+            "min_clearance_mm": spec.board.min_clearance_mm,
+            "min_drill_mm": spec.board.min_drill_mm,
+            "min_hole_clearance_mm": max(spec.board.min_clearance_mm, 0.15),
+            "min_hole_to_hole_mm": max(spec.board.min_clearance_mm, 0.2),
+            "edge_clearance_mm": spec.board.edge_clearance_mm,
+            "assembly_side": "front",
+            "process_profile": "generic_standard_low_voltage_2_4_layer_v1",
+            "fabricator": "not_selected",
+            "capability_verification": "external_l4_required",
+        },
+        "release_blocking",
+        "Fabrication limits are explicit design inputs.",
+        ("user_requirements",),
+    )
+
+
+def _spi_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    matches = [entry for entry in values if entry.get("kind") == "spi"]
+    if len(matches) != 1:
+        raise ValidationError("requirements must define exactly one SPI interface")
+    value = matches[0]
+    allowed = {"id", "kind", "clock_hz", "mode", "external_connector"}
+    if set(value) != allowed:
+        raise ValidationError(
+            "SPI interface fields do not match the supported contract"
+        )
+    if value.get("id") != "sensor_spi" or value.get("external_connector") is not False:
+        raise ValidationError(
+            "the verified SPI profile requires a board-local sensor_spi interface"
+        )
+    clock = value.get("clock_hz")
+    if (
+        isinstance(clock, bool)
+        or not isinstance(clock, int)
+        or not 10_000 <= clock <= 1_000_000
+    ):
+        raise ValidationError("SPI clock_hz must be an integer from 10 kHz to 1 MHz")
+    if value.get("mode") != 0:
+        raise ValidationError("the verified BME280 profile requires SPI mode 0")
+    return dict(value)
+
+
+def _compile_spi_profile(
+    spec: RequirementsSpec,
+    functions: dict[str, dict[str, Any]],
+    graph: PartGraph,
+    registry: BlockRegistry,
+    check_libraries: bool,
+) -> Design:
+    del functions
+    power = _power_contract(spec.power)
+    _validate_power_scope(spec, power)
+    spi = _spi_contract(spec.interfaces)
+    instances = [
+        registry.instantiate("spi_power_input"),
+        registry.instantiate("attiny402_core"),
+        registry.instantiate("bme280_spi_sensor"),
+    ]
+    components = tuple(
+        component for instance in instances for component in instance.components
+    )
+    ports = {instance.block.id: instance.ports for instance in instances}
+    nets = (
+        Net(
+            "net_3v3",
+            "3V3",
+            _merge_ports(
+                ports,
+                ("spi_power_input", "vcc"),
+                ("attiny402_core", "vcc"),
+                ("bme280_spi_sensor", "vcc"),
+            ),
+            "power",
+            "v3v3",
+            None,
+            "Externally supplied regulated 3.3 V rail.",
+        ),
+        Net(
+            "net_gnd",
+            "GND",
+            _merge_ports(
+                ports,
+                ("spi_power_input", "gnd"),
+                ("attiny402_core", "gnd"),
+                ("bme280_spi_sensor", "gnd"),
+            ),
+            "power",
+            "v3v3",
+            None,
+            "Common low-voltage return plane.",
+        ),
+        Net(
+            "net_spi_mosi",
+            "SPI_MOSI",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "spi_mosi"),
+                ("bme280_spi_sensor", "mosi"),
+            ),
+            "spi",
+            "v3v3",
+            "sensor_spi",
+            "ATtiny402 host-to-BME280 SPI data.",
+        ),
+        Net(
+            "net_spi_miso",
+            "SPI_MISO",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "spi_miso"),
+                ("bme280_spi_sensor", "miso"),
+            ),
+            "spi",
+            "v3v3",
+            "sensor_spi",
+            "BME280-to-ATtiny402 SPI data.",
+        ),
+        Net(
+            "net_spi_sck",
+            "SPI_SCK",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "spi_sck"),
+                ("bme280_spi_sensor", "sck"),
+            ),
+            "spi",
+            "v3v3",
+            "sensor_spi",
+            "Mode-0 SPI clock bounded to 1 MHz.",
+        ),
+        Net(
+            "net_spi_cs",
+            "SPI_CS",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "spi_cs"),
+                ("bme280_spi_sensor", "cs"),
+            ),
+            "spi",
+            "v3v3",
+            "sensor_spi",
+            "Active-low BME280 chip select with 10 kOhm inactive bias.",
+        ),
+        Net(
+            "net_updi",
+            "UPDI",
+            ports["attiny402_core"]["updi"],
+            "signal",
+            "v3v3",
+            None,
+            "Accessible single-wire programming/debug connection.",
+        ),
+    )
+    domain = PowerDomain(
+        "v3v3",
+        power["nominal_v"],
+        power["min_v"],
+        power["max_v"],
+        power["max_current_a"],
+        Endpoint("flag_3v3", "1", "source"),
+        "Externally regulated low-voltage supply.",
+    )
+    interface = Interface(
+        "sensor_spi",
+        "spi",
+        "v3v3",
+        tuple(
+            endpoint
+            for net in nets
+            if net.interface == "sensor_spi"
+            for endpoint in net.endpoints
+        ),
+        Endpoint("mcu_u1", "4", "controller"),
+        {
+            "clock_hz": spi["clock_hz"],
+            "mode": spi["mode"],
+            "voltage_v": power["nominal_v"],
+            "topology": "four_wire_single_peripheral",
+            "external_connector": False,
+        },
+        "Board-local BME280 SPI interface with a separately bounded power header.",
+    )
+    constraints = (
+        Constraint(
+            "decouple_mcu",
+            "decoupling",
+            ("mcu_u1", "mcu_c1", "net_3v3", "net_gnd"),
+            {
+                "max_distance_mm": 3.0,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-7,
+            },
+            "release_blocking",
+            "MCU supply transient return must be local.",
+            ("block_attiny402_core",),
+        ),
+        Constraint(
+            "decouple_sensor",
+            "decoupling",
+            ("sensor_u2", "sensor_c2", "net_3v3", "net_gnd"),
+            {
+                "max_distance_mm": 4.25,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-7,
+            },
+            "release_blocking",
+            "BME280 supply decoupling must be local.",
+            ("block_bme280_spi_sensor",),
+        ),
+        Constraint(
+            "spi_electrical_budget",
+            "spi_electrical_budget",
+            (
+                "sensor_spi",
+                "sensor_u2",
+                "cs_r1",
+                "net_spi_mosi",
+                "net_spi_miso",
+                "net_spi_sck",
+                "net_spi_cs",
+            ),
+            {
+                "clock_hz": spi["clock_hz"],
+                "sensor_clock_limit_hz": 10_000_000,
+                "mode": 0,
+                "voltage_v": power["nominal_v"],
+                "cs_pullup_ohm": 10_000,
+                "topology": "four_wire_single_peripheral",
+            },
+            "release_blocking",
+            "Bound SPI mode, clock, voltage, topology, and inactive chip select.",
+            ("block_bme280_spi_sensor",),
+        ),
+        Constraint(
+            "sensor_group",
+            "functional_group",
+            ("sensor_u2", "sensor_c2", "cs_r1", "spi_j1"),
+            {"max_diameter_mm": 20.0, "objective": "short_spi_and_decoupling"},
+            "required",
+            "Keep the sensor interface compact.",
+            ("block_bme280_spi_sensor",),
+        ),
+        Constraint(
+            "spi_edge",
+            "edge_placement",
+            ("spi_j1", "board"),
+            {"edge": "right", "max_edge_distance_mm": 4.0},
+            "release_blocking",
+            "SPI connector must remain mechanically accessible.",
+            ("block_spi_power_input",),
+        ),
+        Constraint(
+            "updi_edge",
+            "edge_placement",
+            ("updi_j2", "board"),
+            {"edge": "left", "max_edge_distance_mm": 4.0},
+            "required",
+            "Programming header must remain accessible.",
+            ("block_attiny402_core",),
+        ),
+        Constraint(
+            "updi_power_policy",
+            "source_ownership",
+            ("updi_j2", "spi_j1", "net_3v3"),
+            {
+                "physical_source_component": "spi_j1",
+                "sense_component": "updi_j2",
+                "sense_pin": "2",
+                "sense_role": "voltage_sense",
+                "simultaneous_external_power_sources": "forbidden",
+            },
+            "release_blocking",
+            "UPDI VTREF remains sense-only while the SPI header owns the rail.",
+            ("block_attiny402_core",),
+        ),
+        Constraint(
+            "power_budget",
+            "power_budget",
+            ("v3v3",),
+            {
+                "max_current_a": power["max_current_a"],
+                "max_power_w": spec.scope.max_power_w,
+                "voltage_basis_v": spec.scope.max_voltage_v,
+                "envelope": "simultaneous_declared_scope_maxima",
+            },
+            "release_blocking",
+            "Keep all loads inside the external supply budget.",
+            ("user_requirements",),
+        ),
+        Constraint(
+            "routing_spi",
+            "routing",
+            ("net_spi_mosi", "net_spi_miso", "net_spi_sck", "net_spi_cs"),
+            {
+                "width_mm": 0.25,
+                "max_length_mm": 100,
+                "continuous_reference_net": "net_gnd",
+                "min_reference_stitching_vias": 2,
+                "auto_route": True,
+                "neckdown_width_mm": spec.board.min_track_mm,
+                "neckdown_max_length_mm_per_pad": 2.25,
+            },
+            "release_blocking",
+            "Bounded low-speed SPI routing contract.",
+            ("block_bme280_spi_sensor",),
+        ),
+        Constraint(
+            "routing_power",
+            "routing",
+            ("net_3v3", "net_gnd"),
+            {
+                "width_mm": 0.25,
+                "auto_route": True,
+                "neckdown_width_mm": spec.board.min_track_mm,
+                "neckdown_max_length_mm_per_pad": 3.0,
+            },
+            "release_blocking",
+            "The bounded 100 mA rail uses a manufacturable width.",
+            ("user_requirements",),
+        ),
+        _manufacturing_constraint(spec),
+    )
+    design = Design(
+        design_id=spec.design_id,
+        name=spec.name,
+        revision=spec.revision,
+        scope=spec.scope,
+        requirements=tuple(
+            sorted(_profile_requirements(spec), key=lambda item: item.id)
+        ),
+        provenance=_provenance(spec, registry),
+        blocks=tuple(instance.block for instance in instances),
+        power_domains=(domain,),
+        interfaces=(interface,),
+        components=components,
+        nets=nets,
+        constraints=tuple(sorted(constraints, key=lambda item: item.id)),
+        board=spec.board,
+        analyses=(
+            {
+                "id": "power_budget",
+                "kind": "power_budget",
+                "required": False,
+                "reason": "Firmware-dependent maximum load remains part of qualified L6 review.",
+            },
+            {
+                "id": "digital_function",
+                "kind": "functional_simulation",
+                "required": False,
+                "reason": "firmware behavior is outside PCB netlist evidence",
+            },
+        ),
+        metadata={
+            "compiler": "copperwright",
+            "profile": SPI_PROFILE_ID,
+            "priorities": list(spec.priorities),
+            "requirements_hash": _sha256(spec.canonical_bytes()),
+            "source": spec.source,
+        },
+    )
+    return _finalize_profile_design(design, graph, check_libraries=check_libraries)
+
+
+def _uart_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+    matches = [entry for entry in values if entry.get("kind") == "uart"]
+    if len(matches) != 1:
+        raise ValidationError("requirements must define exactly one UART interface")
+    value = matches[0]
+    allowed = {
+        "id",
+        "kind",
+        "baud",
+        "data_bits",
+        "parity",
+        "stop_bits",
+        "external_connector",
+    }
+    if set(value) != allowed:
+        raise ValidationError(
+            "UART interface fields do not match the supported contract"
+        )
+    if value.get("id") != "service_uart" or value.get("external_connector") is not True:
+        raise ValidationError(
+            "the verified UART profile requires service_uart with an external connector"
+        )
+    if value.get("baud") not in {9600, 19200, 38400, 57600, 115200}:
+        raise ValidationError("UART baud is outside the verified set")
+    if (value.get("data_bits"), value.get("parity"), value.get("stop_bits")) != (
+        8,
+        "none",
+        1,
+    ):
+        raise ValidationError("the verified UART profile requires 8-N-1 framing")
+    return dict(value)
+
+
+def _compile_uart_ldo_profile(
+    spec: RequirementsSpec,
+    functions: dict[str, dict[str, Any]],
+    graph: PartGraph,
+    registry: BlockRegistry,
+    check_libraries: bool,
+) -> Design:
+    del functions
+    input_power = _power_contract(spec.power, max_supported_v=6.0)
+    _validate_power_scope(spec, input_power)
+    if not (
+        math.isclose(input_power["nominal_v"], 5.0, abs_tol=1e-12)
+        and input_power["min_v"] >= 4.75
+        and input_power["max_v"] <= 5.25
+        and input_power["max_current_a"] <= 0.1
+    ):
+        raise ValidationError(
+            "the AP2112 profile requires regulated 5 V input, 4.75-5.25 V, at no more than 100 mA"
+        )
+    uart = _uart_contract(spec.interfaces)
+    instances = [
+        registry.instantiate("regulated_5v_input"),
+        registry.instantiate("ap2112_3v3_ldo"),
+        registry.instantiate("attiny402_core"),
+        registry.instantiate("uart_service_connector"),
+        registry.instantiate("gpio_status_led"),
+    ]
+    components = tuple(
+        component for instance in instances for component in instance.components
+    )
+    ports = {instance.block.id: instance.ports for instance in instances}
+    nets = (
+        Net(
+            "net_vin",
+            "VIN_5V",
+            _merge_ports(
+                ports,
+                ("regulated_5v_input", "vin"),
+                ("ap2112_3v3_ldo", "vin"),
+            ),
+            "power",
+            "vin5",
+            None,
+            "Externally supplied regulated 5 V input to the AP2112K.",
+        ),
+        Net(
+            "net_3v3",
+            "3V3",
+            _merge_ports(
+                ports,
+                ("ap2112_3v3_ldo", "vout"),
+                ("attiny402_core", "vcc"),
+                ("uart_service_connector", "vcc"),
+            ),
+            "power",
+            "v3v3",
+            None,
+            "AP2112K-regulated 3.3 V rail.",
+        ),
+        Net(
+            "net_gnd",
+            "GND",
+            _merge_ports(
+                ports,
+                ("regulated_5v_input", "gnd"),
+                ("ap2112_3v3_ldo", "gnd"),
+                ("attiny402_core", "gnd"),
+                ("uart_service_connector", "gnd"),
+                ("gpio_status_led", "gnd"),
+            ),
+            "power",
+            None,
+            None,
+            "Common input and regulated-rail return plane.",
+        ),
+        Net(
+            "net_uart_tx",
+            "UART_TX",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "uart_tx"),
+                ("uart_service_connector", "tx"),
+            ),
+            "uart",
+            "v3v3",
+            "service_uart",
+            "3.3 V ATtiny402 transmit output to the service header.",
+        ),
+        Net(
+            "net_uart_rx",
+            "UART_RX",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "uart_rx"),
+                ("uart_service_connector", "rx"),
+            ),
+            "uart",
+            "v3v3",
+            "service_uart",
+            "3.3 V service-header receive input to the ATtiny402.",
+        ),
+        Net(
+            "net_updi",
+            "UPDI",
+            ports["attiny402_core"]["updi"],
+            "signal",
+            "v3v3",
+            None,
+            "Accessible single-wire programming/debug connection.",
+        ),
+        Net(
+            "net_led_ctrl",
+            "LED_CTRL",
+            _merge_ports(
+                ports,
+                ("attiny402_core", "status_gpio"),
+                ("gpio_status_led", "gpio"),
+            ),
+            "signal",
+            "v3v3",
+            None,
+            "MCU-driven status indicator control.",
+        ),
+        Net(
+            "net_led_anode",
+            "LED_ANODE",
+            ports["gpio_status_led"]["anode"],
+            "signal",
+            "v3v3",
+            None,
+            "Current-limited LED anode connection.",
+        ),
+    )
+    domains = (
+        PowerDomain(
+            "vin5",
+            input_power["nominal_v"],
+            input_power["min_v"],
+            input_power["max_v"],
+            input_power["max_current_a"],
+            Endpoint("flag_5v", "1", "source"),
+            "Externally regulated 5 V input envelope.",
+        ),
+        PowerDomain(
+            "v3v3",
+            3.3,
+            3.2,
+            3.4,
+            input_power["max_current_a"],
+            Endpoint("ldo_u2", "5", "source"),
+            "AP2112K fixed 3.3 V regulated output envelope.",
+        ),
+    )
+    interface = Interface(
+        "service_uart",
+        "uart",
+        "v3v3",
+        tuple(
+            endpoint
+            for net in nets
+            if net.interface == "service_uart"
+            for endpoint in net.endpoints
+        ),
+        Endpoint("mcu_u1", "4", "controller"),
+        {
+            "baud": uart["baud"],
+            "data_bits": 8,
+            "parity": "none",
+            "stop_bits": 1,
+            "voltage_v": 3.3,
+            "logic": "single_ended_cmos_not_rs232",
+            "external_connector": True,
+        },
+        "Board-level 3.3 V CMOS UART service connection; not RS-232 tolerant.",
+    )
+    constraints = (
+        Constraint(
+            "decouple_mcu",
+            "decoupling",
+            ("mcu_u1", "mcu_c1", "net_3v3", "net_gnd"),
+            {
+                "max_distance_mm": 3.0,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-7,
+            },
+            "release_blocking",
+            "MCU supply transient return must be local.",
+            ("block_attiny402_core",),
+        ),
+        Constraint(
+            "decouple_ldo_input",
+            "decoupling",
+            ("ldo_u2", "ldo_c2", "net_vin", "net_gnd"),
+            {
+                "max_distance_mm": 4.0,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-6,
+            },
+            "release_blocking",
+            "AP2112K input bypass capacitor must be local.",
+            ("block_ap2112_3v3_ldo",),
+        ),
+        Constraint(
+            "decouple_ldo_output",
+            "decoupling",
+            ("ldo_u2", "ldo_c3", "net_3v3", "net_gnd"),
+            {
+                "max_distance_mm": 4.0,
+                "distance_metric": "minimum_relevant_copper_pad_edge_gap",
+                "geometry_evidence": "native_footprint_pad_rectangles",
+                "min_capacitance_f": 1e-6,
+            },
+            "release_blocking",
+            "AP2112K output stability capacitor must be local.",
+            ("block_ap2112_3v3_ldo",),
+        ),
+        Constraint(
+            "ldo_regulation_budget",
+            "ldo_regulation_budget",
+            ("ldo_u2", "ldo_c2", "ldo_c3", "vin5", "v3v3"),
+            {
+                "input_min_v": input_power["min_v"],
+                "input_max_v": input_power["max_v"],
+                "output_v": 3.3,
+                "load_limit_a": input_power["max_current_a"],
+                "part_current_limit_a": 0.6,
+                "input_capacitance_f": 1e-6,
+                "output_capacitance_f": 1e-6,
+                "enable_policy": "tied_to_vin",
+            },
+            "release_blocking",
+            "Bound AP2112K input, output, load, bypass, stability, and enable contracts.",
+            ("block_ap2112_3v3_ldo",),
+        ),
+        Constraint(
+            "uart_electrical_budget",
+            "uart_electrical_budget",
+            ("service_uart", "net_uart_tx", "net_uart_rx", "uart_j3"),
+            {
+                "baud": uart["baud"],
+                "data_bits": 8,
+                "parity": "none",
+                "stop_bits": 1,
+                "voltage_v": 3.3,
+                "logic": "single_ended_cmos_not_rs232",
+            },
+            "release_blocking",
+            "Bound UART framing, voltage, and connector-level logic contract.",
+            ("block_uart_service_connector",),
+        ),
+        Constraint(
+            "ldo_group",
+            "functional_group",
+            ("ldo_u2", "ldo_c2", "ldo_c3"),
+            {"max_diameter_mm": 10.0, "objective": "short_regulator_loops"},
+            "required",
+            "Keep input and output capacitor loops compact.",
+            ("block_ap2112_3v3_ldo",),
+        ),
+        Constraint(
+            "uart_edge",
+            "edge_placement",
+            ("uart_j3", "board"),
+            {"edge": "right", "max_edge_distance_mm": 4.0},
+            "release_blocking",
+            "UART service connector must remain accessible.",
+            ("block_uart_service_connector",),
+        ),
+        Constraint(
+            "power_input_edge",
+            "edge_placement",
+            ("power_j1", "board"),
+            {"edge": "bottom", "max_edge_distance_mm": 4.0},
+            "release_blocking",
+            "Power input must remain accessible at the board edge.",
+            ("block_regulated_5v_input",),
+        ),
+        Constraint(
+            "updi_edge",
+            "edge_placement",
+            ("updi_j2", "board"),
+            {"edge": "left", "max_edge_distance_mm": 4.0},
+            "required",
+            "Programming header must remain accessible.",
+            ("block_attiny402_core",),
+        ),
+        Constraint(
+            "updi_power_policy",
+            "source_ownership",
+            ("updi_j2", "ldo_u2", "net_3v3"),
+            {
+                "physical_source_component": "ldo_u2",
+                "sense_component": "updi_j2",
+                "sense_pin": "2",
+                "sense_role": "voltage_sense",
+                "simultaneous_external_power_sources": "forbidden",
+            },
+            "release_blocking",
+            "UPDI VTREF is sense-only and the LDO owns the 3.3 V rail.",
+            ("block_attiny402_core",),
+        ),
+        Constraint(
+            "led_current",
+            "current_limit",
+            ("led_r3", "led_d1", "net_led_ctrl"),
+            {
+                "supply_v": 3.3,
+                "forward_v": 2.1,
+                "resistance_ohm": 1000,
+                "max_current_a": 0.005,
+            },
+            "release_blocking",
+            "Bound indicator current and MCU pin load.",
+            ("block_gpio_status_led",),
+        ),
+        Constraint(
+            "power_budget",
+            "power_budget",
+            ("vin5", "v3v3"),
+            {
+                "max_current_a": input_power["max_current_a"],
+                "max_power_w": spec.scope.max_power_w,
+                "voltage_basis_v": spec.scope.max_voltage_v,
+                "envelope": "simultaneous_declared_scope_maxima",
+            },
+            "release_blocking",
+            "Keep regulator input and output loads inside the declared envelope.",
+            ("user_requirements",),
+        ),
+        Constraint(
+            "routing_uart",
+            "routing",
+            ("net_uart_tx", "net_uart_rx"),
+            {
+                "width_mm": 0.25,
+                "max_length_mm": 100,
+                "continuous_reference_net": "net_gnd",
+                "min_reference_stitching_vias": 2,
+                "auto_route": True,
+                "neckdown_width_mm": spec.board.min_track_mm,
+                "neckdown_max_length_mm_per_pad": 2.25,
+            },
+            "release_blocking",
+            "Bounded low-speed UART routing contract.",
+            ("block_uart_service_connector",),
+        ),
+        Constraint(
+            "routing_power",
+            "routing",
+            ("net_vin", "net_3v3", "net_gnd"),
+            {
+                "width_mm": 0.3,
+                "auto_route": True,
+                "neckdown_width_mm": spec.board.min_track_mm,
+                "neckdown_max_length_mm_per_pad": 2.25,
+            },
+            "release_blocking",
+            "The bounded 100 mA rails use a manufacturable width.",
+            ("user_requirements",),
+        ),
+        _manufacturing_constraint(spec),
+    )
+    design = Design(
+        design_id=spec.design_id,
+        name=spec.name,
+        revision=spec.revision,
+        scope=spec.scope,
+        requirements=tuple(
+            sorted(_profile_requirements(spec), key=lambda item: item.id)
+        ),
+        provenance=_provenance(spec, registry),
+        blocks=tuple(instance.block for instance in instances),
+        power_domains=domains,
+        interfaces=(interface,),
+        components=components,
+        nets=nets,
+        constraints=tuple(sorted(constraints, key=lambda item: item.id)),
+        board=spec.board,
+        analyses=(
+            {
+                "id": "power_budget",
+                "kind": "power_budget",
+                "required": False,
+                "reason": "Firmware-dependent maximum load remains part of qualified L6 review.",
+            },
+            {
+                "id": "led_current",
+                "kind": "ohms_law",
+                "required": True,
+                "supply_v": 3.3,
+                "forward_v": 2.1,
+                "resistance_ohm": 1000,
+            },
+            {
+                "id": "digital_function",
+                "kind": "functional_simulation",
+                "required": False,
+                "reason": "firmware behavior is outside PCB netlist evidence",
+            },
+        ),
+        metadata={
+            "compiler": "copperwright",
+            "profile": UART_LDO_PROFILE_ID,
+            "priorities": list(spec.priorities),
+            "requirements_hash": _sha256(spec.canonical_bytes()),
+            "source": spec.source,
+        },
+    )
+    return _finalize_profile_design(design, graph, check_libraries=check_libraries)
+
+
 def _sha256(data: bytes) -> str:
     import hashlib
 
     return hashlib.sha256(data).hexdigest()
 
 
-def _power_contract(value: Mapping[str, Any]) -> dict[str, float]:
+def _power_contract(
+    value: Mapping[str, Any], *, max_supported_v: float = 3.6
+) -> dict[str, float]:
     required = {"nominal_v", "min_v", "max_v", "max_current_a"}
     if set(value) != required:
         raise ValidationError(
@@ -471,9 +1396,9 @@ def _power_contract(value: Mapping[str, Any]) -> dict[str, float]:
         result[name] = float(number)
     if not result["min_v"] <= result["nominal_v"] <= result["max_v"]:
         raise ValidationError("$.power nominal voltage is outside its range")
-    if result["max_v"] > 3.6:
+    if result["max_v"] > max_supported_v:
         raise ValidationError(
-            "the verified TMP102 profile requires a power maximum <= 3.6 V"
+            f"the verified profile requires a power maximum <= {max_supported_v:g} V"
         )
     return result
 
@@ -553,9 +1478,31 @@ def _i2c_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
     }
 
 
-def _validate_profile_functions(functions: dict[str, dict[str, Any]]) -> None:
+def _select_profile(functions: set[str]) -> str:
+    for profile_id, required in PROFILE_FUNCTION_SETS.items():
+        if functions == required:
+            return profile_id
+    if functions < I2C_PROFILE_FUNCTIONS:
+        missing = I2C_PROFILE_FUNCTIONS - functions
+        raise ValidationError(
+            "the built-in low-voltage controller profile requires functions: "
+            + ", ".join(sorted(missing))
+        )
+    raise ValidationError(
+        "requirements do not match any complete verified generation profile; "
+        "supported profile function sets are: "
+        + "; ".join(
+            f"{profile_id}=[{', '.join(sorted(required))}]"
+            for profile_id, required in PROFILE_FUNCTION_SETS.items()
+        )
+    )
+
+
+def _validate_profile_functions(
+    profile_id: str, functions: dict[str, dict[str, Any]]
+) -> None:
     """Reject profile parameters that would otherwise be silently ignored."""
-    for kind, expected in PROFILE_FUNCTION_PARAMETERS.items():
+    for kind, expected in PROFILE_FUNCTION_PARAMETERS[profile_id].items():
         actual = functions[kind]["parameters"]
         if actual != expected:
             raise ValidationError(
@@ -617,14 +1564,29 @@ def _function_acceptance(kind: str) -> tuple[str, ...]:
         "temperature_sensor": (
             "TMP102B supply, address strap, I2C, pull-up, and decoupling rules pass.",
         ),
+        "environmental_sensor": (
+            "BME280 supply, four-wire SPI, chip-select bias, and decoupling rules pass.",
+        ),
         "status_indicator": (
             "LED polarity and calculated current remain within recorded ratings.",
         ),
         "i2c_connector": (
             "External connector pin order is GND/3V3/SDA/SCL and edge placement is enforced.",
         ),
+        "spi_connector": (
+            "External connector pin order is GND/3V3/MOSI/MISO/SCK/CS and edge placement is enforced.",
+        ),
+        "uart_connector": (
+            "The edge-accessible service connector exposes GND/3V3/TX/RX at 3.3 V CMOS levels.",
+        ),
         "updi_programming": (
             "UPDI, target-voltage sense, and return are exposed on an accessible header without a second supply source.",
+        ),
+        "ldo_regulator": (
+            "AP2112K input/output range, load, enable, and stability-capacitor contracts pass.",
+        ),
+        "power_input": (
+            "A polarity-defined regulated low-voltage input is edge-accessible and stays within the selected profile envelope.",
         ),
     }[kind]
 

@@ -100,6 +100,23 @@ class RoutingTests(unittest.TestCase):
                 seed_segments=(RouteSegment("N", 0, 3, 3, 4, 3, 0.2),),
             )
 
+    def test_obstructed_optional_fine_pitch_seed_falls_back_to_bounded_route(
+        self,
+    ) -> None:
+        result = _router().route(
+            (
+                RoutingPad("fine", "N", 2, 2, 0.35, 0.5, (0,)),
+                RoutingPad("far", "N", 8, 2, 0.5, 0.5, (0,)),
+                RoutingPad("foreign", "OTHER", 3, 2, 0.8, 0.8, (0,)),
+            ),
+            seed_segments=(RouteSegment("N", 0, 2, 2, 4, 2, 0.2),),
+        )
+        self.assertEqual(result.state, "completed")
+        self.assertEqual(result.unrouted, ())
+        self.assertTrue(
+            any("omitted obstructed optional" in item for item in result.diagnostics)
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

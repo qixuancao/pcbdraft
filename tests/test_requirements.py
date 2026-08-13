@@ -8,6 +8,7 @@ from pcb_agent.blocks import BlockRegistry
 from pcb_agent.errors import ValidationError
 from pcb_agent.ir import Design
 from pcb_agent.parts import PartGraph
+from pcb_agent.profiles import build_requirements, product_profiles
 from pcb_agent.requirements import RequirementsSpec, compile_requirements
 from pcb_agent.semantic_rules import evaluate_semantic_rules
 from tests.requirements_factory import controller_requirements_dict
@@ -232,6 +233,46 @@ class RequirementsCompilerTests(unittest.TestCase):
             ValidationError, "unsupported requirements function"
         ):
             RequirementsSpec.from_dict(value)
+
+    def test_every_product_profile_compiles_with_distinct_verified_contracts(
+        self,
+    ) -> None:
+        expected = {
+            "low_voltage_i2c_controller_v1": ("i2c", "i2c_electrical_budget"),
+            "low_voltage_spi_environment_v1": ("spi", "spi_electrical_budget"),
+            "low_voltage_uart_ldo_controller_v1": (
+                "uart",
+                "ldo_regulation_budget",
+            ),
+        }
+        self.assertEqual({profile.id for profile in product_profiles()}, set(expected))
+        hashes: set[str] = set()
+        for profile in product_profiles():
+            spec = build_requirements(
+                profile.id,
+                design_name=profile.title,
+                design_id=profile.id,
+                layers=2,
+                width_mm=45,
+                height_mm=30,
+                source_locator="test-product-profile",
+                source_date="2026-08-13",
+            )
+            design = compile_requirements(
+                spec, graph=self.graph, registry=self.registry
+            )
+            interface_kind, constraint_kind = expected[profile.id]
+            self.assertEqual(design.metadata["profile"], profile.id)
+            self.assertEqual(
+                {item.kind for item in design.interfaces}, {interface_kind}
+            )
+            self.assertIn(constraint_kind, {item.kind for item in design.constraints})
+            self.assertEqual(
+                evaluate_semantic_rules(design, self.graph, approximate_geometry=False),
+                (),
+            )
+            hashes.add(design.content_hash())
+        self.assertEqual(len(hashes), 3)
 
 
 if __name__ == "__main__":

@@ -700,6 +700,12 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
                 checks.append(_check_pullups(design, constraint, graph))
             elif constraint.kind == "i2c_electrical_budget":
                 checks.append(_check_i2c_electrical_budget(design, constraint))
+            elif constraint.kind == "spi_electrical_budget":
+                checks.append(_check_spi_electrical_budget(design, constraint, graph))
+            elif constraint.kind == "uart_electrical_budget":
+                checks.append(_check_uart_electrical_budget(design, constraint))
+            elif constraint.kind == "ldo_regulation_budget":
+                checks.append(_check_ldo_regulation_budget(design, constraint, graph))
             elif constraint.kind == "source_ownership":
                 checks.append(_check_source_ownership(design, constraint))
             elif constraint.kind == "current_limit":
@@ -995,6 +1001,196 @@ def _check_i2c_electrical_budget(design: Any, constraint: Any) -> CheckResult:
     )
 
 
+def _check_spi_electrical_budget(
+    design: Any, constraint: Any, graph: PartGraph
+) -> CheckResult:
+    interface = next(
+        item
+        for item in design.interfaces
+        if item.kind == "spi" and item.id in constraint.targets
+    )
+    clock = int(constraint.params["clock_hz"])
+    limit = int(constraint.params["sensor_clock_limit_hz"])
+    sensor = next(
+        component
+        for component in design.components
+        if component.id in constraint.targets
+        and graph.get(component.part_id).kind == "environmental_sensor"
+    )
+    resistor = next(
+        component
+        for component in design.components
+        if component.id in constraint.targets
+        and "resistance_ohm" in graph.get(component.part_id).ratings
+    )
+    resistor_nets = _component_net_ids(design, resistor.id)
+    sensor_limit = int(graph.get(sensor.part_id).ratings["max_spi_clock_hz"])
+    pullup = float(graph.get(resistor.part_id).ratings["resistance_ohm"])
+    expected = {
+        "clock_hz": clock,
+        "mode": 0,
+        "voltage_v": float(constraint.params["voltage_v"]),
+        "topology": "four_wire_single_peripheral",
+        "external_connector": False,
+    }
+    passed = (
+        0 < clock <= limit <= sensor_limit
+        and int(constraint.params["mode"]) == 0
+        and abs(pullup - float(constraint.params["cs_pullup_ohm"])) <= 1e-9
+        and {"net_3v3", "net_spi_cs"} <= resistor_nets
+        and all(interface.params.get(key) == value for key, value in expected.items())
+    )
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "SPI clock, mode, voltage, topology, and chip-select bias meet the verified contract."
+        if passed
+        else "The SPI electrical or chip-select contract failed.",
+        ("semantic IR interface", "trusted sensor and resistor ratings"),
+        {
+            "clock_hz": clock,
+            "declared_sensor_limit_hz": limit,
+            "trusted_sensor_limit_hz": sensor_limit,
+            "mode": constraint.params["mode"],
+            "cs_pullup_ohm": pullup,
+            "cs_pullup_nets": sorted(resistor_nets),
+        },
+        True,
+        True,
+    )
+
+
+def _check_uart_electrical_budget(design: Any, constraint: Any) -> CheckResult:
+    interface = next(
+        item
+        for item in design.interfaces
+        if item.kind == "uart" and item.id in constraint.targets
+    )
+    expected = {
+        "baud": int(constraint.params["baud"]),
+        "data_bits": int(constraint.params["data_bits"]),
+        "parity": constraint.params["parity"],
+        "stop_bits": int(constraint.params["stop_bits"]),
+        "voltage_v": float(constraint.params["voltage_v"]),
+        "logic": constraint.params["logic"],
+    }
+    domain = next(
+        item for item in design.power_domains if item.id == interface.power_domain
+    )
+    passed = (
+        expected["baud"] in {9600, 19200, 38400, 57600, 115200}
+        and (
+            expected["data_bits"],
+            expected["parity"],
+            expected["stop_bits"],
+        )
+        == (8, "none", 1)
+        and expected["logic"] == "single_ended_cmos_not_rs232"
+        and domain.min_v <= expected["voltage_v"] <= domain.max_v
+        and all(interface.params.get(key) == value for key, value in expected.items())
+    )
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "UART framing and 3.3 V CMOS-only voltage contract are internally consistent."
+        if passed
+        else "The UART framing or voltage-level contract failed.",
+        ("semantic IR interface and power-domain contracts",),
+        dict(sorted(expected.items())),
+        True,
+        True,
+    )
+
+
+def _check_ldo_regulation_budget(
+    design: Any, constraint: Any, graph: PartGraph
+) -> CheckResult:
+    regulator = next(
+        component
+        for component in design.components
+        if component.id in constraint.targets
+        and graph.get(component.part_id).kind == "ldo_regulator"
+    )
+    capacitors = [
+        component
+        for component in design.components
+        if component.id in constraint.targets
+        and graph.get(component.part_id).kind == "capacitor"
+    ]
+    ratings = graph.get(regulator.part_id).ratings
+    vin = next(domain for domain in design.power_domains if domain.id == "vin5")
+    vout = next(domain for domain in design.power_domains if domain.id == "v3v3")
+    pin_nets = {
+        endpoint.pin: net.id
+        for net in design.nets
+        for endpoint in net.endpoints
+        if endpoint.component == regulator.id
+    }
+    capacitor_contracts: dict[str, dict[str, Any]] = {}
+    caps_ok = True
+    for rail, key in (
+        ("net_vin", "input_capacitance_f"),
+        ("net_3v3", "output_capacitance_f"),
+    ):
+        matches = [
+            capacitor
+            for capacitor in capacitors
+            if {rail, "net_gnd"} <= _component_net_ids(design, capacitor.id)
+        ]
+        actual = (
+            float(graph.get(matches[0].part_id).ratings["capacitance_f"])
+            if len(matches) == 1
+            else 0.0
+        )
+        minimum = float(constraint.params[key])
+        capacitor_contracts[rail] = {
+            "component": matches[0].reference if len(matches) == 1 else None,
+            "actual_f": actual,
+            "minimum_f": minimum,
+        }
+        caps_ok = caps_ok and len(matches) == 1 and actual >= minimum
+    input_rating = ratings["input_voltage_v"]
+    passed = (
+        len(capacitors) == 2
+        and vin.min_v >= float(input_rating["min"])
+        and vin.max_v <= float(input_rating["max"])
+        and abs(vout.nominal_v - float(ratings["output_voltage_v"])) <= 1e-9
+        and float(constraint.params["load_limit_a"])
+        <= float(ratings["max_output_current_a"])
+        and pin_nets.get("1") == "net_vin"
+        and pin_nets.get("3") == "net_vin"
+        and pin_nets.get("5") == "net_3v3"
+        and pin_nets.get("2") == "net_gnd"
+        and constraint.params.get("enable_policy") == "tied_to_vin"
+        and caps_ok
+    )
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "LDO input, output, load, enable, and capacitor contracts meet trusted ratings."
+        if passed
+        else "The LDO regulation or stability contract failed.",
+        ("semantic IR connectivity", "trusted AP2112K and capacitor ratings"),
+        {
+            "input_domain_v": [vin.min_v, vin.max_v],
+            "trusted_input_v": [input_rating["min"], input_rating["max"]],
+            "output_v": vout.nominal_v,
+            "load_limit_a": constraint.params["load_limit_a"],
+            "trusted_current_limit_a": ratings["max_output_current_a"],
+            "pin_nets": dict(sorted(pin_nets.items())),
+            "capacitors": capacitor_contracts,
+        },
+        True,
+        True,
+    )
+
+
 def _check_source_ownership(design: Any, constraint: Any) -> CheckResult:
     net = next(net for net in design.nets if net.id == "net_3v3")
     components = {component.id: component for component in design.components}
@@ -1025,9 +1221,9 @@ def _check_source_ownership(design: Any, constraint: Any) -> CheckResult:
         "L3",
         "completed",
         "pass" if passed else "fail",
-        "The Qwiic connector is the sole populated rail source and UPDI VTREF is sense-only."
+        "The declared component is the sole populated 3V3 source and UPDI VTREF is sense-only."
         if passed
-        else "The rail source or UPDI voltage-reference ownership contract failed.",
+        else "The 3V3 source or UPDI voltage-reference ownership contract failed.",
         ("semantic IR endpoint roles",),
         {
             "physical_sources": sources,

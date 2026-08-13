@@ -23,7 +23,12 @@ from .locking import ResourceLock
 from .managed import generate_managed_project, open_managed_project
 from .operations import semantic_diff
 from .previews import generate_previews
-from .profiles import build_requirements, product_profiles, safe_design_id
+from .profiles import (
+    build_requirements,
+    get_product_profile,
+    product_profiles,
+    safe_design_id,
+)
 from .providers import (
     MAX_USER_MESSAGE_BYTES,
     IntentProvider,
@@ -638,7 +643,11 @@ class ApplicationService:
             "design_name": merged["design_name"],
             "layers": layers,
             "board": merged["board"],
-            "power_source": "externally_regulated_3v3",
+            "power_source": {
+                "low_voltage_i2c_controller_v1": "externally_regulated_3v3",
+                "low_voltage_spi_environment_v1": "externally_regulated_3v3",
+                "low_voltage_uart_ldo_controller_v1": "externally_regulated_5v_to_onboard_ldo",
+            }[profile_id],
             "risk_class": "prototype",
         }
         proposal: dict[str, Any] = {
@@ -1143,7 +1152,12 @@ class ApplicationService:
                 "this verified profile currently supports conversational board-envelope "
                 "and 2/4-layer changes; no supported semantic change was found"
             )
-        profile_id = "low_voltage_i2c_controller_v1"
+        profile_id = str(managed.design.metadata.get("profile", ""))
+        if profile_id == "attiny402_tmp102_controller_v1":
+            # Migration compatibility for managed projects generated before the
+            # end-user profile identifier became authoritative.
+            profile_id = "low_voltage_i2c_controller_v1"
+        get_product_profile(profile_id)
         new_spec = build_requirements(
             profile_id,
             design_name=current_spec.name,
