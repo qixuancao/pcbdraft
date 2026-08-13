@@ -9,6 +9,7 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from pcb_agent.application import ApplicationService
 from pcb_agent.errors import ValidationError
 from pcb_agent.external_evidence import load_external_evidence, record_external_evidence
 from pcb_agent.managed import generate_managed_project
@@ -67,6 +68,30 @@ class ManagedPipelineTests(unittest.TestCase):
         self.assertEqual(
             first.manifest["native_snapshots"],
             second.project.manifest["native_snapshots"],
+        )
+
+    def test_existing_managed_project_migrates_without_state_loss(self) -> None:
+        service = ApplicationService(
+            self.parent / "application", provider_name="builtin"
+        )
+        imported = service.import_managed_project(
+            "Imported 0.2 managed design", self.generated.project.root
+        )
+        project_id = imported["project"]["id"]
+        self.assertEqual(imported["project"]["status"], "generated")
+        self.assertEqual(
+            imported["design"]["content_hash"],
+            self.generated.project.design.content_hash(),
+        )
+        self.assertEqual(
+            imported["state"]["migration"]["from"],
+            "CopperWright managed project 0.2.x",
+        )
+        self.assertEqual(
+            ApplicationService(
+                self.parent / "application", provider_name="builtin"
+            ).open_project(project_id)["design"]["content_hash"],
+            self.generated.project.design.content_hash(),
         )
 
     def test_four_layer_generation_and_real_validation_pass(self) -> None:

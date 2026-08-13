@@ -8,14 +8,19 @@ import time
 import unittest
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
 
 from pcb_agent.application import ApplicationService
 from pcb_agent.errors import ValidationError
+from pcb_agent.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
 from pcb_agent.providers import (
     BuiltinIntentProvider,
+    OpenAICompatibleIntentProvider,
+    OpenAICompatibleSettings,
     ProviderContext,
+    interpretation_schema,
     validate_interpretation,
 )
 from pcb_agent.webapp import create_app_server
@@ -112,6 +117,17 @@ class ApplicationConversationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "intent schema"):
             validate_interpretation(invalid)
 
+    def test_codex_strict_schema_uses_supported_keywords(self) -> None:
+        schema = interpretation_schema()
+        serialized = json.dumps(schema, sort_keys=True)
+        self.assertNotIn("uniqueItems", serialized)
+        self.assertFalse(
+            any(
+                key not in {"type", "enum"}
+                for key in schema["properties"]["missing_fields"]["items"]
+            )
+        )
+
     def test_builtin_provider_selects_all_profiles_and_rejects_unverified_usb(
         self,
     ) -> None:
@@ -133,6 +149,138 @@ class ApplicationConversationTests(unittest.TestCase):
                 self.assertEqual(result["proposed_profile"], expected, request)
                 if expected == "unsupported":
                     self.assertTrue(result["unsupported_reasons"])
+
+    def test_openai_compatible_provider_keeps_secret_runtime_only(self) -> None:
+        captured: dict[str, object] = {}
+
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+            def do_POST(self) -> None:
+                length = int(self.headers["Content-Length"])
+                captured["path"] = self.path
+                captured["authorization"] = self.headers.get("Authorization")
+                captured["request"] = json.loads(self.rfile.read(length))
+                intent = {
+                    "request_summary": "Create a 2-layer UART controller",
+                    "proposed_profile": "low_voltage_uart_ldo_controller_v1",
+                    "design_name": "UART controller",
+                    "layers": 2,
+                    "board": {"width_mm": None, "height_mm": None},
+                    "assumptions": ["Externally regulated 5 V input"],
+                    "missing_fields": [],
+                    "unsupported_reasons": [],
+                }
+                response = json.dumps(
+                    {"choices": [{"message": {"content": json.dumps(intent)}}]}
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        key_name = "COPPERWRIGHT_TEST_PROVIDER_KEY"
+        sentinel = "test-only-provider-secret-123456789"
+        previous = os.environ.get(key_name)
+        os.environ[key_name] = sentinel
+        try:
+            provider = OpenAICompatibleIntentProvider(
+                OpenAICompatibleSettings(
+                    base_url=f"http://127.0.0.1:{server.server_port}/v1",
+                    model="local-test-model",
+                    api_key_env=key_name,
+                )
+            )
+            with tempfile.TemporaryDirectory() as temporary:
+                result = provider.interpret(
+                    ProviderContext(
+                        "Create a 2-layer UART controller", "UART controller", {}
+                    ),
+                    project_dir=Path(temporary),
+                    run_dir=Path(temporary) / "provider-run",
+                    timeout=5,
+                )
+                self.assertEqual(
+                    result["proposed_profile"],
+                    "low_voltage_uart_ldo_controller_v1",
+                )
+                self.assertFalse(any(Path(temporary).rglob("*")))
+            diagnostic = provider.diagnostic()
+        finally:
+            if previous is None:
+                os.environ.pop(key_name, None)
+            else:
+                os.environ[key_name] = previous
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
+        self.assertEqual(captured["path"], "/v1/chat/completions")
+        self.assertEqual(captured["authorization"], f"Bearer {sentinel}")
+        request = captured["request"]
+        self.assertIsInstance(request, dict)
+        self.assertEqual(request["temperature"], 0)
+        self.assertEqual(request["response_format"]["type"], "json_schema")
+        self.assertNotIn(sentinel, json.dumps(diagnostic, sort_keys=True))
+        self.assertTrue(diagnostic["secret_present"])
+
+    def test_restart_recovers_transient_project_and_job_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            view = service.create_draft("Restart recovery")
+            project_id = view["project"]["id"]
+            root = service.project_root(project_id)
+            state_path = root / "project.json"
+            state = json.loads(state_path.read_text(encoding="utf-8"))
+            state["status"] = "interpreting"
+            state_path.write_text(
+                json.dumps(state, sort_keys=True) + "\n", encoding="utf-8"
+            )
+            job_id = "20260813T000000Z-acde1234"
+            job_path = root / "jobs" / f"{job_id}.json"
+            job_path.write_text(
+                json.dumps(
+                    {
+                        "schema": JOB_SCHEMA,
+                        "version": JOB_VERSION,
+                        "id": job_id,
+                        "project_id": project_id,
+                        "action": "message",
+                        "args": {"text": "2 layers", "timeout": 180.0},
+                        "status": "running",
+                        "attempt": 1,
+                        "retry_of": None,
+                        "created_at": "2026-08-13T00:00:00Z",
+                        "started_at": "2026-08-13T00:00:01Z",
+                        "completed_at": None,
+                        "cancel_requested_at": None,
+                        "result": None,
+                        "error": None,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            restarted = ApplicationService(temporary, provider_name="builtin")
+            self.assertEqual(
+                restarted.open_project(project_id)["project"]["status"],
+                "interrupted",
+            )
+            runner = JobRunner(restarted, workers=1)
+            try:
+                recovered = runner.get(project_id, job_id)
+                self.assertEqual(recovered["status"], "interrupted")
+                self.assertIn("stopped", recovered["error"])
+            finally:
+                runner.shutdown()
+            events = restarted.events(project_id)
+            self.assertEqual(events[-1]["kind"], "operation.interrupted")
 
 
 class BrowserSecurityTests(unittest.TestCase):

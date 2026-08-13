@@ -114,7 +114,6 @@ def interpretation_schema(
             },
             "missing_fields": {
                 "type": "array",
-                "uniqueItems": True,
                 "maxItems": 4,
                 "items": {
                     "type": "string",
