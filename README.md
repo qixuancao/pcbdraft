@@ -25,6 +25,13 @@ but it is deliberately **not** called production-ready: qualified human review,
 live sourcing, fabrication, bring-up, EMC, and measured physical results remain
 external gates.
 
+> **Product status:** the historical R01–R44 report proves the bounded engineering
+> runtime described below; it does not, by itself, prove a complete end-user
+> application. CopperWright v1 is complete only when the shared application
+> service, conversational `chat` workflow, local browser `app`, persistent
+> projects, safe conversational edits, previews, and multi-profile acceptance are
+> implemented and exercised. See [product acceptance](docs/PRODUCT_ACCEPTANCE.md).
+
 ## What is implemented
 
 - Strict semantic circuit/PCB IR with typed interfaces, power domains,

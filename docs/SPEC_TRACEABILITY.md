@@ -5,6 +5,12 @@ Source: `/mnt/2T/ai_agent_pcb_design_analysis.md`, read in full on 2026-08-12.
 gate` means the runtime behavior is complete but truthful evidence can only come
 from a person, supplier, fabrication, lab, or physical board.
 
+This table is the historical engineering-runtime baseline. R01–R44 do not claim
+that conversational onboarding, a browser application, persistent user sessions,
+or a multi-profile end-user workflow are complete. Those product-level criteria
+are tracked separately in [`PRODUCT_ACCEPTANCE.md`](PRODUCT_ACCEPTANCE.md); the
+historical report and its artifact hashes remain unchanged.
+
 | ID | Analysis / completion requirement | Implementation | Verification | Status |
 |---|---|---|---|---|
 | R01 | Model-independent semantic circuit/PCB IR | `pcb_agent.ir` | `tests/test_ir.py` strict round trip | implemented |

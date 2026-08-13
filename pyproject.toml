@@ -42,4 +42,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcb_agent = ["data/**/*.json", "data/**/*.md"]
+pcb_agent = ["data/**/*.json", "data/**/*.md", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]

@@ -12,6 +12,7 @@ from . import PRIMARY_CLI, PRODUCT_NAME, __version__
 from .api import serve
 from .benchmark import run_benchmark
 from .blocks import BlockRegistry
+from .chat import run_chat_command
 from .doctor import doctor_report
 from .errors import PcbAgentError, TransactionRejected
 from .external_evidence import record_external_evidence
@@ -40,6 +41,7 @@ from .transactions import (
     undo_transaction,
 )
 from .validation import validate_managed_project
+from .webapp import run_app
 from .workflows import run_apply, run_patch, run_review
 
 DEFAULT_TIMEOUT = 600.0
@@ -226,6 +228,45 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "semantic-recover", help="recover an interrupted semantic IR transaction"
     )
     semantic_recover.add_argument("TRANSACTION")
+
+    chat = subcommands.add_parser(
+        "chat", help="create, change, validate, and release projects conversationally"
+    )
+    chat.add_argument("--workspace", metavar="DIR")
+    chat.add_argument(
+        "--provider",
+        choices=("auto", "codex", "openai-compatible", "builtin"),
+        default="auto",
+    )
+    chat.add_argument("--project", dest="project_id", metavar="ID")
+    chat.add_argument("--new", dest="new_name", metavar="NAME")
+    chat.add_argument("--message", metavar="TEXT")
+    chat.add_argument(
+        "--yes",
+        action="store_true",
+        help="confirm a ready generation or semantic change noninteractively",
+    )
+    chat.add_argument("--undo", action="store_true")
+    chat.add_argument("--validate", action="store_true", dest="chat_validate")
+    chat.add_argument("--release", action="store_true", dest="chat_release")
+    chat.add_argument("--list", action="store_true", dest="list_only")
+    chat.add_argument("--json", action="store_true", dest="as_json")
+    chat.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
+
+    app = subcommands.add_parser(
+        "app", help="start the local CopperWright browser application"
+    )
+    app.add_argument("--workspace", metavar="DIR")
+    app.add_argument(
+        "--provider",
+        choices=("auto", "codex", "openai-compatible", "builtin"),
+        default="auto",
+    )
+    app.add_argument("--host", default="127.0.0.1")
+    app.add_argument("--port", type=int, default=8765)
+    app.add_argument(
+        "--no-open", action="store_true", help="do not open the default browser"
+    )
 
     subcommands.add_parser(
         "api", help="serve newline-delimited JSON-RPC 2.0 on stdin/stdout"
@@ -444,6 +485,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                 f"semantic transaction recovered: {recover_transaction(args.TRANSACTION)}"
             )
             return 0
+        if args.command == "chat":
+            return run_chat_command(
+                workspace=args.workspace,
+                provider=args.provider,
+                project_id=args.project_id,
+                new_name=args.new_name,
+                message=args.message,
+                assume_yes=args.yes,
+                undo=args.undo,
+                validate=args.chat_validate,
+                release=args.chat_release,
+                list_only=args.list_only,
+                as_json=args.as_json,
+                timeout=args.timeout,
+            )
+        if args.command == "app":
+            return run_app(
+                host=args.host,
+                port=args.port,
+                workspace=args.workspace,
+                provider=args.provider,
+                open_browser=not args.no_open,
+            )
         if args.command == "api":
             return serve()
     except TransactionRejected as exc:
