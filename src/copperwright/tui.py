@@ -1,32 +1,139 @@
-"""Full-screen terminal interface for the CopperWright application service.
+"""Compact full-screen terminal conversation for CopperWright.
 
-The TUI intentionally owns no engineering state and does not write KiCad files
-itself.  It is a small interaction shell over :class:`ApplicationService`, just
-like the browser client, so conversation, confirmation, attempts, validation,
-and recovery keep one authoritative implementation.
+The terminal is deliberately a thin client over :class:`ApplicationService`.
+It owns no engineering state: project creation, planning, confirmation,
+validation, recovery, and release actions remain in the application service.
 """
 
 from __future__ import annotations
 
 import curses
 import os
+import re
 import sys
-import textwrap
+import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .application import ApplicationService
 from .errors import CopperWrightError, ValidationError
+from .providers import resolve_provider
 
 _MAX_INPUT_CHARS = 8_192
 _MIN_HEIGHT = 16
 _MIN_WIDTH = 72
+_PROVIDER_NAMES = ("auto", "codex", "openai-compatible", "builtin")
+
+
+def _cell_width(text: str) -> int:
+    """Return terminal cells occupied by ordinary printable text."""
+
+    return sum(
+        0
+        if unicodedata.combining(character)
+        else 2
+        if unicodedata.east_asian_width(character) in {"W", "F"}
+        else 1
+        for character in text
+    )
+
+
+def _tail_to_cell_width(text: str, width: int) -> str:
+    """Keep the newest input suffix that fits a terminal row."""
+
+    result: list[str] = []
+    used = 0
+    for character in reversed(text):
+        character_width = _cell_width(character)
+        if character_width and used + character_width > width:
+            break
+        result.append(character)
+        used += character_width
+    return "".join(reversed(result))
+
+
+def _split_to_cell_width(text: str, width: int) -> list[str]:
+    """Split text into terminal rows without separating combining marks."""
+
+    result: list[str] = []
+    current: list[str] = []
+    used = 0
+    for character in text:
+        character_width = _cell_width(character)
+        if current and character_width and used + character_width > width:
+            result.append("".join(current))
+            current = []
+            used = 0
+        current.append(character)
+        used += character_width
+    if current:
+        result.append("".join(current))
+    return result or [""]
+
+
+@dataclass(frozen=True)
+class SlashCommand:
+    """A visible, user-facing terminal command."""
+
+    name: str
+    usage: str
+    description: str
+    accepts_argument: bool = False
+    requires_argument: bool = False
+
+
+SLASH_COMMANDS = (
+    SlashCommand("/help", "/help", "show command help"),
+    SlashCommand("/new", "/new [name]", "start a project", True),
+    SlashCommand("/projects", "/projects", "list local projects"),
+    SlashCommand("/open", "/open ID", "open a project", True, True),
+    SlashCommand("/status", "/status", "refresh this project"),
+    SlashCommand(
+        "/model",
+        "/model [provider]",
+        "show or switch planner",
+        True,
+    ),
+    SlashCommand("/confirm", "/confirm", "confirm ready work"),
+    SlashCommand("/validate", "/validate", "run validation"),
+    SlashCommand("/undo", "/undo", "undo last change"),
+    SlashCommand("/discard", "/discard", "discard staged change"),
+    SlashCommand("/release", "/release", "build release evidence"),
+    SlashCommand("/quit", "/quit", "quit CopperWright"),
+)
+
+
+def command_suggestions(text: str) -> tuple[SlashCommand, ...]:
+    """Return commands matching the slash-command name currently being typed."""
+
+    if not text.startswith("/"):
+        return ()
+    parts = text[1:].split(maxsplit=1)
+    name = parts[0].casefold() if parts else ""
+    return tuple(
+        command
+        for command in SLASH_COMMANDS
+        if command.name[1:].casefold().startswith(name)
+    )
+
+
+def _project_name_from_request(request: str) -> str:
+    """Make a short local draft name without asking a provider a second time."""
+
+    text = " ".join(request.split())
+    text = re.sub(
+        r"^(?:please\s+)?(?:build|create|make|design)\s+(?:(?:an?|the)\s+)?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    ).strip(" .,:;")
+    return text[:64].rstrip() or "Untitled board"
 
 
 @dataclass
 class TuiController:
-    """Testable controller for a full-screen CopperWright terminal session."""
+    """Testable controller for one full-screen CopperWright session."""
 
     service: ApplicationService
     timeout: float = 420.0
@@ -44,29 +151,49 @@ class TuiController:
             self.refresh()
         else:
             self.projects = self.service.list_projects()
-            self.notice = (
-                "Ctrl+N creates a board project; Ctrl+P opens an existing one."
-            )
+            self.notice = "Describe a board to begin, or type / for commands."
 
     @property
     def provider_name(self) -> str:
         provider = getattr(self.service, "provider", None)
-        value = getattr(provider, "provider_id", None)
-        return value if isinstance(value, str) else "configured provider"
+        provider_id = getattr(provider, "provider_id", None)
+        provider_id = provider_id if isinstance(provider_id, str) else "configured"
+        diagnostic = getattr(provider, "diagnostic", None)
+        details: dict[str, Any] = {}
+        if callable(diagnostic):
+            try:
+                value = diagnostic()
+            except Exception:  # noqa: BLE001 - header rendering must stay usable
+                value = None
+            if isinstance(value, dict):
+                details = value
+        model = details.get("model")
+        reasoning_effort = details.get("reasoning_effort")
+        if isinstance(model, str) and model:
+            if isinstance(reasoning_effort, str) and reasoning_effort:
+                return f"{provider_id} / {model} · {reasoning_effort}"
+            return f"{provider_id} / {model}"
+        if model is False:
+            return f"{provider_id} / no planning model"
+        if provider_id == "builtin":
+            return "builtin / offline"
+        if provider_id == "codex":
+            return "codex / model managed by local CLI"
+        return f"{provider_id} / model not reported"
 
     @property
     def input_label(self) -> str:
         if self.mode == "new_name":
             return "Project name"
         if self.mode == "new_request":
-            return "What should this board do?"
+            return "Board request"
         return "Message"
 
     def refresh(self) -> None:
         self.error = ""
         if self.project_id is None:
             self.projects = self.service.list_projects()
-            self.notice = "No project selected. Ctrl+N creates one; Ctrl+P opens one."
+            self.notice = "No project selected. Describe a board or use /new."
             return
         try:
             self._set_view(self.service.open_project(self.project_id))
@@ -99,7 +226,7 @@ class TuiController:
             self.picker_index = max(0, min(current, len(self.projects) - 1))
             self.mode = "project_picker"
         else:
-            self.notice = "No local projects yet. Press Ctrl+N to create one."
+            self.notice = "No local projects yet. Describe a board or use /new."
 
     def move_picker(self, delta: int) -> None:
         if self.mode != "project_picker" or not self.projects:
@@ -112,11 +239,11 @@ class TuiController:
         if self.mode != "project_picker" or not self.projects:
             return
         selected = self.projects[self.picker_index]
-        value = selected.get("id")
-        if not isinstance(value, str):
+        project_id = selected.get("id")
+        if not isinstance(project_id, str):
             self.error = "Selected project record is malformed."
             return
-        self.open_project(value)
+        self.open_project(project_id)
 
     def open_project(self, project_id: str) -> None:
         clean = project_id.strip()
@@ -132,7 +259,7 @@ class TuiController:
             self.error = str(exc)
 
     def cancel_overlay(self) -> None:
-        if self.mode in {"project_picker", "help"}:
+        if self.mode == "project_picker":
             self.mode = "message"
             self.notice = ""
         elif self.mode in {"new_name", "new_request"}:
@@ -141,7 +268,7 @@ class TuiController:
             self.notice = "New project cancelled."
 
     def submit(self, text: str) -> str:
-        """Handle a completed input line and return ``continue`` or ``quit``."""
+        """Handle one completed input line and return ``continue`` or ``quit``."""
 
         if len(text) > _MAX_INPUT_CHARS:
             self.error = f"Input is limited to {_MAX_INPUT_CHARS} characters."
@@ -165,8 +292,9 @@ class TuiController:
             return "continue"
         if clean.startswith("/"):
             return self._command(clean)
-        if not self._has_project():
-            return "continue"
+        if self.project_id is None:
+            self.begin_new(_project_name_from_request(clean))
+            return self._create_project(clean)
         self._call(
             "Planning the requested board",
             lambda: self.service.send_message(
@@ -176,7 +304,7 @@ class TuiController:
         return "continue"
 
     def action(self, name: str) -> str:
-        """Run a deliberate UI action without exposing raw engineering writes."""
+        """Run a deliberate UI action through the application service."""
 
         if name == "new":
             self.begin_new()
@@ -184,12 +312,12 @@ class TuiController:
         if name == "projects":
             self.show_projects()
             return "continue"
-        if name == "refresh":
+        if name == "status":
             self.refresh()
             return "continue"
         if name == "help":
-            self.mode = "help"
             self.error = ""
+            self.notice = "Type / for commands. ↑/↓ select · Tab complete · Enter run · Esc dismiss."
             return "continue"
         if name == "quit":
             return "quit"
@@ -240,7 +368,7 @@ class TuiController:
                 ),
             )
             return "continue"
-        self.error = f"Unknown TUI action: {name}"
+        self.error = f"Unknown terminal action: {name}"
         return "continue"
 
     def _create_project(self, request: str) -> str:
@@ -273,20 +401,21 @@ class TuiController:
         command, _, argument = text[1:].partition(" ")
         command = command.casefold()
         argument = argument.strip()
-        if command in {"q", "quit", "exit"}:
-            return self.action("quit")
-        if command in {"new", "n"}:
+        if command == "help":
+            return self.action("help")
+        if command == "new":
             self.begin_new(argument or None)
             return "continue"
-        if command in {"projects", "project", "p"}:
-            self.show_projects()
-            return "continue"
+        if command == "projects":
+            return self.action("projects")
         if command == "open":
             self.open_project(argument)
             return "continue"
-        if command in {"refresh", "status"}:
-            return self.action("refresh")
-        if command in {"confirm", "apply"}:
+        if command == "status":
+            return self.action("status")
+        if command == "model":
+            return self._set_provider(argument)
+        if command == "confirm":
             return self.action("confirm")
         if command == "validate":
             return self.action("validate")
@@ -296,9 +425,35 @@ class TuiController:
             return self.action("discard")
         if command == "release":
             return self.action("release")
-        if command in {"help", "?"}:
-            return self.action("help")
-        self.error = "Unknown command. Type /help for the command list."
+        if command == "quit":
+            return self.action("quit")
+        self.error = "Unknown command. Type / for the command list."
+        return "continue"
+
+    def _set_provider(self, argument: str) -> str:
+        if not argument:
+            self.error = ""
+            self.notice = (
+                f"Planning provider: {self.provider_name}. "
+                "Use /model [auto|codex|openai-compatible|builtin]."
+            )
+            return "continue"
+        provider_name = argument.casefold()
+        if provider_name not in _PROVIDER_NAMES or " " in provider_name:
+            self.error = (
+                "Supported providers: auto, codex, openai-compatible, or builtin."
+            )
+            return "continue"
+        try:
+            provider = resolve_provider(provider_name)
+        except CopperWrightError as exc:
+            self.error = str(exc)
+            return "continue"
+        self.service.provider = provider
+        self.error = ""
+        self.notice = (
+            f"Planning provider switched for this session: {self.provider_name}."
+        )
         return "continue"
 
     def _call(self, label: str, operation: Any) -> None:
@@ -313,7 +468,7 @@ class TuiController:
         except CopperWrightError as exc:
             self.error = str(exc)
         except Exception as exc:  # noqa: BLE001 - keep the terminal usable
-            self.error = f"Unexpected UI action failure: {type(exc).__name__}"
+            self.error = f"Unexpected terminal action failure: {type(exc).__name__}"
 
     def _set_view(self, value: dict[str, Any]) -> None:
         project = value.get("project")
@@ -347,18 +502,26 @@ class CopperWrightTui:
         self.busy = ""
         self.height = 0
         self.width = 0
+        self.palette_index = 0
+        self.palette_dismissed = False
+        self._input_only_redraw = False
         self._init_terminal()
 
     def run(self) -> int:
+        self._render()
         while True:
-            self._render()
             key = self.screen.get_wch()
+            self._input_only_redraw = False
             try:
                 result = self._handle_key(key)
             except _QuitTui:
                 return 0
             if result == "quit":
                 return 0
+            if self._input_only_redraw:
+                self._render_input_only()
+            else:
+                self._render()
 
     def _init_terminal(self) -> None:
         self.screen.keypad(True)
@@ -366,34 +529,48 @@ class CopperWrightTui:
             curses.curs_set(1)
         except curses.error:
             pass
-        if curses.has_colors():
+        try:
+            has_colors = curses.has_colors()
+        except curses.error:
+            has_colors = False
+        if not has_colors:
+            return
+        try:
             curses.start_color()
+            curses.use_default_colors()
+        except curses.error:
+            pass
+        for number, foreground in (
+            (1, curses.COLOR_BLACK),
+            (2, curses.COLOR_CYAN),
+            (3, curses.COLOR_GREEN),
+            (4, curses.COLOR_YELLOW),
+            (5, curses.COLOR_RED),
+            (6, curses.COLOR_MAGENTA),
+        ):
             try:
-                curses.use_default_colors()
+                curses.init_pair(number, foreground, -1)
             except curses.error:
-                pass
-            for number, foreground in (
-                (1, curses.COLOR_BLACK),
-                (2, curses.COLOR_CYAN),
-                (3, curses.COLOR_GREEN),
-                (4, curses.COLOR_YELLOW),
-                (5, curses.COLOR_RED),
-                (6, curses.COLOR_MAGENTA),
-            ):
-                try:
-                    curses.init_pair(number, foreground, -1)
-                except curses.error:
-                    continue
+                continue
 
     def _handle_key(self, key: str | int) -> str:
+        if key == "\x11":  # Ctrl+Q
+            return "quit"
         if self.controller.mode == "project_picker":
             return self._handle_picker_key(key)
-        if self.controller.mode == "help":
-            if key in ("\x1b", "\n", "\r", curses.KEY_ENTER, "q", "Q"):
-                self.controller.cancel_overlay()
-            return "continue"
-        if key in ("\x11",):  # Ctrl+Q
-            return "quit"
+        if self._palette_visible():
+            if key in (curses.KEY_UP,):
+                self._move_palette(-1)
+                return "continue"
+            if key in (curses.KEY_DOWN,):
+                self._move_palette(1)
+                return "continue"
+            if key in ("\t",):
+                self._complete_selected_command()
+                return "continue"
+            if key == "\x1b":
+                self.palette_dismissed = True
+                return "continue"
         if key in ("\x0e", curses.KEY_F2):  # Ctrl+N / F2
             self._run_action("new")
             return "continue"
@@ -401,7 +578,7 @@ class CopperWrightTui:
             self._run_action("projects")
             return "continue"
         if key in ("\x12", curses.KEY_F5):  # Ctrl+R / F5
-            self._run_action("refresh")
+            self._run_action("status")
             return "continue"
         if key in ("\x19", curses.KEY_F7):  # Ctrl+Y / F7
             self._run_action("confirm")
@@ -409,26 +586,37 @@ class CopperWrightTui:
         if key in ("\x16", curses.KEY_F6):  # Ctrl+V / F6
             self._run_action("validate")
             return "continue"
-        if key in ("\x1a",):  # Ctrl+Z
+        if key == "\x1a":  # Ctrl+Z
             self._run_action("undo")
             return "continue"
-        if key in ("\x04",):  # Ctrl+D
+        if key == "\x04":  # Ctrl+D
             self._run_action("discard")
             return "continue"
-        if key in (curses.KEY_PPAGE,):
+        if key == curses.KEY_PPAGE:
             self.scroll += max(1, self.height // 3)
             return "continue"
-        if key in (curses.KEY_NPAGE,):
+        if key == curses.KEY_NPAGE:
             self.scroll = max(0, self.scroll - max(1, self.height // 3))
             return "continue"
-        if key in ("\x1b",):
+        if key == curses.KEY_UP:
+            self.scroll += 1
+            return "continue"
+        if key == curses.KEY_DOWN:
+            self.scroll = max(0, self.scroll - 1)
+            return "continue"
+        if key == "\x1b":
             self.controller.cancel_overlay()
             self.input_text = ""
+            self.palette_dismissed = False
             return "continue"
         if key in ("\n", "\r", curses.KEY_ENTER):
             return self._submit()
         if key in ("\b", "\x7f", curses.KEY_BACKSPACE):
+            had_palette = self._palette_visible()
             self.input_text = self.input_text[:-1]
+            self._input_changed()
+            if not had_palette and not self._palette_visible():
+                self._input_only_redraw = True
             return "continue"
         if isinstance(key, str) and key.isprintable():
             if len(self.input_text) >= _MAX_INPUT_CHARS:
@@ -436,7 +624,11 @@ class CopperWrightTui:
                     f"Input is limited to {_MAX_INPUT_CHARS} characters."
                 )
             else:
+                had_palette = self._palette_visible()
                 self.input_text += key
+                self._input_changed()
+                if not had_palette and not self._palette_visible():
+                    self._input_only_redraw = True
         return "continue"
 
     def _handle_picker_key(self, key: str | int) -> str:
@@ -448,20 +640,68 @@ class CopperWrightTui:
             self.controller.move_picker(1)
         elif key in ("\n", "\r", curses.KEY_ENTER):
             self._run_controller(self.controller.select_picker, "Opening project")
-        elif key in ("\x11",):
-            return "quit"
         return "continue"
 
+    def _input_changed(self) -> None:
+        self.palette_index = 0
+        self.palette_dismissed = False
+
+    def _palette_visible(self) -> bool:
+        return (
+            self.controller.mode == "message"
+            and self.input_text.startswith("/")
+            and not self.palette_dismissed
+        )
+
+    def _palette_commands(self) -> tuple[SlashCommand, ...]:
+        return command_suggestions(self.input_text) if self._palette_visible() else ()
+
+    def _move_palette(self, delta: int) -> None:
+        commands = self._palette_commands()
+        if not commands:
+            return
+        self.palette_index = (self.palette_index + delta) % len(commands)
+
+    def _selected_command(self) -> SlashCommand | None:
+        commands = self._palette_commands()
+        if not commands:
+            return None
+        self.palette_index = max(0, min(self.palette_index, len(commands) - 1))
+        return commands[self.palette_index]
+
+    def _complete_selected_command(self) -> bool:
+        command = self._selected_command()
+        if command is None:
+            return False
+        self.input_text = command.name + (" " if command.accepts_argument else "")
+        self.palette_index = 0
+        self.palette_dismissed = False
+        return True
+
     def _submit(self) -> str:
+        if self._palette_visible():
+            command = self._selected_command()
+            if command is not None and self._command_needs_completion(command):
+                self._complete_selected_command()
+                return "continue"
         text = self.input_text
         if not text.strip() and self.controller.mode == "message":
             return "continue"
         self.input_text = ""
+        self.palette_index = 0
+        self.palette_dismissed = False
         self.scroll = 0
         result = self._run_controller(
             lambda: self.controller.submit(text), "Working with CopperWright"
         )
         return result if result == "quit" else "continue"
+
+    def _command_needs_completion(self, command: SlashCommand) -> bool:
+        typed = self.input_text[1:]
+        name, separator, _argument = typed.partition(" ")
+        if name.casefold() != command.name[1:].casefold():
+            return True
+        return command.requires_argument and not separator
 
     def _run_action(self, action: str) -> None:
         result = self._run_controller(
@@ -485,13 +725,12 @@ class CopperWrightTui:
         return {
             "new": "Starting a project",
             "projects": "Loading projects",
-            "refresh": "Refreshing project",
+            "status": "Refreshing project",
             "confirm": "Confirming generation",
             "validate": "Running validation",
             "undo": "Undoing change",
             "discard": "Discarding change",
             "release": "Building release evidence",
-            "help": "Opening help",
         }.get(action, "Working")
 
     def _render(self) -> None:
@@ -502,35 +741,39 @@ class CopperWrightTui:
             self.screen.refresh()
             return
         self._render_header()
-        content_top = 2
-        input_top = self.height - 3
-        content_height = input_top - content_top - 1
-        left_width = max(42, min(self.width - 30, (self.width * 3) // 5))
-        right_x = left_width + 1
-        right_width = self.width - right_x
-        self._box(content_top, 0, content_height, left_width, "Conversation")
-        self._box(content_top, right_x, content_height, right_width, "Design evidence")
-        self._render_conversation(
-            content_top + 1, 1, content_height - 2, left_width - 2
-        )
-        self._render_evidence(
-            content_top + 1, right_x + 1, content_height - 2, right_width - 2
-        )
+        palette_height = self._palette_height()
+        input_top = self.height - 2
+        palette_top = input_top - palette_height
+        content_top = 3
+        content_height = max(1, palette_top - content_top)
+        self._render_conversation(content_top, content_height, self.width - 2)
+        if palette_height:
+            self._render_palette(palette_top)
         self._render_input(input_top)
         if self.controller.mode == "project_picker":
             self._render_project_picker()
-        elif self.controller.mode == "help":
-            self._render_help()
+        self.screen.refresh()
+
+    def _render_input_only(self) -> None:
+        """Update a normal text edit without reflowing the whole transcript."""
+
+        if self.screen.getmaxyx() != (self.height, self.width):
+            self._render()
+            return
+        input_top = self.height - 2
+        self._add(input_top + 1, 0, " " * max(0, self.width - 1))
+        self._render_input(input_top)
         self.screen.refresh()
 
     def _render_too_small(self) -> None:
         self._add(
             0,
             0,
-            f"CopperWright TUI needs at least {_MIN_WIDTH}×{_MIN_HEIGHT}; resize this terminal.",
+            "CopperWright needs a terminal at least "
+            f"{_MIN_WIDTH}×{_MIN_HEIGHT}; resize to continue.",
             curses.A_BOLD,
         )
-        self._add(2, 0, "Ctrl+Q quits after resizing.")
+        self._add(2, 0, "Resize, then type /quit to exit.")
 
     def _render_header(self) -> None:
         project_name = "No project"
@@ -539,239 +782,154 @@ class CopperWrightTui:
             project = self.controller.view.get("project")
             if isinstance(project, dict):
                 project_name = str(project.get("name", project_name))
-                status = str(project.get("status", status))
-        title = f" CopperWright TUI  |  {project_name} "
-        right = f"provider: {self.controller.provider_name}  |  {status} "
+                status = str(project.get("status", status)).replace("_", " ")
+        left = f" CopperWright · {project_name} · {status} "
+        right = f" {self.controller.provider_name} "
         self._add(0, 0, " " * max(0, self.width - 1), self._style(1, curses.A_BOLD))
-        self._add(0, 0, title, self._style(1, curses.A_BOLD))
-        self._add(
-            0,
-            max(0, self.width - len(right) - 1),
-            right,
-            self._style(1, curses.A_BOLD),
-        )
+        self._add(0, 0, left, self._style(1, curses.A_BOLD))
+        if len(left) + len(right) + 2 < self.width:
+            self._add(
+                0,
+                self.width - len(right) - 1,
+                right,
+                self._style(1, curses.A_BOLD),
+            )
         subtitle = (
             self.busy
             or self.controller.error
             or self.controller.notice
-            or "Review intent first; native KiCad generation always needs confirmation."
+            or "Review plans before /confirm; type /quit to exit."
         )
-        tone = self._style(5) if self.controller.error else self._style(2)
+        tone = self._style(5) if self.controller.error else self._style(4)
         self._add(1, 1, subtitle, tone)
+        self._add(2, 0, "─" * max(0, self.width - 1), self._style(4))
 
-    def _render_conversation(self, y: int, x: int, height: int, width: int) -> None:
+    def _render_conversation(self, y: int, height: int, width: int) -> None:
         lines = self._conversation_lines(width)
-        if not lines:
-            lines = [
-                ("Welcome. Press Ctrl+N to create a PCB project.", self._style(2)),
-                (
-                    "The AI will propose a reviewable circuit plan before it can generate KiCad files.",
-                    0,
-                ),
-            ]
         maximum_scroll = max(0, len(lines) - height)
         self.scroll = max(0, min(self.scroll, maximum_scroll))
         start = max(0, len(lines) - height - self.scroll)
         for offset, (text, style) in enumerate(lines[start : start + height]):
-            self._add(y + offset, x, text, style)
+            self._add(y + offset, 1, text, style)
         if self.scroll:
-            self._add(y, x + max(0, width - 8), "↑ scroll", self._style(4))
+            self._add(y, max(1, self.width - 10), "↑ older", self._style(4))
         if start + height < len(lines):
-            self._add(y + height - 1, x + max(0, width - 8), "↓ more", self._style(4))
+            self._add(
+                y + height - 1, max(1, self.width - 10), "↓ newer", self._style(4)
+            )
 
     def _conversation_lines(self, width: int) -> list[tuple[str, int]]:
         if not isinstance(self.controller.view, dict):
-            return []
+            return [
+                ("Welcome to CopperWright.", self._style(2, curses.A_BOLD)),
+                ("Describe the board you want to build to create a local project.", 0),
+                ("Use /new to name it first, or /projects to reopen one.", 0),
+                (
+                    "A reviewable plan is required before /confirm creates KiCad files.",
+                    0,
+                ),
+            ]
         conversation = self.controller.view.get("conversation")
         messages = (
             conversation.get("messages") if isinstance(conversation, dict) else []
         )
-        if not isinstance(messages, list):
-            return []
         result: list[tuple[str, int]] = []
-        for message in messages[-300:]:
-            if not isinstance(message, dict):
-                continue
-            role = str(message.get("role", "system"))
-            kind = str(message.get("kind", "message"))
-            text = str(message.get("text", ""))
-            label, style = {
-                "user": ("You", self._style(2, curses.A_BOLD)),
-                "assistant": ("CopperWright", self._style(3, curses.A_BOLD)),
-            }.get(role, ("System", self._style(4, curses.A_BOLD)))
-            result.append((f"{label} · {kind}", style))
-            wrapped = self._wrap(text, max(12, width - 2))
-            result.extend((f"  {line}", 0) for line in wrapped)
-            result.append(("", 0))
-        return result
-
-    def _render_evidence(self, y: int, x: int, height: int, width: int) -> None:
-        lines = self._evidence_lines(width)
-        for offset, (text, style) in enumerate(lines[:height]):
-            self._add(y + offset, x, text, style)
-
-    def _evidence_lines(self, width: int) -> list[tuple[str, int]]:
-        if not isinstance(self.controller.view, dict):
-            return [
-                ("No project selected", self._style(4, curses.A_BOLD)),
-                ("", 0),
-                ("Ctrl+N  New project", self._style(2)),
-                ("Ctrl+P  Open project", self._style(2)),
-                ("", 0),
-                (
-                    "A normal part request is planned and attempted; it is not rejected simply because there is no fixed template.",
-                    0,
-                ),
-            ]
-        project = self.controller.view.get("project")
-        proposal = self.controller.view.get("conversation", {}).get("proposal")
-        result: list[tuple[str, int]] = []
-        if isinstance(project, dict):
-            result.append(
-                (str(project.get("name", "Project")), self._style(2, curses.A_BOLD))
-            )
-            result.append(
-                (f"Status: {project.get('status', 'unknown')}", self._style(4))
-            )
-            result.append((f"ID: {project.get('id', '')}", 0))
-        if isinstance(proposal, dict):
-            scope = proposal.get("scope", {})
-            if isinstance(scope, dict):
-                result.append(("", 0))
-                result.append(("Request", self._style(2, curses.A_BOLD)))
-                result.extend(
-                    (line, 0)
-                    for line in self._wrap(
-                        f"Generation: {scope.get('decision', 'unknown')}", width
-                    )
-                )
-                for warning in scope.get("warnings", []):
+        if isinstance(messages, list):
+            for message in messages[-300:]:
+                if not isinstance(message, dict):
+                    continue
+                role = str(message.get("role", "system"))
+                text = str(message.get("text", "")).strip()
+                label, style = {
+                    "user": ("You", self._style(2, curses.A_BOLD)),
+                    "assistant": ("CopperWright", self._style(3, curses.A_BOLD)),
+                }.get(role, ("System", self._style(4, curses.A_BOLD)))
+                result.append((label, style))
+                if text:
                     result.extend(
-                        (f"! {line}", self._style(5))
-                        for line in self._wrap(str(warning), max(12, width - 2))
+                        (line, 0) for line in self._wrap(text, max(12, width - 1))
                     )
-            brief = proposal.get("brief")
-            if isinstance(brief, dict):
                 result.append(("", 0))
-                result.append(("Reviewed plan", self._style(2, curses.A_BOLD)))
-                result.extend(
-                    (line, 0)
-                    for line in self._wrap(str(brief.get("purpose", "")), width)
-                )
-                board = brief.get("board")
-                if isinstance(board, dict):
-                    result.append(
-                        (
-                            f"Board: {board.get('width_mm')} × {board.get('height_mm')} mm · {board.get('layers')} layers",
-                            0,
-                        )
-                    )
-                bom = brief.get("bom")
-                if isinstance(bom, list):
-                    placements = sum(
-                        item.get("quantity", 0)
-                        for item in bom
-                        if isinstance(item, dict)
-                        and isinstance(item.get("quantity"), int)
-                    )
-                    result.append(
-                        (f"Parts: {placements} placements / {len(bom)} types", 0)
-                    )
-                review = brief.get("plan_review")
-                if isinstance(review, dict):
-                    summary = review.get("summary", {})
-                    if isinstance(summary, dict):
-                        attention = summary.get("attention_required", 0)
-                        failed = summary.get("failed", 0)
-                    else:
-                        attention = 0
-                        failed = 0
-                    if isinstance(attention, int) and attention > 0:
-                        result.append(("", 0))
-                        result.append(
-                            ("Topology warnings", self._style(5, curses.A_BOLD))
-                        )
-                        result.append(
-                            (
-                                f"{attention} need attention · {failed} structural failures · generation available",
-                                self._style(5),
-                            )
-                        )
-                    findings = review.get("findings")
-                    if (
-                        isinstance(findings, list)
-                        and isinstance(attention, int)
-                        and attention > 0
-                    ):
-                        for finding in findings:
-                            if (
-                                not isinstance(finding, dict)
-                                or finding.get("outcome") == "pass"
-                            ):
-                                continue
-                            title = str(finding.get("summary", "Topology finding"))
-                            result.extend(
-                                (f"• {line}", self._style(5))
-                                for line in self._wrap(title, max(12, width - 2))
-                            )
-        attempts = self.controller.view.get("attempts")
-        if isinstance(attempts, list) and attempts:
-            latest = attempts[0]
-            if isinstance(latest, dict):
-                result.append(("", 0))
-                result.append(("Latest attempt", self._style(2, curses.A_BOLD)))
-                result.append(
+        if not result:
+            result.extend(
+                [
+                    ("No messages yet.", self._style(4)),
+                    ("Describe a board or a requested change below.", 0),
+                ]
+            )
+        status = self.controller._project_status()
+        if status == "awaiting_confirmation":
+            result.extend(
+                [
+                    ("", 0),
                     (
-                        f"{latest.get('status')} · {latest.get('phase')}",
-                        self._style(5)
-                        if latest.get("status") == "failed"
-                        else self._style(4),
-                    )
-                )
-        artifacts = self.controller.view.get("artifacts")
-        validation = (
-            artifacts.get("validation") if isinstance(artifacts, dict) else None
-        )
-        if isinstance(validation, dict):
-            result.append(("", 0))
-            result.append(("Checks", self._style(2, curses.A_BOLD)))
-            result.append(
-                (
-                    "Result: "
-                    + (
-                        "passed"
-                        if validation.get("candidate_ready")
-                        else "findings remain"
+                        "Plan ready for review. Use /confirm when you are ready.",
+                        self._style(4),
                     ),
-                    self._style(3)
-                    if validation.get("candidate_ready")
-                    else self._style(5),
-                )
+                ]
+            )
+        elif status == "change_ready":
+            result.extend(
+                [
+                    ("", 0),
+                    (
+                        "Semantic change ready. Use /confirm to apply or /discard.",
+                        self._style(4),
+                    ),
+                ]
             )
         return result
+
+    def _palette_height(self) -> int:
+        commands = self._palette_commands()
+        if not commands:
+            return 0
+        return 2 + (len(commands) + 1) // 2
+
+    def _render_palette(self, y: int) -> None:
+        commands = self._palette_commands()
+        if not commands:
+            return
+        rows = (len(commands) + 1) // 2
+        self._add(
+            y,
+            1,
+            "Commands — filter by name; all commands are shown for /",
+            self._style(4),
+        )
+        column_width = max(30, (self.width - 4) // 2)
+        for index, command in enumerate(commands):
+            column = index % 2
+            row = index // 2
+            marker = "› " if index == self.palette_index else "  "
+            text = f"{marker}{command.usage} — {command.description}"
+            style = self._style(1, curses.A_BOLD) if index == self.palette_index else 0
+            self._add(y + 1 + row, 1 + column * column_width, text, style)
+        self._add(
+            y + rows + 1,
+            1,
+            "↑/↓ choose · Tab complete · Enter complete/run · Esc dismiss",
+            self._style(4),
+        )
 
     def _render_input(self, y: int) -> None:
-        if self.height < 4:
-            return
+        hint = "Enter sends · / commands · /quit exits"
+        if self.controller.mode == "new_name":
+            hint = "Enter continues · Esc cancels"
+        elif self.controller.mode == "new_request":
+            hint = "Enter creates the project · Esc cancels"
+        self._add(y, 1, hint, self._style(4))
         prompt = self.controller.input_label + " › "
-        if self.controller.mode in {"project_picker", "help"}:
-            prompt = "Overlay › "
-        message = self.controller.error or self.controller.notice
-        style = self._style(5) if self.controller.error else self._style(4)
-        self._add(y, 1, message, style)
-        footer = (
-            "Ctrl+N New · Ctrl+P Projects · F5 Refresh · F7 Confirm · "
-            "F6 Validate · Ctrl+Q Quit · /help"
-        )
-        self._add(y + 1, 1, footer, self._style(4))
-        self._add(y + 2, 1, prompt, self._style(2, curses.A_BOLD))
-        if self.controller.mode not in {"project_picker", "help"}:
-            available = max(1, self.width - len(prompt) - 3)
-            visible = self.input_text[-available:]
-            self._add(y + 2, 1 + len(prompt), visible)
+        self._add(y + 1, 1, prompt, self._style(2, curses.A_BOLD))
+        if self.controller.mode != "project_picker":
+            prompt_width = _cell_width(prompt)
+            available = max(1, self.width - prompt_width - 3)
+            visible = _tail_to_cell_width(self.input_text, available)
+            self._add(y + 1, 1 + prompt_width, visible)
             try:
                 self.screen.move(
-                    y + 2, min(self.width - 2, 1 + len(prompt) + len(visible))
+                    y + 1,
+                    min(self.width - 2, 1 + prompt_width + _cell_width(visible)),
                 )
             except curses.error:
                 pass
@@ -800,7 +958,7 @@ class CopperWrightTui:
             name = str(item.get("name", "Unnamed project"))
             status = str(item.get("status", "unknown"))
             project_id = str(item.get("id", ""))
-            text = f"{'> ' if selected else '  '}{name}  [{status}]  {project_id}"
+            text = f"{'› ' if selected else '  '}{name}  [{status}]  {project_id}"
             self._add(
                 y + 2 + offset,
                 x + 2,
@@ -814,38 +972,6 @@ class CopperWrightTui:
             self._style(4),
         )
 
-    def _render_help(self) -> None:
-        lines = [
-            "CopperWright TUI keyboard guide",
-            "",
-            "Enter          send message / advance the new-project form",
-            "Ctrl+N         create a new project",
-            "Ctrl+P         list and open local projects",
-            "F5 / Ctrl+R    refresh current project",
-            "F7 / Ctrl+Y    confirm a reviewed generation or staged change",
-            "F6 / Ctrl+V    run L0–L7 validation",
-            "Ctrl+Z         undo the last applied semantic change",
-            "Ctrl+D         discard a staged semantic change",
-            "PageUp/Down    scroll the conversation",
-            "Ctrl+Q         quit",
-            "",
-            "Commands: /new [name], /projects, /open ID, /confirm, /validate,",
-            "/undo, /discard, /release, /refresh, /quit",
-            "",
-            "The planner can propose a general circuit topology, but the right panel",
-            "shows deterministic preflight evidence before KiCad generation is allowed.",
-            "",
-            "Press Esc, Enter, or q to close this help.",
-        ]
-        box_width = min(max(56, self.width * 4 // 5), self.width - 6)
-        box_height = min(len(lines) + 4, self.height - 4)
-        x = max(2, (self.width - box_width) // 2)
-        y = max(1, (self.height - box_height) // 2)
-        self._box(y, x, box_height, box_width, "Help")
-        for offset, line in enumerate(lines[: box_height - 2]):
-            style = self._style(2, curses.A_BOLD) if offset == 0 else 0
-            self._add(y + 1 + offset, x + 2, line, style)
-
     def _box(self, y: int, x: int, height: int, width: int, title: str) -> None:
         if height < 3 or width < 5:
             return
@@ -855,8 +981,7 @@ class CopperWrightTui:
         for row in range(y + 1, y + height - 1):
             self._add(row, x, "|", self._style(4))
             self._add(row, x + width - 1, "|", self._style(4))
-        label = f" {title} "
-        self._add(y, x + 2, label, self._style(2, curses.A_BOLD))
+        self._add(y, x + 2, f" {title} ", self._style(2, curses.A_BOLD))
 
     def _add(self, y: int, x: int, text: str, style: int = 0) -> None:
         if y < 0 or x < 0 or y >= self.height or x >= self.width - 1:
@@ -871,12 +996,24 @@ class CopperWrightTui:
     @staticmethod
     def _wrap(text: str, width: int) -> list[str]:
         clean = " ".join(text.replace("\n", " ").split())
-        return textwrap.wrap(
-            clean,
-            width=max(1, width),
-            break_long_words=True,
-            break_on_hyphens=False,
-        ) or [""]
+        if not clean:
+            return [""]
+        line_width = max(1, width)
+        result: list[str] = []
+        current = ""
+        for word in clean.split(" "):
+            candidate = word if not current else f"{current} {word}"
+            if _cell_width(candidate) <= line_width:
+                current = candidate
+                continue
+            if current:
+                result.append(current)
+            chunks = _split_to_cell_width(word, line_width)
+            result.extend(chunks[:-1])
+            current = chunks[-1]
+        if current:
+            result.append(current)
+        return result
 
     @staticmethod
     def _style(pair: int, attributes: int = 0) -> int:
@@ -897,14 +1034,17 @@ def run_tui_command(
     project_id: str | None,
     timeout: float,
 ) -> int:
-    """Launch the full-screen terminal UI on an interactive local terminal."""
+    """Launch the default full-screen terminal interface."""
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValidationError(
-            "tui requires an interactive terminal; use `chat --json` for scripting"
+            "the full-screen terminal interface requires an interactive terminal; "
+            "use `chat --json` for scripting"
         )
     if os.environ.get("TERM", "").casefold() in {"", "dumb"}:
-        raise ValidationError("tui requires a terminal with cursor-addressing support")
+        raise ValidationError(
+            "the full-screen terminal interface requires cursor-addressing support"
+        )
     service = ApplicationService(workspace, provider_name=provider)
     controller = TuiController(service=service, timeout=timeout, project_id=project_id)
     try:

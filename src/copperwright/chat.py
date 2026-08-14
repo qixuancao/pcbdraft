@@ -1,4 +1,4 @@
-"""Interactive and scriptable terminal conversation for CopperWright."""
+"""Parameterized terminal conversation actions for CopperWright."""
 
 from __future__ import annotations
 
@@ -7,9 +7,8 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
-from .agent import interactive_agent
 from .application import ApplicationService
-from .errors import CopperWrightError, ValidationError
+from .errors import ValidationError
 
 
 def _print_project(view: dict[str, Any], stream: TextIO) -> None:
@@ -126,6 +125,11 @@ def run_chat_command(
     as_json: bool,
     timeout: float,
 ) -> int:
+    if not list_only and not new_name and not project_id:
+        raise ValidationError(
+            "chat requires --new, --project, or --list; "
+            "run `copperwright` for the terminal interface"
+        )
     service = ApplicationService(workspace, provider_name=provider)
     if list_only:
         value: Any = {"projects": service.list_projects()}
@@ -135,14 +139,6 @@ def run_chat_command(
                 raise ValidationError("--new requires --message")
             value = service.create_project(new_name, message)
             project_id = value["project"]["id"]
-        elif not project_id:
-            if sys.stdin.isatty():
-                return interactive_agent(
-                    service,
-                    initial_message=message,
-                    timeout=timeout,
-                )
-            raise ValidationError("noninteractive chat requires --new or --project")
         else:
             value = service.open_project(project_id)
             if message:
@@ -172,94 +168,3 @@ def run_chat_command(
     else:
         _print_project(value, sys.stdout)
     return 0
-
-
-def interactive_chat(
-    service: ApplicationService,
-    *,
-    input_stream: TextIO = sys.stdin,
-    output_stream: TextIO = sys.stdout,
-) -> int:
-    """Run a small command-aware REPL suitable for SSH terminals."""
-
-    print("CopperWright — local conversational PCB design", file=output_stream)
-    diagnostic = service.diagnostics()
-    provider = diagnostic["provider"]
-    print(
-        f"Provider: {provider['id']} ({'available' if provider['available'] else 'unavailable'})",
-        file=output_stream,
-    )
-    print(
-        "Type /help for commands. Credentials are never accepted here.",
-        file=output_stream,
-    )
-    current_id: str | None = None
-    while True:
-        prompt = f"copperwright:{current_id or 'no-project'}> "
-        output_stream.write(prompt)
-        output_stream.flush()
-        line = input_stream.readline()
-        if not line:
-            print(file=output_stream)
-            return 0
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            if line in {"/quit", "/exit"}:
-                return 0
-            if line == "/help":
-                print(
-                    "/new NAME, /open ID, /projects, /status, /confirm, /discard, "
-                    "/validate, /undo, /release, /quit",
-                    file=output_stream,
-                )
-                continue
-            if line == "/projects":
-                for item in service.list_projects():
-                    print(
-                        f"{item['id']}\t{item['status']}\t{item['name']}",
-                        file=output_stream,
-                    )
-                continue
-            if line.startswith("/new "):
-                name = line[5:].strip()
-                output_stream.write("What should the board do? ")
-                output_stream.flush()
-                request = input_stream.readline().strip()
-                view = service.create_project(name, request)
-                current_id = view["project"]["id"]
-                _print_project(view, output_stream)
-                continue
-            if line.startswith("/open "):
-                current_id = line[6:].strip()
-                _print_project(service.open_project(current_id), output_stream)
-                continue
-            if current_id is None:
-                print("Create or open a project first.", file=output_stream)
-                continue
-            if line == "/status":
-                view = service.open_project(current_id)
-            elif line == "/confirm":
-                current = service.open_project(current_id)
-                if current["project"]["status"] == "awaiting_confirmation":
-                    view = service.confirm_project(current_id)
-                elif current["project"]["status"] == "change_ready":
-                    view = service.apply_modification(current_id)
-                else:
-                    raise ValidationError("nothing is awaiting confirmation")
-            elif line == "/discard":
-                view = service.discard_modification(current_id)
-            elif line == "/validate":
-                view = service.validate_project(current_id)
-            elif line == "/undo":
-                view = service.undo_last_modification(current_id)
-            elif line == "/release":
-                view = service.build_release(current_id)
-            elif line.startswith("/"):
-                raise ValidationError("unknown chat command; type /help")
-            else:
-                view = service.send_message(current_id, line)
-            _print_project(view, output_stream)
-        except CopperWrightError as exc:
-            print(f"Error: {exc}", file=output_stream)

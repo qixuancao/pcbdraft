@@ -24,7 +24,7 @@ from .agent_design import (
     CircuitPlan,
     circuit_plan_schema,
 )
-from .codex import invoke_structured_codex
+from .codex import CODEX_MODEL, CODEX_REASONING, invoke_structured_codex
 from .errors import CopperWrightError, ValidationError
 from .io import make_directory
 
@@ -331,6 +331,8 @@ class CodexIntentProvider:
         return {
             "id": self.provider_id,
             "available": bool(executable),
+            "model": CODEX_MODEL,
+            "reasoning_effort": CODEX_REASONING,
             "executable": str(Path(executable).resolve()) if executable else None,
             "secret_storage": "Codex CLI authentication; not read by CopperWright",
             "planning": "structured circuit plan over installed KiCad symbols",

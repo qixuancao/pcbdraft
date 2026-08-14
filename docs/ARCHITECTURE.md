@@ -9,7 +9,7 @@ execution, validation outcomes, or release identity.
 
 ## Product path
 
-    compact terminal agent / terminal chat / local browser / JSON-RPC
+    full-screen terminal / parameterized chat / local browser / JSON-RPC
                        |
                        v
              ApplicationService: projects, events, locks,
@@ -50,12 +50,14 @@ execution, validation outcomes, or release identity.
              |                                 |
              +------------- retained attempt --+
 
-The application service is the only business write authority. The compact
-terminal agent, terminal chat, and browser render the same persisted project,
-conversation, attempt, event, and decision records. The compact agent derives a
-local project name from the first normal-language request, while slash commands
-handle project selection and explicit engineering actions. A restart marks an
-incomplete job interrupted rather than replaying its side effects.
+The application service is the only business write authority. The default
+full-screen terminal and browser render the same persisted project,
+conversation, attempt, event, and decision records. The terminal derives a
+local project name from the first normal-language request, while its slash
+palette handles project selection and explicit engineering actions. The
+parameterized <code>chat</code> command is for automation and does not start a
+line-oriented session. A restart marks an incomplete job interrupted rather
+than replaying its side effects.
 
 ## Generic request and plan
 

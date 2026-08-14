@@ -62,19 +62,31 @@ For model-assisted circuit planning, start the local browser app:
 
     uv run copperwright app --provider codex
 
-Or use the compact terminal client:
+Or launch the full-screen terminal conversation (the default command):
 
-    uv run copperwright agent --provider codex
+    uv run copperwright --provider codex
 
 Describe the board, review the proposed stock KiCad parts and nets, then confirm
-generation. Requests mentioning RF, mains, high voltage, high power, medical,
-aviation, safety-critical, or other complex domains follow the same generation
-path. CopperWright may warn that it lacks domain-specific validation, but the
-domain label itself does not reject the request.
+generation. The single conversation surface has a slash-command palette: type
+`/` to see all commands, use arrow keys to select, Tab to complete, and Enter
+to complete or run a command. `--workspace`, `--project`, and `--timeout` are
+also available before the default launcher. Requests mentioning RF, mains, high
+voltage, high power, medical, aviation, safety-critical, or other complex
+domains follow the same generation path. CopperWright may warn that it lacks
+domain-specific validation, but the domain label itself does not reject the
+request.
+
+The palette provides `/help`, `/new [name]`, `/projects`, `/open ID`, `/status`,
+`/model [auto|codex|openai-compatible|builtin]`, `/confirm`, `/validate`,
+`/undo`, `/discard`, `/release`, and `/quit`. `/model` reports the active
+planner/provider model when it is configured and changes only this running
+application service; it never writes credentials or provider configuration.
 
 The offline `--provider builtin` extracts requirements but does not invent a
 circuit. Use the included example without a provider, or configure a planning
-provider for free-form requests.
+provider for free-form requests. For scripts, `chat` remains explicitly
+parameterized—for example, `uv run copperwright chat --new NAME --message TEXT
+--json`; it does not open an interactive prompt.
 
 ## Plan and API commands
 

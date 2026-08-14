@@ -2,11 +2,12 @@
 
 ## Conversational application
 
-<code>copperwright agent</code>, <code>copperwright chat</code>, and
-<code>copperwright app</code> all use <code>ApplicationService</code>. The compact
-<code>agent</code> terminal starts with a direct board question and creates a local
-project from its first plain-language message; <code>chat</code> retains its
-noninteractive argument surface. The service owns project state, confirmation,
+<code>copperwright</code> with no subcommand, <code>copperwright chat</code>, and
+<code>copperwright app</code> all use <code>ApplicationService</code>. The default
+full-screen terminal creates a local project from its first plain-language
+message and presents slash commands through an in-place palette. <code>chat</code>
+retains its noninteractive argument surface and requires an explicit action; it
+does not fall back to a line REPL. The service owns project state, confirmation,
 events, locks, recovery, generation attempts, and validation; clients do not
 reimplement engineering logic.
 

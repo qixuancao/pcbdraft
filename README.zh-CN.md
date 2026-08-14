@@ -77,16 +77,24 @@ CopperWright 不是重写 KiCad，也不是“给几个固定开发板套模板�
 生成计划，请用 <code>--provider codex</code> 或配置
 <code>--provider openai-compatible</code>。
 
-终端和网页使用同一个应用服务。推荐的终端入口是简洁的 Pi 风格对话：启动后直接描述要做的板子，首条消息会自动创建本地项目；普通文字继续当前对话，只有项目和工程动作使用斜杠命令。
+终端和网页使用同一个应用服务。终端默认入口是全屏单窗格对话：启动后直接描述要做的板子，首条消息会自动创建本地项目；普通文字继续当前对话，只有项目和工程动作使用斜杠命令。
 
-    uv run copperwright agent --provider codex
-    # What would you like to build?
+    uv run copperwright --provider codex
     # 做一块带 STM32F405 和 SHT31、含 I2C 与 SWD 的 2 层板
     # /confirm
 
-    # /new [名称]、/projects、/open ID、/status、/validate、/release、/quit
+输入 `/` 会显示全部命令和简短说明；上下键选择，Tab 补全，Enter 补全或执行，Esc
+关闭命令面板。默认终端入口也支持 `--workspace`、`--project` 和 `--timeout`。例如
+`/model` 会显示当前规划 provider/model，`/model builtin` 等受支持的 provider 只会
+切换当前进程中的 provider，不会写入凭据或配置。
 
-`chat` 仍保留完整的非交互参数，适合 `--json`、`--new`、`--project` 和自动化脚本。
+命令面板包含 `/help`、`/new [name]`、`/projects`、`/open ID`、`/status`、
+`/model [auto|codex|openai-compatible|builtin]`、`/confirm`、`/validate`、
+`/undo`、`/discard`、`/release` 和 `/quit`。
+
+`chat` 仍保留完整的非交互参数，适合 `--json`、`--new`、`--project` 和自动化脚本，
+例如 `uv run copperwright chat --new 名称 --message "需求" --json`；未给出明确动作时它
+不会回退到行式 REPL。
 
 ## 面向脚本的入口
 

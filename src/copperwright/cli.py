@@ -10,7 +10,6 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from . import PRIMARY_CLI, PRODUCT_NAME, __version__
-from .agent import run_agent_command
 from .agent_design import (
     AgentDesignRequest,
     CircuitPlan,
@@ -84,11 +83,33 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         description=(
             f"{PRODUCT_NAME}: generate native KiCad projects from reviewable circuit plans."
         ),
+        epilog=(
+            "Run without a subcommand to launch the full-screen terminal interface."
+        ),
     )
     parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
-    subcommands = parser.add_subparsers(dest="command", required=True)
+    parser.add_argument(
+        "--workspace", metavar="DIR", help="terminal interface workspace"
+    )
+    parser.add_argument(
+        "--provider",
+        choices=("auto", "codex", "openai-compatible", "builtin"),
+        default="auto",
+        help="terminal planning provider",
+    )
+    parser.add_argument(
+        "--project", dest="project_id", metavar="ID", help="project to open"
+    )
+    parser.add_argument(
+        "--timeout",
+        type=positive_timeout,
+        default=420.0,
+        metavar="SEC",
+        help="terminal action timeout",
+    )
+    subcommands = parser.add_subparsers(dest="command")
 
     doctor = subcommands.add_parser(
         "doctor", help="check local Codex, KiCad, and Git tools"
@@ -277,7 +298,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     semantic_recover.add_argument("TRANSACTION")
 
     chat = subcommands.add_parser(
-        "chat", help="create, change, validate, and release projects conversationally"
+        "chat", help="run explicit project actions, including JSON automation"
     )
     chat.add_argument("--workspace", metavar="DIR")
     chat.add_argument(
@@ -299,35 +320,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     chat.add_argument("--list", action="store_true", dest="list_only")
     chat.add_argument("--json", action="store_true", dest="as_json")
     chat.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
-
-    agent = subcommands.add_parser(
-        "agent", help="launch a compact Pi-style local design conversation"
-    )
-    agent.add_argument("--workspace", metavar="DIR")
-    agent.add_argument(
-        "--provider",
-        choices=("auto", "codex", "openai-compatible", "builtin"),
-        default="auto",
-    )
-    agent.add_argument("--project", dest="project_id", metavar="ID")
-    agent.add_argument(
-        "--message",
-        metavar="TEXT",
-        help="send the first message after starting or opening a project",
-    )
-    agent.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
-
-    tui = subcommands.add_parser(
-        "tui", help="launch the full-screen local terminal design interface"
-    )
-    tui.add_argument("--workspace", metavar="DIR")
-    tui.add_argument(
-        "--provider",
-        choices=("auto", "codex", "openai-compatible", "builtin"),
-        default="auto",
-    )
-    tui.add_argument("--project", dest="project_id", metavar="ID")
-    tui.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
 
     app = subcommands.add_parser(
         "app", help="start the local CopperWright browser application"
@@ -366,6 +358,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command is None:
+            return run_tui_command(
+                workspace=args.workspace,
+                provider=args.provider,
+                project_id=args.project_id,
+                timeout=args.timeout,
+            )
         if args.command == "doctor":
             return _print_doctor(doctor_report(), args.as_json)
         if args.command == "review":
@@ -700,21 +699,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 release=args.chat_release,
                 list_only=args.list_only,
                 as_json=args.as_json,
-                timeout=args.timeout,
-            )
-        if args.command == "agent":
-            return run_agent_command(
-                workspace=args.workspace,
-                provider=args.provider,
-                project_id=args.project_id,
-                initial_message=args.message,
-                timeout=args.timeout,
-            )
-        if args.command == "tui":
-            return run_tui_command(
-                workspace=args.workspace,
-                provider=args.provider,
-                project_id=args.project_id,
                 timeout=args.timeout,
             )
         if args.command == "app":
