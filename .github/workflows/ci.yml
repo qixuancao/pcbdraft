@@ -9,24 +9,6 @@ permissions:
   contents: read
 
 jobs:
-  deepseek-contract:
-    name: Optional DeepSeek Harness contracts
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
-        with:
-          python-version: "3.11"
-          enable-cache: true
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-      - run: uv sync --frozen --extra dev --extra harness
-      - run: uv run ruff check src/pcbdraft/harness_bridge.py src/pcbdraft/deepseek_bridge.py tests/test_harness_provider.py integrations/deepseek-harness/test/python-provider-runtime.py
-      - run: uv run python -m unittest -v tests.test_harness_provider
-      - run: uv run python integrations/deepseek-harness/test/python-provider-runtime.py
-      - run: node --test integrations/deepseek-harness/test/plugin.test.mjs
-
   python-core:
     name: Python ${{ matrix.python }} core
     runs-on: ubuntu-24.04

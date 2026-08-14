@@ -24,7 +24,7 @@ fi
 uv run python -m zipfile -t "$WHEEL"
 tar -tzf "$SDIST" >/dev/null
 uv run python -c \
-    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/integrations/deepseek-harness/index.mjs", "/scripts/tui-e2e.py", "/src/pcbdraft/data/deepseek_provider.cordis.yml"); assert all(any(name.endswith(item) for name in names) for item in required)' \
+    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/scripts/tui-e2e.py", "/src/pcbdraft/tui.tcss"); assert all(any(name.endswith(item) for name in names) for item in required)' \
     "$SDIST"
 
 uv venv --python 3.11 "$CHECK_ROOT/venv"
@@ -33,7 +33,7 @@ uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
 "$CHECK_ROOT/venv/bin/python" -c \
     'from pcbdraft.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 "$CHECK_ROOT/venv/bin/python" -c \
-    'from importlib.resources import files; assert files("pcbdraft").joinpath("data/deepseek_provider.cordis.yml").is_file()'
+    'from importlib.resources import files; assert files("pcbdraft").joinpath("tui.tcss").is_file()'
 
 PCBDRAFT_EXE="$CHECK_ROOT/venv/bin/pcbdraft" \
 PCBDRAFT_PYTHON="$CHECK_ROOT/venv/bin/python" \
@@ -48,7 +48,7 @@ uv run python scripts/browser-e2e.py \
 "$CHECK_ROOT/venv/bin/pcbdraft" benchmark \
     "$CHECK_ROOT/benchmark.json" --repetitions 2 --json
 "$CHECK_ROOT/venv/bin/pcbdraft" generate \
-    "$REPO_DIR/examples/attiny_sensor_controller/requirements.json" \
+    "$REPO_DIR/tests/fixtures/attiny_sensor_controller.json" \
     "$CHECK_ROOT/project" --json
 "$CHECK_ROOT/venv/bin/pcbdraft" validate \
     "$CHECK_ROOT/project" --output "$CHECK_ROOT/validation" --json

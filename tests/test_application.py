@@ -549,7 +549,7 @@ class ApplicationConversationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "intent schema"):
             validate_interpretation(invalid)
 
-    def test_codex_strict_schema_uses_supported_keywords(self) -> None:
+    def test_intent_schema_uses_supported_keywords(self) -> None:
         schema = interpretation_schema()
         serialized = json.dumps(schema, sort_keys=True)
         self.assertNotIn("uniqueItems", serialized)
@@ -679,7 +679,14 @@ class ApplicationConversationTests(unittest.TestCase):
                     timeout=5,
                 )
                 self.assertEqual(result["requested_parts"], ["AP2112"])
-                self.assertFalse(any(Path(temporary).rglob("*")))
+                retained = tuple(Path(temporary).rglob("*"))
+                self.assertTrue(retained)
+                self.assertFalse(
+                    any(
+                        item.is_file() and sentinel in item.read_text(encoding="utf-8")
+                        for item in retained
+                    )
+                )
             diagnostic = provider.diagnostic()
         finally:
             if previous is None:
@@ -917,7 +924,8 @@ class BrowserSecurityTests(unittest.TestCase):
         html = web.joinpath("index.html").read_text(encoding="utf-8")
         script = web.joinpath("app.js").read_text(encoding="utf-8")
         self.assertIn('id="setup-dialog"', html)
-        self.assertIn("OPENAI_API_KEY=&lt;secret&gt;", html)
+        self.assertIn("/connect", html)
+        self.assertNotIn("OPENAI_API_KEY", html)
         self.assertNotIn('id="provider-api-key"', html)
         self.assertIn("Findings and unavailable checks", script)
         self.assertIn("validation_report", script)

@@ -1,6 +1,6 @@
 """Persistent background runtime for PCBDraft interactive agent turns.
 
-The runtime is intentionally independent of curses.  It turns synchronous
+The runtime is intentionally independent of any UI toolkit.  It turns synchronous
 application operations into durable jobs and exposes only incremental events,
 which lets terminal, web, and future desktop surfaces share one PCB-agent core.
 """
@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .agent_capabilities import agent_capability
 from .agent_events import AgentActivity, AgentUpdate
 from .application import ApplicationService
 from .errors import ValidationError
@@ -17,15 +18,6 @@ from .jobs import JobRunner
 
 _ACTIVE_JOB_STATES = {"queued", "running", "cancel_requested"}
 _RETRYABLE_JOB_STATES = {"failed", "interrupted", "cancelled"}
-_TUI_ACTIONS = {
-    "confirm": "confirm",
-    "validate": "validate",
-    "apply_change": "apply_change",
-    "discard_change": "discard_change",
-    "undo": "undo",
-    "release": "release",
-    "previews": "previews",
-}
 
 
 @dataclass
@@ -102,10 +94,10 @@ class AgentRuntime:
     ) -> AgentUpdate:
         """Enqueue one explicit PCB project action."""
 
-        job_action = _TUI_ACTIONS.get(action)
-        if job_action is None:
+        capability = agent_capability(action)
+        if capability is None:
             raise ValidationError(f"unsupported agent action: {action}")
-        return self._submit(project_id, job_action, {"timeout": timeout})
+        return self._submit(project_id, capability.job_action, {"timeout": timeout})
 
     def poll(self) -> AgentUpdate | None:
         """Return newly persisted activity and settle a finished turn."""

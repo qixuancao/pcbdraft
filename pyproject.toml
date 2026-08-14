@@ -27,6 +27,7 @@ classifiers = [
 dependencies = [
     # Pinned because generated KiCad syntax is part of the output contract.
     "kicad-sch-api==0.5.6",
+    "textual>=8.2.8,<9",
 ]
 
 [project.urls]
@@ -37,7 +38,6 @@ Changelog = "https://github.com/qixuancao/pcbdraft/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["build>=1.2", "ruff>=0.12"]
-harness = ["deepseek-harness-sdk>=0.1.0rc5,<0.2"]
 
 [project.scripts]
 pcbdraft = "pcbdraft.cli:main"
@@ -49,4 +49,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]
+pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml", "*.tcss", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]

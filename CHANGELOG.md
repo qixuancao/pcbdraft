@@ -21,12 +21,10 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   native staging by default.
 - Added a UI-neutral Python <code>AgentRuntime</code>, durable non-blocking jobs,
   persisted activity events, cooperative stop, explicit retry, review/log views,
-  restart recovery without replay, and a single-window slash-command TUI.
+  restart recovery without replay, and a modular Textual agent TUI.
 - Added bounded repair for generation and completed deterministic L1–L3 failures.
   Replacement plans pass through the same compiler, staged validation, atomic
   application, and exact undo; unknown/human evidence never self-approves.
-- Added optional DeepSeek Harness support in both directions: a strict Python
-  planner-provider bridge and a constrained Harness-hosted PCB tool plugin.
 - Added versioned component-qualification evidence with actual native footprint
   pad-number checks, honest datasheet/identity states, and deterministic power,
   source, contention, passive, LED, I2C, and decoupling preflight rules.
@@ -34,16 +32,13 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   from the bounded grid, preserving half-pitch spacing, and reporting detailed
   unrouted-net evidence before reference-plane work. Reference-plane ties are
   now added from actual connectivity need instead of a universal via count.
-- Added LED, passive RC, and I2C pull-up stock-library examples that route and
-  reach the candidate gate under real KiCad checks. The intentionally incomplete
-  STM32F405/SHT31 fixture now routes but remains correctly blocked by electrical
-  evidence gates.
+- Added stock-library routing and electrical-gate regression fixtures for LED,
+  passive RC, I2C pull-up, and incomplete MCU/sensor designs.
 - Local-library generic data remains provisional. Exact mapping and deterministic
   electrical failures block candidate readiness; unqualified identity/datasheet
   evidence blocks production claims without pretending generation failed.
-- Rewrote README, architecture, API, acceptance, traceability, development, and
-  open-source-reuse records to distinguish the generic product path from legacy
-  deterministic fixtures.
+- Rewrote the Chinese README and core developer documentation around the generic
+  product path, and removed internal acceptance reports and generated artifacts.
 
 ## 1.0.0 — 2026-08-13
 
@@ -53,7 +48,7 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   confirmation, persistent projects/sessions/events/jobs, crash recovery,
   progress/cancel/retry states, real previews, safe open-in-KiCad actions, and
   manufacturing-candidate export with offline verification.
-- Added strict authenticated Codex and OpenAI-compatible intent providers plus a
+- Added strict authenticated model API and OpenAI-compatible intent providers plus a
   deterministic offline provider. Credentials remain outside browser and project
   records; untrusted model output cannot directly edit engineering files.
 - Added preview/validate/apply/undo semantic conversations with isolated staged
@@ -86,7 +81,7 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
 - Added explicit I2C RC/sink-current and UPDI source-ownership contracts, a filled
   GND reference plane with deterministic stitching vias, native pad-edge
   decoupling metrics, and a consistent worst-case power envelope.
-- Added synchronized managed semantic context to bounded Codex reviews; drifted
+- Added synchronized managed semantic context to bounded model API reviews; drifted
   projects automatically lose intent-authority status.
 - Added KiCad 10 compatibility policy, hostile-input coverage, examples, CI, and
   release documentation.

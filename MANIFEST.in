@@ -1,10 +1,9 @@
-include LICENSE NOTICE README.md BENCHMARK.md CHANGELOG.md CONTRIBUTING.md SECURITY.md
+include LICENSE NOTICE README.md CHANGELOG.md CONTRIBUTING.md SECURITY.md
 include Makefile pcbdraft uv.lock
 recursive-include docs *.md *.png *.svg
 recursive-include scripts *.sh *.py
-recursive-include integrations *.md *.json *.mjs
-recursive-include examples *.md *.json *.kicad_sch *.kicad_pcb *.kicad_pro
 recursive-include tests *.py
+recursive-include src/pcbdraft *.tcss
 recursive-include src/pcbdraft/data *.json *.md *.yml
 prune artifacts
 global-exclude *.py[cod] __pycache__ *.kicad_prl

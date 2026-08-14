@@ -7,10 +7,8 @@ from pcbdraft.doctor import doctor_report
 
 
 class DoctorTests(unittest.TestCase):
-    def test_codex_is_optional_for_deterministic_core(self) -> None:
+    def test_model_is_optional_for_deterministic_core(self) -> None:
         def fake_check(name: str, _args: list[str]) -> dict[str, object]:
-            if name == "codex":
-                return {"available": False, "version": None}
             version = "10.0.5" if name == "kicad-cli" else "git version 2.50.0"
             return {"available": True, "version": version}
 
@@ -18,7 +16,7 @@ class DoctorTests(unittest.TestCase):
             report = doctor_report()
         self.assertTrue(report["ok"])
         self.assertTrue(report["core_ok"])
-        self.assertFalse(report["ai_review_available"])
+        self.assertFalse(report["model_available"])
 
     def test_unsupported_kicad_fails_core_profile(self) -> None:
         def fake_check(name: str, _args: list[str]) -> dict[str, object]:

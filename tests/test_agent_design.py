@@ -523,39 +523,6 @@ class GenericAgentDesignTests(unittest.TestCase):
             self.assertEqual(checks["l4.bom_lifecycle"].outcome, "unknown")
             self.assertFalse(checks["l4.bom_lifecycle"].blocks_candidate)
 
-    @unittest.skipUnless(shutil.which("kicad-cli"), "real KiCad CLI unavailable")
-    def test_additional_stock_examples_reach_the_candidate_gate(self) -> None:
-        repository = Path(__file__).resolve().parents[1]
-        for example in ("rc_filter_board", "i2c_pullup_adapter"):
-            with (
-                self.subTest(example=example),
-                tempfile.TemporaryDirectory() as temporary,
-            ):
-                source = repository / "examples" / example
-                request = AgentDesignRequest.from_dict(
-                    json.loads((source / "request.json").read_text(encoding="utf-8"))
-                )
-                plan = CircuitPlan.from_dict(
-                    json.loads(
-                        (source / "circuit-plan.json").read_text(encoding="utf-8")
-                    )
-                )
-                compilation = compile_agent_plan(request, plan)
-                generated = materialize_managed_design(
-                    compilation.request,
-                    compilation.design,
-                    Path(temporary) / "project",
-                    graph=compilation.graph,
-                    plan=compilation.plan,
-                )
-                self.assertEqual(generated.pcb.routing.state, "completed")
-                self.assertEqual(generated.pcb.routing.unrouted, ())
-                validation = validate_managed_project(
-                    generated.project, output=Path(temporary) / "validation"
-                )
-                self.assertTrue(validation.candidate_ready)
-                self.assertFalse(validation.production_ready)
-
     def test_cli_stock_generation_reports_route_without_claiming_validation(
         self,
     ) -> None:

@@ -1,4 +1,4 @@
-"""Export bounded semantic KiCad evidence for Codex review.
+"""Export bounded semantic KiCad evidence for model API review.
 
 Run through workflows.run_review; requires kicad-cli.
 Produces deterministic netlist, board-statistics, and PCB-connectivity artifacts.
@@ -472,7 +472,7 @@ def collect_semantic_context(
     redactions: Mapping[str, str],
     executable: str | None = None,
 ) -> dict[str, Any]:
-    """Export and normalize semantic evidence without asking Codex to inspect raw KiCad files."""
+    """Export and normalize semantic evidence without asking model API to inspect raw KiCad files."""
     make_directory(output_dir)
     resolved = executable or shutil.which("kicad-cli")
     if not resolved:

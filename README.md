@@ -1,198 +1,128 @@
-<p align="center">
-  <img src="docs/assets/brand/pcbdraft-mark-256.png" width="180" alt="PCBDraft mark">
-</p>
+# PCBDraft
 
-<h1 align="center">PCBDraft</h1>
+![PCBDraft 标志](docs/assets/brand/pcbdraft-mark-256.png)
 
-<p align="center">
-  <a href="README.md">English</a> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a> ·
-  <a href="README.ko.md">한국어</a>
-</p>
+PCBDraft 是一个独立的开源 PCB 设计智能体。你用自然语言描述想做的
+电路板，它负责整理需求、规划电路、生成原生 KiCad 工程，并把连接检查、
+ERC、DRC 和每一步的证据留在本地。
 
-<p align="center"><strong>An open-source, local, agent-safe KiCad generator.</strong></p>
+它面向小型、低压、非安全关键的原型板。生成结果是工程候选，仍然需要
+人工审查，不能替代电气、布局、热、EMC 或制造工程师的签字。
 
-PCBDraft turns a reviewable circuit plan into a native KiCad project. Its
-generic generator uses only the stock KiCad symbols and footprints installed on
-your machine—no vendor libraries, supplier integrations, or KiCad plugins.
+## 特性
 
-It generates a schematic, places components, makes a bounded routing attempt,
-and keeps the request and semantic design beside the KiCad files. When a symbol,
-route, ERC/DRC check, or export fails, PCBDraft reports the real failure and
-retains the available work instead of claiming success.
+- 类似编程智能体的全屏终端界面，支持中文自然语言输入；
+- 不要求用户预先决定层数、尺寸或全部器件；
+- 只使用本机安装的 KiCad 符号和封装；
+- 模型只负责受约束的需求理解和电路计划，确定性代码负责生成 KiCad 文件；
+- 自动布局、布线、连接检查、ERC、DRC 和项目一致性检查；
+- 所有模型服务都通过 PCBDraft 自己的配置文件接入，不依赖其他 CLI；
+- 失败会保留计划、工程和错误信息，方便继续修改。
 
-## Quick start
+## 快速开始
 
-Requirements: Linux, Python 3.11+, `uv`, and KiCad 10 with its standard symbol
-and footprint packages.
+需要 Linux、Python 3.11 或更高版本、[uv](https://docs.astral.sh/uv/)，以及
+KiCad 10 和 `kicad-cli`。
 
-    uv sync --extra dev
-    scripts/prepare-kicad-environment.sh
-    uv run pcbdraft doctor --json
+```bash
+git clone https://github.com/qixuancao/pcbdraft.git
+cd pcbdraft
+uv sync --extra dev
+scripts/prepare-kicad-environment.sh
+uv run pcbdraft doctor --json
+```
 
-Generate the included stock-library example:
+## 配置模型
 
-    uv run pcbdraft agent-generate \
-      examples/basic_stock_board/request.json \
-      examples/basic_stock_board/circuit-plan.json \
-      build/basic-stock-board
+启动 TUI 后输入 `/connect`，选择 DeepSeek、MiniMax、Kimi、OpenAI、
+OpenRouter、本地 Ollama 或自定义 OpenAI 兼容服务，然后输入 API Key。
+输入 `/models` 可以搜索并切换模型。
 
-On the installed KiCad 10.0.5 environment, this example produces a routed board
-with zero ERC violations, DRC violations, unconnected items, or schematic-parity
-errors. The source files and circuit explanation are in
-<a href="examples/basic_stock_board">examples/basic_stock_board</a>.
-Two additional stock-library acceptance examples exercise a passive RC network
-and explicit I2C pull-ups:
-<a href="examples/rc_filter_board">examples/rc_filter_board</a> and
-<a href="examples/i2c_pullup_adapter">examples/i2c_pullup_adapter</a>.
+密钥由 PCBDraft 写入 `~/.config/pcbdraft/config.toml`，文件权限为 `600`，
+不会进入 PCB 工程、对话记录或运行收据。也可以手动创建同样的配置：
 
-## Output
+```toml
+version = 1
+active_provider = "deepseek"
+active_model = "deepseek-v4-pro"
 
-`build/basic-stock-board/` contains:
+[providers.deepseek]
+name = "DeepSeek"
+base_url = "https://api.deepseek.com"
+api_key = "在这里填写密钥"
+models = ["deepseek-v4-pro", "deepseek-v4-flash"]
+docs_url = "https://platform.deepseek.com/"
+```
 
-- `basic-stock-board.kicad_sch` — native KiCad schematic;
-- `basic-stock-board.kicad_pcb` — native routed PCB;
-- `basic-stock-board.kicad_pro` — KiCad project settings;
-- `circuit-plan.json` and `design.pcbir.json` — editable plan and semantic IR;
-- `parts.pcbdraft.json` and `component-qualification.json` — exact local
-  part records, symbol/footprint pad-map evidence, and explicit datasheet/MPN
-  qualification state;
-- `requirements.pcbreq.json` — the retained generation request; and
-- `project.pcbdraft.json` — hashes and generation details.
+手动创建后执行：
 
-Open the `.kicad_pro` file in KiCad to inspect or continue editing the design.
+```bash
+chmod 700 ~/.config/pcbdraft
+chmod 600 ~/.config/pcbdraft/config.toml
+```
 
-## Conversational use
+## 启动
 
-For model-assisted circuit planning, start the local browser app:
+```bash
+uv run pcbdraft
+```
 
-    uv run pcbdraft app --provider codex
+直接描述电路板即可。用户没有指定层数时，PCBDraft 会根据小型原型的约束
+自动选择保守的初始方案，不要求用户理解叠层设计。
 
-Or launch the full-screen terminal conversation (the default command):
+TUI 中常用命令：
 
-    uv run pcbdraft --provider codex
+| 命令 | 作用 |
+| --- | --- |
+| `/connect` | 添加或更新模型服务和 API Key |
+| `/models` | 搜索并选择当前模型 |
+| `/new [名称]` | 创建新项目 |
+| `/projects` | 打开已有项目 |
+| `/review` | 查看计划、变更和检查证据 |
+| `/logs on` | 展开工具执行详情 |
+| `/stop` | 在安全边界停止当前任务 |
+| `/retry` | 重试最近一次失败的任务 |
+| `/validate` | 重新运行检查 |
+| `/release` | 生成制造候选证据包 |
+| `/quit` | 退出 TUI |
 
-Describe the board once. The terminal queues a durable agent turn and streams
-its requirement, planning, generation, preview, and validation activity while
-remaining responsive. Unless you explicitly state a layer count, PCBDraft
-chooses an initial stackup as part of the design attempt. Press Esc or use
-`/stop` to request a stop before the next PCB tool starts. A reviewable circuit
-plan is always retained; `/confirm` remains available for a manually staged or
-recovered project, but it is not an extra step in the default terminal flow.
-The terminal remembers only the last local project identifier and resumes it on
-restart; it never stores prompts or provider credentials in the TUI session
-record. Use `/review` for the retained plan and staged semantic diff, `/logs on`
-for expanded activity, and `/retry` to explicitly rerun a recovered failed or
-interrupted job. Recovery never replays work automatically.
+`Ctrl+P` 打开命令面板。`Ctrl+X` 是快捷操作前缀：再按 `N` 新建项目、
+`L` 打开项目列表、`M` 切换模型、`R` 工程审查、`D` 展开工具详情、
+`S` 刷新项目状态、`C` 连接模型服务、`H` 打开帮助、`Q` 退出。
+`Esc` 关闭菜单或中断当前任务，`F1` 也可查看完整帮助。
 
-For generic parts, “found in KiCad” is deliberately not reported as “qualified.”
-The compiler verifies that every selected symbol pin maps to a real pad number
-in the selected installed footprint, retains any KiCad datasheet locator as an
-unverified reference, and marks manufacturer identity, ratings, lifecycle, and
-package suitability for engineering review. Deterministic topology failures—
-including supply/ground polarity, implausible rail sources, output contention,
-reversed ground-referenced LEDs, missing per-line I2C pull-ups, and missing IC
-bypass topology—can enter the same bounded repair loop; unknown datasheet or
-human evidence never does.
+## 离线模式
 
-The single conversation surface has a slash-command palette: type `/` to see
-all commands, use arrow keys to select, Tab to complete, and Enter to complete
-or run a command. `--workspace`, `--project`, and `--timeout` are also available
-before the default launcher. Requests mentioning RF, mains, high voltage, high
-power, medical, aviation, safety-critical, or other complex domains follow the
-same generation path. PCBDraft may warn that it lacks domain-specific
-validation, but the domain label itself does not reject the request.
+没有配置模型时也可以使用：
 
-The palette provides `/help`, `/new [name]`, `/projects`, `/open ID`, `/status`,
-`/review`, `/logs [on|off]`,
-`/model [auto|codex|deepseek-harness|openai-compatible|builtin]`, `/stop`,
-`/retry`, `/confirm`, `/validate`, `/undo`, `/discard`, `/release`, and `/quit`.
-`/model` reports the active planner/provider model when it is configured and
-changes only this running application service; it never writes credentials or
-provider configuration.
+```bash
+uv run pcbdraft --provider builtin
+```
 
-The offline `--provider builtin` extracts requirements but does not invent a
-circuit. Use the included example without a provider, or configure a planning
-provider for free-form requests. For scripts, `chat` remains explicitly
-parameterized—for example, `uv run pcbdraft chat --new NAME --message TEXT
---json`; it does not open an interactive prompt.
+离线模式可以整理需求，但不会凭空编造未知电路拓扑。要从自由描述生成
+完整电路计划，需要在 `/connect` 中配置一个模型服务。
 
-## Optional DeepSeek Harness agent
+## 工程流程
 
-The all-Python PCBDraft runtime is the primary product path. The DSH
-integration is optional: it can supply external model orchestration while the
-native CLI/TUI, event boundary, KiCad generation, and validation remain
-independent.
+```text
+自然语言需求 → 约束提取 → 电路计划 → KiCad 符号解析
+→ 原理图与 PCB → 布局/布线 → 连接、ERC、DRC → 人工审查
+```
 
-To use Harness as the planner behind the native Python TUI:
+生成的工程可以直接用 KiCad 打开和继续编辑。PCBDraft 不锁定文件格式，
+也不把模型服务绑定到某一家供应商。
 
-    uv sync --extra harness
-    DEEPSEEK_API_KEY=... uv run pcbdraft --provider deepseek-harness
+## 开发
 
-The adapter sends prompts over a versioned stdin/stdout bridge, bounds time and
-output, and validates every returned intent or plan again in PCBDraft. User
-prompts and credentials are not placed in subprocess arguments or receipts.
+```bash
+scripts/test.sh
+```
 
-Alternatively, let DeepSeek Harness host the agent and mount PCBDraft as
-three constrained PCB tools. This profile exposes no general shell, filesystem,
-browser, subagent, or code runtime:
+主要模块位于 `src/pcbdraft/`：模型配置、模型传输、TUI、需求解析、KiCad
+生成、验证和事务应用彼此分离，方便替换任意一层。欢迎提交 Issue 和
+Pull Request。需要脚本化生成时，也可以使用 `agent-generate` 命令调用同一套
+受约束的电路计划和 KiCad 生成流程。
 
-    scripts/setup-deepseek-harness.sh
-    scripts/run-pcbdraft-agent.sh 'Design a low-power sensor board'
+## 许可证
 
-Its isolated local profile and generated boards are Git-ignored. See
-<a href="integrations/deepseek-harness/README.md">the integration guide</a> for
-its tool boundary, credential handling, and reproducible verification commands.
-
-## Plan and API commands
-
-Search the installed KiCad symbol libraries:
-
-    uv run pcbdraft symbols SHT31 --json
-
-Compile a request and reviewed plan without generating native files:
-
-    uv run pcbdraft agent-compile REQUEST.json PLAN.json \
-      --ir-output design.pcbir.json \
-      --parts-output parts.pcbdraft.json \
-      --json
-
-Generate the native project:
-
-    uv run pcbdraft agent-generate REQUEST.json PLAN.json OUTPUT_DIR --json
-
-The newline-delimited JSON-RPC API exposes `symbols.find`,
-`agent.request.prepare`, `agent.plan.compile`, and `agent.project.generate`; see
-<a href="docs/API.md">docs/API.md</a>.
-
-## Limitations
-
-- The router is bounded. If it cannot finish, the schematic and failed PCB
-  attempt are retained and the unrouted nets are reported.
-- ERC and DRC prove only the checks KiCad performed. They do not establish
-  circuit function, electrical safety, regulatory compliance, RF/SI/PI,
-  thermal behavior, or manufacturing fitness.
-- Model-generated pin choices, values, topology, and layout still need review.
-- PCBDraft accepts an agent-selected or user-specified positive layer count;
-  the installed KiCad build decides whether the requested stackup can be generated.
-
-Detailed architecture and historical validation material remain available in
-<a href="docs/ARCHITECTURE.md">docs/ARCHITECTURE.md</a> and the other `docs/`
-files. The evidence-based next milestones are in
-<a href="docs/ROADMAP.md">docs/ROADMAP.md</a>. These documents are reference
-material, not extra gates on ordinary generation.
-
-## Tests
-
-Run formatting, lint, unit/integration tests, and available real-KiCad tests:
-
-    scripts/test.sh
-
-Run the standalone KiCad smoke test:
-
-    REAL_CODEX=0 scripts/smoke.sh
-
-## License
-
-Apache-2.0. See <a href="LICENSE">LICENSE</a> and <a href="NOTICE">NOTICE</a>.
+PCBDraft 使用 MIT 许可证，详见 [LICENSE](LICENSE)。

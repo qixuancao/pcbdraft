@@ -7,8 +7,8 @@ not, while the installed KiCad backend reports concrete technical limits.
 
 ## Current MVP baseline
 
-The current runtime can accept an ordinary-language request through a Codex-like
-Python TUI, create a schema-constrained circuit plan, resolve installed stock
+The current runtime can accept an ordinary-language request through the Python TUI
+and a configured model API, create a schema-constrained circuit plan, resolve installed stock
 KiCad symbols and footprints, generate native schematic/PCB/project files, make
 a bounded deterministic placement/routing attempt, run available KiCad and
 PCBDraft checks, repair at most twice, and preserve inspectable evidence.

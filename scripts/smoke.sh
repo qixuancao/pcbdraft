@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Smoke-tests doctor, real KiCad ERC/DRC, and optional live Codex review.
-# Run: REAL_CODEX=0 scripts/smoke.sh (set DEMO_DIR to override the KiCad demo).
-# Requires: uv, kicad-cli, and codex when REAL_CODEX=1.
+# Smoke-tests doctor, real KiCad ERC/DRC, and optional live model API review.
+# Run: REAL_MODEL=0 scripts/smoke.sh (set DEMO_DIR to override the KiCad demo).
+# Requires: uv, kicad-cli, and a configured model when REAL_MODEL=1.
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 DEMO_SOURCE=${DEMO_DIR:-/usr/share/kicad/demos/ecc83}
-REAL_CODEX=${REAL_CODEX:-0}
+REAL_MODEL=${REAL_MODEL:-0}
 
 if [[ ! -d "$DEMO_SOURCE" ]]; then
     echo "smoke: KiCad demo directory not found: $DEMO_SOURCE" >&2
@@ -42,7 +42,7 @@ timeout 120s kicad-cli pcb drc --format json --severity-error --severity-warning
     --output "$GATE_DIR/drc.json" "${BOARDS[0]}"
 chmod 600 "$GATE_DIR/erc.json" "$GATE_DIR/drc.json"
 
-if [[ "$REAL_CODEX" == "1" ]]; then
+if [[ "$REAL_MODEL" == "1" ]]; then
     # ecc83 currently contains two matching root projects; select one without
     # touching the system demo so PCBDraft's ambiguity behavior remains strict.
     SELECTED="$SMOKE_ROOT/selected-project"
@@ -53,7 +53,7 @@ if [[ "$REAL_CODEX" == "1" ]]; then
         ! -name "$STEM.kicad_sch" ! -name "$STEM.kicad_pcb" -delete
     timeout 960s uv run ./pcbdraft review "$SELECTED" --output "$RUNS_DIR" --timeout 900
 else
-    echo "smoke: REAL_CODEX=0, skipped live Codex review"
+    echo "smoke: REAL_MODEL=0, skipped live model API review"
 fi
 
 echo "smoke: doctor and real KiCad ERC/DRC completed on a temporary copy"

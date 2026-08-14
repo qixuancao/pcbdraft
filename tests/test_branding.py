@@ -52,35 +52,21 @@ class PCBDraftBrandingTests(unittest.TestCase):
             (1280, 640),
         )
 
-    def test_multilingual_readmes_describe_the_generic_runtime(self) -> None:
-        paths = [
-            ROOT / "README.md",
-            ROOT / "README.zh-CN.md",
-            ROOT / "README.ja.md",
-            ROOT / "README.ko.md",
-        ]
-        documents = [path.read_text(encoding="utf-8") for path in paths]
-        expected_navigation = [path.name for path in paths]
-        for document in documents:
-            normalized = document.casefold()
-            for name in expected_navigation:
-                self.assertIn(f'href="{name}"', document)
-            self.assertIn("docs/assets/brand/pcbdraft-mark-256.png", document)
-            for literal in ("agent-safe", "KiCad", "pcbdraft app", "pcbdraft"):
-                self.assertIn(literal.casefold(), normalized)
-            self.assertNotIn("low_voltage_i2c_controller_v1", document)
-            self.assertNotIn("EXPERIMENTAL_RP2040_TMP117", document)
-
-        for document in documents[:2]:
-            self.assertIn("agent-compile", document)
-        self.assertIn("generic", documents[0].casefold())
-        self.assertIn("通用", documents[1])
-
-        primary = documents[0]
-        self.assertIn("examples/basic_stock_board", primary)
-        self.assertIn("stock KiCad", primary)
+    def test_primary_readme_is_the_single_chinese_project_homepage(self) -> None:
+        document = (ROOT / "README.md").read_text(encoding="utf-8")
+        normalized = document.casefold()
+        self.assertIn("docs/assets/brand/pcbdraft-mark-256.png", document)
+        for literal in ("pcb 设计智能体", "KiCad", "pcbdraft", "快速开始"):
+            self.assertIn(literal.casefold(), normalized)
+        self.assertIn("agent-generate", document)
+        self.assertNotIn("README.zh-CN.md", document)
+        self.assertNotIn("README.ja.md", document)
+        self.assertNotIn("README.ko.md", document)
+        self.assertNotIn("examples/", document)
+        self.assertNotIn("low_voltage_i2c_controller_v1", document)
+        self.assertNotIn("EXPERIMENTAL_RP2040_TMP117", document)
         self.assertNotIn(
-            "High-risk domains are outside the automated boundary", primary
+            "High-risk domains are outside the automated boundary", document
         )
 
     def test_smoke_script_does_not_call_nonzero_reports_a_clean_design(self) -> None:

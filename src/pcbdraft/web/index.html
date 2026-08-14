@@ -107,7 +107,7 @@
       <input id="new-project-name" name="name" maxlength="160" autocomplete="off" placeholder="Greenhouse sensor" required>
       <label for="new-project-request">Board request</label>
       <textarea id="new-project-request" name="request" rows="6" maxlength="16000" placeholder="Create a compact 2-layer TMP102 temperature sensor board with an I2C connector and status LED." required></textarea>
-      <p class="form-note">Do not paste API keys. Provider credentials stay in the launch environment or Codex CLI.</p>
+      <p class="form-note">模型密钥只在 PCBDraft 的本地私有配置中保存，不会进入项目记录。</p>
       <button class="primary wide" type="submit">Start conversation</button>
     </form>
   </dialog>
@@ -119,14 +119,9 @@
       <h2 id="setup-title">Provider &amp; tool setup</h2>
       <p id="active-provider" class="form-note"></p>
       <section class="setup-option">
-        <h3>Authenticated Codex CLI</h3>
-        <p>Authenticate outside PCBDraft, then restart the app with:</p>
-        <code>pcbdraft app --provider codex</code>
-      </section>
-      <section class="setup-option">
         <h3>OpenAI-compatible endpoint</h3>
-        <p>Set the endpoint, model, and API key only in the launch environment. Secret values never enter browser JavaScript or project records.</p>
-        <code>PCBDRAFT_OPENAI_BASE_URL=https://provider.example/v1 PCBDRAFT_OPENAI_MODEL=model-id OPENAI_API_KEY=&lt;secret&gt; pcbdraft app --provider openai-compatible</code>
+        <p>在终端 TUI 中输入 <code>/connect</code>，选择 DeepSeek、MiniMax、Kimi 或自定义接口，再输入 API Key。</p>
+        <code>/connect</code>
       </section>
       <section class="setup-option">
         <h3>Offline intent classifier</h3>

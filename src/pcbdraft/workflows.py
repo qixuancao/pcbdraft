@@ -10,7 +10,6 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from . import PRODUCT_NAME, __version__
-from .codex import invoke_codex, patch_prompt, review_prompt
 from .doctor import probe_executable
 from .errors import PCBDraftError, TransactionRejected, ValidationError
 from .gates import collect_structured_evidence, gate_dict, gates_are_runnable, run_gates
@@ -22,6 +21,7 @@ from .io import (
     make_directory,
     read_bytes_limited,
 )
+from .model_review import invoke_model, patch_prompt, review_prompt
 from .patching import (
     MAX_TARGET_BYTES,
     apply_operations,
@@ -66,15 +66,9 @@ def _receipt_base(*, run_id: str, kind: str, project: Path) -> dict[str, Any]:
 def _tool_versions(
     *,
     kicad_executable: str | None,
-    codex_executable: str | None,
-    include_codex: bool,
 ) -> dict[str, Any]:
     kicad = kicad_executable or shutil.which("kicad-cli")
-    versions = {"kicad-cli": probe_executable(kicad, ["--version"])}
-    if include_codex:
-        codex = codex_executable or shutil.which("codex")
-        versions["codex"] = probe_executable(codex, ["--version"])
-    return versions
+    return {"kicad-cli": probe_executable(kicad, ["--version"])}
 
 
 def _write_receipt(run_dir: Path, receipt: dict[str, Any]) -> None:
@@ -125,17 +119,22 @@ def _record_apply_artifacts(run_dir: Path, receipt: dict[str, Any]) -> None:
     )
 
 
-def _capture_codex_failure(run_dir: Path, receipt: dict[str, Any]) -> None:
-    invocation = run_dir / "codex-invocation.json"
-    if invocation.exists() and "codex" not in receipt:
+def _capture_model_failure(run_dir: Path, receipt: dict[str, Any]) -> None:
+    if "model" in receipt:
+        return
+    for filename in ("model-review.receipt.json", "model-patch.receipt.json"):
+        artifact = run_dir / filename
+        if not artifact.exists():
+            continue
         try:
-            receipt["codex"] = load_json_limited(invocation, RECEIPT_LIMIT)
+            receipt["model"] = load_json_limited(artifact, RECEIPT_LIMIT)
         except PCBDraftError:
-            receipt["codex"] = {
+            receipt["model"] = {
                 "completed": False,
                 "schema_valid": False,
                 "artifact_unreadable": True,
             }
+        return
 
 
 def _gate_failure_message(results: Mapping[str, Any]) -> str:
@@ -150,7 +149,6 @@ def run_review(
     output_parent: str | None,
     timeout: float,
     kicad_executable: str | None = None,
-    codex_executable: str | None = None,
 ) -> Path:
     project = canonical_project(project_value)
     validate_agent_tree(project)
@@ -165,8 +163,6 @@ def run_review(
     try:
         receipt["tool_versions"] = _tool_versions(
             kicad_executable=kicad_executable,
-            codex_executable=codex_executable,
-            include_codex=True,
         )
         receipt["selected_input_hashes"] = {
             name: sha256_file(path)
@@ -234,9 +230,8 @@ def run_review(
                 f"semantic KiCad export failed: {', '.join(sorted(unavailable_semantic))}"
             )
 
-        codex = invoke_codex(
+        model = invoke_model(
             mode="review",
-            project=project,
             run_dir=run_dir,
             prompt=review_prompt(
                 files=files.relative(project),
@@ -244,11 +239,9 @@ def run_review(
                 gates={"summary": evidence_gates, "violations": violation_evidence},
                 semantic_context=semantic_context,
             ),
-            deadline=deadline,
-            redactions=redactions,
-            executable=codex_executable,
+            timeout=min(1800.0, max(1.0, deadline - time.monotonic())),
         )
-        receipt["codex"] = codex.receipt
+        receipt["model"] = model.receipt
         report = {
             "report_version": 1,
             "run_id": run_id,
@@ -256,13 +249,13 @@ def run_review(
             "selected_files": files.relative(project),
             "evidence_classes": {
                 "deterministic": "Local kicad-cli ERC/DRC evidence",
-                "ai_heuristic": "Codex interpretation; not an engineering sign-off",
+                "ai_heuristic": "Model interpretation; not an engineering sign-off",
             },
             "deterministic_evidence": {
                 "gates": evidence_gates,
                 "violations": violation_evidence,
             },
-            "ai_heuristic": codex.value,
+            "ai_heuristic": model.value,
         }
         atomic_write_json(run_dir / "report.json", report)
         atomic_write_text(
@@ -272,7 +265,7 @@ def run_review(
                 project=str(project),
                 selected_files=files.relative(project),
                 gates=evidence_gates,
-                review=codex.value,
+                review=model.value,
                 violations=violation_evidence,
             ),
         )
@@ -288,10 +281,9 @@ def run_review(
                 "semantic/board-stats.json",
                 "semantic/board-netlist.d356",
                 "semantic-context.json",
-                "codex-events.jsonl",
-                "codex-final.json",
-                "codex-output.schema.json",
-                "codex-invocation.json",
+                "model-review.schema.json",
+                "model-review.final.json",
+                "model-review.receipt.json",
                 "report.json",
                 "report.md",
                 "receipt.json",
@@ -301,7 +293,7 @@ def run_review(
         return run_dir
     except Exception as exc:
         if receipt.get("status") == "running":
-            _capture_codex_failure(run_dir, receipt)
+            _capture_model_failure(run_dir, receipt)
             receipt["status"] = "failed"
             receipt["failure"] = str(exc)
             _write_receipt(run_dir, receipt)
@@ -315,7 +307,6 @@ def run_patch(
     output_parent: str | None,
     timeout: float,
     kicad_executable: str | None = None,
-    codex_executable: str | None = None,
 ) -> Path:
     if not isinstance(request, str) or not request.strip():
         raise ValidationError("--request must be non-empty")
@@ -344,8 +335,6 @@ def run_patch(
     try:
         receipt["tool_versions"] = _tool_versions(
             kicad_executable=kicad_executable,
-            codex_executable=codex_executable,
-            include_codex=True,
         )
         _write_receipt(run_dir, receipt)
         unavailable = _unavailable_tools(receipt["tool_versions"])
@@ -390,9 +379,8 @@ def run_patch(
                 f"baseline gate tool failed; transaction kept in {run_dir}"
             )
 
-        codex = invoke_codex(
+        model = invoke_model(
             mode="patch",
-            project=staging,
             run_dir=run_dir,
             prompt=patch_prompt(
                 request=request,
@@ -403,13 +391,11 @@ def run_patch(
                     "violations": baseline_violation_evidence,
                 },
             ),
-            deadline=deadline,
-            redactions=redactions,
-            executable=codex_executable,
+            timeout=min(1800.0, max(1.0, deadline - time.monotonic())),
         )
-        receipt["codex"] = codex.receipt
+        receipt["model"] = model.receipt
 
-        applied = apply_operations(staging, codex.value["operations"])
+        applied = apply_operations(staging, model.value["operations"])
         changed_paths = sorted({operation.relative_path for operation in applied})
         staged_manifest = baseline_manifest(staging)
         baseline_paths = set(manifest_hashes(baseline))
@@ -458,11 +444,11 @@ def run_patch(
         status = "rejected" if reasons else "ready"
         change_set = {
             "change_set_version": 1,
-            "summary": codex.value["summary"],
-            "operations": codex.value["operations"],
+            "summary": model.value["summary"],
+            "operations": model.value["operations"],
             "application": [operation.to_dict() for operation in applied],
             "changed_paths": changed_paths,
-            "unsupported_checks": codex.value["unsupported_checks"],
+            "unsupported_checks": model.value["unsupported_checks"],
             "status": status,
             "rejection_reasons": reasons,
         }
@@ -489,10 +475,9 @@ def run_patch(
                 "after-gates/erc.json",
                 "after-gates/drc.json",
                 "inventory.json",
-                "codex-events.jsonl",
-                "codex-final.json",
-                "codex-output.schema.json",
-                "codex-invocation.json",
+                "model-patch.schema.json",
+                "model-patch.final.json",
+                "model-patch.receipt.json",
                 "evidence.json",
                 "change_set.json",
                 "changes.patch",
@@ -510,7 +495,7 @@ def run_patch(
         raise
     except Exception as exc:
         if receipt.get("status") == "running":
-            _capture_codex_failure(run_dir, receipt)
+            _capture_model_failure(run_dir, receipt)
             receipt["status"] = "failed"
             receipt["failure"] = str(exc)
             _write_receipt(run_dir, receipt)
@@ -602,14 +587,14 @@ def run_apply(
         isinstance(item, str) for item in existing_artifacts
     ):
         raise ValidationError("transaction artifact list is malformed")
-    codex_receipt = receipt.get("codex")
+    model_receipt = receipt.get("model")
     if (
-        not isinstance(codex_receipt, dict)
-        or codex_receipt.get("completed") is not True
-        or codex_receipt.get("schema_valid") is not True
+        not isinstance(model_receipt, dict)
+        or model_receipt.get("completed") is not True
+        or model_receipt.get("schema_valid") is not True
     ):
         raise ValidationError(
-            "transaction lacks a completed schema-valid Codex change set"
+            "transaction lacks a completed schema-valid Model change set"
         )
     baseline_gate_data = receipt.get("baseline_gates")
     after_gate_data = receipt.get("after_gates")
@@ -624,8 +609,6 @@ def run_apply(
     project = canonical_project(project_value)
     receipt["apply_tool_versions"] = _tool_versions(
         kicad_executable=kicad_executable,
-        codex_executable=None,
-        include_codex=False,
     )
     unavailable = _unavailable_tools(receipt["apply_tool_versions"])
     if unavailable:

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Installs PCBDraft into this repository's uv environment.
 # Run: scripts/deploy.sh
-# Requires: uv, KiCad 10, and git. Codex is optional for AI review.
+# Requires: uv, KiCad 10, and git. A model API is optional for AI review.
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

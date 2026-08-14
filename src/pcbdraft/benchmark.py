@@ -8,23 +8,17 @@ import json
 import math
 import platform
 import secrets
-import shutil
 import statistics
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .codex import (
-    CODEX_MODEL,
-    CODEX_REASONING,
-    CODEX_SERVICE_TIER,
-    invoke_structured_codex,
-)
 from .errors import PCBDraftError, ValidationError
 from .io import atomic_write_json, make_directory, read_bytes_limited
 from .ir import Design, canonical_json_bytes
 from .kicad_pcb import inspect_footprints
+from .model_api import OpenAICompatibleSettings, invoke_structured_model
 from .operations import ChangeSet, apply_change_set
 from .parts import PartGraph
 from .requirements import RequirementsSpec, compile_requirements
@@ -627,11 +621,11 @@ def _run_model_benchmark(
     runs: int,
     timeout: float,
 ) -> dict[str, Any]:
-    executable = shutil.which("codex")
-    if executable is None:
+    settings = OpenAICompatibleSettings.from_config()
+    if settings is None:
         return {
             "state": "unavailable",
-            "reason": "codex executable is not available",
+            "reason": "no model is configured in PCBDraft config",
             "requested_runs": runs,
             "completed_runs": 0,
             "deterministic_results_are_not_reported_as_model_results": True,
@@ -651,13 +645,12 @@ def _run_model_benchmark(
         run_dir = artifacts / f"run-{index + 1:02d}-{secrets.token_hex(3)}"
         make_directory(run_dir)
         try:
-            value, receipt = invoke_structured_codex(
-                project=model_project,
+            value, receipt = invoke_structured_model(
                 run_dir=run_dir,
                 prompt=prompt,
                 schema=schema,
                 timeout=timeout,
-                executable=executable,
+                schema_name="pcbdraft_benchmark",
                 artifact_prefix="benchmark-model",
             )
             outputs.append(_validate_model_output(value, selected, receipt))
@@ -677,9 +670,9 @@ def _run_model_benchmark(
             "completed_runs": 0,
             "failures": failures,
             "artifacts": str(artifacts),
-            "model": CODEX_MODEL,
-            "reasoning_effort": CODEX_REASONING,
-            "service_tier": CODEX_SERVICE_TIER,
+            "provider": settings.provider_id,
+            "model": settings.model,
+            "config": settings.source,
             "deterministic_results_are_not_reported_as_model_results": True,
         }
     vectors = [tuple(item["fault"] for item in output["results"]) for output in outputs]
@@ -730,9 +723,9 @@ def _run_model_benchmark(
         "requested_runs": runs,
         "completed_runs": len(outputs),
         "failures": failures,
-        "model": CODEX_MODEL,
-        "reasoning_effort": CODEX_REASONING,
-        "service_tier": CODEX_SERVICE_TIER,
+        "provider": settings.provider_id,
+        "model": settings.model,
+        "config": settings.source,
         "sample": {
             "selection": "sha256-stratified, at most 16 fault and 8 clean model-eligible cases",
             "case_ids": [case.id for case in selected],
