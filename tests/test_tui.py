@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
+from rich.text import Text
 from textual.widgets import Input
 
 from pcbdraft.agent_events import AgentActivity, AgentUpdate
@@ -20,6 +21,8 @@ from pcbdraft.errors import ValidationError
 from pcbdraft.model_config import connect_provider
 from pcbdraft.tui import TuiController, command_suggestions, run_tui_command
 from pcbdraft.tui_app import (
+    CommandPickerScreen,
+    HelpScreen,
     ModelPickerScreen,
     PCBDraftApp,
     ProjectPickerScreen,
@@ -27,7 +30,7 @@ from pcbdraft.tui_app import (
     ReviewScreen,
 )
 from pcbdraft.tui_projection import project_projection
-from pcbdraft.tui_widgets import CommandPalette, ProjectRail
+from pcbdraft.tui_widgets import CommandPalette, Composer, ProjectRail
 
 
 def _view(project_id: str, *, status: str = "awaiting_confirmation") -> dict[str, Any]:
@@ -461,13 +464,40 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
             palette = app.query_one("#command-palette", CommandPalette)
             self.assertTrue(palette.display)
             self.assertEqual(palette.option_count, len(command_suggestions("/")))
+            self.assertTrue(composer.has_focus)
+            self.assertFalse(composer.cursor_blink)
+            first_prompt = palette.get_option_at_index(0).prompt
+            self.assertIsInstance(first_prompt, Text)
+            self.assertTrue(first_prompt.plain.startswith("›"))
 
-            await pilot.press("down", "tab")
+            await pilot.press("down")
+            self.assertEqual(palette.highlighted, 1)
+            self.assertTrue(composer.has_focus)
+            second_prompt = palette.get_option_at_index(1).prompt
+            self.assertIsInstance(second_prompt, Text)
+            self.assertTrue(second_prompt.plain.startswith("›"))
+
+            await pilot.press("tab")
             self.assertEqual(composer.value, "/new ")
+            self.assertFalse(palette.display)
 
             composer.value = "/va"
             await pilot.press("enter")
             self.assertEqual(composer.value, "/validate")
+            self.assertFalse(palette.display)
+
+            composer.value = "/"
+            await pilot.pause()
+            await pilot.press("up")
+            self.assertEqual(palette.selected_command().name, "/quit")
+
+            composer.value = "/not-a-command"
+            await pilot.pause()
+            self.assertTrue(palette.display)
+            self.assertIn(
+                "No matching commands",
+                palette.get_option_at_index(0).prompt.plain,
+            )
 
     async def test_empty_model_picker_can_open_provider_picker(self) -> None:
         app = PCBDraftApp(TuiController(service=FakeService()))
@@ -482,7 +512,42 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertIsInstance(app.screen, ProviderPickerScreen)
 
-    async def test_model_filter_enter_switches_the_first_matching_model(self) -> None:
+    async def test_agent_style_command_palette_and_leader_shortcuts(self) -> None:
+        controller = TuiController(service=FakeService())
+        app = PCBDraftApp(controller)
+        async with app.run_test(size=(120, 38)) as pilot:
+            composer = app.query_one("#composer-input", Input)
+            composer.value = "keep this draft"
+            await pilot.press("ctrl+p")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, CommandPickerScreen)
+            self.assertEqual(composer.value, "keep this draft")
+
+            command_filter = app.screen.query_one("#command-filter", Input)
+            command_filter.value = "help"
+            await pilot.press("enter")
+            await pilot.pause()
+            self.assertIsInstance(app.screen, HelpScreen)
+            await pilot.press("escape")
+            await pilot.pause()
+            self.assertEqual(composer.value, "keep this draft")
+
+            composer.value = ""
+            await pilot.press("n")
+            self.assertEqual(composer.value, "n")
+            composer.value = ""
+            await pilot.pause()
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            self.assertTrue(
+                app.query_one("#composer", Composer).has_class("leader-active")
+            )
+            await pilot.press("n")
+            await pilot.pause()
+            self.assertEqual(controller.mode, "new_request")
+            self.assertEqual(composer.value, "")
+
+    async def test_model_filter_arrows_switch_the_highlighted_model(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             config_path = Path(temporary) / "config.toml"
             connect_provider("deepseek", api_key="sk-test", path=config_path)
@@ -497,9 +562,9 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.pause()
                     self.assertIsInstance(app.screen, ModelPickerScreen)
                     model_filter = app.screen.query_one("#model-filter", Input)
-                    model_filter.value = "flash"
+                    model_filter.value = "deepseek"
                     await pilot.pause()
-                    await pilot.press("enter")
+                    await pilot.press("down", "enter")
                     await pilot.pause()
                     self.assertEqual(controller.mode, "message")
                     self.assertIn("deepseek-v4-flash", controller.notice)
@@ -531,7 +596,9 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
         }
         app = PCBDraftApp(controller)
         async with app.run_test(size=(120, 38)) as pilot:
-            await pilot.press("ctrl+r")
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            await pilot.press("r")
             await pilot.pause()
             self.assertIsInstance(app.screen, ReviewScreen)
             self.assertIn("STM32F405", app.export_screenshot())
@@ -539,7 +606,9 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(controller.mode, "message")
 
-            await pilot.press("ctrl+p")
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            await pilot.press("l")
             await pilot.pause()
             self.assertIsInstance(app.screen, ProjectPickerScreen)
 

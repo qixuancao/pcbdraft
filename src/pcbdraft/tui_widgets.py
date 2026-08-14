@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from rich.console import Group, RenderableType
+from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -20,7 +21,7 @@ from .tui_review import ReviewSection
 
 
 class AgentHeader(Static):
-    """Project, model, and live agent status."""
+    """Compact project and agent status bar."""
 
     def update_state(
         self,
@@ -34,35 +35,33 @@ class AgentHeader(Static):
         grid = Table.grid(expand=True)
         grid.add_column(ratio=1)
         grid.add_column(justify="right")
-        left = Text("PCBDraft", style="bold #7dd3fc")
-        left.append("  ")
-        left.append(projection.project_name, style="bold #e5e7eb")
-        left.append("  ·  ")
+        left = Text("◆", style="bold #e2a06b")
+        left.append("  PCBDraft", style="bold #f0f2f5")
+        left.append("   ")
+        left.append(projection.project_name, style="#c9ced7")
+        left.append("  ·  ", style="#4f5865")
         left.append(projection.status_label, style=_status_style(projection.status))
-        right = Text(provider_name, style="#a8b3cf")
-        right.append("  ")
-        right.append(
-            "●" if provider_status == "ready" else "○",
-            style="#5ee0a0" if provider_status == "ready" else "#f3c969",
-        )
-        grid.add_row(left, right)
-        subtitle = Text()
         if busy:
-            subtitle.append("● ", style="bold #7dd3fc")
-            subtitle.append(activity_label or "Agent turn running", style="#c9d4ef")
+            right = Text("◆  ", style="bold #e2a06b")
+            right.append(activity_label or "Agent is working", style="#d5d9e0")
         else:
-            subtitle.append("Ready", style="#7e8ba8")
-            subtitle.append(
-                "  ·  Esc stops a turn  ·  / commands  ·  Ctrl+P projects",
-                style="#5f6b85",
+            right = Text(provider_name, style="#8d96a3")
+            right.append("  ")
+            right.append(
+                "●" if provider_status == "ready" else "○",
+                style="#82c99a" if provider_status == "ready" else "#d9b968",
             )
-        self.update(Group(grid, subtitle))
+        grid.add_row(left, right)
+        self.update(grid)
 
 
 class TranscriptView(VerticalScroll):
     """Scrollable conversation with inline live PCB tool activity."""
 
-    can_focus = True
+    # Keeping focus in the composer makes the software cursor reliably visible.
+    # The transcript still supports mouse-wheel scrolling and the app routes
+    # PageUp/PageDown here while the composer remains focused.
+    can_focus = False
 
     def compose(self) -> ComposeResult:
         yield Static(id="transcript-content")
@@ -77,10 +76,12 @@ class TranscriptView(VerticalScroll):
     ) -> None:
         renderables: list[RenderableType] = []
         if projection.project_id is None:
-            renderables.append(_welcome_panel())
+            renderables.append(_welcome_renderable())
 
         for message in projection.messages:
-            renderables.append(_message_panel(message.role, message.text, message.kind))
+            renderables.append(
+                _message_renderable(message.role, message.text, message.kind)
+            )
 
         pending = pending_user_text.strip()
         last_message = projection.messages[-1] if projection.messages else None
@@ -89,7 +90,7 @@ class TranscriptView(VerticalScroll):
             and last_message.role == "user"
             and last_message.text.strip() == pending
         ):
-            renderables.append(_message_panel("user", pending, "pending"))
+            renderables.append(_message_renderable("user", pending, "pending"))
 
         if activities:
             renderables.append(_activity_panel(activities, expanded=logs_expanded))
@@ -102,7 +103,7 @@ class TranscriptView(VerticalScroll):
                         "Use [bold]/review[/] to inspect it and [bold]/confirm[/] "
                         "to generate the KiCad project."
                     ),
-                    border_style="#735f2c",
+                    border_style="#7f603b",
                     title="Approval boundary",
                     title_align="left",
                 )
@@ -115,7 +116,7 @@ class TranscriptView(VerticalScroll):
                         "Use [bold]/review[/], then [bold]/confirm[/] or "
                         "[bold]/discard[/]."
                     ),
-                    border_style="#735f2c",
+                    border_style="#7f603b",
                     title="Approval boundary",
                     title_align="left",
                 )
@@ -125,13 +126,20 @@ class TranscriptView(VerticalScroll):
             renderables.append(
                 Panel(
                     Text("Describe a board or a requested change below."),
-                    border_style="#2b3448",
+                    border_style="#2c343e",
                     title="Conversation",
                     title_align="left",
                 )
             )
         self.query_one("#transcript-content", Static).update(Group(*renderables))
-        self.call_after_refresh(self.scroll_end, animate=False)
+        scroll_target = (
+            self.scroll_home
+            if projection.project_id is None
+            and not projection.messages
+            and not activities
+            else self.scroll_end
+        )
+        self.call_after_refresh(scroll_target, animate=False)
 
 
 class ProjectRail(VerticalScroll):
@@ -142,8 +150,8 @@ class ProjectRail(VerticalScroll):
 
     def update_state(self, projection: TuiProjection) -> None:
         facts = Table.grid(padding=(0, 1), expand=True)
-        facts.add_column(style="#7e8ba8", no_wrap=True)
-        facts.add_column(style="#dbe5f5", justify="right")
+        facts.add_column(style="#77808e", no_wrap=True)
+        facts.add_column(style="#d6dae1", justify="right")
         facts.add_row("Size", projection.board_size)
         facts.add_row("Layers", projection.layer_label)
         facts.add_row("Parts", _count_label(projection.component_count))
@@ -153,53 +161,53 @@ class ProjectRail(VerticalScroll):
                 "Review",
                 Text(
                     f"{projection.attention_required} finding(s)",
-                    style="#f3c969",
+                    style="#d9b968",
                 ),
             )
 
         pipeline = Text()
         stage_marker = {
-            "complete": ("✓", "#5ee0a0"),
-            "active": ("●", "bold #7dd3fc"),
-            "blocked": ("!", "bold #f3c969"),
-            "failed": ("×", "bold #ff7b88"),
-            "pending": ("○", "#536078"),
+            "complete": ("✓", "#82c99a"),
+            "active": ("◆", "bold #e2a06b"),
+            "blocked": ("!", "bold #d9b968"),
+            "failed": ("×", "bold #e78284"),
+            "pending": ("○", "#515a66"),
         }
         for index, stage in enumerate(projection.stages):
             marker, style = stage_marker[stage.state]
             pipeline.append(f"{marker} ", style=style)
-            pipeline.append(stage.name, style="#dbe5f5")
+            pipeline.append(stage.name, style="#d6dae1")
             if index < len(projection.stages) - 1:
-                pipeline.append("\n│\n", style="#354058")
+                pipeline.append("\n│\n", style="#343c46")
 
         readiness_style = (
-            "#5ee0a0"
+            "#82c99a"
             if projection.candidate_ready is True
-            else "#ff7b88"
+            else "#e78284"
             if projection.candidate_ready is False
-            else "#f3c969"
+            else "#d9b968"
         )
         readiness = Text(projection.readiness_label, style=f"bold {readiness_style}")
         readiness.append("\n")
         readiness.append(
-            "Human engineering review is required before fabrication.",
-            style="#8c98b3",
+            "Human review is required before fabrication.",
+            style="#858e9a",
         )
         readiness.append("\n")
-        readiness.append(f"Assurance: {projection.assurance}", style="#65728e")
+        readiness.append(f"Assurance: {projection.assurance}", style="#626b78")
 
         content: list[RenderableType] = [
-            Text("PROJECT", style="bold #65728e"),
-            Text(projection.project_name, style="bold #eef2ff"),
-            Text(projection.purpose, style="#9ca8c0"),
+            Text("PROJECT", style="bold #a97652"),
+            Text(projection.project_name, style="bold #eceff3"),
+            Text(projection.purpose, style="#929aa6"),
             Text(""),
-            Text("PCB", style="bold #65728e"),
+            Text("PCB", style="bold #a97652"),
             facts,
             Text(""),
-            Text("AGENT PIPELINE", style="bold #65728e"),
+            Text("AGENT PIPELINE", style="bold #a97652"),
             pipeline,
             Text(""),
-            Text("READINESS", style="bold #65728e"),
+            Text("READINESS", style="bold #a97652"),
             readiness,
         ]
         self.query_one("#rail-content", Static).update(Group(*content))
@@ -212,70 +220,161 @@ class NoticeBar(Static):
         self.remove_class("notice-error", "notice-busy", "notice-muted")
         if error:
             self.add_class("notice-error")
-            self.update(Text("×  " + error, style="bold #ff9aa5"))
+            self.update(Text("×  " + error, style="bold #ef9294"))
         elif notice:
             self.add_class("notice-busy" if busy else "notice-muted")
-            marker = "●  " if busy else "·  "
+            marker = "◆  " if busy else "·  "
             self.update(Text(marker + notice))
         else:
             self.add_class("notice-muted")
-            self.update(
-                Text(
-                    "Describe a board in plain language; dimensions and layers are automatic."
-                )
-            )
+            self.update(Text("Ready"))
+
+
+class AppFooter(Static):
+    """Quiet, persistent navigation hints in place of Textual's busy footer."""
+
+    def update_state(self, projection: TuiProjection, *, provider_status: str) -> None:
+        grid = Table.grid(expand=True)
+        grid.add_column(ratio=1)
+        grid.add_column(justify="right")
+        location = Text(
+            projection.project_id or "local workspace",
+            style="#646d79",
+        )
+        state = Text(
+            "ctrl+p commands   ·   ctrl+x shortcuts   ·   f1 help",
+            style="#646d79",
+        )
+        state.append(
+            "   ●",
+            style="#82c99a" if provider_status == "ready" else "#d9b968",
+        )
+        grid.add_row(location, state)
+        self.update(grid)
+
+
+class ComposerInput(Input):
+    """Input that releases printable Ctrl+X chords back to the application."""
+
+    _LEADER_KEYS = frozenset({"n", "l", "m", "r", "d", "s", "c", "h", "q"})
+
+    def check_consume_key(self, key: str, character: str | None) -> bool:
+        if getattr(self.app, "leader_active", False) and key in self._LEADER_KEYS:
+            return False
+        return super().check_consume_key(key, character)
 
 
 class Composer(Vertical):
-    """Prompt label, multiline-feeling single-line input, and context hint."""
+    """OpenCode-inspired prompt surface with persistent software cursor."""
 
     def compose(self) -> ComposeResult:
-        with Horizontal(id="composer-row"):
-            yield Static("Message", id="composer-label")
-            yield Input(
-                placeholder="Describe a PCB, request a change, or type / for commands",
-                id="composer-input",
-            )
-        yield Static(
-            "Enter send  ·  /connect provider  ·  /models model  ·  Ctrl+R review",
-            id="composer-hint",
-        )
+        with Vertical(id="composer-surface"):
+            with Horizontal(id="composer-row"):
+                yield Static("›", id="composer-prompt")
+                yield ComposerInput(
+                    placeholder="Ask PCBDraft to design or change a board…",
+                    id="composer-input",
+                    compact=True,
+                    select_on_focus=False,
+                )
+            with Horizontal(id="composer-meta"):
+                yield Static("MESSAGE", id="composer-label")
+                yield Static(
+                    "enter send   ·   / autocomplete   ·   ctrl+p commands",
+                    id="composer-hint",
+                )
 
     def update_state(self, *, label: str, busy: bool) -> None:
-        self.query_one("#composer-label", Static).update(label)
+        self.set_class(busy, "composer-busy")
+        self.query_one("#composer-label", Static).update(
+            "WORKING" if busy else label.upper()
+        )
+        self.query_one("#composer-prompt", Static).update("◆" if busy else "›")
         input_widget = self.query_one("#composer-input", Input)
         input_widget.placeholder = (
-            "Agent is working — Esc or /stop cancels at a safe boundary"
+            "Agent is working… Esc or /stop interrupts at a safe boundary"
             if busy
-            else "Describe a PCB or type / for commands  (try /connect or /models)"
+            else "Ask PCBDraft to design or change a board…"
         )
+
+    def set_palette_open(self, open_: bool) -> None:
+        """Swap the prompt hint while slash completion owns the arrow keys."""
+
+        self.set_class(open_, "palette-open")
+        self._refresh_hint()
+
+    def set_leader_active(self, active: bool) -> None:
+        """Show the available second keys while Ctrl+X is pending."""
+
+        self.set_class(active, "leader-active")
+        self._refresh_hint()
+
+    def _refresh_hint(self) -> None:
+        if self.has_class("leader-active"):
+            hint = (
+                "ctrl+x · n new · l projects · m models · r review · d details · q quit"
+            )
+        elif self.has_class("palette-open"):
+            hint = "↑↓ navigate   ·   enter choose   ·   tab complete   ·   esc close"
+        else:
+            hint = "enter send   ·   / autocomplete   ·   ctrl+p commands"
+        self.query_one("#composer-hint", Static).update(hint)
 
 
 class CommandPalette(OptionList):
     """Filterable slash-command palette controlled by the composer."""
 
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        super().__init__(*args, **kwargs)
+        self._commands: tuple[SlashCommand, ...] = ()
+        self._painted_highlight: int | None = None
+
     def set_commands(self, commands: Sequence[SlashCommand]) -> None:
-        highlighted = self.highlighted
+        self._commands = tuple(commands)
+        self._painted_highlight = None
         self.clear_options()
+        if not commands:
+            empty = Text("  No matching commands", style="#68717d")
+            empty.append("   keep typing or press Esc", style="#4f5864")
+            self.add_option(Option(empty, id="__empty__", disabled=True))
+            self.highlighted = None
+            return
+
         self.add_options(
             Option(_command_prompt(command), id=command.name[1:])
-            for command in commands
+            for command in self._commands
         )
-        if commands:
-            self.highlighted = min(highlighted or 0, len(commands) - 1)
+        self.highlighted = 0
+        self._paint_cursor()
+
+    def watch_highlighted(self, highlighted: int | None) -> None:
+        super().watch_highlighted(highlighted)
+        self._paint_cursor()
+
+    def _paint_cursor(self) -> None:
+        """Draw a real selection marker while focus stays in the input."""
+
+        if not hasattr(self, "_commands"):
+            return
+        if self.option_count != len(self._commands):
+            return
+        if self._painted_highlight == self.highlighted:
+            return
+        self._painted_highlight = self.highlighted
+        for index, command in enumerate(self._commands):
+            self.replace_option_prompt_at_index(
+                index,
+                _command_prompt(command, selected=index == self.highlighted),
+            )
+        self.refresh()
 
     def selected_command(self) -> SlashCommand | None:
-        if self.option_count == 0 or self.highlighted is None:
+        if self.highlighted is None:
             return None
-        option = self.get_option_at_index(self.highlighted)
-        if option.id is None:
+        try:
+            return self._commands[self.highlighted]
+        except IndexError:
             return None
-        name = "/" + option.id
-        from .tui_commands import SLASH_COMMANDS
-
-        return next(
-            (command for command in SLASH_COMMANDS if command.name == name), None
-        )
 
 
 def review_renderable(sections: Sequence[ReviewSection]) -> RenderableType:
@@ -300,48 +399,67 @@ def review_renderable(sections: Sequence[ReviewSection]) -> RenderableType:
     return Group(*panels) if panels else Text("Nothing to review yet.")
 
 
-def _welcome_panel() -> Panel:
-    title = Text("Turn an idea into a reviewable KiCad project", style="bold #eef2ff")
+def _welcome_renderable() -> RenderableType:
+    brand = Text("◆  PCBDRAFT", style="bold #e2a06b")
+    brand.append("   hardware design agent", style="#626b77")
+    title = Text("Turn an idea into a reviewable KiCad project", style="bold #eceff3")
     body = Text()
-    body.append("\nDescribe what the board should do", style="#c9d4ef")
+    body.append("Describe what the board should do", style="#cbd0d8")
     body.append(
         " — for example: “Make a small USB-C powered temperature sensor board.”",
-        style="#8996b2",
+        style="#858e9a",
     )
-    body.append("\n\nPCBDraft will", style="bold #7dd3fc")
+    body.append("\n\nPCBDraft will", style="bold #e2a06b")
     body.append(
         " understand the request, plan the circuit, choose routine board details, "
         "generate native KiCad files, and run checks.",
-        style="#c9d4ef",
+        style="#bdc3cc",
     )
-    body.append("\n\nYou approve the plan before files are generated.", style="#f3c969")
-    body.append("\n\nQuick actions", style="bold #7dd3fc")
-    body.append("\n  /connect   add an API key or local provider", style="#a9b8d0")
-    body.append("\n  /models    switch the active model", style="#a9b8d0")
-    body.append("\n  /help      see every command", style="#a9b8d0")
-    return Panel(
-        Group(title, body),
-        title="Start here",
-        title_align="left",
-        border_style="#365273",
-        padding=(1, 2),
+    body.append("\n\nYou approve the plan before files are generated.", style="#d9b968")
+
+    actions = Table.grid(padding=(0, 2))
+    actions.add_column(style="bold #eab17f", no_wrap=True)
+    actions.add_column(style="#919aa6")
+    actions.add_row("/connect", "connect a model provider")
+    actions.add_row("/models", "switch the active model")
+    actions.add_row("/help", "show every command and shortcut")
+    start = Text("›  Start typing below", style="bold #d8dde4")
+    start.append(
+        "   ·   type / to autocomplete   ·   Ctrl+P for commands",
+        style="#69727f",
+    )
+    return Padding(
+        Group(
+            brand, Text(""), title, Text(""), body, Text(""), actions, Text(""), start
+        ),
+        (1, 3),
     )
 
 
-def _message_panel(role: str, text: str, kind: str) -> Panel:
-    title, border = {
-        "user": ("You", "#3277a8"),
-        "assistant": ("PCBDraft", "#34745a"),
-    }.get(role, ("System", "#5f5777"))
-    subtitle = " sending" if kind == "pending" else ""
-    return Panel(
-        Text(text, style="#e5eaf3"),
-        title=title,
-        subtitle=subtitle,
-        title_align="left",
-        subtitle_align="right",
-        border_style=border,
-        padding=(0, 1),
+def _message_renderable(role: str, text: str, kind: str) -> RenderableType:
+    if role == "user":
+        table = Table.grid(expand=True, padding=0)
+        table.add_column(width=1, no_wrap=True)
+        table.add_column(ratio=1, style="on #151a21")
+        heading = Text("YOU", style="bold #b7bec8")
+        if kind == "pending":
+            heading.append("   QUEUED", style="bold #d9b968")
+        content = Group(heading, Text(text, style="#eef0f3"))
+        table.add_row(
+            Text("▌", style="#e2a06b"),
+            Padding(content, (1, 2)),
+        )
+        return Padding(table, (1, 0, 0, 0))
+
+    if role == "assistant":
+        heading = Text("◆  PCBDraft", style="bold #82c99a")
+        content = Text(text, style="#d8dde4")
+        return Padding(Group(heading, Padding(content, (0, 0, 0, 3))), (1, 1, 0, 1))
+
+    heading = Text("·  SYSTEM", style="bold #8f829f")
+    return Padding(
+        Group(heading, Padding(Text(text, style="#b9bec7"), (0, 0, 0, 3))),
+        (1, 1, 0, 1),
     )
 
 
@@ -352,16 +470,16 @@ def _activity_panel(activities: Sequence[AgentActivity], *, expanded: bool) -> P
     table.add_column(ratio=1)
     table.add_column(style="#687590", justify="right", no_wrap=True)
     marker = {
-        "queued": ("○", "#7e8ba8"),
-        "running": ("●", "bold #7dd3fc"),
-        "completed": ("✓", "#5ee0a0"),
-        "failed": ("×", "bold #ff7b88"),
-        "info": ("·", "#73809c"),
+        "queued": ("○", "#77808e"),
+        "running": ("◆", "bold #e2a06b"),
+        "completed": ("✓", "#82c99a"),
+        "failed": ("×", "bold #e78284"),
+        "info": ("·", "#717a87"),
     }
     for activity in activities[-limit:]:
         symbol, style = marker[activity.state]
-        label = Text(activity.label, style="#dbe5f5")
-        label.append(f"\n{activity.message}", style="#7e8ba8") if (
+        label = Text(activity.label, style="#d6dae1")
+        label.append(f"\n{activity.message}", style="#77808e") if (
             expanded and activity.message
         ) else None
         table.add_row(Text(symbol, style=style), label, Text(activity.tool))
@@ -372,14 +490,17 @@ def _activity_panel(activities: Sequence[AgentActivity], *, expanded: bool) -> P
         subtitle=hint,
         title_align="left",
         subtitle_align="right",
-        border_style="#435274",
+        border_style="#343f4b",
     )
 
 
-def _command_prompt(command: SlashCommand) -> Text:
-    prompt = Text(command.usage, style="bold #b8dcff")
+def _command_prompt(command: SlashCommand, *, selected: bool = False) -> Text:
+    prompt = Text("›" if selected else " ", style="bold #f0b47e" if selected else "")
     prompt.append("  ")
-    prompt.append(command.description, style="#8d9ab5")
+    prompt.append(
+        f"{command.usage:<20}", style="bold #f0b47e" if selected else "bold #d9dde3"
+    )
+    prompt.append(command.description, style="#c5cbd3" if selected else "#7f8895")
     return prompt
 
 
@@ -389,9 +510,9 @@ def _count_label(value: int | None) -> str:
 
 def _status_style(status: str) -> str:
     if "failed" in status or status == "interrupted":
-        return "bold #ff7b88"
+        return "bold #e78284"
     if status in {"validated", "released"}:
-        return "bold #5ee0a0"
+        return "bold #82c99a"
     if status in {"interpreting", "generating", "repairing", "validating", "releasing"}:
-        return "bold #7dd3fc"
-    return "#f3c969"
+        return "bold #e2a06b"
+    return "#d9b968"
