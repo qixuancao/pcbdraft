@@ -1,5 +1,11 @@
 # CopperWright 1.0 产品完成报告
 
+> **历史记录，已不代表当前产品状态。** 本文记录的是固定确定性夹具曾经的产品
+> 叙述；它已经被通用“请求 → 电路计划 → 本地 KiCad 解析 → 语义 IR”路径取代。
+> 不要把本文的固定 profile、候选发布或已完成表述用于当前产品。请以
+> [PRODUCT_ACCEPTANCE.md](PRODUCT_ACCEPTANCE.md) 和
+> [ARCHITECTURE.md](ARCHITECTURE.md) 为准。
+
 日期：2026-08-13
 
 ## 结论

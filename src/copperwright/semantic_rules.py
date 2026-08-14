@@ -47,6 +47,7 @@ def evaluate_semantic_rules(
     footprint_inspections: dict[str, Any] | None = None,
     routing: dict[str, Any] | None = None,
     approximate_geometry: bool = True,
+    allow_provisional: bool = False,
 ) -> tuple[RuleFinding, ...]:
     """Return stable findings for locally provable semantic contract failures."""
     findings: list[RuleFinding] = []
@@ -54,7 +55,11 @@ def evaluate_semantic_rules(
         findings.append(
             RuleFinding(issue.code, issue.severity, issue.path, issue.message)
         )
-    for issue in graph.validate_design(design, check_libraries=False):
+    for issue in graph.validate_design(
+        design,
+        check_libraries=False,
+        allow_provisional=allow_provisional,
+    ):
         findings.append(
             RuleFinding(issue.code, issue.severity, issue.path, issue.message)
         )

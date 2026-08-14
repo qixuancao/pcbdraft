@@ -4,7 +4,6 @@ import json
 import os
 import stat
 import subprocess
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -219,7 +218,6 @@ class OfflineEndToEndTests(unittest.TestCase):
             environment["COPPERWRIGHT_TEST_SECRET"] = sentinel
             result = subprocess.run(
                 [
-                    sys.executable,
                     str(ROOT / "copperwright"),
                     "review",
                     str(project),

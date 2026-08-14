@@ -43,7 +43,7 @@ function toast(message, error = false) {
 
 function statusTone(status) {
   if (["validated", "released"].includes(status)) return "good";
-  if (["unsupported", "validation_failed", "generation_failed", "release_failed", "provider_error"].includes(status)) return "bad";
+  if (["generation_unavailable", "validation_failed", "generation_failed", "release_failed", "provider_error"].includes(status)) return "bad";
   return "warn";
 }
 
@@ -139,17 +139,23 @@ function renderBrief(view) {
     target.append(waiting);
     return;
   }
-  const scope = card("Scope decision");
+  const scope = card("Generation request");
   const scopeMetric = node("div", "metric-grid");
   const decision = node("div", "metric");
-  decision.append(node("strong", "", proposal.scope.decision === "supported" ? "Supported" : "Rejected"), node("span", "", "bounded v1 decision"));
-  const profile = node("div", "metric");
-  profile.append(node("strong", "", proposal.proposed_profile), node("span", "", "verified profile"));
-  scopeMetric.append(decision, profile);
+  const decisionLabel = proposal.scope.decision === "attempted"
+    ? "Normal generation path"
+    : "Backend unavailable";
+  decision.append(node("strong", "", decisionLabel), node("span", "", "request handling"));
+  const planning = node("div", "metric");
+  planning.append(
+    node("strong", "", proposal.planning?.state || "not started"),
+    node("span", "", "circuit planning"),
+  );
+  scopeMetric.append(decision, planning);
   scope.append(scopeMetric);
-  const reasons = node("ul");
-  for (const reason of proposal.scope.reasons || []) reasons.append(node("li", "", reason));
-  scope.append(reasons);
+  const warnings = node("ul");
+  for (const warning of proposal.scope.warnings || []) warnings.append(node("li", "", warning));
+  scope.append(warnings);
   target.append(scope);
   if (!proposal.brief) return;
 
@@ -165,31 +171,62 @@ function renderBrief(view) {
   summary.append(board);
   target.append(summary);
 
-  const assumptions = card("Assumptions & external gates");
+  const assumptions = card("Assumptions");
   const assumptionList = node("ul");
   for (const item of brief.assumptions) assumptionList.append(node("li", "", item));
-  for (const item of proposal.scope.external_gates) assumptionList.append(node("li", "", `${item} — external`));
   assumptions.append(assumptionList);
   target.append(assumptions);
 
-  const bom = card("Parts / BOM");
+  const identity = brief.identity;
+  const requested = identity?.requested_parts || [];
+  if (requested.length) {
+    const identityCard = card("Requested parts");
+    identityCard.append(node("p", "", `Preserved for planning: ${requested.join(", ")}`));
+    target.append(identityCard);
+  }
+
+  const bom = card("Stock KiCad parts");
   const bomWrap = node("div", "table-wrap");
   const table = node("table");
   const header = node("tr");
-  for (const label of ["Refs", "Value", "Part contract", "Qty"]) header.append(node("th", "", label));
+  for (const label of ["Refs", "Value", "KiCad symbol", "Qty"]) header.append(node("th", "", label));
   const head = node("thead"); head.append(header); table.append(head);
   const body = node("tbody");
   for (const item of brief.bom) {
     const row = node("tr");
-    row.append(node("td", "", item.references.join(", ")), node("td", "", item.value), node("td", "", item.part_id), node("td", "", item.quantity));
+    row.append(node("td", "", item.references.join(", ")), node("td", "", item.value), node("td", "", item.symbol || ""), node("td", "", item.quantity));
     body.append(row);
   }
   table.append(body); bomWrap.append(table); bom.append(bomWrap); target.append(bom);
 
-  const constraints = card(`Constraints (${brief.constraints.length})`);
+  const constraints = card(`Board and routing rules (${brief.constraints.length})`);
   const list = node("ul");
-  for (const item of brief.constraints) list.append(node("li", "", `${item.id} · ${item.kind} · ${item.severity}`));
+  for (const item of brief.constraints) list.append(node("li", "", item.kind.replaceAll("_", " ")));
   constraints.append(list); target.append(constraints);
+
+  const planReview = brief.plan_review;
+  if (planReview) {
+    const count = planReview.summary?.attention_required || 0;
+    const findings = (planReview.findings || []).filter((finding) => finding.outcome !== "pass");
+    if (findings.length) {
+      const preflight = card(`Topology warnings (${count})`);
+      preflight.append(node("p", "", "Generation remains available. These checks do not certify electrical or manufacturing behavior."));
+      for (const finding of findings) {
+        const failed = finding.outcome === "fail";
+        const item = node("article", `finding ${failed ? "finding-fail" : "finding-external"}`);
+        const heading = node("div", "finding-heading");
+        heading.append(
+          node("strong", "", finding.id),
+          node("span", failed ? "state-fail" : finding.outcome === "pass" ? "state-pass" : "state-warn", finding.outcome),
+        );
+        item.append(heading, node("p", "", finding.summary));
+        if ((finding.evidence || []).length) item.append(node("div", "path", finding.evidence.join(" · ")));
+        item.append(node("p", "", finding.action));
+        preflight.append(item);
+      }
+      target.append(preflight);
+    }
+  }
 
   if (view.active_change) {
     const change = card("Pending semantic change");
@@ -214,6 +251,22 @@ function renderArtifacts(view) {
   const target = byId("tab-artifacts");
   clear(target);
   const projectId = view.project.id;
+  const attempts = view.attempts || [];
+  if (attempts.length) {
+    const attemptCard = card("Generation attempts");
+    for (const attempt of attempts) {
+      const item = node("article", `finding ${attempt.status === "failed" ? "finding-fail" : "finding-external"}`);
+      const heading = node("div", "finding-heading");
+      heading.append(
+        node("strong", "", attempt.status),
+        node("span", attempt.status === "failed" ? "state-fail" : "state-warn", attempt.phase.replaceAll("_", " ")),
+      );
+      item.append(heading, node("p", "", attempt.error || "Generated work retained for inspection."));
+      item.append(node("div", "path", attempt.root));
+      attemptCard.append(item);
+    }
+    target.append(attemptCard);
+  }
   const preview = view.artifacts.previews;
   if (!preview) {
     const empty = card("Visual evidence");
@@ -233,7 +286,9 @@ function renderArtifacts(view) {
   schematic.append(schematicImage); target.append(schematic);
   const links = card("Artifacts & source");
   const linkRow = node("div", "artifact-links");
-  for (const [key, label] of [["schematic_pdf", "Schematic PDF"], ["board_svg", "Board SVG"], ["schematic", ".kicad_sch"], ["board", ".kicad_pcb"], ["kicad_project", ".kicad_pro"], ["requirements", "Requirements JSON"], ["ir", "Semantic IR"]]) linkRow.append(artifactLink(projectId, key, label));
+  const sourceLinks = [["schematic_pdf", "Schematic PDF"], ["board_svg", "Board SVG"], ["schematic", ".kicad_sch"], ["board", ".kicad_pcb"], ["kicad_project", ".kicad_pro"], ["requirements", "Requirements JSON"], ["ir", "Semantic IR"]];
+  if (view.design?.files?.circuit_plan) sourceLinks.push(["circuit_plan", "Reviewed circuit plan"]);
+  for (const [key, label] of sourceLinks) linkRow.append(artifactLink(projectId, key, label));
   if (view.artifacts.release) linkRow.append(artifactLink(projectId, "release_archive", "Release ZIP"));
   links.append(linkRow);
   if (view.design) links.append(node("div", "path", view.design.root));
@@ -245,39 +300,31 @@ function renderValidation(view) {
   clear(target);
   const validation = view.artifacts.validation;
   if (!validation) {
-    const empty = card("L0–L7 validation");
-    empty.append(node("p", "", "No validation evidence yet. Generation runs the applicable real KiCad and CopperWright gates."));
+    const empty = card("Checks");
+    empty.append(node("p", "", "No check results yet. Generation runs the applicable real KiCad and CopperWright checks."));
     target.append(empty);
     return;
   }
-  const readiness = card("Readiness claim");
+  const readiness = card("Validation results");
   const metrics = node("div", "metric-grid");
   const candidate = node("div", "metric");
-  candidate.append(node("strong", "", validation.candidate_ready ? "Candidate ready" : "Blocked"), node("span", "", "engineering-candidate gate"));
+  candidate.append(node("strong", "", validation.candidate_ready ? "Checks passed" : "Findings remain"), node("span", "", "recorded checks"));
   const production = node("div", "metric");
-  production.append(node("strong", "", "Not production-signed"), node("span", "", "human + physical gates remain"));
+  production.append(node("strong", "", "No compliance claim"), node("span", "", "only recorded evidence is reported"));
   metrics.append(candidate, production); readiness.append(metrics); target.append(readiness);
-  const levels = card("Layered results");
-  for (const level of validation.levels || []) {
-    const row = node("div", "level-row");
-    row.append(node("span", "level-name", level.level));
-    const copy = node("div");
-    copy.append(node("strong", "", level.name.replaceAll("_", " ")), node("span", "", level.state.replaceAll("_", " ")));
-    const tone = level.outcome === "pass" ? "state-pass" : level.outcome === "fail" ? "state-fail" : "state-warn";
-    row.append(copy, node("span", tone, level.outcome));
-    levels.append(row);
-  }
-  target.append(levels);
+  const limits = card("What these checks mean");
+  limits.append(node("p", "", "KiCad and CopperWright results do not establish circuit function, electrical safety, regulatory compliance, RF/thermal behavior, sourcing, or manufacturing fitness."));
+  target.append(limits);
   const noteworthy = [];
   for (const level of validation.levels || []) {
     for (const check of level.checks || []) {
-      if (check.outcome !== "pass" || !["completed", "not_applicable"].includes(check.state)) {
+      if (check.blocks_candidate && (check.outcome !== "pass" || !["completed", "not_applicable"].includes(check.state))) {
         noteworthy.push({ level: level.level, ...check });
       }
     }
   }
   if (noteworthy.length) {
-    const findings = card("Actionable findings & honest external gates");
+    const findings = card("Findings and unavailable checks");
     for (const finding of noteworthy) {
       const item = node("article", `finding ${finding.outcome === "fail" ? "finding-fail" : "finding-external"}`);
       const heading = node("div", "finding-heading");
@@ -311,7 +358,7 @@ function renderConfirmation(view) {
     panel.classList.remove("hidden"); discard.classList.add("hidden");
     byId("confirmation-title").textContent = "Confirm generation";
     byId("confirmation-copy").textContent = "Create native KiCad files from this reviewed semantic intent?";
-    confirm.textContent = "Generate & validate";
+    confirm.textContent = "Generate & check";
   } else if (status === "change_ready") {
     panel.classList.remove("hidden"); discard.classList.remove("hidden");
     byId("confirmation-title").textContent = "Confirm semantic change";
@@ -324,7 +371,7 @@ function renderConfirmation(view) {
 
 function renderProject(view) {
   state.current = view;
-  if (["draft", "interpreting", "needs_clarification", "awaiting_confirmation", "unsupported", "provider_error"].includes(view.project.status)) selectTab("brief");
+  if (["draft", "interpreting", "needs_clarification", "planning_required", "awaiting_confirmation", "generation_unavailable", "provider_error"].includes(view.project.status)) selectTab("brief");
   byId("empty-state").classList.add("hidden");
   byId("project-workspace").classList.remove("hidden");
   byId("project-eyebrow").textContent = `${view.project.status.replaceAll("_", " ")} · revision ${view.project.design_revision}`;
@@ -365,7 +412,11 @@ function renderJob(view = state.current) {
   state.activeJob = job;
   panel.classList.remove("hidden");
   byId("job-title").textContent = `${job.action.replaceAll("_", " ")} · ${job.status.replaceAll("_", " ")}`;
-  byId("job-detail").textContent = job.error || "Progress is persisted; you can safely reopen this project.";
+  const attempt = view?.attempts?.[0];
+  const attemptProgress = job.action === "confirm" && attempt?.status === "running"
+    ? `Generation phase: ${attempt.phase.replaceAll("_", " ")}. Evidence is already persisted.`
+    : null;
+  byId("job-detail").textContent = job.error || attemptProgress || "Progress is persisted; you can safely reopen this project.";
   const terminal = ["completed", "completed_after_cancel", "failed", "cancelled", "interrupted"].includes(job.status);
   byId("cancel-job").classList.toggle("hidden", terminal || job.status === "cancel_requested");
   byId("retry-job").classList.toggle("hidden", !["failed", "cancelled", "interrupted"].includes(job.status));

@@ -8,7 +8,12 @@ import time
 import unittest
 from pathlib import Path
 
-from copperwright.managed import generate_managed_project
+from copperwright.agent_design import (
+    AgentDesignRequest,
+    CircuitPlan,
+    compile_agent_plan,
+)
+from copperwright.managed import generate_managed_project, materialize_managed_design
 from copperwright.project import discover_project
 from copperwright.requirements import RequirementsSpec
 from copperwright.semantic import (
@@ -17,16 +22,20 @@ from copperwright.semantic import (
     _managed_semantic_context,
     collect_semantic_context,
 )
+from copperwright.workflows import run_review
 from tests.requirements_factory import controller_requirements_dict
+from tests.test_agent_design import indicator_plan_dict, indicator_request_dict
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE_KICAD = ROOT / "tests" / "fakes" / "kicad-cli"
+FAKE_CODEX = ROOT / "tests" / "fakes" / "codex"
 
 
 class SemanticContextTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        FAKE_KICAD.chmod(FAKE_KICAD.stat().st_mode | stat.S_IXUSR)
+        for executable in (FAKE_KICAD, FAKE_CODEX):
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
 
     def test_large_context_is_bounded_without_looping(self) -> None:
         context = {
@@ -74,6 +83,66 @@ class SemanticContextTests(unittest.TestCase):
             self.assertEqual(
                 context["managed_project"]["reason"], "not_a_managed_project"
             )
+
+    def test_generic_managed_context_includes_plan_and_project_local_parts(
+        self,
+    ) -> None:
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(indicator_plan_dict()),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            project = materialize_managed_design(
+                compilation.request,
+                compilation.design,
+                Path(temporary) / "project",
+                graph=compilation.graph,
+                plan=compilation.plan,
+            ).project
+            context = _managed_semantic_context(project.root)
+            self.assertTrue(context["available"])
+            self.assertEqual(context["request_kind"], "agent_design_request")
+            self.assertTrue(context["circuit_plan"]["available"])
+            self.assertEqual(
+                context["circuit_plan"]["content"], compilation.plan.to_dict()
+            )
+            self.assertTrue(context["plan_preflight"]["available"])
+            self.assertNotIn("attempt_allowed", context["plan_preflight"]["content"])
+            self.assertNotIn("release_allowed", context["plan_preflight"]["content"])
+            self.assertEqual(context["verified_blocks"], [])
+            self.assertNotIn("trusted_parts", context)
+            records = context["part_records"]["records"]
+            self.assertTrue(records)
+            self.assertTrue(all(record["trust"] == "extracted" for record in records))
+
+    def test_review_workflow_receives_generic_plan_provenance(self) -> None:
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(indicator_plan_dict()),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            project = materialize_managed_design(
+                compilation.request,
+                compilation.design,
+                root / "project",
+                graph=compilation.graph,
+                plan=compilation.plan,
+            ).project
+            run = run_review(
+                str(project.root),
+                output_parent=str(root / "runs"),
+                timeout=30,
+                kicad_executable=str(FAKE_KICAD),
+                codex_executable=str(FAKE_CODEX),
+            )
+            context = json.loads(
+                (run / "semantic-context.json").read_text(encoding="utf-8")
+            )["managed_project"]
+            self.assertTrue(context["circuit_plan"]["available"])
+            self.assertTrue(context["plan_preflight"]["available"])
+            self.assertEqual(context["request_kind"], "agent_design_request")
+            self.assertEqual(context["verified_blocks"], [])
 
     @unittest.skipUnless(
         shutil.which("kicad-cli") is not None and Path("/usr/bin/python3").is_file(),

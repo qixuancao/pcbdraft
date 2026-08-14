@@ -1,96 +1,105 @@
 # CopperWright application and agent API reference
 
-## Conversational application interface
+## Conversational application
 
-`copperwright chat` is the stable product interface for terminals and automation.
-Interactive commands cover `/new`, `/open`, `/projects`, `/status`, `/confirm`,
-`/discard`, `/validate`, `/undo`, `/release`, and `/quit`. Noninteractive callers
-can combine `--new` or `--project` with `--message`, `--yes`, `--undo`,
-`--validate`, `--release`, `--list`, and `--json`. The JSON result is the same
-public project projection used by the browser and includes proposal, authoritative
-design identity, current transaction, artifacts, and structured events.
+<code>copperwright agent</code>, <code>copperwright chat</code>, and
+<code>copperwright app</code> all use <code>ApplicationService</code>. The compact
+<code>agent</code> terminal starts with a direct board question and creates a local
+project from its first plain-language message; <code>chat</code> retains its
+noninteractive argument surface. The service owns project state, confirmation,
+events, locks, recovery, generation attempts, and validation; clients do not
+reimplement engineering logic.
 
-```bash
-copperwright chat --workspace /tmp/copperwright-work \
-  --provider builtin --new "Environment sensor" \
-  --message "Create a BME280 SPI controller" --json
-```
+The normal flow is:
 
-`copperwright app` serves the same `ApplicationService` on `127.0.0.1` by default.
-Its `/api/*` routes and SSE stream are a versioned internal browser transport, not
-a general remote API. The server refuses non-loopback binds and validates Host,
-Origin, CSRF tokens, request sizes, project IDs, and artifact paths. It must not be
-placed behind a public reverse proxy. Use the terminal JSON interface or the
-newline JSON-RPC API below for external automation.
+    user request
+      → requirement interpretation
+      → clarification only for material facts
+      → reviewed generic circuit plan
+      → explicit confirmation
+      → native KiCad generation attempt
+      → optional KiCad/CopperWright checks
 
-The supported Python seam is `copperwright.application.ApplicationService`. Methods
-return plain JSON-compatible projections and enforce the same confirmation,
-locking, provider, and transaction semantics. Callers must not edit the private
-application workspace directly.
+The browser listens only on loopback by design. Its HTTP/SSE routes are an
+internal UI transport, not a public remote API.
 
-## Deterministic JSON-RPC interface
+The builtin provider can collect requirements without a network credential, but
+it does not invent an electrical topology. A Codex or OpenAI-compatible provider
+is needed to produce a generic circuit plan.
 
-`copperwright api` serves newline-delimited JSON-RPC 2.0 over stdin/stdout. The
-service has no network listener and performs no authentication. The caller is
-responsible for process isolation and filesystem permissions.
+## JSON-RPC
 
-## Framing and errors
+<code>copperwright api</code> runs newline-delimited JSON-RPC 2.0 over
+stdin/stdout. It has no network listener. Start by discovering the actual
+runtime capabilities:
 
-Each input line must be one JSON object with exactly `jsonrpc`, `id`, `method`,
-and optional `params`. `jsonrpc` must be `"2.0"`; `params` must be an object.
-Responses are one compact JSON line and preserve the request ID.
+    {"jsonrpc":"2.0","id":1,"method":"runtime.capabilities","params":{}}
 
-Limits are 4 MiB per request and 10,000 requests per process. Standard errors are
-used for parse (`-32700`), invalid request (`-32600`), method (`-32601`), params
-(`-32602`), and internal failures (`-32603`). Runtime domain errors use negative
-codes below `-32000` and include the exception type, not a traceback.
+Every request is one JSON object with <code>jsonrpc</code>, <code>id</code>,
+<code>method</code>, and optional <code>params</code>. Inputs are limited to
+4 MiB, fields are exact, and domain errors are returned as JSON-RPC errors rather
+than tracebacks.
 
-Start every integration with:
+## Generic agent methods
 
-```json
-{"jsonrpc":"2.0","id":1,"method":"runtime.capabilities","params":{}}
-```
+| Method | Required params | What it does |
+|---|---|---|
+| <code>symbols.find</code> | <code>query</code>; optional <code>limit</code> | searches the installed stock KiCad symbols and returns actual symbols, default footprints, descriptions, and pins |
+| <code>agent.plan.compile</code> | <code>request</code>, <code>plan</code> | validates the generic request/plan, resolves local symbols, preserves named parts, and returns semantic IR, a project-local part graph, and deterministic <code>plan_review</code> evidence |
+| <code>agent.project.generate</code> | <code>request</code>, <code>plan</code>, <code>output</code>; optional <code>retain_failed_attempt</code> | compiles and creates a new native KiCad managed-project attempt; successful projects retain the reviewed <code>circuit-plan.json</code> in their manifest, and the optional directory receives available staging on failure |
 
-The response declares API/runtime versions, methods, evidence states, exact
-generation profiles, recognized-but-unimplemented domains, and rejected domains.
+The request document has schema
+<code>copperwright-agent-design-request</code>. The plan document has schema
+<code>copperwright-circuit-plan</code>. The planner may declare semantic
+components/pins/nets only; raw KiCad, geometry, routing, commands, and executable
+text are rejected by the schema and compiler.
 
-## Methods
+<code>plan_review</code> checks only facts that can be determined from the
+reviewed topology and local symbol metadata: power-input coverage, declared
+non-ground rail sources, applicable I2C pull-up/decoupling evidence, and the
+board rules. Findings do not block an otherwise valid generation attempt.
 
-| Method | Required params | Optional params | Effect |
-|---|---|---|---|
-| `runtime.capabilities` | none | none | read-only capability discovery |
-| `parts.find` | none | `kind`, `function`, `min_voltage_v`, `active_only`, `trusted_only` | query canonical parts |
-| `requirements.compile` | `requirements` object | none | compile IR without filesystem writes |
-| `project.generate` | `requirements` object, `output` | none | create a managed KiCad project |
-| `project.inspect` | `project` | none | return identity, files, and drift |
-| `project.validate` | `project`, `output` | `timeout` | create an L0–L7 evidence run |
-| `project.release` | `project`, `output` | `timeout` | create a candidate release |
-| `release.verify` | `release` | none | offline release integrity verification |
-| `sync.preview` | `project` | none | preview recognized native KiCad edits |
-| `sync.apply` | `project` | `timeout` | preview, regenerate, validate, publish |
-| `evidence.record` | `project`, `level`, `outcome`, `actor`, `role`, `performed_at`, `statement`, `artifacts`, `metadata` | none | copy/hash attributed L4 sourcing/fabricator, L6 review, or L7 physical evidence |
-| `benchmark.run` | `output` | `repetitions`, `corpus`, `model_runs`, `model_timeout` | run the independent corpus |
+Example:
 
-Unknown parameters are errors. Write methods use create-only output paths except
-for intentional transaction publication and external-evidence indexes, which are
-lock-protected and hash checked.
+    copperwright api <<'EOF'
+    {"jsonrpc":"2.0","id":"symbols","method":"symbols.find","params":{"query":"SHT31"}}
+    {"jsonrpc":"2.0","id":"caps","method":"runtime.capabilities","params":{}}
+    EOF
 
-## Example session
+Creating native files is not an electrical or manufacturing validation claim. A later
+<code>review</code> run on an intact generic managed project receives the parsed
+request, persisted circuit plan, project-local part records (including their
+trust state), a deterministic preflight recomputed from the persisted plan and
+current semantic IR, and native KiCad evidence.
 
-```bash
-copperwright api <<'EOF'
-{"jsonrpc":"2.0","id":"caps","method":"runtime.capabilities","params":{}}
-{"jsonrpc":"2.0","id":"parts","method":"parts.find","params":{"function":"i2c_sda"}}
-{"jsonrpc":"2.0","id":"inspect","method":"project.inspect","params":{"project":"/tmp/controller"}}
-EOF
-```
+## Other methods
 
-For a requirements compile request, pass the parsed JSON object, not a path. This
-keeps the API transport deterministic and lets the caller own source retrieval.
+| Method | Required params | Effect |
+|---|---|---|
+| <code>parts.find</code> | none | query curated reusable part records |
+| <code>project.inspect</code> | <code>project</code> | report project identity, tracked files, and drift |
+| <code>project.validate</code> | <code>project</code>, <code>output</code> | create L0–L7 evidence |
+| <code>project.release</code> | <code>project</code>, <code>output</code> | try to build a candidate evidence bundle; gates may block it |
+| <code>release.verify</code> | <code>release</code> | verify a previously created bundle |
+| <code>sync.preview</code> / <code>sync.apply</code> | <code>project</code> | inspect/import recognized native KiCad edits |
+| <code>evidence.record</code> | project and attributed evidence fields | record L4, L6, or L7 external evidence |
+| <code>benchmark.run</code> | <code>output</code> | run the independent error-injection corpus |
 
-## Stability
+## Legacy fixture methods
 
-`api_version` follows major compatibility. New optional response fields or methods
-may be added within major version 1. Request schemas remain exact so misspellings
-cannot be silently ignored. IR, requirements, corpus, manifest, transaction,
-evidence, validation, and release documents each carry their own schema/version.
+<code>requirements.compile</code> and <code>project.generate</code> are retained
+for the old deterministic fixture corpus. They are explicitly compatibility
+methods, not the general conversational generation route. Consumers building new
+agent tooling should use <code>symbols.find</code>,
+<code>agent.plan.compile</code>, and <code>agent.project.generate</code>.
+
+## Stability and output truthfulness
+
+<code>api_version</code> follows major compatibility. Semantic IR, generic
+request/plan, manifest, validation, release, and evidence records have their own
+schema/version fields. Write targets are create-only except for explicitly
+transactional publication and lock-protected evidence indexes.
+
+Domain labels do not trigger API rejection. The current native backend accepts
+2- and 4-layer board requests; complex domains may produce diagnostic warnings.
+Only tool results that actually ran are reported as validation evidence.

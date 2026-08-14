@@ -1,4 +1,8 @@
-"""Deterministic requirements-to-semantic-design compiler for the accepted scope."""
+"""Legacy deterministic requirements-to-semantic-design fixture compiler.
+
+The conversational product path is the generic agent-plan runtime. This module
+remains for independently reproducible regression fixtures of the KiCad backend.
+"""
 
 from __future__ import annotations
 
@@ -279,9 +283,8 @@ def compile_requirements(
         raise ValidationError(
             "requirements scope and board specify different layer counts"
         )
-    # Apply the global risk boundary before describing narrower generator support.
-    # A rejected domain such as mains must never look like an ordinary missing
-    # feature that a caller could reasonably work around.
+    # Check only concrete backend prerequisites before the legacy fixture's
+    # narrower, profile-specific feature check below.
     assert_scope_supported(spec.scope)
     functions = {entry["kind"]: entry for entry in spec.functions}
     if len(functions) != len(spec.functions):
@@ -304,7 +307,6 @@ def compile_requirements(
         return _compile_uart_ldo_profile(
             spec, functions, resolved_graph, resolved_registry, check_libraries
         )
-
     instances = [
         resolved_registry.instantiate("qwiic_power_input"),
         resolved_registry.instantiate("attiny402_core"),
@@ -325,7 +327,9 @@ def compile_requirements(
         Requirement(
             id=f"req_{function['id']}",
             text=function["intent"],
-            acceptance=_function_acceptance(function["kind"]),
+            acceptance=_function_acceptance(
+                function["kind"], function.get("parameters", {})
+            ),
             risk="low",
             provenance=("user_requirements",),
         )
@@ -518,17 +522,20 @@ def compile_requirements(
     return design
 
 
-def _profile_requirements(spec: RequirementsSpec) -> tuple[Requirement, ...]:
-    return tuple(
+def _fixture_requirements(spec: RequirementsSpec) -> tuple[Requirement, ...]:
+    functional = tuple(
         Requirement(
             id=f"req_{function['id']}",
             text=function["intent"],
-            acceptance=_function_acceptance(function["kind"]),
+            acceptance=_function_acceptance(
+                function["kind"], function.get("parameters", {})
+            ),
             risk="low",
             provenance=("user_requirements",),
         )
         for function in spec.functions
-    ) + (
+    )
+    return functional + (
         Requirement(
             id="req_manufacturing",
             text="Produce a fabricable, assembly-ready two-to-four-layer design candidate.",
@@ -543,7 +550,7 @@ def _profile_requirements(spec: RequirementsSpec) -> tuple[Requirement, ...]:
     )
 
 
-def _finalize_profile_design(
+def _finalize_fixture_design(
     design: Design, graph: PartGraph, *, check_libraries: bool
 ) -> Design:
     normalized = Design.from_dict(design.to_dict())
@@ -889,7 +896,7 @@ def _compile_spi_profile(
         revision=spec.revision,
         scope=spec.scope,
         requirements=tuple(
-            sorted(_profile_requirements(spec), key=lambda item: item.id)
+            sorted(_fixture_requirements(spec), key=lambda item: item.id)
         ),
         provenance=_provenance(spec, registry),
         blocks=tuple(instance.block for instance in instances),
@@ -921,7 +928,7 @@ def _compile_spi_profile(
             "source": spec.source,
         },
     )
-    return _finalize_profile_design(design, graph, check_libraries=check_libraries)
+    return _finalize_fixture_design(design, graph, check_libraries=check_libraries)
 
 
 def _uart_contract(values: tuple[dict[str, Any], ...]) -> dict[str, Any]:
@@ -1327,7 +1334,7 @@ def _compile_uart_ldo_profile(
         revision=spec.revision,
         scope=spec.scope,
         requirements=tuple(
-            sorted(_profile_requirements(spec), key=lambda item: item.id)
+            sorted(_fixture_requirements(spec), key=lambda item: item.id)
         ),
         provenance=_provenance(spec, registry),
         blocks=tuple(instance.block for instance in instances),
@@ -1367,7 +1374,7 @@ def _compile_uart_ldo_profile(
             "source": spec.source,
         },
     )
-    return _finalize_profile_design(design, graph, check_libraries=check_libraries)
+    return _finalize_fixture_design(design, graph, check_libraries=check_libraries)
 
 
 def _sha256(data: bytes) -> str:
@@ -1556,7 +1563,10 @@ def _merge_ports(
     )
 
 
-def _function_acceptance(kind: str) -> tuple[str, ...]:
+def _function_acceptance(
+    kind: str, parameters: Mapping[str, Any] | None = None
+) -> tuple[str, ...]:
+    del parameters
     return {
         "microcontroller": (
             "MCU power, ground, I2C, UPDI, and status GPIO contracts are connected.",

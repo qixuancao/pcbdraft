@@ -14,21 +14,24 @@ from . import (
     PRODUCT_NAME,
     __version__,
 )
+from .agent_design import (
+    AgentDesignRequest,
+    CircuitPlan,
+    LocalKiCadPartResolver,
+    compile_agent_plan,
+)
 from .benchmark import run_benchmark
 from .blocks import BlockRegistry
 from .errors import CopperWrightError, ValidationError
 from .external_evidence import record_external_evidence
-from .managed import generate_managed_project, open_managed_project
+from .managed import (
+    generate_managed_project,
+    materialize_managed_design,
+    open_managed_project,
+)
 from .parts import PartGraph
 from .release import build_manufacturing_release, verify_manufacturing_release
-from .requirements import (
-    GENERATION_PROFILE_DOMAINS,
-    GENERATION_PROFILE_ID,
-    SUPPORTED_FUNCTIONS,
-    RequirementsSpec,
-    compile_requirements,
-)
-from .scope import REJECTED_DOMAINS, SUPPORTED_DOMAINS
+from .requirements import RequirementsSpec, compile_requirements
 from .sync import apply_kicad_import, preview_kicad_import
 from .validation import EVIDENCE_STATES, validate_managed_project
 
@@ -50,7 +53,12 @@ def capabilities() -> dict[str, Any]:
         "transport": "newline_delimited_json_rpc_2.0",
         "methods": [
             "runtime.capabilities",
+            "symbols.find",
             "parts.find",
+            "agent.plan.compile",
+            "agent.project.generate",
+            # Compatibility methods for the deterministic fixture compiler. They
+            # are intentionally not the conversational product path.
             "requirements.compile",
             "project.generate",
             "project.inspect",
@@ -63,26 +71,21 @@ def capabilities() -> dict[str, Any]:
             "benchmark.run",
         ],
         "evidence_states": sorted(EVIDENCE_STATES),
-        "accepted_scope": {
+        "generation": {
             "layers": [2, 4],
-            "domains": sorted(GENERATION_PROFILE_DOMAINS),
-            "high_risk_domains": "explicitly_rejected",
+            "component_libraries": "installed_stock_kicad_only",
+            "domain_requests": "attempted_without_preemptive_rejection",
+            "validation_claims": "limited_to_recorded_tool_evidence",
         },
-        "generation_profiles": [
-            {
-                "id": GENERATION_PROFILE_ID,
-                "domains": sorted(GENERATION_PROFILE_DOMAINS),
-                "functions": sorted(SUPPORTED_FUNCTIONS),
-                "layers": [2, 4],
-            }
-        ],
-        "scope_policy": {
-            "recognized_domains": sorted(SUPPORTED_DOMAINS),
-            "explicitly_rejected_domains": sorted(REJECTED_DOMAINS),
-            "recognized_without_bundled_generator": sorted(
-                SUPPORTED_DOMAINS - GENERATION_PROFILE_DOMAINS
-            ),
+        "agent_runtime": {
+            "request_schema": "copperwright-agent-design-request",
+            "plan_schema": "copperwright-circuit-plan",
+            "part_resolution": "installed KiCad symbols are resolved into a project-local provisional part graph",
+            "plan_checks": "topology findings are reported without blocking a normal generation attempt",
+            "project_files": "successful projects retain circuit-plan.json beside the native KiCad files",
+            "model_authority": "structured topology only; no raw KiCad, coordinates, or executable code",
         },
+        "legacy_fixture_methods": ["requirements.compile", "project.generate"],
     }
 
 
@@ -135,6 +138,16 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
     if method == "runtime.capabilities":
         _exact(params, set())
         return capabilities()
+    if method == "symbols.find":
+        _exact(params, {"query"}, {"limit"})
+        query = params["query"]
+        if not isinstance(query, str):
+            raise RpcError(-32602, "query must be a string")
+        limit = _integer(params.get("limit", 12), "limit")
+        if not 1 <= limit <= 64:
+            raise RpcError(-32602, "limit must be from 1 to 64")
+        candidates = LocalKiCadPartResolver().find(query, limit=limit)
+        return {"candidates": [candidate.to_dict() for candidate in candidates]}
     if method == "parts.find":
         _exact(
             params,
@@ -143,6 +156,35 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
         )
         parts = PartGraph.bundled().find(**params)
         return {"parts": [part.to_dict() for part in parts]}
+    if method == "agent.plan.compile":
+        _exact(params, {"request", "plan"})
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(params["request"]),
+            CircuitPlan.from_dict(params["plan"]),
+        )
+        return _agent_compilation_result(compilation)
+    if method == "agent.project.generate":
+        _exact(params, {"request", "plan", "output"}, {"retain_failed_attempt"})
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(params["request"]),
+            CircuitPlan.from_dict(params["plan"]),
+        )
+        generated = materialize_managed_design(
+            compilation.request,
+            compilation.design,
+            _path(params["output"], "output"),
+            graph=compilation.graph,
+            plan=compilation.plan,
+            retain_failed_attempt=(
+                _path(params["retain_failed_attempt"], "retain_failed_attempt")
+                if "retain_failed_attempt" in params
+                else None
+            ),
+        )
+        return {
+            **_project_result(generated.project),
+            "plan_review": compilation.review.to_dict(),
+        }
     if method == "requirements.compile":
         _exact(params, {"requirements"})
         spec = RequirementsSpec.from_dict(params["requirements"])
@@ -258,6 +300,20 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             "model_consistency": result.result["model_consistency"],
         }
     raise RpcError(-32601, f"method not found: {method}")
+
+
+def _agent_compilation_result(compilation: Any) -> dict[str, Any]:
+    """Serialize a generic plan without treating it as a validated release."""
+
+    return {
+        "request": compilation.request.to_dict(),
+        "plan": compilation.plan.to_dict(),
+        "design": compilation.design.to_dict(),
+        "part_catalog": compilation.graph.to_dict(),
+        "plan_review": compilation.review.to_dict(),
+        "content_hash": compilation.design.content_hash(),
+        "assurance": compilation.design.metadata.get("assurance"),
+    }
 
 
 def serve(

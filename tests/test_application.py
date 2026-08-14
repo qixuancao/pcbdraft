@@ -11,7 +11,9 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
+from unittest.mock import patch
 
+from copperwright.agent_design import CircuitPlan
 from copperwright.application import ApplicationService
 from copperwright.errors import ValidationError
 from copperwright.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
@@ -24,15 +26,86 @@ from copperwright.providers import (
     validate_interpretation,
 )
 from copperwright.webapp import create_app_server
+from tests.test_agent_design import circuit_plan_dict
+
+
+class GenericPlanningProvider:
+    """Deterministic test double for the model-backed generic planner."""
+
+    provider_id = "generic-test-planner"
+    supports_planning = True
+
+    def diagnostic(self) -> dict[str, object]:
+        return {
+            "id": self.provider_id,
+            "available": True,
+            "planning": "test double",
+            "secret_storage": "none",
+        }
+
+    def interpret(
+        self,
+        context: ProviderContext,
+        *,
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> dict[str, object]:
+        del project_dir, run_dir, timeout
+        request = context.request
+        lowered = request.casefold()
+        parts = [part for part in ("STM32F405", "SHT31") if part.casefold() in lowered]
+        functions = (
+            ["sensor acquisition"]
+            if parts
+            else ["embedded control"]
+            if "controller" in lowered
+            else []
+        )
+        layers = 2 if "2-layer" in lowered or "2 layers" in lowered else None
+        return validate_interpretation(
+            {
+                "request_summary": request,
+                "design_name": context.project_name,
+                "layers": layers,
+                "board": {"width_mm": 80.0, "height_mm": 50.0},
+                "assumptions": ["A regulated 3.3 V supply is available."],
+                "requested_parts": parts,
+                "functions": functions,
+                "power": {
+                    "nominal_v": 3.3,
+                    "max_voltage_v": 3.3,
+                    "max_current_a": 0.5,
+                    "max_power_w": 1.65,
+                },
+                "missing_fields": ["layers"] if layers is None else [],
+            }
+        )
+
+    def plan(
+        self,
+        request: object,
+        *,
+        symbol_context: dict[str, list[dict[str, object]]],
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> CircuitPlan:
+        del project_dir, run_dir, timeout
+        self.last_symbol_context = symbol_context
+        plan = circuit_plan_dict()
+        plan["design_id"] = request.design_id  # type: ignore[attr-defined]
+        return CircuitPlan.from_dict(plan)
 
 
 class ApplicationConversationTests(unittest.TestCase):
-    def test_supported_request_stops_at_reviewable_confirmation(self) -> None:
+    def test_generic_request_stops_at_reviewable_confirmation(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            provider = GenericPlanningProvider()
+            service = ApplicationService(temporary, provider=provider)
             view = service.create_project(
-                "Greenhouse sensor",
-                "Create a TMP102 I2C temperature sensor board",
+                "Generic sensor",
+                "Create an STM32F405 board with an SHT31 sensor",
             )
             project_id = view["project"]["id"]
             self.assertEqual(view["project"]["status"], "needs_clarification")
@@ -45,50 +118,112 @@ class ApplicationConversationTests(unittest.TestCase):
             view = service.send_message(project_id, "2 layers")
             proposal = view["conversation"]["proposal"]
             self.assertEqual(view["project"]["status"], "awaiting_confirmation")
-            self.assertEqual(proposal["scope"]["decision"], "supported")
-            self.assertTrue(proposal["brief"]["confirmation_required"])
-            self.assertEqual(len(proposal["brief"]["bom"]), 9)
-            self.assertGreaterEqual(len(proposal["brief"]["constraints"]), 10)
-            self.assertFalse((service.project_root(project_id) / "design").exists())
-
-            reopened = ApplicationService(temporary, provider_name="builtin")
+            self.assertEqual(proposal["scope"]["decision"], "attempted")
+            self.assertEqual(proposal["planning"]["state"], "ready")
             self.assertEqual(
-                reopened.open_project(project_id)["conversation"]["proposal"],
-                proposal,
+                proposal["brief"]["identity"]["requested_parts"],
+                ["SHT31", "STM32F405"],
             )
-            self.assertGreaterEqual(len(reopened.events(project_id)), 4)
+            symbols = {
+                entry["symbol"]
+                for entry in proposal["brief"]["identity"]["planned_symbols"]
+            }
+            self.assertIn("MCU_ST_STM32F4:STM32F405RGTx", symbols)
+            self.assertIn("Sensor_Humidity:SHT31-DIS", symbols)
+            self.assertIn("_runtime_primitives", provider.last_symbol_context)
+            preflight = proposal["brief"]["plan_review"]
+            self.assertNotIn("attempt_allowed", preflight)
+            self.assertGreater(preflight["summary"]["attention_required"], 0)
+            self.assertNotIn("release_allowed", preflight)
+            root = service.project_root(project_id)
+            self.assertTrue((root / "pending-agent-request.json").is_file())
+            self.assertTrue((root / "pending-circuit-plan.json").is_file())
+            self.assertTrue((root / "pending-parts.copperwright.json").is_file())
 
-    def test_unsupported_high_risk_request_fails_closed(self) -> None:
+            reopened = ApplicationService(temporary, provider=provider)
+            self.assertEqual(
+                reopened.open_project(project_id)["conversation"]["proposal"], proposal
+            )
+
+    def test_builtin_preserves_unknown_named_parts_and_requests_a_planner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             service = ApplicationService(temporary, provider_name="builtin")
+            view = service.create_project(
+                "Generic request",
+                "Create a 2-layer STM32F405 board with an SHT31 sensor",
+            )
+            proposal = view["conversation"]["proposal"]
+            self.assertEqual(view["project"]["status"], "planning_required")
+            self.assertEqual(proposal["scope"]["decision"], "attempted")
+            self.assertEqual(proposal["requested_parts"], ["SHT31", "STM32F405"])
+            self.assertIsNone(proposal["brief"])
+            self.assertNotIn("unsupported", proposal["planning"]["message"].casefold())
+
+    def test_complex_domain_request_reaches_normal_planning_and_confirmation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider=GenericPlanningProvider())
             view = service.create_project(
                 "Mains controller",
-                "Build a 230V mains medical RF controller",
+                "Build a 2-layer 230V mains medical RF controller",
             )
-            self.assertEqual(view["project"]["status"], "unsupported")
+            self.assertEqual(view["project"]["status"], "awaiting_confirmation")
             self.assertEqual(
                 view["conversation"]["proposal"]["scope"]["decision"],
-                "unsupported",
+                "attempted",
             )
-            self.assertIsNone(view["design"])
+            warnings = " ".join(view["conversation"]["proposal"]["scope"]["warnings"])
+            for domain in ("mains", "medical", "rf"):
+                self.assertIn(domain, warnings)
+            self.assertEqual(
+                view["conversation"]["proposal"]["planning"]["state"], "ready"
+            )
 
-    def test_unverified_board_envelope_is_rejected_before_confirmation(self) -> None:
+    def test_builtin_chinese_complex_request_is_retained_for_a_planner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             service = ApplicationService(temporary, provider_name="builtin")
             view = service.create_project(
-                "Oversized sensor",
-                "Create a 2-layer 60 x 40 mm BME280 SPI environmental board",
+                "高风险控制器",
+                "做一块 2 层高压市电医疗控制板，带射频天线",
             )
-            self.assertEqual(view["project"]["status"], "unsupported")
-            self.assertEqual(
-                view["conversation"]["proposal"]["scope"]["decision"],
-                "unsupported",
+            self.assertEqual(view["project"]["status"], "planning_required")
+            proposal = view["conversation"]["proposal"]
+            self.assertEqual(proposal["scope"]["decision"], "attempted")
+            warnings = " ".join(proposal["scope"]["warnings"])
+            for domain in ("high_voltage", "mains", "medical", "rf"):
+                self.assertIn(domain, warnings)
+            self.assertNotIn("outside the automated", proposal["planning"]["message"])
+
+    def test_failed_generic_generation_retains_request_plan_and_part_graph(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider=GenericPlanningProvider())
+            view = service.create_project(
+                "Retained generic attempt",
+                "Create a 2-layer STM32F405 board with an SHT31 sensor",
             )
-            self.assertIn(
-                "45 mm × 30 mm",
-                view["conversation"]["proposal"]["scope"]["reasons"][0],
-            )
-            self.assertIsNone(view["design"])
+            project_id = view["project"]["id"]
+            with (
+                patch(
+                    "copperwright.application.materialize_managed_design",
+                    side_effect=ValidationError("router left I2C_SDA unrouted"),
+                ),
+                self.assertRaisesRegex(ValidationError, "I2C_SDA"),
+            ):
+                service.confirm_project(project_id, validate=False)
+            failed = service.open_project(project_id)
+            self.assertEqual(failed["project"]["status"], "generation_failed")
+            attempt = failed["attempts"][0]
+            self.assertEqual(attempt["status"], "failed")
+            self.assertEqual(attempt["assurance"], "provisional")
+            self.assertIn("I2C_SDA", attempt["error"])
+            attempt_root = Path(attempt["root"])
+            self.assertTrue((attempt_root / "request.json").is_file())
+            self.assertTrue((attempt_root / "circuit-plan.json").is_file())
+            self.assertTrue((attempt_root / "design.pcbir.json").is_file())
+            self.assertTrue((attempt_root / "parts.copperwright.json").is_file())
 
     def test_secrets_are_redacted_before_provider_and_storage(self) -> None:
         sentinel = "test-provider-secret-value-123456789"
@@ -99,32 +234,24 @@ class ApplicationConversationTests(unittest.TestCase):
                 service = ApplicationService(temporary, provider_name="builtin")
                 view = service.create_project(
                     "Secret check",
-                    f"Create a 2-layer TMP102 I2C sensor; api_key={sentinel}",
+                    f"Create a 2-layer SHT31 sensor; api_key={sentinel}",
                 )
             finally:
                 if previous is None:
                     os.environ.pop("COPPERWRIGHT_TEST_API_KEY", None)
                 else:
                     os.environ["COPPERWRIGHT_TEST_API_KEY"] = previous
-            self.assertEqual(view["project"]["status"], "awaiting_confirmation")
+            self.assertEqual(view["project"]["status"], "planning_required")
             combined = b""
-            for path in Path(temporary).rglob("*"):
-                if path.is_file():
-                    combined += path.read_bytes()
+            for item in Path(temporary).rglob("*"):
+                if item.is_file():
+                    combined += item.read_bytes()
             self.assertNotIn(sentinel.encode(), combined)
             self.assertIn(b"[REDACTED]", combined)
 
     def test_untrusted_provider_shape_is_rejected(self) -> None:
         valid = BuiltinIntentProvider().interpret(
-            context=type(
-                "Context",
-                (),
-                {
-                    "request": "2-layer TMP102 I2C sensor",
-                    "project_name": "Sensor",
-                    "prior_decisions": {},
-                },
-            )(),
+            context=ProviderContext("2-layer SHT31 sensor", "Sensor", {}),
             project_dir=Path.cwd(),
             run_dir=Path.cwd(),
             timeout=1,
@@ -146,27 +273,42 @@ class ApplicationConversationTests(unittest.TestCase):
             )
         )
 
-    def test_builtin_provider_selects_all_profiles_and_rejects_unverified_usb(
-        self,
-    ) -> None:
+    def test_builtin_provider_does_not_claim_a_fixed_board_type(self) -> None:
         provider = BuiltinIntentProvider()
-        cases = {
-            "Build a 2-layer TMP102 I2C temperature board": "low_voltage_i2c_controller_v1",
-            "Build a 2-layer BME280 SPI environmental board": "low_voltage_spi_environment_v1",
-            "Build a 2-layer UART controller with 5V input and an AP2112 LDO": "low_voltage_uart_ldo_controller_v1",
-            "Build a USB-C sensor board": "unsupported",
-        }
         with tempfile.TemporaryDirectory() as temporary:
-            for request, expected in cases.items():
-                result = provider.interpret(
-                    ProviderContext(request, "Profile selection", {}),
-                    project_dir=Path(temporary),
-                    run_dir=Path(temporary),
-                    timeout=1,
-                )
-                self.assertEqual(result["proposed_profile"], expected, request)
-                if expected == "unsupported":
-                    self.assertTrue(result["unsupported_reasons"])
+            result = provider.interpret(
+                ProviderContext(
+                    "Build a 2-layer UART controller with 5V input and an AP2112 LDO",
+                    "Generic intent",
+                    {},
+                ),
+                project_dir=Path(temporary),
+                run_dir=Path(temporary),
+                timeout=1,
+            )
+        self.assertEqual(result["layers"], 2)
+        self.assertIn("UART serial interface", result["functions"])
+        self.assertNotIn("proposed_profile", result)
+
+    def test_builtin_provider_keeps_a_chinese_generic_request_generic(self) -> None:
+        provider = BuiltinIntentProvider()
+        with tempfile.TemporaryDirectory() as temporary:
+            result = provider.interpret(
+                ProviderContext(
+                    "做一块 2 层控制板，使用 STM32F405 和 SHT31 传感器，"
+                    "提供 I2C，3.3伏，最大 200毫安",
+                    "中文通用请求",
+                    {},
+                ),
+                project_dir=Path(temporary),
+                run_dir=Path(temporary),
+                timeout=1,
+            )
+        self.assertEqual(result["layers"], 2)
+        self.assertEqual(result["requested_parts"], ["SHT31", "STM32F405"])
+        self.assertIn("sensor acquisition", result["functions"])
+        self.assertIn("I2C bus", result["functions"])
+        self.assertEqual(result["power"]["max_current_a"], 0.2)
 
     def test_openai_compatible_provider_keeps_secret_runtime_only(self) -> None:
         captured: dict[str, object] = {}
@@ -182,13 +324,19 @@ class ApplicationConversationTests(unittest.TestCase):
                 captured["request"] = json.loads(self.rfile.read(length))
                 intent = {
                     "request_summary": "Create a 2-layer UART controller",
-                    "proposed_profile": "low_voltage_uart_ldo_controller_v1",
                     "design_name": "UART controller",
                     "layers": 2,
                     "board": {"width_mm": None, "height_mm": None},
                     "assumptions": ["Externally regulated 5 V input"],
+                    "requested_parts": ["AP2112"],
+                    "functions": ["UART serial interface"],
+                    "power": {
+                        "nominal_v": 5.0,
+                        "max_voltage_v": 5.0,
+                        "max_current_a": 0.1,
+                        "max_power_w": 0.5,
+                    },
                     "missing_fields": [],
-                    "unsupported_reasons": [],
                 }
                 response = json.dumps(
                     {"choices": [{"message": {"content": json.dumps(intent)}}]}
@@ -223,10 +371,7 @@ class ApplicationConversationTests(unittest.TestCase):
                     run_dir=Path(temporary) / "provider-run",
                     timeout=5,
                 )
-                self.assertEqual(
-                    result["proposed_profile"],
-                    "low_voltage_uart_ldo_controller_v1",
-                )
+                self.assertEqual(result["requested_parts"], ["AP2112"])
                 self.assertFalse(any(Path(temporary).rglob("*")))
             diagnostic = provider.diagnostic()
         finally:
@@ -300,9 +445,7 @@ class ApplicationConversationTests(unittest.TestCase):
             events = restarted.events(project_id)
             self.assertEqual(events[-1]["kind"], "operation.interrupted")
 
-    def test_queued_job_can_be_cancelled_and_retried_without_side_effects(
-        self,
-    ) -> None:
+    def test_queued_job_can_be_cancelled_and_retried_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             service = ApplicationService(temporary, provider_name="builtin")
             blocker_id = service.create_draft("Worker blocker")["project"]["id"]
@@ -326,7 +469,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 queued = runner.submit(
                     target_id,
                     "message",
-                    {"text": "Create a 2-layer TMP102 I2C sensor"},
+                    {"text": "Create a 2-layer SHT31 sensor"},
                 )
                 cancelled = runner.cancel(target_id, queued["id"])
                 self.assertEqual(cancelled["status"], "cancel_requested")
@@ -356,7 +499,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 self.assertEqual(retried["status"], "completed")
                 self.assertEqual(
                     service.open_project(target_id)["project"]["status"],
-                    "awaiting_confirmation",
+                    "planning_required",
                 )
             finally:
                 release.set()
@@ -466,7 +609,7 @@ class BrowserSecurityTests(unittest.TestCase):
         self.assertIn('id="setup-dialog"', html)
         self.assertIn("OPENAI_API_KEY=&lt;secret&gt;", html)
         self.assertNotIn('id="provider-api-key"', html)
-        self.assertIn("Actionable findings & honest external gates", script)
+        self.assertIn("Findings and unavailable checks", script)
         self.assertIn("validation_report", script)
         self.assertIn('node("strong", "", validation.candidate_ready', script)
 

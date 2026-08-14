@@ -20,18 +20,20 @@ class AcceptanceScopeTests(unittest.TestCase):
         self.assertFalse(decision.accepted)
         self.assertIn("2- or 4-copper-layer", "; ".join(decision.reasons))
 
-    def test_mains_rf_and_safety_critical_are_explicitly_rejected(self) -> None:
+    def test_complex_domains_are_warned_about_without_blocking_generation(self) -> None:
         value = minimal_design_dict()["scope"]
-        value["domains"] = ["mains", "rf"]
+        value["domains"] = ["aviation", "high_power", "mains", "medical", "rf"]
         value["max_voltage_v"] = 325
-        value["layers"] = 8
+        value["max_current_a"] = 20
+        value["max_power_w"] = 6500
         value["risk_class"] = "safety_critical"
         decision = evaluate_scope(Scope.from_dict(value))
-        self.assertFalse(decision.accepted)
-        joined = " ".join(decision.reasons)
-        self.assertIn("high-risk", joined)
-        self.assertIn("60 VDC", joined)
-        self.assertIn("2- or 4-copper-layer", joined)
+        self.assertTrue(decision.accepted)
+        self.assertEqual(decision.reasons, ())
+        joined = " ".join(decision.warnings)
+        for domain in ("aviation", "high_power", "mains", "medical", "rf"):
+            self.assertIn(domain, joined)
+        self.assertIn("does not validate", joined)
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "copperwright"
 version = "1.0.0"
-description = "CopperWright: local conversational PCB design with deterministic KiCad engineering"
+description = "CopperWright: local agent-safe PCB planning and KiCad runtime"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
@@ -13,7 +13,7 @@ license-files = ["LICENSE", "NOTICE"]
 authors = [{name = "CopperWright contributors"}]
 keywords = ["pcb", "kicad", "eda", "agent", "electronics", "automation"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Environment :: Web Environment",
     "Operating System :: POSIX :: Linux",

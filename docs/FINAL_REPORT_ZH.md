@@ -1,5 +1,12 @@
 # CopperWright 工程基线：最终完成报告
 
+> **历史记录，已不代表当前产品状态。** 本文保留的是固定确定性夹具时代的
+> 2026-08-13 验收背景，不应被理解为 CopperWright 当前的通用 AI PCB 产品说明。
+> 当前架构、能力边界和证据状态以
+> [ARCHITECTURE.md](ARCHITECTURE.md)、
+> [PRODUCT_ACCEPTANCE.md](PRODUCT_ACCEPTANCE.md) 和
+> [SPEC_TRACEABILITY.md](SPEC_TRACEABILITY.md) 为准。
+
 > 本报告保留 2026-08-13 工程验收背景。当前产品名、主命令、schema、工件路径和
 > 记录的运行名称均使用 CopperWright / `copperwright`。
 

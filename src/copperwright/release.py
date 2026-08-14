@@ -91,7 +91,7 @@ def build_manufacturing_release(
         else open_managed_project(project_value)
     )
     project.assert_synchronized()
-    resolved_graph = graph or PartGraph.bundled()
+    resolved_graph = graph or project.graph
     root = _new_release_root(output)
     receipt_path = root / "receipt.json"
     receipt: dict[str, Any] = {

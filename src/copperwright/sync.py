@@ -18,13 +18,13 @@ from .managed import (
     MANAGED_MANIFEST_LIMIT,
     ManagedProject,
     inspect_native_project,
+    load_generation_request,
     materialize_managed_design,
     open_managed_project,
 )
 from .operations import ChangeSet, apply_change_set, semantic_diff
 from .parts import PartGraph
 from .project import sha256_file
-from .requirements import load_requirements
 from .runs import utc_timestamp
 from .validation import validate_managed_project
 
@@ -77,7 +77,7 @@ def preview_kicad_import(
         if isinstance(project_value, ManagedProject)
         else open_managed_project(project_value)
     )
-    resolved_graph = graph or PartGraph.bundled()
+    resolved_graph = graph or project.graph
     drift = set(project.drift())
     allowed = {"board:hash_mismatch", "kicad_project:hash_mismatch"}
     if drift - allowed:
@@ -212,9 +212,9 @@ def apply_kicad_import(
         raise ValidationError("KiCad synchronization preview contains no changes")
     project = open_managed_project(preview.project_root)
     _verify_preview_baseline(project, preview)
-    resolved_graph = graph or PartGraph.bundled()
+    resolved_graph = graph or project.graph
     after = apply_change_set(project.design, preview.change_set)
-    requirements = load_requirements(project.requirements_path)
+    requirements = load_generation_request(project.requirements_path)
 
     transaction_parent = project.root.parent / ".copperwright-transactions"
     make_directory(transaction_parent)
@@ -246,6 +246,7 @@ def apply_kicad_import(
             after,
             staged,
             graph=resolved_graph,
+            plan=project.plan,
             system_python=system_python,
         )
         validation = validate_managed_project(

@@ -324,6 +324,33 @@ class PartGraph:
         except KeyError as exc:
             raise ValidationError(f"unknown canonical part id: {part_id}") from exc
 
+    def merged(
+        self,
+        parts: Iterable[PartRecord],
+        *,
+        source: str | None = None,
+    ) -> PartGraph:
+        """Return an immutable graph extended with project-local part records.
+
+        A project may carry parts extracted from the exact KiCad libraries used to
+        generate it.  Never let a later record silently redefine an existing
+        identity: reproducibility depends on the full record being identical.
+        """
+
+        records = dict(self._parts)
+        for part in parts:
+            existing = records.get(part.id)
+            if existing is not None and existing.to_dict() != part.to_dict():
+                raise ValidationError(
+                    f"part catalog merge would redefine canonical part id: {part.id}"
+                )
+            records[part.id] = part
+        return PartGraph(
+            records.values(),
+            license_id=self.license_id,
+            source=source or self.source,
+        )
+
     def find(
         self,
         *,
@@ -413,7 +440,11 @@ class PartGraph:
         return {"symbol": symbol_resolution, "footprint": footprint_resolution}
 
     def validate_design(
-        self, design: Design, *, check_libraries: bool = False
+        self,
+        design: Design,
+        *,
+        check_libraries: bool = False,
+        allow_provisional: bool = False,
     ) -> list[IRIssue]:
         issues: list[IRIssue] = []
         components = {component.id: component for component in design.components}
@@ -435,16 +466,30 @@ class PartGraph:
                     )
                 )
                 continue
-            if part.trust in {"unverified", "extracted"}:
+            if part.trust == "unverified" or (
+                part.trust == "extracted" and not allow_provisional
+            ):
                 issues.append(
                     IRIssue(
                         "error",
                         "part.untrusted",
                         f"$.components[{index}].part_id",
-                        f"part trust state is insufficient for generation: {part.trust}",
+                        (
+                            f"part trust state is insufficient for generation: {part.trust}"
+                            if not allow_provisional
+                            else f"part trust state is insufficient even for a provisional attempt: {part.trust}"
+                        ),
                     )
                 )
-            if part.lifecycle.get("status") != "active" and part.bom:
+            if (
+                part.lifecycle.get("status") != "active"
+                and part.bom
+                and not (
+                    allow_provisional
+                    and part.trust == "extracted"
+                    and part.lifecycle.get("status") == "unknown"
+                )
+            ):
                 issues.append(
                     IRIssue(
                         "error",
@@ -567,10 +612,20 @@ class PartGraph:
                             )
         return sorted(set(issues))
 
-    def assert_design(self, design: Design, *, check_libraries: bool = False) -> None:
+    def assert_design(
+        self,
+        design: Design,
+        *,
+        check_libraries: bool = False,
+        allow_provisional: bool = False,
+    ) -> None:
         errors = [
             issue
-            for issue in self.validate_design(design, check_libraries=check_libraries)
+            for issue in self.validate_design(
+                design,
+                check_libraries=check_libraries,
+                allow_provisional=allow_provisional,
+            )
             if issue.severity == "error"
         ]
         if errors:

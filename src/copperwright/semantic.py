@@ -14,14 +14,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from .agent_design import AgentDesignRequest, review_agent_plan
 from .blocks import BlockRegistry
 from .errors import CopperWrightError, ValidationError
 from .io import make_directory, read_bytes_limited
-from .managed import MANAGED_MANIFEST, open_managed_project
-from .parts import PartGraph
+from .managed import MANAGED_MANIFEST, load_generation_request, open_managed_project
 from .process import redact_argv, remaining_timeout, run_command
 from .project import ProjectFiles, sha256_file
-from .requirements import load_requirements
+from .requirements import RequirementsSpec
 from .semantic_rules import evaluate_semantic_rules
 
 PROCESS_OUTPUT_LIMIT = 1024 * 1024
@@ -294,31 +294,103 @@ def _managed_semantic_context(project_root: Path) -> dict[str, Any]:
         }
     try:
         project = open_managed_project(project_root)
-        requirements = load_requirements(project.requirements_path)
-        graph = PartGraph.bundled()
-        registry = BlockRegistry.bundled(graph)
+        generation_request = load_generation_request(project.requirements_path)
+        graph = project.graph
         drift = project.drift()
-        part_issues = graph.validate_design(project.design, check_libraries=True)
+        part_issues = graph.validate_design(
+            project.design,
+            check_libraries=True,
+            allow_provisional=project.design.metadata.get("assurance") == "provisional",
+        )
         semantic_findings = evaluate_semantic_rules(
             project.design,
             graph,
             routing=project.manifest["generation"]["pcb"]["routing"],
             approximate_geometry=False,
+            allow_provisional=project.design.metadata.get("assurance") == "provisional",
         )
         used_part_ids = sorted(
             {component.part_id for component in project.design.components}
         )
         used_block_ids = sorted(block.id for block in project.design.blocks)
-        block_definitions = {
-            definition.id: definition
-            for definition in registry.definitions()
-            if definition.id in used_block_ids
-        }
+        verified_blocks: list[dict[str, Any]] = []
+        request_kind: str
+        circuit_plan: dict[str, Any]
+        plan_preflight: dict[str, Any]
+        if isinstance(generation_request, RequirementsSpec):
+            request_kind = "requirements_spec"
+            registry = BlockRegistry.bundled(graph)
+            block_definitions = {
+                definition.id: definition
+                for definition in registry.definitions()
+                if definition.id in used_block_ids
+            }
+            verified_blocks = [
+                {
+                    "id": definition.id,
+                    "version": definition.version,
+                    "kind": definition.kind,
+                    "verification_state": definition.verification_state,
+                    "description": definition.description,
+                    "constraints": list(definition.constraints),
+                    "evidence": list(definition.evidence),
+                    "verification_tests": list(definition.verification_tests),
+                }
+                for definition in (
+                    block_definitions[block_id] for block_id in used_block_ids
+                )
+            ]
+            circuit_plan = {
+                "available": False,
+                "reason": "legacy_requirements_project",
+            }
+            plan_preflight = {
+                "available": False,
+                "reason": "legacy_requirements_project",
+            }
+        elif isinstance(generation_request, AgentDesignRequest):
+            request_kind = "agent_design_request"
+            if project.plan is None or project.plan_path is None:
+                circuit_plan = {
+                    "available": False,
+                    "reason": "generic_project_missing_persisted_plan",
+                }
+                plan_preflight = {
+                    "available": False,
+                    "reason": "generic_project_missing_persisted_plan",
+                }
+            else:
+                circuit_plan = {
+                    "available": True,
+                    "sha256": sha256_file(project.plan_path),
+                    "content": project.plan.to_dict(),
+                }
+                plan_preflight = {
+                    "available": True,
+                    "source": "recomputed_from_persisted_plan_and_current_semantic_ir",
+                    "content": review_agent_plan(
+                        generation_request,
+                        project.plan,
+                        project.design,
+                        graph,
+                    ).to_dict(),
+                }
+        else:  # Defensive guard if a future request schema reaches this runtime.
+            raise ValidationError(
+                "managed project contains an unsupported generation request"
+            )
+        trust_summary: dict[str, int] = {}
+        for part_id in used_part_ids:
+            trust = graph.get(part_id).trust
+            trust_summary[trust] = trust_summary.get(trust, 0) + 1
+        intent_complete = not isinstance(
+            generation_request, AgentDesignRequest
+        ) or bool(circuit_plan.get("available"))
         generation = project.manifest["generation"]
         context = {
             "available": True,
             "schema": "copperwright-managed-review-context",
-            "version": 1,
+            "version": 3,
             "authority": project.manifest["sync"].get("authority"),
             "synchronization": {
                 "state": "synchronized" if not drift else "drifted",
@@ -333,28 +405,18 @@ def _managed_semantic_context(project_root: Path) -> dict[str, Any]:
                 "schematic_sha256": sha256_file(project.schematic_path),
                 "board_sha256": sha256_file(project.board_path),
             },
-            "requirements": requirements.to_dict(),
+            "request_kind": request_kind,
+            "generation_request": generation_request.to_dict(),
+            "circuit_plan": circuit_plan,
+            "plan_preflight": plan_preflight,
             "design_ir": project.design.to_dict(),
-            "trusted_parts": {
+            "part_records": {
                 "license": graph.license_id,
+                "trust_summary": dict(sorted(trust_summary.items())),
                 "records": [graph.get(part_id).to_dict() for part_id in used_part_ids],
                 "contract_issues": [issue.to_dict() for issue in part_issues],
             },
-            "verified_blocks": [
-                {
-                    "id": definition.id,
-                    "version": definition.version,
-                    "kind": definition.kind,
-                    "verification_state": definition.verification_state,
-                    "description": definition.description,
-                    "constraints": list(definition.constraints),
-                    "evidence": list(definition.evidence),
-                    "verification_tests": list(definition.verification_tests),
-                }
-                for definition in (
-                    block_definitions[block_id] for block_id in used_block_ids
-                )
-            ],
+            "verified_blocks": verified_blocks,
             "generation_evidence": {
                 "schematic": generation["schematic"],
                 "placement": generation["pcb"]["placement"],
@@ -369,7 +431,14 @@ def _managed_semantic_context(project_root: Path) -> dict[str, Any]:
             },
             "interpretation": {
                 "native_evidence_authoritative": not drift,
-                "intent_evidence_authoritative": not drift,
+                "intent_evidence_authoritative": not drift and intent_complete,
+                "intent_evidence_reason": (
+                    "synchronized_managed_artifacts"
+                    if not drift and intent_complete
+                    else "managed_artifact_drift"
+                    if drift
+                    else "generic_project_missing_persisted_plan"
+                ),
                 "physical_or_human_signoff": False,
             },
         }

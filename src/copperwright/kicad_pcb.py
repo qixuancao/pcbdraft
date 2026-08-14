@@ -192,7 +192,11 @@ def generate_pcb(
     """Place, route, and materialize a board; never report an unrouted board complete."""
     resolved_graph = graph or PartGraph.bundled()
     assert_supported(design)
-    resolved_graph.assert_design(design, check_libraries=True)
+    resolved_graph.assert_design(
+        design,
+        check_libraries=True,
+        allow_provisional=design.metadata.get("assurance") == "provisional",
+    )
     target = Path(output).resolve(strict=False)
     if target.suffix != ".kicad_pcb":
         raise ValidationError("PCB output must end in .kicad_pcb")
@@ -462,10 +466,9 @@ def _place(
                     # component-center proxy can falsely reject two deliberately
                     # fixed parts whose relevant supply pads meet the real bound.
                     continue
-                # Component-level centers cannot be closer than their physical
-                # rectangles without overlap.  Preserve the electrical bound in
-                # the IR; this coarse placer uses the nearest feasible grid bound,
-                # while the geometric validator measures the actual supply pads.
+                # The IR bound is a copper-pad edge gap, while this coarse placer
+                # compares component centers.  Preserve the electrical bound in
+                # the IR; the geometric validator measures the real supply pads.
                 feasible = min(
                     (first.width_mm + second.width_mm) / 2,
                     (first.height_mm + second.height_mm) / 2,
@@ -591,7 +594,12 @@ def _route(
         min_drill_mm=design.board.min_drill_mm,
         edge_clearance_mm=design.board.edge_clearance_mm,
         grid_mm=ROUTING_GRID_MM,
-        max_expansions=750_000,
+        # A conversational provisional plan must return useful feedback rather
+        # than monopolize the local runtime.  Fully curated designs retain the
+        # larger deterministic routing budget.
+        max_expansions=(
+            20_000 if design.metadata.get("assurance") == "provisional" else 750_000
+        ),
     )
     routed = router.route(
         pads,

@@ -1,50 +1,55 @@
-# Open-source reuse and bounded product study
+# Open-source reuse and attribution record
 
-This record covers code and assets that CopperWright actually depends on or
-redistributes, plus the small public-project study used to choose product patterns.
-It is not a list of endorsements. Repositories and their instructions were treated
-as untrusted data. The review was performed on 2026-08-13 before the 1.0.0 release.
+This file records the upstream projects and public material examined while
+building CopperWright's generic Agent-safe KiCad runtime. It is a design and
+license record, not a claim that another project's code was copied.
 
-## Code and data actually reused
+## Runtime dependencies and external tools
 
-| Item | Exact use | License evidence | Distribution decision |
+| Item | Use | License / attribution treatment |
+|---|---|---|
+| [kicad-sch-api](https://github.com/circuit-synth/kicad-sch-api) 0.5.6 | native KiCad schematic construction adapter | separately distributed MIT dependency; named in NOTICE and package metadata |
+| [KiCad](https://www.kicad.org/) | user-installed schematic/PCB editor, library data, geometry API, checks, and manufacturing backend | not bundled as an application dependency artifact; users install a compatible KiCad 10 distribution |
+| [Official KiCad libraries](https://gitlab.com/kicad/libraries) | symbols, footprints, and models resolved from the user's local installation | not redistributed as a standalone collection; generated designs retain the KiCad library license/design exception |
+
+## Public projects studied
+
+| Project | Revision/license checked | What was taken from it | CopperWright implementation |
 |---|---|---|---|
-| [`kicad-sch-api==0.5.6`](https://github.com/circuit-synth/kicad-sch-api) | The one direct runtime Python dependency; CopperWright uses its public API to emit KiCad 10 schematics. | Upstream [`LICENSE`](https://github.com/circuit-synth/kicad-sch-api/blob/main/LICENSE) declares MIT; the pinned package and hashes are in `uv.lock`. | Imported as a normal dependency; not vendored. Attribution is in `NOTICE`. |
-| [KiCad](https://gitlab.com/kicad/code/kicad) and `kicad-cli`/`pcbnew` | Installed external EDA engine for parsing, ERC/DRC, PCB creation, preview/export, and manufacturing outputs. | [KiCad source licensing](https://www.kicad.org/about/licenses/) | Not bundled in the wheel. CopperWright invokes the user's compatible KiCad 10 installation through bounded adapters. |
-| [Official KiCad libraries](https://gitlab.com/kicad/libraries) | Installed symbols, footprints, and referenced 3D models used by generated example designs. | [KiCad library license and electronic-design exception](https://www.kicad.org/libraries/license/) | Libraries are not redistributed as a standalone collection. Generated examples retain the applicable CC-BY-SA 4.0 design exception; attribution is in `NOTICE`. |
-| CopperWright mark | Source raster supplied and reviewed for this repository at `artifacts/branding/copperwright-mark-v1.png`; preserved as `docs/assets/brand/copperwright-mark-v1-source.png`. | Project-owned input supplied by the maintainer. | Deterministic derivatives are produced by `scripts/generate-brand-assets.sh`; no third-party brand asset was used. |
+| [atopile](https://github.com/atopile/atopile) | commit [619eda7](https://github.com/atopile/atopile/tree/619eda7f777558a3e500dbad9cc2941712881495), [MIT](https://github.com/atopile/atopile/blob/619eda7f777558a3e500dbad9cc2941712881495/LICENSE) | declarative circuit intent, typed interfaces, reusable composition, and constraints as a layer above KiCad | generic request/plan schema and semantic IR keep design intent distinct from KiCad output |
+| [tscircuit](https://github.com/tscircuit/tscircuit) | commit [5587ef5](https://github.com/tscircuit/tscircuit/tree/5587ef58af046200e7d534ac07eb9a873e452533), [MIT](https://github.com/tscircuit/tscircuit/blob/5587ef58af046200e7d534ac07eb9a873e452533/LICENSE) | separation between circuit description, PCB representation, rendering, and solver work | planner returns components/pins/nets only; deterministic runtime owns placement/routing and UI reads authoritative project state |
+| [circuit-synth](https://github.com/circuit-synth/circuit-synth) | commit [3aaff18](https://github.com/circuit-synth/circuit-synth/tree/3aaff18c056de7cbe8f5b0a3e1e6e7e7895f544e), [MIT](https://github.com/circuit-synth/circuit-synth/blob/3aaff18c056de7cbe8f5b0a3e1e6e7e7895f544e/LICENSE) | Python circuit composition and KiCad integration direction | project staging/managed generation remains CopperWright code; the separately packaged kicad-sch-api dependency is used for schematic emission |
+| [Pi / π](https://github.com/earendil-works/pi) | [MIT](https://github.com/earendil-works/pi/blob/main/LICENSE) | small agent core with clear provider/session/CLI boundaries | CopperWright keeps terminal/browser clients thin and routes all stateful engineering work through one application service |
+| [KiCad MCP Pro](https://github.com/oaslananka/kicad-mcp-pro) | [MIT](https://github.com/oaslananka/kicad-mcp-pro/blob/main/LICENSE) | the need for guided workflows, diagnostics, and transactional behavior rather than a giant raw tool list | public interfaces expose high-level request/plan/validation operations; raw KiCad mutation is not model-controlled |
+| [SKiDL](https://github.com/devbisme/skidl) | [MIT](https://github.com/devbisme/skidl/blob/master/LICENSE) | textual connectivity and reusable circuit composition | semantic connectivity remains authoritative before native KiCad emission |
 
-All remaining application, provider, web UI, transaction, validation, routing,
-benchmark, and release code in this repository was independently implemented for
-CopperWright. The browser application uses the Python standard library and ships no
-third-party JavaScript or CSS framework. Firefox/geckodriver are external test tools,
-not runtime or redistributed dependencies.
+The repositories above were inspected on 2026-08-13. No source files, tests,
+fixtures, screenshots, logos, datasets, or design files from those projects are
+vendored into CopperWright. The implementation uses compatible architectural
+patterns, not copy-pasted source. Any future direct code reuse must name the
+files and preserve every required license notice in this table and NOTICE.
 
-## Public projects studied, with no code or assets copied
+## Design conclusions applied here
 
-| Project | License verified | Pattern examined | CopperWright decision |
-|---|---|---|---|
-| [atopile](https://github.com/atopile/atopile) | [MIT](https://github.com/atopile/atopile/blob/main/LICENSE) | readable circuit-as-code, typed interfaces, reusable modules, package-quality tooling | Keep a readable versioned semantic IR and verified block registry, while retaining deterministic KiCad generation and fail-closed scope gates. |
-| [tscircuit](https://github.com/tscircuit/tscircuit) | [MIT](https://github.com/tscircuit/tscircuit/blob/main/LICENSE) | browser-native schematic/PCB visualization and composable circuit representation | Provide local browser previews over authoritative server-side artifacts; do not make browser state authoritative. |
-| [circuit-synth](https://github.com/circuit-synth/circuit-synth) | [MIT](https://github.com/circuit-synth/circuit-synth/blob/main/LICENSE) | Python circuit definitions and KiCad integration | Reuse only its separately packaged `kicad-sch-api` dependency; CopperWright's application and compiler were independently implemented. |
-| [KiCad MCP Pro](https://github.com/oaslananka/kicad-mcp-pro) | [MIT](https://github.com/oaslananka/kicad-mcp-pro/blob/main/LICENSE) | local dashboard, actionable diagnostics, agent workflow, capability reporting | Use one bounded application service and a small semantic action surface instead of exposing broad low-level file mutation tools. |
-| [KiBot](https://github.com/INTI-CMNB/KiBot) | [AGPL-3.0](https://github.com/INTI-CMNB/KiBot/blob/master/LICENSE) | repeatable fabrication/documentation automation and CI integration | Independently implement the smaller release adapter needed by v1. No KiBot code is linked, copied, vendored, or invoked. |
-| [SKiDL](https://github.com/devbisme/skidl) | [MIT](https://github.com/devbisme/skidl/blob/master/LICENSE) | textual connectivity, reusable subcircuits, ERC-friendly circuit construction | Preserve semantic topology and typed blocks as the authority, but generate modern native KiCad files and retain controlled bidirectional synchronization. |
+1. AI proposes a bounded semantic plan; it does not author raw KiCad or board
+   geometry.
+2. KiCad remains the editor, geometry, rule-checking, and manufacturing backend.
+3. Component identity comes from an auditable project-local graph; a local
+   library extraction is useful but provisional.
+4. Generation is transactional: failures preserve useful artifacts and do not
+   overwrite an authoritative project.
+5. A browser or terminal is an interaction shell, not a second engineering
+   implementation.
+6. ERC/DRC results are evidence, not a functional or manufacturing sign-off.
 
-## Architecture conclusions
+## Public research and vendor material
 
-The study reinforced five product choices:
+The repository's design rationale follows the local research report
+<code>ai_agent_pcb_design_analysis.md</code>. That local working document
+discusses pcbGPT, OmniLayout, SchGen, KiCad's IPC/API work, and vendor
+documentation as background. No paper text, vendor reference design file, or
+third-party PCB layout has been copied into the runtime.
 
-1. Conversation proposes typed intent; it never owns parts, topology, geometry,
-   validation, or release identity.
-2. One application service drives both terminal and browser clients, so confirmation,
-   locking, recovery, and safety semantics cannot diverge.
-3. A small set of high-level semantic operations is safer and more testable than
-   hundreds of file-level agent tools or raw KiCad text edits.
-4. Browser previews are useful only when tied to the same hashes and validation
-   evidence as the generated project.
-5. Unsupported domains and external physical gates must remain visible states rather
-   than being converted into optimistic success messages.
-
-No project with missing or unclear licensing was used. No studied source code,
-fixture, annotation, screenshot, logo, or other asset was copied into CopperWright.
+Curated factual part records must retain their own provenance links in the part
+catalog. A provenance link is not permission to redistribute a datasheet, library,
+or reference design.

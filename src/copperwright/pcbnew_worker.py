@@ -460,7 +460,7 @@ def _configure_board(board, rules, layer_count):
 
 
 def _configure_project_rules(project_data):
-    """Replace KiCad's broad default ignores with an explicit scope policy."""
+    """Replace KiCad's broad default ignores with explicit project rules."""
     try:
         board_severities = project_data["board"]["design_settings"]["rule_severities"]
     except (KeyError, TypeError) as exc:

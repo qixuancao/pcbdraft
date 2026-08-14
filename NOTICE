@@ -16,3 +16,9 @@ not redistributed as a standalone collection here. See
 https://www.kicad.org/libraries/license/.
 
 KiCad is a trademark of its respective owner. No endorsement is implied.
+
+CopperWright's generic runtime architecture was independently implemented after
+studying public MIT-licensed projects including atopile, tscircuit,
+circuit-synth, and Pi/π. No source code, fixture, design, logo, screenshot, or
+dataset from those projects is vendored here. The detailed source/revision record
+is in docs/OPEN_SOURCE_REUSE.md.

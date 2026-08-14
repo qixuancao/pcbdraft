@@ -1,4 +1,9 @@
-"""Verified end-user design profiles built on the deterministic runtime."""
+"""Legacy deterministic fixture profiles.
+
+The product path is the generic agent-plan runtime in :mod:`agent_design`.
+These small, deterministic compositions remain only as regression fixtures for
+the lower KiCad compiler; they are not selectable conversational product modes.
+"""
 
 from __future__ import annotations
 
@@ -15,17 +20,6 @@ class ProductProfile:
     id: str
     title: str
     summary: str
-    verified_capabilities: tuple[str, ...]
-    unavailable_capabilities: tuple[str, ...]
-
-    def public_dict(self) -> dict[str, Any]:
-        return {
-            "id": self.id,
-            "title": self.title,
-            "summary": self.summary,
-            "verified_capabilities": list(self.verified_capabilities),
-            "unavailable_capabilities": list(self.unavailable_capabilities),
-        }
 
 
 I2C_CONTROLLER = ProductProfile(
@@ -34,23 +28,6 @@ I2C_CONTROLLER = ProductProfile(
     summary=(
         "Externally regulated 3.3 V temperature/controller board with Qwiic, "
         "UPDI, and a status indicator."
-    ),
-    verified_capabilities=(
-        "low_voltage_mcu",
-        "temperature_sensor",
-        "i2c_100khz",
-        "external_regulated_3v3",
-        "updi",
-        "status_indicator",
-        "two_or_four_layers",
-        "board_45x30_mm",
-    ),
-    unavailable_capabilities=(
-        "on_board_regulation",
-        "usb",
-        "wireless",
-        "safety_critical",
-        "physical_environmental_signoff",
     ),
 )
 
@@ -61,22 +38,6 @@ SPI_ENVIRONMENT = ProductProfile(
         "Externally regulated 3.3 V environmental sensor/controller with a "
         "dedicated power header and UPDI."
     ),
-    verified_capabilities=(
-        "low_voltage_mcu",
-        "environmental_sensor",
-        "board_local_spi_mode0_1mhz",
-        "external_regulated_3v3",
-        "updi",
-        "two_or_four_layers",
-        "board_45x30_mm",
-    ),
-    unavailable_capabilities=(
-        "on_board_regulation",
-        "usb",
-        "wireless",
-        "safety_critical",
-        "physical_environmental_signoff",
-    ),
 )
 
 UART_LDO_CONTROLLER = ProductProfile(
@@ -86,26 +47,7 @@ UART_LDO_CONTROLLER = ProductProfile(
         "Regulated 5 V-input controller with on-board 3.3 V LDO, a 3.3 V CMOS "
         "UART service header, UPDI, and a status indicator."
     ),
-    verified_capabilities=(
-        "low_voltage_mcu",
-        "uart_3v3_cmos",
-        "regulated_5v_input",
-        "ap2112_3v3_ldo",
-        "updi",
-        "status_indicator",
-        "two_or_four_layers",
-        "board_45x30_mm",
-    ),
-    unavailable_capabilities=(
-        "rs232_voltage_levels",
-        "usb",
-        "buck_converter",
-        "wireless",
-        "safety_critical",
-        "physical_environmental_signoff",
-    ),
 )
-
 
 _PROFILES = {
     I2C_CONTROLLER.id: I2C_CONTROLLER,
@@ -122,9 +64,7 @@ def get_product_profile(profile_id: str) -> ProductProfile:
     try:
         return _PROFILES[profile_id]
     except KeyError as exc:
-        raise ValidationError(
-            f"unknown or unverified product profile: {profile_id}"
-        ) from exc
+        raise ValidationError(f"unknown product profile: {profile_id}") from exc
 
 
 def safe_design_id(name: str) -> str:
@@ -145,14 +85,14 @@ def build_requirements(
     source_locator: str,
     source_date: str,
 ) -> RequirementsSpec:
-    """Construct strict requirements using only a fully verified profile contract."""
+    """Construct strict requirements from a bounded profile contract."""
 
     get_product_profile(profile_id)
     if layers not in {2, 4}:
-        raise ValidationError("verified profiles accept only 2 or 4 copper layers")
+        raise ValidationError("bounded profiles accept only 2 or 4 copper layers")
     if abs(width_mm - 45.0) > 1e-9 or abs(height_mm - 30.0) > 1e-9:
         raise ValidationError(
-            "verified v1 profiles require the 45 mm × 30 mm board envelope"
+            "bounded v1 profiles require the 45 mm × 30 mm board envelope"
         )
     value: dict[str, Any] = {
         "schema": "copperwright-requirements",

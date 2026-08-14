@@ -56,4 +56,5 @@ else
     echo "smoke: REAL_CODEX=0, skipped live Codex review"
 fi
 
-echo "smoke: doctor and real KiCad ERC/DRC passed on a temporary copy"
+echo "smoke: doctor and real KiCad ERC/DRC completed on a temporary copy"
+echo "smoke: successful tool execution does not imply a clean design; review the reported counts"

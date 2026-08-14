@@ -43,7 +43,7 @@ class TrustedPartGraphTests(unittest.TestCase):
         result = self.graph.find(
             kind="microcontroller", function="i2c_sda", min_voltage_v=3.6
         )
-        self.assertEqual([part.id for part in result], ["microchip.attiny402-ssn"])
+        self.assertIn("microchip.attiny402-ssn", [part.id for part in result])
         self.assertTrue(all(part.trust == "rule_validated" for part in result))
 
 

@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any, TextIO
 
+from .agent import interactive_agent
 from .application import ApplicationService
 from .errors import CopperWrightError, ValidationError
 
@@ -20,7 +21,8 @@ def _print_project(view: dict[str, Any], stream: TextIO) -> None:
     proposal = view["conversation"].get("proposal")
     if isinstance(proposal, dict):
         scope = proposal.get("scope", {})
-        print(f"Scope: {scope.get('decision', 'unknown')}", file=stream)
+        for warning in scope.get("warnings", []):
+            print(f"Warning: {warning}", file=stream)
         if proposal.get("clarifications"):
             print(proposal["clarifications"][0]["question"], file=stream)
         brief = proposal.get("brief")
@@ -32,18 +34,37 @@ def _print_project(view: dict[str, Any], stream: TextIO) -> None:
                 file=stream,
             )
             print(
-                f"BOM: {sum(item['quantity'] for item in brief['bom'])} placements / "
-                f"{len(brief['bom'])} lines; constraints: {len(brief['constraints'])}",
+                f"Parts: {sum(item['quantity'] for item in brief['bom'])} placements / "
+                f"{len(brief['bom'])} types; board rules: {len(brief['constraints'])}",
                 file=stream,
             )
+            plan_review = brief.get("plan_review")
+            if isinstance(plan_review, dict):
+                summary = plan_review.get("summary", {})
+                attention = summary.get("attention_required", 0)
+                if isinstance(attention, int) and attention > 0:
+                    print(
+                        f"Topology warnings: {attention}; generation remains available.",
+                        file=stream,
+                    )
+                    for finding in plan_review.get("findings", []):
+                        if (
+                            isinstance(finding, dict)
+                            and finding.get("outcome") != "pass"
+                        ):
+                            print(f"  - {finding.get('summary')}", file=stream)
+            identity = brief.get("identity", {})
+            requested_parts = identity.get("requested_parts", [])
+            if requested_parts:
+                print(
+                    "Named parts: "
+                    + ", ".join(requested_parts)
+                    + " (preserved for planning)",
+                    file=stream,
+                )
             print("Assumptions:", file=stream)
             for assumption in brief["assumptions"]:
                 print(f"  - {assumption}", file=stream)
-            print(
-                "External gates: human engineering review, physical build/test, "
-                "and production sign-off.",
-                file=stream,
-            )
     if view.get("active_change"):
         change = view["active_change"]
         summary = change["diff"]["summary"]
@@ -58,21 +79,22 @@ def _print_project(view: dict[str, Any], stream: TextIO) -> None:
         print(f"KiCad project: {design['root']}", file=stream)
         for key in ("schematic", "board", "kicad_project"):
             print(f"  {key}: {design['files'][key]}", file=stream)
+    attempts = view.get("attempts", [])
+    if attempts:
+        latest = attempts[0]
+        print(
+            f"Latest generation attempt: {latest['status']} ({latest['phase']})",
+            file=stream,
+        )
+        print(f"  retained files: {latest['root']}", file=stream)
+        if latest.get("error"):
+            print(f"  failure: {latest['error']}", file=stream)
     validation = view.get("artifacts", {}).get("validation")
     if isinstance(validation, dict):
         print(
-            "Validation: "
-            f"candidate={'yes' if validation['candidate_ready'] else 'no'}, "
-            f"production={'yes' if validation['production_ready'] else 'no'} "
-            "(production is never self-claimed)",
-            file=stream,
-        )
-        print(
-            "  "
-            + ", ".join(
-                f"{level['level']}={level['state']}:{level['outcome']}"
-                for level in validation.get("levels", [])
-            ),
+            "Checks: "
+            + ("passed" if validation["candidate_ready"] else "findings remain")
+            + "; no electrical, regulatory, or manufacturing claim",
             file=stream,
         )
     preview = view.get("artifacts", {}).get("previews")
@@ -115,7 +137,11 @@ def run_chat_command(
             project_id = value["project"]["id"]
         elif not project_id:
             if sys.stdin.isatty():
-                return interactive_chat(service)
+                return interactive_agent(
+                    service,
+                    initial_message=message,
+                    timeout=timeout,
+                )
             raise ValidationError("noninteractive chat requires --new or --project")
         else:
             value = service.open_project(project_id)

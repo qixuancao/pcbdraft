@@ -4,30 +4,44 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from . import PRIMARY_CLI, PRODUCT_NAME, __version__
+from .agent import run_agent_command
+from .agent_design import (
+    AgentDesignRequest,
+    CircuitPlan,
+    LocalKiCadPartResolver,
+    compile_agent_plan,
+)
 from .api import serve
 from .benchmark import run_benchmark
 from .blocks import BlockRegistry
 from .chat import run_chat_command
 from .doctor import doctor_report
-from .errors import CopperWrightError, TransactionRejected
+from .errors import CopperWrightError, TransactionRejected, ValidationError
 from .external_evidence import record_external_evidence
 from .io import (
     atomic_write_bytes,
     atomic_write_json,
     load_json_limited,
+    make_directory,
     read_bytes_limited,
 )
 from .ir import IR_FILE_LIMIT
-from .managed import generate_managed_project, open_managed_project
+from .managed import (
+    generate_managed_project,
+    materialize_managed_design,
+    open_managed_project,
+)
 from .operations import MAX_CHANGE_BYTES, load_change_set_bytes
 from .parts import PartGraph
 from .release import build_manufacturing_release, verify_manufacturing_release
 from .requirements import compile_requirements, load_requirements
+from .runs import new_run_id, utc_timestamp
 from .sync import (
     apply_kicad_import,
     preview_kicad_import,
@@ -40,6 +54,7 @@ from .transactions import (
     recover_transaction,
     undo_transaction,
 )
+from .tui import run_tui_command
 from .validation import validate_managed_project
 from .webapp import run_app
 from .workflows import run_apply, run_patch, run_review
@@ -67,8 +82,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog or invoked_program(),
         description=(
-            f"{PRODUCT_NAME}: evidence-driven semantic PCB design, validation, "
-            "and release runtime."
+            f"{PRODUCT_NAME}: generate native KiCad projects from reviewable circuit plans."
         ),
     )
     parser.add_argument(
@@ -84,7 +98,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     )
 
     review = subcommands.add_parser(
-        "review", help="run deterministic gates and an AI heuristic review"
+        "review", help="run available deterministic checks and an AI heuristic review"
     )
     review.add_argument("PROJECT", help="KiCad project directory")
     review.add_argument(
@@ -114,18 +128,51 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     apply_parser.add_argument("RUN_DIR", help="ready patch transaction directory")
 
     compile_parser = subcommands.add_parser(
-        "compile", help="compile strict requirements into deterministic semantic IR"
+        "compile",
+        help="compile a legacy deterministic fixture requirements file into semantic IR",
     )
     compile_parser.add_argument("REQUIREMENTS", help="requirements JSON file")
     compile_parser.add_argument("--output", required=True, metavar="FILE")
     compile_parser.add_argument("--json", action="store_true", dest="as_json")
 
     generate = subcommands.add_parser(
-        "generate", help="generate a new managed semantic and native KiCad project"
+        "generate",
+        help="generate a legacy deterministic fixture managed KiCad project",
     )
     generate.add_argument("REQUIREMENTS", help="requirements JSON file")
     generate.add_argument("OUTPUT", help="new project directory")
     generate.add_argument("--json", action="store_true", dest="as_json")
+
+    symbols = subcommands.add_parser(
+        "symbols", help="search symbols available in the local KiCad installation"
+    )
+    symbols.add_argument("QUERY")
+    symbols.add_argument("--limit", type=int, default=12)
+    symbols.add_argument("--json", action="store_true", dest="as_json")
+
+    agent_compile = subcommands.add_parser(
+        "agent-compile",
+        help="compile a reviewed generic agent request and circuit plan into semantic IR",
+    )
+    agent_compile.add_argument("REQUEST", help="agent design request JSON")
+    agent_compile.add_argument("PLAN", help="reviewed circuit plan JSON")
+    agent_compile.add_argument("--ir-output", required=True, metavar="FILE")
+    agent_compile.add_argument("--parts-output", required=True, metavar="FILE")
+    agent_compile.add_argument("--json", action="store_true", dest="as_json")
+
+    agent_generate = subcommands.add_parser(
+        "agent-generate",
+        help="generate a native KiCad project from a reviewed stock-library plan",
+    )
+    agent_generate.add_argument("REQUEST", help="agent design request JSON")
+    agent_generate.add_argument("PLAN", help="reviewed circuit plan JSON")
+    agent_generate.add_argument("OUTPUT", help="new project directory")
+    agent_generate.add_argument(
+        "--retain-failed-attempt",
+        metavar="DIR",
+        help="attempt directory retained on failure; defaults beside OUTPUT",
+    )
+    agent_generate.add_argument("--json", action="store_true", dest="as_json")
 
     inspect_parser = subcommands.add_parser(
         "inspect", help="inspect a managed project and report synchronization drift"
@@ -134,7 +181,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     inspect_parser.add_argument("--json", action="store_true", dest="as_json")
 
     validate_parser = subcommands.add_parser(
-        "validate", help="run honest L0-L7 validation on a managed project"
+        "validate", help="run available KiCad and CopperWright checks"
     )
     validate_parser.add_argument("PROJECT")
     validate_parser.add_argument("--output", metavar="DIR")
@@ -253,6 +300,35 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     chat.add_argument("--json", action="store_true", dest="as_json")
     chat.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
 
+    agent = subcommands.add_parser(
+        "agent", help="launch a compact Pi-style local design conversation"
+    )
+    agent.add_argument("--workspace", metavar="DIR")
+    agent.add_argument(
+        "--provider",
+        choices=("auto", "codex", "openai-compatible", "builtin"),
+        default="auto",
+    )
+    agent.add_argument("--project", dest="project_id", metavar="ID")
+    agent.add_argument(
+        "--message",
+        metavar="TEXT",
+        help="send the first message after starting or opening a project",
+    )
+    agent.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
+
+    tui = subcommands.add_parser(
+        "tui", help="launch the full-screen local terminal design interface"
+    )
+    tui.add_argument("--workspace", metavar="DIR")
+    tui.add_argument(
+        "--provider",
+        choices=("auto", "codex", "openai-compatible", "builtin"),
+        default="auto",
+    )
+    tui.add_argument("--project", dest="project_id", metavar="ID")
+    tui.add_argument("--timeout", type=positive_timeout, default=420.0, metavar="SEC")
+
     app = subcommands.add_parser(
         "app", help="start the local CopperWright browser application"
     )
@@ -312,6 +388,132 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "apply":
             run_dir = run_apply(args.RUN_DIR)
             print(f"transaction applied: {run_dir}")
+            return 0
+        if args.command == "symbols":
+            if not 1 <= args.limit <= 64:
+                raise ValidationError("symbol candidate limit must be from 1 to 64")
+            candidates = LocalKiCadPartResolver().find(args.QUERY, limit=args.limit)
+            value = {
+                "query": args.QUERY,
+                "candidates": [candidate.to_dict() for candidate in candidates],
+            }
+            _emit(
+                value,
+                args.as_json,
+                "\n".join(candidate.symbol for candidate in candidates),
+            )
+            return 0
+        if args.command == "agent-compile":
+            compilation = _load_agent_compilation(args.REQUEST, args.PLAN)
+            ir_output = Path(args.ir_output).expanduser().resolve(strict=False)
+            parts_output = Path(args.parts_output).expanduser().resolve(strict=False)
+            if ir_output == parts_output:
+                raise ValidationError(
+                    "agent IR and part-catalog output paths must differ"
+                )
+            atomic_write_bytes(
+                ir_output, compilation.design.canonical_bytes(), mode=0o644
+            )
+            atomic_write_json(parts_output, compilation.graph.to_dict(), mode=0o644)
+            value = {
+                "ir": str(ir_output),
+                "part_catalog": str(parts_output),
+                "content_hash": compilation.design.content_hash(),
+                "assurance": compilation.design.metadata.get("assurance"),
+                "plan_review": compilation.review.to_dict(),
+                "components": len(compilation.design.components),
+                "nets": len(compilation.design.nets),
+            }
+            _emit(value, args.as_json, f"generic semantic IR compiled: {ir_output}")
+            return 0
+        if args.command == "agent-generate":
+            compilation = _load_agent_compilation(args.REQUEST, args.PLAN)
+            output = Path(args.OUTPUT).expanduser()
+            attempt_root = (
+                Path(args.retain_failed_attempt).expanduser()
+                if args.retain_failed_attempt
+                else output.parent / f"{output.name}.attempt-{new_run_id()}"
+            )
+            if (
+                attempt_root.name in {"", ".", ".."}
+                or attempt_root.is_symlink()
+                or attempt_root.exists()
+            ):
+                raise ValidationError(
+                    "generic failed-attempt directory is unsafe or already occupied"
+                )
+            make_directory(attempt_root.parent)
+            make_directory(attempt_root, parents=False)
+            attempt = {
+                "schema": "copperwright-generic-cli-attempt",
+                "version": 1,
+                "status": "running",
+                "started_at": utc_timestamp(),
+                "completed_at": None,
+                "error": None,
+                "files": {
+                    "request": "request.json",
+                    "plan": "circuit-plan.json",
+                    "semantic_ir": "design.pcbir.json",
+                    "part_catalog": "parts.copperwright.json",
+                    "retained_native": None,
+                },
+            }
+            atomic_write_json(
+                attempt_root / "request.json", compilation.request.to_dict()
+            )
+            atomic_write_json(
+                attempt_root / "circuit-plan.json", compilation.plan.to_dict()
+            )
+            atomic_write_json(
+                attempt_root / "design.pcbir.json", compilation.design.to_dict()
+            )
+            atomic_write_json(
+                attempt_root / "parts.copperwright.json", compilation.graph.to_dict()
+            )
+            atomic_write_json(attempt_root / "attempt.json", attempt)
+            try:
+                result = materialize_managed_design(
+                    compilation.request,
+                    compilation.design,
+                    output,
+                    graph=compilation.graph,
+                    plan=compilation.plan,
+                    retain_failed_attempt=attempt_root / "native",
+                )
+            except CopperWrightError as exc:
+                attempt["status"] = "failed"
+                attempt["completed_at"] = utc_timestamp()
+                attempt["error"] = str(exc)[:2048]
+                if (attempt_root / "native").is_dir():
+                    attempt["files"]["retained_native"] = "native"
+                atomic_write_json(attempt_root / "attempt.json", attempt)
+                value = {
+                    "error": str(exc),
+                    "retained_attempt": str(attempt_root),
+                }
+                _emit(
+                    value,
+                    args.as_json,
+                    f"generic generation failed: {exc}; retained attempt: {attempt_root}",
+                )
+                return exc.exit_code
+            shutil.rmtree(attempt_root)
+            value = {
+                **_managed_value(result.project),
+                "routing": {
+                    "state": result.pcb.routing.state,
+                    "unrouted": list(result.pcb.routing.unrouted),
+                    "via_count": len(result.pcb.routing.vias),
+                },
+                "validation": "not_run",
+            }
+            _emit(
+                value,
+                args.as_json,
+                "KiCad schematic and routed PCB generated: "
+                f"{result.project.root} (ERC/DRC not run)",
+            )
             return 0
         if args.command == "compile":
             graph = PartGraph.bundled()
@@ -500,6 +702,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 as_json=args.as_json,
                 timeout=args.timeout,
             )
+        if args.command == "agent":
+            return run_agent_command(
+                workspace=args.workspace,
+                provider=args.provider,
+                project_id=args.project_id,
+                initial_message=args.message,
+                timeout=args.timeout,
+            )
+        if args.command == "tui":
+            return run_tui_command(
+                workspace=args.workspace,
+                provider=args.provider,
+                project_id=args.project_id,
+                timeout=args.timeout,
+            )
         if args.command == "app":
             return run_app(
                 host=args.host,
@@ -525,6 +742,14 @@ def _emit(value: dict, as_json: bool, text: str) -> None:
         print(json.dumps(value, ensure_ascii=False, sort_keys=True))
     else:
         print(text)
+
+
+def _load_agent_compilation(request_path: str, plan_path: str):
+    request = AgentDesignRequest.from_dict(
+        load_json_limited(Path(request_path), IR_FILE_LIMIT)
+    )
+    plan = CircuitPlan.from_dict(load_json_limited(Path(plan_path), IR_FILE_LIMIT))
+    return compile_agent_plan(request, plan)
 
 
 def _managed_value(project: object) -> dict[str, object]:

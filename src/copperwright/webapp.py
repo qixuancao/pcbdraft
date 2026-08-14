@@ -36,6 +36,7 @@ _ARTIFACT_KEYS = {
     "kicad_project",
     "requirements",
     "ir",
+    "circuit_plan",
     "validation_report",
     "release_archive",
 }
@@ -309,13 +310,12 @@ class CopperWrightHandler(BaseHTTPRequestHandler):
                 "kicad_project": "kicad_project",
                 "requirements": "requirements",
                 "ir": "ir",
+                "circuit_plan": "circuit_plan",
             }[key]
             if isinstance(design, dict):
-                relative = (
-                    Path(design["files"][managed_key])
-                    .relative_to(project_root)
-                    .as_posix()
-                )
+                source = design.get("files", {}).get(managed_key)
+                if isinstance(source, str):
+                    relative = Path(source).relative_to(project_root).as_posix()
         if not relative or Path(relative).is_absolute() or ".." in Path(relative).parts:
             raise ValidationError("project artifact is unavailable")
         artifact = (project_root / relative).resolve(strict=True)

@@ -54,12 +54,12 @@
 
       <section id="empty-state" class="empty-state">
         <div class="trace-art" aria-hidden="true"><span></span><span></span><span></span></div>
-        <p class="eyebrow">Deterministic engineering beneath the conversation</p>
-        <h2>Describe a useful low-voltage board.</h2>
-        <p>CopperWright asks only for missing decisions, shows its assumptions and parts, then waits for confirmation before touching KiCad.</p>
+        <p class="eyebrow">Open-source PCB generation with native KiCad files</p>
+        <h2>Describe the board you want.</h2>
+        <p>CopperWright plans with installed stock KiCad parts, shows the circuit, then waits for confirmation before generating files.</p>
         <button id="empty-new-project" class="primary" type="button">Create your first project</button>
-        <div class="scope-chips" aria-label="Example supported capabilities">
-          <span>I2C sensor</span><span>2 / 4 layer</span><span>3.3 V</span><span>Safe undo</span>
+        <div class="scope-chips" aria-label="Example capabilities">
+          <span>Stock symbols</span><span>Native schematic</span><span>Routed PCB</span><span>Safe undo</span>
         </div>
       </section>
 
@@ -80,7 +80,7 @@
             <label class="sr-only" for="message-input">Message CopperWright</label>
             <textarea id="message-input" rows="2" maxlength="16000" placeholder="Ask for a board or request a safe change…" required></textarea>
             <button id="send-message" class="send" type="submit" aria-label="Send message">Send</button>
-            <p>AI proposes intent. CopperWright owns parts, topology, geometry, validation, and release identity.</p>
+            <p>CopperWright uses installed KiCad libraries and reports generation or check failures as they occur.</p>
           </form>
         </section>
 

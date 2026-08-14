@@ -123,7 +123,7 @@ def validate_managed_project(
         if isinstance(project_value, ManagedProject)
         else open_managed_project(project_value)
     )
-    resolved_graph = graph or PartGraph.bundled()
+    resolved_graph = graph or project.graph
     output_dir = _validation_output(project, output)
     deadline = time.monotonic() + timeout
     receipt = {
@@ -362,6 +362,26 @@ def _build_checks(
             True,
         )
     )
+    assurance = str(project.design.metadata.get("assurance", "verified"))
+    if assurance == "provisional":
+        checks.append(
+            CheckResult(
+                "l0.local_stock_library_data",
+                "L0",
+                "completed",
+                "pass",
+                "The plan and component records were resolved from installed stock KiCad libraries. This confirms file availability only, not electrical or manufacturing suitability.",
+                (project.ir_path.name,),
+                {
+                    "assurance": assurance,
+                    "requested_parts": project.design.metadata.get(
+                        "requested_parts", []
+                    ),
+                },
+                False,
+                False,
+            )
+        )
     tool_ready = erc["status"] == "completed" and drc["status"] == "completed"
     checks.append(
         CheckResult(
@@ -384,7 +404,11 @@ def _build_checks(
         )
     )
 
-    part_issues = graph.validate_design(project.design, check_libraries=True)
+    part_issues = graph.validate_design(
+        project.design,
+        check_libraries=True,
+        allow_provisional=assurance == "provisional",
+    )
     part_errors = [issue for issue in part_issues if issue.severity == "error"]
     checks.append(
         CheckResult(
@@ -462,26 +486,39 @@ def _build_checks(
         component.reference
         for component in project.design.components
         if graph.get(component.part_id).bom
-        and graph.get(component.part_id).lifecycle.get("status") != "active"
+        and graph.get(component.part_id).lifecycle.get("status") in {"nrnd", "obsolete"}
+    ]
+    lifecycle_unknown = [
+        component.reference
+        for component in project.design.components
+        if graph.get(component.part_id).bom
+        and graph.get(component.part_id).lifecycle.get("status") == "unknown"
     ]
     checks.append(
         CheckResult(
             "l4.bom_lifecycle",
             "L4",
-            "completed",
-            "fail" if lifecycle_failures else "pass",
+            "completed" if not lifecycle_unknown else "unavailable",
+            "fail"
+            if lifecycle_failures
+            else "unknown"
+            if lifecycle_unknown
+            else "pass",
             "All populated parts have active catalog lifecycle evidence."
-            if not lifecycle_failures
-            else "Inactive parts are present in the BOM.",
-            ("bundled part catalog",),
+            if not lifecycle_failures and not lifecycle_unknown
+            else "NRND or obsolete parts are present in the design."
+            if lifecycle_failures
+            else "Lifecycle status was not checked for the selected stock KiCad parts; generation remains available.",
+            ("project part records",),
             {
                 "bom_line_count": sum(
                     graph.get(component.part_id).bom
                     for component in project.design.components
                 ),
                 "inactive_references": lifecycle_failures,
+                "unknown_references": lifecycle_unknown,
             },
-            True,
+            not lifecycle_unknown,
             True,
         )
     )
@@ -765,6 +802,7 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
         footprint_inspections=inspections,
         routing=project.manifest["generation"]["pcb"]["routing"],
         approximate_geometry=False,
+        allow_provisional=project.design.metadata.get("assurance") == "provisional",
     )
     checks.append(
         CheckResult(
@@ -1545,14 +1583,25 @@ def _analysis_checks(project: ManagedProject, graph: PartGraph) -> list[CheckRes
                     required,
                 )
             )
+    has_high_speed_interface = any(
+        interface.kind in {"qspi", "usb", "pcie", "serdes"}
+        for interface in project.design.interfaces
+    )
     checks.append(
         CheckResult(
             "l5.high_speed_field_thermal",
             "L5",
-            "not_applicable",
-            "pass",
-            "SI/PI field solving and thermal simulation are outside the declared low-speed, sub-watt acceptance scope; unsupported high-risk domains are rejected earlier.",
+            "unavailable" if has_high_speed_interface else "not_applicable",
+            "unknown" if has_high_speed_interface else "pass",
+            (
+                "A high-speed interface is present, but no trusted SI/PI field-solver evidence is attached."
+                if has_high_speed_interface
+                else "No high-speed interface was identified; SI/PI field solving and thermal simulation were not performed."
+            ),
             (project.ir_path.name,),
+            {"high_speed_interface_present": has_high_speed_interface},
+            False,
+            has_high_speed_interface,
         )
     )
     return checks

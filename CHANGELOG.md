@@ -3,6 +3,28 @@
 All notable changes are documented here. The project follows semantic versioning
 for the CLI/API package; individual on-disk schemas are independently versioned.
 
+## Unreleased
+
+- Replaced the erroneous hard-coded RP2040/TMP117 product route with a generic
+  request → circuit plan → local KiCad resolution → semantic IR path.
+- Added <code>AgentDesignRequest</code>, a schema-constrained
+  <code>CircuitPlan</code>, local installed-symbol discovery, and project-local
+  extracted <code>PartGraph</code> records.
+- Explicitly named parts must survive from the request into the reviewed plan and
+  compiled part graph. A missing symbol, invalid pin, or routing failure is
+  retained as evidence, never silently replaced by a demo board.
+- Added generic planner operations to the application, CLI, and JSON-RPC:
+  <code>symbols.find</code>, <code>agent.plan.compile</code>, and
+  <code>agent.project.generate</code>.
+- Application attempts retain request, plan, IR, part graph, available native
+  staging, phase, and sanitized error. The generic CLI now also retains failed
+  native staging by default.
+- Local-library generic data is marked provisional and blocks candidate/manufacturing
+  release claims until independent engineering evidence exists.
+- Rewrote README, architecture, API, acceptance, traceability, development, and
+  open-source-reuse records to distinguish the generic product path from legacy
+  deterministic fixtures.
+
 ## 1.0.0 — 2026-08-13
 
 - Added one authoritative application service shared by `copperwright chat` and
@@ -16,10 +38,9 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   records; untrusted model output cannot directly edit engineering files.
 - Added preview/validate/apply/undo semantic conversations with isolated staged
   validation and authoritative-state hashes.
-- Added fully verified BME280/SPI and AP2112K/UART/LDO profiles alongside the
-  original TMP102/I2C profile, including trusted part/block contracts, routing,
-  real KiCad ERC/DRC, L0–L7 gates, examples, and independent tests. Their verified
-  envelope is explicitly limited to 45 mm × 30 mm and 2/4 copper layers.
+- Added deterministic fixture designs, part/block contracts, routing, real KiCad
+  ERC/DRC, L0–L7 gates, examples, and independent tests. These records are
+  regression infrastructure, not the current generic product interface.
 - Added real clean-HOME terminal and Firefox WebDriver product E2E acceptance,
   restart/reopen checks, provider contract tests, and managed-project coverage.
 - USB 2.0, buck, high-speed, RF, mains, high-power, medical, aviation, and

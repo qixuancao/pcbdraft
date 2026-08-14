@@ -11,6 +11,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .agent_design import (
+    AgentDesignRequest,
+    CircuitPlan,
+    compile_agent_plan,
+    planner_symbol_context,
+)
 from .doctor import doctor_report
 from .errors import CopperWrightError, ValidationError
 from .io import (
@@ -18,16 +24,14 @@ from .io import (
     load_json_limited,
     make_directory,
 )
+from .ir import BoardSpec, Design, Scope
 from .locking import ResourceLock
-from .managed import generate_managed_project, open_managed_project
-from .operations import semantic_diff
-from .previews import generate_previews
-from .profiles import (
-    build_requirements,
-    get_product_profile,
-    product_profiles,
-    safe_design_id,
+from .managed import (
+    materialize_managed_design,
+    open_managed_project,
 )
+from .parts import PartGraph
+from .previews import generate_previews
 from .providers import (
     MAX_USER_MESSAGE_BYTES,
     IntentProvider,
@@ -35,15 +39,36 @@ from .providers import (
     resolve_provider,
 )
 from .release import build_manufacturing_release, verify_manufacturing_release
-from .requirements import RequirementsSpec, compile_requirements
 from .runs import new_run_id, utc_timestamp
+from .scope import evaluate_scope
 from .validation import validate_managed_project
 
 APP_PROJECT_SCHEMA = "copperwright-application-project"
 APP_PROJECT_VERSION = 1
 CONVERSATION_SCHEMA = "copperwright-conversation-record"
 CONVERSATION_VERSION = 1
+ATTEMPT_SCHEMA = "copperwright-generation-attempt"
+ATTEMPT_VERSION = 2
+_ATTEMPT_FIELDS = {
+    "schema",
+    "version",
+    "id",
+    "status",
+    "phase",
+    "runtime",
+    "assurance",
+    "started_at",
+    "completed_at",
+    "part_ids",
+    "requested_parts",
+    "files",
+    "error",
+}
 APP_FILE_LIMIT = 4 * 1024 * 1024
+PENDING_REQUEST_NAME = "pending-agent-request.json"
+PENDING_PLAN_NAME = "pending-circuit-plan.json"
+PENDING_DESIGN_NAME = "pending-design.pcbir.json"
+PENDING_PARTS_NAME = "pending-parts.copperwright.json"
 MAX_MESSAGES = 2_000
 _PROJECT_ID = re.compile(r"[a-z][a-z0-9-]{2,79}")
 _TRANSIENT_STATES = {
@@ -192,7 +217,12 @@ class ApplicationService:
             "tools": tools["tools"],
             "kicad_library_tables": library_tables,
             "ready_for_generation": tools["ok"] and libraries_ready,
-            "profiles": [profile.public_dict() for profile in product_profiles()],
+            "generation_runtime": {
+                "architecture": "requirements -> circuit plan -> local KiCad symbols -> semantic IR -> transactional KiCad",
+                "product_path": "generic_agent_plan",
+                "component_libraries": "installed stock KiCad symbols and footprints only",
+                "validation_note": "results state only what CopperWright and KiCad actually checked",
+            },
             "credential_guidance": {
                 "codex": "Authenticate with the Codex CLI outside CopperWright.",
                 "openai_compatible": (
@@ -264,6 +294,7 @@ class ApplicationService:
                 "events",
                 "jobs",
                 "provider-runs",
+                "attempts",
                 "transactions",
                 "releases",
                 "validation",
@@ -362,7 +393,7 @@ class ApplicationService:
                 run_dir=run_dir,
                 timeout=timeout,
             )
-            proposal, requirements = self._prepare_proposal(
+            proposal, agent_request = self._prepare_proposal(
                 project_id, project.state["created_at"], value, prior_decisions, clean
             )
         except BaseException as exc:
@@ -375,6 +406,38 @@ class ApplicationService:
             )
             raise
 
+        compilation = None
+        planning_error: str | None = None
+        if (
+            agent_request is not None
+            and not proposal["clarifications"]
+            and proposal["scope"]["decision"] == "attempted"
+        ):
+            planner = getattr(self.provider, "plan", None)
+            try:
+                if not callable(planner) or not getattr(
+                    self.provider, "supports_planning", True
+                ):
+                    raise CopperWrightError(
+                        "the selected provider can interpret requirements but cannot produce a circuit plan"
+                    )
+                symbol_context = planner_symbol_context(agent_request)
+                plan = planner(
+                    agent_request,
+                    symbol_context=symbol_context,
+                    project_dir=project.root,
+                    run_dir=project.root / "provider-runs" / new_run_id(),
+                    timeout=timeout,
+                )
+                compilation = compile_agent_plan(agent_request, plan)
+                proposal = self._attach_plan(proposal, compilation)
+            except CopperWrightError as exc:
+                planning_error = _sanitize_secret_text(str(exc))[:2048]
+                proposal["planning"] = {
+                    "state": "unavailable",
+                    "message": planning_error,
+                }
+
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:
@@ -383,18 +446,29 @@ class ApplicationService:
             conversation = current.conversation
             conversation["proposal"] = proposal
             conversation["decisions"] = proposal.get("decisions", {})
-            if requirements is not None:
+            if compilation is not None:
                 atomic_write_json(
-                    current.root / "pending-requirements.json",
-                    requirements.to_dict(),
+                    current.root / PENDING_REQUEST_NAME,
+                    compilation.request.to_dict(),
+                )
+                atomic_write_json(
+                    current.root / PENDING_PLAN_NAME, compilation.plan.to_dict()
+                )
+                atomic_write_json(
+                    current.root / PENDING_DESIGN_NAME, compilation.design.to_dict()
+                )
+                atomic_write_json(
+                    current.root / PENDING_PARTS_NAME, compilation.graph.to_dict()
                 )
             pending = proposal["clarifications"]
-            accepted = proposal["scope"]["decision"] == "supported"
+            attemptable = proposal["scope"]["decision"] == "attempted"
             state["status"] = (
-                "unsupported"
-                if not accepted
+                "generation_unavailable"
+                if not attemptable
                 else "needs_clarification"
                 if pending
+                else "planning_required"
+                if compilation is None
                 else "awaiting_confirmation"
             )
             state["revision"] += 1
@@ -403,18 +477,26 @@ class ApplicationService:
             self._append_message(
                 conversation,
                 "assistant",
-                "proposal" if accepted else "unsupported",
+                "proposal" if attemptable and compilation is not None else "planning",
                 assistant_text,
                 data={
                     "status": state["status"],
                     "clarification_count": len(pending),
+                    "planning_error": planning_error,
                 },
             )
             self._event(
                 state,
                 current.root,
-                "proposal.ready" if accepted else "scope.rejected",
+                (
+                    "plan.ready"
+                    if compilation is not None
+                    else "planning.required"
+                    if attemptable
+                    else "generation.unavailable"
+                ),
                 assistant_text,
+                level="warning" if planning_error else "info",
             )
             self._write_records(current.root, state, conversation)
         return self.open_project(project_id)
@@ -438,9 +520,24 @@ class ApplicationService:
             open_managed_project(project.design_root).assert_synchronized()
             self.generate_project_previews(project_id)
             return self.validate_project(project_id, timeout=timeout)
-        pending_path = project.root / "pending-requirements.json"
-        spec = RequirementsSpec.from_dict(
-            load_json_limited(pending_path, APP_FILE_LIMIT)
+        request = AgentDesignRequest.from_dict(
+            load_json_limited(project.root / PENDING_REQUEST_NAME, APP_FILE_LIMIT)
+        )
+        plan = CircuitPlan.from_dict(
+            load_json_limited(project.root / PENDING_PLAN_NAME, APP_FILE_LIMIT)
+        )
+        design = Design.from_dict(
+            load_json_limited(project.root / PENDING_DESIGN_NAME, APP_FILE_LIMIT)
+        )
+        graph = PartGraph.load(project.root / PENDING_PARTS_NAME)
+        if design.design_id != request.design_id or plan.design_id != request.design_id:
+            raise ValidationError(
+                "pending request, plan, and semantic design identities differ"
+            )
+        graph.assert_design(
+            design,
+            check_libraries=True,
+            allow_provisional=design.metadata.get("assurance") == "provisional",
         )
         expected_revision = project.state["revision"]
         with ResourceLock(project.root, self.locks_root):
@@ -461,9 +558,63 @@ class ApplicationService:
             )
             self._write_records(current.root, state, current.conversation)
             expected_revision = state["revision"]
+        attempt_dir: Path | None = None
+        attempt_record: dict[str, Any] | None = None
         try:
-            generated = generate_managed_project(spec, project.design_root)
+            attempt_id = new_run_id()
+            attempt_dir = make_directory(
+                make_directory(project.root / "attempts") / attempt_id
+            )
+            attempt_record = {
+                "schema": ATTEMPT_SCHEMA,
+                "version": ATTEMPT_VERSION,
+                "id": attempt_id,
+                "status": "running",
+                "phase": "native_generation",
+                "runtime": "agent_plan_v1",
+                "assurance": "unknown",
+                "started_at": utc_timestamp(),
+                "completed_at": None,
+                "part_ids": [],
+                "requested_parts": list(request.requested_parts),
+                "files": {
+                    "request": "request.json",
+                    "plan": "circuit-plan.json",
+                    "semantic_ir": "design.pcbir.json",
+                    "part_catalog": "parts.copperwright.json",
+                    "retained_native": None,
+                },
+                "error": None,
+            }
+            atomic_write_json(attempt_dir / "request.json", request.to_dict())
+            atomic_write_json(attempt_dir / "circuit-plan.json", plan.to_dict())
+            atomic_write_json(attempt_dir / "design.pcbir.json", design.to_dict())
+            atomic_write_json(attempt_dir / "parts.copperwright.json", graph.to_dict())
+            atomic_write_json(attempt_dir / "attempt.json", attempt_record)
+            attempt_record["assurance"] = str(
+                design.metadata.get("assurance", "provisional")
+            )
+            attempt_record["part_ids"] = sorted(
+                {component.part_id for component in design.components}
+            )
+            atomic_write_json(attempt_dir / "attempt.json", attempt_record)
+            generated = materialize_managed_design(
+                request,
+                design,
+                project.design_root,
+                graph=graph,
+                plan=plan,
+                retain_failed_attempt=attempt_dir / "native",
+            )
         except BaseException as exc:
+            if attempt_dir is not None and attempt_record is not None:
+                attempt_record["status"] = "failed"
+                attempt_record["phase"] = "failed"
+                attempt_record["completed_at"] = utc_timestamp()
+                attempt_record["error"] = _sanitize_secret_text(str(exc))[:2048]
+                if (attempt_dir / "native").is_dir():
+                    attempt_record["files"]["retained_native"] = "native"
+                atomic_write_json(attempt_dir / "attempt.json", attempt_record)
             self._record_failure(
                 project_id,
                 expected_revision,
@@ -472,6 +623,11 @@ class ApplicationService:
                 str(exc),
             )
             raise
+        if attempt_dir is not None and attempt_record is not None:
+            attempt_record["status"] = "completed"
+            attempt_record["phase"] = "completed"
+            attempt_record["completed_at"] = utc_timestamp()
+            atomic_write_json(attempt_dir / "attempt.json", attempt_record)
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:
@@ -486,14 +642,18 @@ class ApplicationService:
                 conversation,
                 "assistant",
                 "generation",
-                "The confirmed semantic design was generated as a native KiCad project.",
-                data={"design_content_hash": generated.project.design.content_hash()},
+                "Generated a native KiCad schematic and routed PCB. Validation results, when run, are reported separately.",
+                data={
+                    "design_content_hash": generated.project.design.content_hash(),
+                    "routing_state": generated.pcb.routing.state,
+                    "unrouted": list(generated.pcb.routing.unrouted),
+                },
             )
             self._event(
                 state,
                 current.root,
                 "generation.complete",
-                "Native KiCad project generated",
+                "Native KiCad schematic and routed PCB generated",
             )
             self._write_records(current.root, state, conversation)
         self.generate_project_previews(project_id)
@@ -528,49 +688,59 @@ class ApplicationService:
         value: dict[str, Any],
         prior: dict[str, Any],
         request: str,
-    ) -> tuple[dict[str, Any], RequirementsSpec | None]:
+    ) -> tuple[dict[str, Any], AgentDesignRequest | None]:
+        """Turn generic intent into a reviewable request, never a fixed board type."""
+
         merged = dict(value)
-        if (
-            prior.get("proposed_profile")
-            in {profile.id for profile in product_profiles()}
-            and value["proposed_profile"] == "unsupported"
-            # A terse response to a previously asked layer question is not new scope.
-            and re.fullmatch(
+        layer_reply = bool(
+            re.fullmatch(
                 r"\s*(?:use\s+)?[24]\s*(?:[- ]?layers?)?\s*",
                 request,
                 re.IGNORECASE,
             )
-        ):
-            merged["proposed_profile"] = prior["proposed_profile"]
-            merged["unsupported_reasons"] = []
-        for field in ("layers",):
-            if merged.get(field) is None and prior.get(field) is not None:
-                merged[field] = prior[field]
+        )
+        if merged.get("layers") is None and prior.get("layers") in {2, 4}:
+            merged["layers"] = prior["layers"]
         old_board = prior.get("board") if isinstance(prior.get("board"), dict) else {}
+        raw_board = merged.get("board") if isinstance(merged.get("board"), dict) else {}
         merged["board"] = {
-            key: merged["board"].get(key)
-            if merged["board"].get(key) is not None
+            key: raw_board.get(key)
+            if raw_board.get(key) is not None
             else old_board.get(key)
             for key in ("width_mm", "height_mm")
         }
-        profile_id = merged["proposed_profile"]
-        if profile_id == "unsupported":
-            return (
+        if layer_reply:
+            for key in ("requested_parts", "functions"):
+                if not merged.get(key) and isinstance(prior.get(key), list):
+                    merged[key] = list(prior[key])
+            if isinstance(prior.get("request_summary"), str):
+                merged["request_summary"] = prior["request_summary"]
+        requested_parts = tuple(
+            sorted(
                 {
-                    **merged,
-                    "scope": {
-                        "decision": "unsupported",
-                        "reasons": merged["unsupported_reasons"],
-                        "external_gates": [],
-                    },
-                    "clarifications": [],
-                    "brief": None,
-                    "decisions": {},
+                    item
+                    for item in merged.get("requested_parts", [])
+                    if isinstance(item, str) and item.strip()
                 },
-                None,
+                key=str.casefold,
             )
-        layers = merged.get("layers")
+        )
+        functions = tuple(
+            sorted(
+                {
+                    item
+                    for item in merged.get("functions", [])
+                    if isinstance(item, str) and item.strip()
+                }
+            )
+        )
+        assumptions = [
+            item
+            for item in merged.get("assumptions", [])
+            if isinstance(item, str) and item.strip()
+        ]
         clarifications: list[dict[str, Any]] = []
+        layers = merged.get("layers")
         if layers not in {2, 4}:
             clarifications.append(
                 {
@@ -580,92 +750,267 @@ class ApplicationService:
                     "required": True,
                 }
             )
-        width = merged["board"].get("width_mm") or 45.0
-        height = merged["board"].get("height_mm") or 30.0
-        merged["board"] = {"width_mm": float(width), "height_mm": float(height)}
-        if abs(float(width) - 45.0) > 1e-9 or abs(float(height) - 30.0) > 1e-9:
-            reason = (
-                "the bounded v1 profiles are verified only for a 45 mm × 30 mm "
-                "board envelope"
+        if not functions:
+            clarifications.append(
+                {
+                    "id": "purpose",
+                    "question": "What should this board do, and which interfaces or loads must it expose?",
+                    "choices": [],
+                    "required": True,
+                }
             )
-            merged["unsupported_reasons"] = [reason]
+        width = merged["board"].get("width_mm")
+        height = merged["board"].get("height_mm")
+        if width is None or height is None:
+            width, height = 80.0, 50.0
+            assumptions.append(
+                "Board envelope is assumed as 80 mm × 50 mm until changed in the reviewed plan."
+            )
+        merged["board"] = {"width_mm": float(width), "height_mm": float(height)}
+        power_raw = merged.get("power") if isinstance(merged.get("power"), dict) else {}
+        nominal = power_raw.get("nominal_v")
+        if (
+            not isinstance(nominal, (int, float))
+            or isinstance(nominal, bool)
+            or nominal <= 0
+        ):
+            nominal = 3.3
+            assumptions.append(
+                "3.3 V logic supply is assumed until the reviewed plan specifies otherwise."
+            )
+        max_voltage = power_raw.get("max_voltage_v")
+        if not isinstance(max_voltage, (int, float)) or isinstance(max_voltage, bool):
+            max_voltage = nominal
+        max_current = power_raw.get("max_current_a")
+        if (
+            not isinstance(max_current, (int, float))
+            or isinstance(max_current, bool)
+            or max_current <= 0
+        ):
+            max_current = 0.5
+        max_power = power_raw.get("max_power_w")
+        if (
+            not isinstance(max_power, (int, float))
+            or isinstance(max_power, bool)
+            or max_power <= 0
+        ):
+            max_power = float(nominal) * float(max_current)
+        power = {
+            "nominal_v": float(nominal),
+            "max_voltage_v": max(float(nominal), float(max_voltage)),
+            "max_current_a": float(max_current),
+            "max_power_w": float(max_power),
+        }
+        domains = {"simple_control"}
+        words = " ".join((request, *requested_parts, *functions)).casefold()
+        for token, domain in (
+            ("i2c", "i2c"),
+            ("i²c", "i2c"),
+            ("spi", "spi"),
+            ("uart", "uart"),
+            ("串口", "uart"),
+            ("usb", "usb2_basic"),
+            ("基础usb", "usb2_basic"),
+            ("buck", "simple_buck"),
+            ("降压", "simple_buck"),
+            ("ldo", "ldo"),
+            ("稳压", "ldo"),
+        ):
+            if token in words:
+                domains.add(domain)
+        if any(
+            token in words
+            for token in (
+                "sensor",
+                "temperature",
+                "humidity",
+                "pressure",
+                "传感器",
+                "温度",
+                "湿度",
+                "压力",
+            )
+        ):
+            domains.add("sensor")
+        if any(
+            token in words
+            for token in (
+                "mcu",
+                "controller",
+                "microcontroller",
+                "embedded control",
+                "单片机",
+                "微控制器",
+                "控制器",
+                "控制板",
+            )
+        ):
+            domains.add("low_voltage_mcu")
+        for token, domain in (
+            ("ddr", "ddr"),
+            ("pcie", "pcie"),
+            ("serdes", "serdes"),
+            ("高速串行", "serdes"),
+            ("rf", "rf"),
+            ("antenna", "rf"),
+            ("射频", "rf"),
+            ("天线", "rf"),
+            ("mains", "mains"),
+            ("市电", "mains"),
+            ("交流电", "mains"),
+            ("high voltage", "high_voltage"),
+            ("高压", "high_voltage"),
+            ("high power", "high_power"),
+            ("high-power", "high_power"),
+            ("大功率", "high_power"),
+            ("高功率", "high_power"),
+            ("medical", "medical"),
+            ("医疗", "medical"),
+            ("aviation", "aviation"),
+            ("航空", "aviation"),
+            ("safety-critical", "safety_critical"),
+            ("安全关键", "safety_critical"),
+        ):
+            if token in words:
+                domains.add(domain)
+        scope = Scope.from_dict(
+            {
+                "domains": sorted(domains),
+                "max_voltage_v": power["max_voltage_v"],
+                "max_current_a": power["max_current_a"],
+                "max_power_w": power["max_power_w"],
+                "layers": int(layers) if layers in {2, 4} else 2,
+                "intended_use": "User-requested PCB design; no domain validation is implied.",
+                "risk_class": "unspecified",
+            }
+        )
+        scope_decision = evaluate_scope(scope)
+        if not scope_decision.accepted:
             return (
                 {
                     **merged,
+                    "requested_parts": list(requested_parts),
+                    "functions": list(functions),
+                    "assurance": "provisional",
                     "scope": {
-                        "decision": "unsupported",
-                        "reasons": [reason],
-                        "external_gates": [],
+                        "decision": "generation_unavailable",
+                        "errors": list(scope_decision.reasons),
+                        "warnings": list(scope_decision.warnings),
                     },
                     "clarifications": [],
+                    "planning": {"state": "not_started", "message": None},
                     "brief": None,
                     "decisions": {},
                 },
                 None,
             )
-        decisions = {
-            "proposed_profile": profile_id,
-            "design_name": merged["design_name"],
-            "layers": layers,
-            "board": merged["board"],
-            "power_source": {
-                "low_voltage_i2c_controller_v1": "externally_regulated_3v3",
-                "low_voltage_spi_environment_v1": "externally_regulated_3v3",
-                "low_voltage_uart_ldo_controller_v1": "externally_regulated_5v_to_onboard_ldo",
-            }[profile_id],
-            "risk_class": "prototype",
-        }
+        board = BoardSpec.from_dict(
+            {
+                "width_mm": float(width),
+                "height_mm": float(height),
+                "layers": int(layers) if layers in {2, 4} else 2,
+                "thickness_mm": 1.6,
+                "edge_clearance_mm": 0.5,
+                "min_track_mm": 0.2,
+                "min_clearance_mm": 0.2,
+                "min_drill_mm": 0.3,
+                "finish": "enig",
+            }
+        )
+        design_id = (
+            f"{_slug(merged.get('design_name', 'board'))[:40]}-{project_id[-8:]}"
+        )
+        approved_request = AgentDesignRequest.from_dict(
+            {
+                "schema": "copperwright-agent-design-request",
+                "version": 1,
+                "design_id": design_id,
+                "name": str(merged.get("design_name") or "CopperWright board"),
+                "revision": "A",
+                "request_summary": str(merged.get("request_summary") or request),
+                "scope": scope.to_dict(),
+                "board": board.to_dict(),
+                "assumptions": sorted(set(assumptions)),
+                "requested_parts": list(requested_parts),
+                "functions": list(functions),
+                "power": power,
+                "source": {
+                    "locator": f"application/projects/{project_id}/conversation.json",
+                    "date": created_at[:10],
+                },
+            }
+        )
         proposal: dict[str, Any] = {
             **merged,
+            "requested_parts": list(requested_parts),
+            "functions": list(functions),
+            "assumptions": list(approved_request.assumptions),
+            "power": power,
+            "assurance": "provisional",
             "scope": {
-                "decision": "supported",
-                "reasons": ["Request maps to a locally verified low-voltage profile."],
-                "external_gates": [
-                    "human engineering review",
-                    "physical build and test",
-                    "production sign-off",
-                ],
+                "decision": "attempted",
+                "warnings": list(scope_decision.warnings),
             },
             "clarifications": clarifications,
+            "planning": {"state": "pending", "message": None},
             "brief": None,
-            "decisions": decisions,
+            "decisions": {
+                "runtime": "agent_plan_v1",
+                "assurance": "provisional",
+                "design_id": approved_request.design_id,
+                "design_name": approved_request.name,
+                "layers": approved_request.board.layers,
+                "board": approved_request.board.to_dict(),
+                "requested_parts": list(approved_request.requested_parts),
+                "risk_class": approved_request.scope.risk_class,
+            },
         }
-        if clarifications:
-            return proposal, None
-        source_date = created_at[:10]
-        requirements = build_requirements(
-            profile_id,
-            design_name=merged["design_name"],
-            design_id=safe_design_id(merged["design_name"]),
-            layers=int(layers),
-            width_mm=float(width),
-            height_mm=float(height),
-            source_locator=f"application/projects/{project_id}/conversation.json",
-            source_date=source_date,
-        )
-        design = compile_requirements(requirements)
+        return proposal, None if clarifications else approved_request
+
+    @staticmethod
+    def _attach_plan(proposal: dict[str, Any], compilation: Any) -> dict[str, Any]:
+        """Attach only reviewable plan/IR facts; native generation stays confirmed."""
+
+        result = dict(proposal)
+        design = compilation.design
+        graph = compilation.graph
         counts: dict[tuple[str, str], int] = {}
         references: dict[tuple[str, str], list[str]] = {}
         for component in design.components:
             key = (component.part_id, component.value)
             counts[key] = counts.get(key, 0) + 1
             references.setdefault(key, []).append(component.reference)
-        proposal["brief"] = {
-            "purpose": merged["request_summary"],
+        result["planning"] = {"state": "ready", "message": None}
+        result["brief"] = {
+            "purpose": compilation.request.request_summary,
             "architecture": [
                 {"id": block.id, "kind": block.kind, "name": block.name}
                 for block in design.blocks
             ],
-            "assumptions": merged["assumptions"],
-            "power": requirements.power,
-            "interfaces": list(requirements.interfaces),
-            "board": requirements.board.to_dict(),
+            "assumptions": list(compilation.request.assumptions),
+            "power": compilation.request.power,
+            "interfaces": [],
+            "board": compilation.request.board.to_dict(),
+            "identity": {
+                "requested_parts": list(compilation.request.requested_parts),
+                "planned_symbols": [
+                    {
+                        "reference": component.reference,
+                        "symbol": graph.get(component.part_id).symbol,
+                        "part_id": component.part_id,
+                    }
+                    for component in design.components
+                ],
+                "preserved": True,
+            },
             "bom": [
                 {
                     "part_id": key[0],
                     "value": key[1],
                     "quantity": counts[key],
                     "references": sorted(references[key]),
+                    "symbol": graph.get(key[0]).symbol,
+                    "trust": graph.get(key[0]).trust,
                 }
                 for key in sorted(counts)
             ],
@@ -678,20 +1023,41 @@ class ApplicationService:
                 }
                 for item in design.constraints
             ],
+            "plan_review": compilation.review.to_dict(),
             "semantic_content_hash": design.content_hash(),
             "confirmation_required": True,
         }
-        return proposal, requirements
+        return result
 
     @staticmethod
     def _proposal_message(proposal: dict[str, Any]) -> str:
-        if proposal["scope"]["decision"] != "supported":
-            return "Unsupported scope: " + "; ".join(proposal["scope"]["reasons"])
+        decision = proposal["scope"]["decision"]
+        if decision != "attempted":
+            return "This request cannot reach the current KiCad backend: " + "; ".join(
+                proposal["scope"].get("errors", [])
+            )
         if proposal["clarifications"]:
             return proposal["clarifications"][0]["question"]
+        planning = proposal.get("planning", {})
+        if planning.get("state") != "ready":
+            return (
+                "Requirements were retained without substituting parts, but a circuit "
+                "planning provider is needed before a reviewable topology can be generated: "
+                + str(planning.get("message") or "planning is pending")
+            )
+        review = proposal.get("brief", {}).get("plan_review", {})
+        summary = review.get("summary", {}) if isinstance(review, dict) else {}
+        attention = summary.get("attention_required", 0)
+        if isinstance(attention, int) and attention > 0:
+            return (
+                "The circuit plan and stock KiCad parts are ready for review. "
+                f"{attention} deterministic preflight finding(s) need engineering attention; "
+                "generation remains available. "
+                "Confirm explicitly before CopperWright creates KiCad files."
+            )
         return (
-            "The design brief, assumptions, BOM, interfaces, and constraints are ready. "
-            "Confirm explicitly before CopperWright creates KiCad files."
+            "The circuit plan, stock KiCad parts, and assumptions are ready. "
+            "Confirm before CopperWright creates KiCad files."
         )
 
     def _record_failure(
@@ -731,6 +1097,7 @@ class ApplicationService:
                 with ResourceLock(candidate, self.locks_root, timeout=0):
                     current = self._open_path(candidate)
                     if current.state["status"] in _TRANSIENT_STATES:
+                        self._interrupt_running_attempts(candidate)
                         recovered_status = "interrupted"
                         if (
                             current.design_root.is_dir()
@@ -897,6 +1264,88 @@ class ApplicationService:
             "provider": project.state["provider"],
         }
 
+    @staticmethod
+    def _interrupt_running_attempts(root: Path) -> None:
+        attempts = root / "attempts"
+        if attempts.is_symlink() or not attempts.is_dir():
+            return
+        for candidate in attempts.iterdir():
+            if candidate.is_symlink() or not candidate.is_dir():
+                continue
+            record_path = candidate / "attempt.json"
+            try:
+                record = load_json_limited(record_path, APP_FILE_LIMIT)
+            except CopperWrightError:
+                continue
+            if (
+                not ApplicationService._valid_attempt_record(
+                    record, expected_id=candidate.name
+                )
+                or record.get("status") != "running"
+            ):
+                continue
+            record["status"] = "interrupted"
+            record["phase"] = "interrupted"
+            record["completed_at"] = utc_timestamp()
+            record["error"] = "Generation process stopped before completion."
+            atomic_write_json(record_path, record)
+
+    @staticmethod
+    def _attempt_records(project: ApplicationProject) -> list[dict[str, Any]]:
+        attempts = project.root / "attempts"
+        if attempts.is_symlink() or not attempts.is_dir():
+            return []
+        result: list[dict[str, Any]] = []
+        for candidate in sorted(attempts.iterdir(), reverse=True):
+            if candidate.is_symlink() or not candidate.is_dir():
+                continue
+            try:
+                record = load_json_limited(candidate / "attempt.json", APP_FILE_LIMIT)
+            except CopperWrightError:
+                continue
+            if not ApplicationService._valid_attempt_record(
+                record, expected_id=candidate.name
+            ):
+                continue
+            public = dict(record)
+            public["root"] = str(candidate)
+            result.append(public)
+            if len(result) >= 50:
+                break
+        return result
+
+    @staticmethod
+    def _valid_attempt_record(value: Any, *, expected_id: str) -> bool:
+        if not isinstance(value, dict) or set(value) != _ATTEMPT_FIELDS:
+            return False
+        files = value.get("files")
+        string_lists = (value.get("part_ids"), value.get("requested_parts"))
+        return bool(
+            value.get("schema") == ATTEMPT_SCHEMA
+            and value.get("version") == ATTEMPT_VERSION
+            and value.get("id") == expected_id
+            and value.get("status") in {"running", "completed", "failed", "interrupted"}
+            and isinstance(value.get("phase"), str)
+            and isinstance(value.get("runtime"), str)
+            and value.get("assurance") in {"unknown", "provisional"}
+            and isinstance(value.get("started_at"), str)
+            and (
+                value.get("completed_at") is None
+                or isinstance(value.get("completed_at"), str)
+            )
+            and all(
+                isinstance(items, list)
+                and len(items) <= 2_000
+                and all(isinstance(item, str) for item in items)
+                for items in string_lists
+            )
+            and isinstance(files, dict)
+            and set(files)
+            == {"request", "plan", "semantic_ir", "part_catalog", "retained_native"}
+            and all(item is None or isinstance(item, str) for item in files.values())
+            and (value.get("error") is None or isinstance(value.get("error"), str))
+        )
+
     def _public_project(self, project: ApplicationProject) -> dict[str, Any]:
         design: dict[str, Any] | None = None
         if project.design_root.is_dir() and not project.design_root.is_symlink():
@@ -939,6 +1388,7 @@ class ApplicationService:
                 "validation": project.state["last_validation"],
                 "release": project.state["last_release"],
             },
+            "attempts": self._attempt_records(project),
             "active_change": active_change,
             "events": self.events(
                 project.state["id"], after=max(0, project.state["event_sequence"] - 50)
@@ -974,7 +1424,7 @@ class ApplicationService:
             state["revision"] += 1
             state["updated_at"] = utc_timestamp()
             self._event(
-                state, current.root, "validation.started", "Running L0-L7 gates"
+                state, current.root, "validation.started", "Running configured checks"
             )
             self._write_records(current.root, state, current.conversation)
             expected_revision = state["revision"]
@@ -998,6 +1448,7 @@ class ApplicationService:
             "candidate_ready": result.candidate_ready,
             "production_ready": result.production_ready,
             "production_claimed": False,
+            "assurance": str(managed.design.metadata.get("assurance", "verified")),
             "levels": report["levels"],
         }
         with ResourceLock(project.root, self.locks_root):
@@ -1007,16 +1458,25 @@ class ApplicationService:
             state = current.state
             conversation = current.conversation
             state["last_validation"] = summary
+            provisional = summary["assurance"] == "provisional"
             state["status"] = (
-                "validated" if result.candidate_ready else "validation_failed"
+                "validated"
+                if result.candidate_ready
+                else "generated"
+                if provisional
+                else "validation_failed"
             )
             state["revision"] += 1
             state["updated_at"] = utc_timestamp()
             text = (
-                "Engineering-candidate validation passed; human review and physical "
-                "L7 evidence remain external gates."
+                "The configured KiCad and CopperWright checks passed. This does not "
+                "establish electrical, regulatory, or manufacturing fitness."
                 if result.candidate_ready
-                else "Validation found release-blocking issues; inspect the L0-L7 results."
+                else (
+                    "KiCad and CopperWright checks completed and the generated files were retained. Review the reported findings; no electrical, regulatory, or manufacturing validation is implied."
+                    if provisional
+                    else "Checks found issues; the generated files and results were retained for review."
+                )
             )
             self._append_message(
                 conversation,
@@ -1033,7 +1493,7 @@ class ApplicationService:
                 current.root,
                 "validation.complete",
                 text,
-                level="info" if result.candidate_ready else "error",
+                level="info" if result.candidate_ready or provisional else "error",
             )
             self._write_records(current.root, state, conversation)
         return self.open_project(project_id)
@@ -1079,179 +1539,23 @@ class ApplicationService:
         return self.open_project(project_id)
 
     def preview_modification(self, project_id: str, request: str) -> dict[str, Any]:
-        """Compile and validate a semantic change in staging without applying it."""
+        """Keep generated generic designs immutable until a replacement plan exists.
 
-        clean = _sanitize_secret_text(
-            _safe_text(request, "modification request", limit=MAX_USER_MESSAGE_BYTES)
-        )
+        The semantic patch/transaction API remains available for reviewed IR change
+        sets.  Conversational topology revision is intentionally routed back
+        through a fresh plan instead of attempting to reinterpret raw KiCad text.
+        """
+
+        del request
         project = self._open(project_id)
-        if project.state["status"] not in {
-            "generated",
-            "validated",
-            "validation_failed",
-            "released",
-        }:
-            raise ValidationError("project must be generated before it can be modified")
-        if project.state["active_transaction"] is not None:
-            raise ValidationError("confirm or discard the active semantic change first")
         managed = open_managed_project(project.design_root)
-        managed.assert_synchronized()
-        current_spec = RequirementsSpec.from_dict(
-            load_json_limited(managed.requirements_path, APP_FILE_LIMIT)
-        )
-        dimensions = re.search(
-            r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm)?\s*[x×]\s*"
-            r"(\d+(?:\.\d+)?)\s*mm\b",
-            clean.casefold(),
-        )
-        layer_match = re.search(r"\b([24])\s*[- ]?layers?\b", clean.casefold())
-        if dimensions:
+        if managed.design.metadata.get("generator") == "agent_plan_v1":
             raise ValidationError(
-                "the bounded v1 profiles are verified only for a 45 mm × 30 mm "
-                "board envelope; conversational geometry changes are unsupported"
+                "generic topology revisions require a new reviewed circuit plan; create a revision project or use the semantic patch workflow"
             )
-        width = current_spec.board.width_mm
-        height = current_spec.board.height_mm
-        layers = int(layer_match.group(1)) if layer_match else current_spec.board.layers
-        if not layer_match:
-            raise ValidationError(
-                "this verified profile currently supports conversational 2/4-layer "
-                "changes; no supported semantic change was found"
-            )
-        profile_id = str(managed.design.metadata.get("profile", ""))
-        get_product_profile(profile_id)
-        new_spec = build_requirements(
-            profile_id,
-            design_name=current_spec.name,
-            design_id=current_spec.design_id,
-            layers=layers,
-            width_mm=width,
-            height_mm=height,
-            source_locator=f"application/projects/{project_id}/conversation.json",
-            source_date=project.state["created_at"][:10],
+        raise ValidationError(
+            "the legacy conversational modification path is unavailable; use the semantic patch workflow"
         )
-        new_design = compile_requirements(new_spec)
-        diff = semantic_diff(managed.design, new_design)
-        if (
-            diff["summary"]["objects_added"] == 0
-            and diff["summary"]["objects_removed"] == 0
-            and diff["summary"]["objects_modified"] == 0
-            and not diff["board_fields"]
-            and not diff["metadata_fields"]
-        ):
-            raise ValidationError(
-                "the requested values already match the authoritative design"
-            )
-        transaction_id = new_run_id()
-        transaction = project.root / "transactions" / transaction_id
-        make_directory(transaction)
-        receipt_path = transaction / "receipt.json"
-        receipt: dict[str, Any] = {
-            "schema": "copperwright-project-transaction",
-            "version": 1,
-            "id": transaction_id,
-            "status": "preparing",
-            "created_at": utc_timestamp(),
-            "request": clean,
-            "before_hash": managed.design.content_hash(),
-            "after_hash": new_design.content_hash(),
-            "before_design_revision": project.state["design_revision"],
-            "prior_status": project.state["status"],
-            "prior_validation": project.state["last_validation"],
-            "prior_preview": project.state["last_preview"],
-            "prior_release": project.state["last_release"],
-            "diff": "semantic-diff.json",
-            "staged": "staged",
-            "validation": None,
-            "applied_at": None,
-            "undone_at": None,
-        }
-        atomic_write_json(receipt_path, receipt)
-        atomic_write_json(transaction / "semantic-diff.json", diff)
-        expected_revision = project.state["revision"]
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before semantic preview")
-            state = current.state
-            conversation = current.conversation
-            state["status"] = "applying_change"
-            state["revision"] += 1
-            state["updated_at"] = utc_timestamp()
-            self._append_message(conversation, "user", "modification", clean)
-            self._event(
-                state,
-                current.root,
-                "change.preview.started",
-                "Compiling and validating semantic change in staging",
-            )
-            self._write_records(current.root, state, conversation)
-            expected_revision = state["revision"]
-        try:
-            staged = generate_managed_project(new_spec, transaction / "staged")
-            validation = validate_managed_project(
-                staged.project,
-                output=transaction / "validation",
-                timeout=120.0,
-            )
-            if not validation.candidate_ready:
-                raise ValidationError(
-                    "staged semantic change did not pass candidate gates"
-                )
-            receipt["status"] = "ready"
-            receipt["validation"] = {
-                "report": validation.report_path.relative_to(transaction).as_posix(),
-                "report_sha256": validation.report_sha256,
-                "candidate_ready": validation.candidate_ready,
-                "production_ready": validation.production_ready,
-                "production_claimed": False,
-            }
-            atomic_write_json(receipt_path, receipt)
-        except BaseException as exc:
-            receipt["status"] = "rejected"
-            receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
-            atomic_write_json(receipt_path, receipt)
-            self._record_failure(
-                project_id,
-                expected_revision,
-                project.state["status"],
-                "change.preview.failed",
-                str(exc),
-            )
-            raise
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError(
-                    "project changed while semantic preview was running"
-                )
-            state = current.state
-            conversation = current.conversation
-            state["status"] = "change_ready"
-            state["active_transaction"] = transaction_id
-            state["revision"] += 1
-            state["updated_at"] = utc_timestamp()
-            text = (
-                "A staged semantic diff passed deterministic validation. Confirm explicitly "
-                "to apply it, or discard it; the current KiCad project is unchanged."
-            )
-            self._append_message(
-                conversation,
-                "assistant",
-                "change_preview",
-                text,
-                data={"transaction_id": transaction_id, "diff": diff["summary"]},
-            )
-            self._event(state, current.root, "change.preview.ready", text)
-            self._write_records(current.root, state, conversation)
-        view = self.open_project(project_id)
-        view["active_change"] = {
-            "transaction_id": transaction_id,
-            "request": clean,
-            "diff": diff,
-            "validation": receipt["validation"],
-        }
-        return view
 
     def apply_modification(self, project_id: str) -> dict[str, Any]:
         """Atomically publish the currently staged, confirmed semantic change."""

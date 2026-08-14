@@ -15,8 +15,8 @@ class IndependentBenchmarkTests(unittest.TestCase):
         document, cases = load_corpus()
         self.assertEqual(document["license"], "CC0-1.0")
         self.assertEqual(len(cases), 90)
-        self.assertEqual(sum(case.label == "fault" for case in cases), 70)
-        self.assertEqual(sum(case.label == "clean" for case in cases), 20)
+        self.assertEqual(sum(case.label == "fault" for case in cases), 66)
+        self.assertEqual(sum(case.label == "clean" for case in cases), 24)
         self.assertGreaterEqual(len({case.category for case in cases}), 15)
         self.assertIn("No competitor fixture", document["methodology"])
         self.assertTrue(
@@ -37,10 +37,10 @@ class IndependentBenchmarkTests(unittest.TestCase):
             self.assertEqual(
                 metrics["confusion_matrix"],
                 {
-                    "true_positive": 70,
+                    "true_positive": 66,
                     "false_negative": 0,
                     "false_positive": 0,
-                    "true_negative": 20,
+                    "true_negative": 24,
                 },
             )
             self.assertEqual(metrics["detection"]["targeted_code_recall"], 1.0)

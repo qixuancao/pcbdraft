@@ -1,0 +1,38 @@
+{
+  "schema": "copperwright-agent-design-request",
+  "version": 1,
+  "design_id": "basic-stock-board",
+  "name": "Basic stock KiCad board",
+  "revision": "A",
+  "request_summary": "A 3.3 V LED indicator with a two-pin power connector and supply bypass capacitor.",
+  "scope": {
+    "domains": ["simple_control"],
+    "max_voltage_v": 3.3,
+    "max_current_a": 0.02,
+    "max_power_w": 0.066,
+    "layers": 2,
+    "intended_use": "Basic KiCad generation example",
+    "risk_class": "prototype"
+  },
+  "board": {
+    "width_mm": 80.0,
+    "height_mm": 50.0,
+    "layers": 2,
+    "thickness_mm": 1.6,
+    "edge_clearance_mm": 0.5,
+    "min_track_mm": 0.2,
+    "min_clearance_mm": 0.15,
+    "min_drill_mm": 0.3,
+    "finish": "enig"
+  },
+  "assumptions": ["The external source is regulated to 3.3 V."],
+  "requested_parts": [],
+  "functions": ["status indicator"],
+  "power": {
+    "nominal_v": 3.3,
+    "max_voltage_v": 3.3,
+    "max_current_a": 0.02,
+    "max_power_w": 0.066
+  },
+  "source": {"locator": "examples/basic_stock_board/request.json"}
+}

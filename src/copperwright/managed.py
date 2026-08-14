@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .agent_design import AgentDesignRequest, CircuitPlan
 from .blocks import BlockRegistry
 from .errors import ValidationError
 from .io import (
@@ -38,6 +39,9 @@ MANAGED_MANIFEST = "project.copperwright.json"
 MANAGED_MANIFEST_LIMIT = 16 * 1024 * 1024
 REQUIREMENTS_NAME = "requirements.pcbreq.json"
 IR_NAME = "design.pcbir.json"
+PART_CATALOG_NAME = "parts.copperwright.json"
+CIRCUIT_PLAN_NAME = "circuit-plan.json"
+GenerationRequest = RequirementsSpec | AgentDesignRequest
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,10 @@ class ManagedProject:
     board_path: Path
     project_path: Path
     manifest_path: Path
+    plan_path: Path | None
     design: Design
+    graph: PartGraph
+    plan: CircuitPlan | None
     manifest: dict[str, Any]
 
     def drift(self) -> tuple[str, ...]:
@@ -94,6 +101,7 @@ def generate_managed_project(
     graph: PartGraph | None = None,
     registry: BlockRegistry | None = None,
     system_python: str | Path | None = None,
+    retain_failed_attempt: str | Path | None = None,
     lock_timeout: float = 10.0,
 ) -> ManagedGeneration:
     """Compile a new project in a sibling staging directory, then publish atomically.
@@ -120,17 +128,20 @@ def generate_managed_project(
         output,
         graph=resolved_graph,
         system_python=system_python,
+        retain_failed_attempt=retain_failed_attempt,
         lock_timeout=lock_timeout,
     )
 
 
 def materialize_managed_design(
-    requirements: RequirementsSpec,
+    requirements: GenerationRequest,
     design: Design,
     output: str | Path,
     *,
     graph: PartGraph | None = None,
+    plan: CircuitPlan | None = None,
     system_python: str | Path | None = None,
+    retain_failed_attempt: str | Path | None = None,
     lock_timeout: float = 10.0,
 ) -> ManagedGeneration:
     """Publish an already-validated semantic design as a new managed project."""
@@ -142,6 +153,27 @@ def materialize_managed_design(
     if design.metadata.get("requirements_hash") != expected_requirements_hash:
         raise ValidationError(
             "semantic design does not originate from the supplied requirements"
+        )
+    if isinstance(requirements, AgentDesignRequest):
+        if plan is None:
+            raise ValidationError(
+                "generic managed generation requires the reviewed circuit plan"
+            )
+        if (
+            plan.design_id != requirements.design_id
+            or plan.design_id != design.design_id
+        ):
+            raise ValidationError(
+                "reviewed circuit plan identity does not match the generic design"
+            )
+        expected_plan_hash = hashlib.sha256(plan.canonical_bytes()).hexdigest()
+        if design.metadata.get("plan_hash") != expected_plan_hash:
+            raise ValidationError(
+                "semantic design does not originate from the reviewed circuit plan"
+            )
+    elif plan is not None:
+        raise ValidationError(
+            "legacy requirements generation cannot include a generic circuit plan"
         )
     raw_target = Path(output).expanduser()
     if raw_target.name in {"", ".", ".."} or raw_target.is_symlink():
@@ -156,6 +188,22 @@ def materialize_managed_design(
     except OSError as exc:
         raise ValidationError("managed project output parent is unavailable") from exc
     target = parent / raw_target.name
+    retained_target: Path | None = None
+    if retain_failed_attempt is not None:
+        raw_retained = Path(retain_failed_attempt).expanduser()
+        if (
+            raw_retained.name in {"", ".", ".."}
+            or raw_retained.is_symlink()
+            or raw_retained.exists()
+        ):
+            raise ValidationError("failed-attempt retention path is unsafe or occupied")
+        try:
+            retained_parent = raw_retained.parent.resolve(strict=True)
+        except OSError as exc:
+            raise ValidationError(
+                "failed-attempt retention parent is unavailable"
+            ) from exc
+        retained_target = retained_parent / raw_retained.name
 
     with ResourceLock(target, parent / ".copperwright-locks", timeout=lock_timeout):
         if target.exists() or target.is_symlink():
@@ -172,6 +220,12 @@ def materialize_managed_design(
                 requirements_path, requirements.canonical_bytes(), mode=0o644
             )
             atomic_write_bytes(ir_path, design.canonical_bytes(), mode=0o644)
+            part_catalog_path = temporary / PART_CATALOG_NAME
+            atomic_write_json(part_catalog_path, resolved_graph.to_dict(), mode=0o644)
+            if plan is not None:
+                atomic_write_bytes(
+                    temporary / CIRCUIT_PLAN_NAME, plan.canonical_bytes(), mode=0o644
+                )
 
             stem = design.design_id
             schematic = generate_schematic(
@@ -187,11 +241,14 @@ def materialize_managed_design(
                 "manifest": MANAGED_MANIFEST,
                 "requirements": REQUIREMENTS_NAME,
                 "ir": IR_NAME,
+                "part_catalog": PART_CATALOG_NAME,
                 "schematic": schematic.path.name,
                 "board": pcb.path.name,
                 "kicad_project": pcb.project_path.name,
                 "worker_receipt": pcb.worker_receipt.name,
             }
+            if plan is not None:
+                files["circuit_plan"] = CIRCUIT_PLAN_NAME
             hashes = {
                 name: sha256_file(temporary / relative, max_bytes=128 * 1024 * 1024)
                 for name, relative in files.items()
@@ -237,7 +294,16 @@ def materialize_managed_design(
             _fsync_parent(parent)
         except BaseException:
             if not published:
-                _remove_private_staging(temporary, parent)
+                retained = False
+                if retained_target is not None:
+                    try:
+                        os.rename(temporary, retained_target)
+                        _fsync_parent(retained_target.parent)
+                        retained = True
+                    except OSError:
+                        retained = False
+                if not retained:
+                    _remove_private_staging(temporary, parent)
             raise
 
     project = open_managed_project(target)
@@ -256,6 +322,36 @@ def open_managed_project(value: str | Path) -> ManagedProject:
     files = manifest["files"]
     paths = {name: _managed_member(root, relative) for name, relative in files.items()}
     design = load_design(paths["ir"])
+    graph = (
+        PartGraph.load(paths["part_catalog"])
+        if "part_catalog" in paths
+        else PartGraph.bundled()
+    )
+    generation_request = load_generation_request(paths["requirements"])
+    plan_path = paths.get("circuit_plan")
+    plan = (
+        CircuitPlan.from_dict(load_json_limited(plan_path, MANAGED_MANIFEST_LIMIT))
+        if plan_path is not None
+        else None
+    )
+    if isinstance(generation_request, AgentDesignRequest):
+        if plan is not None:
+            if (
+                plan.design_id != generation_request.design_id
+                or plan.design_id != design.design_id
+            ):
+                raise ValidationError(
+                    "managed circuit plan identity does not match the generic design"
+                )
+            plan_hash = hashlib.sha256(plan.canonical_bytes()).hexdigest()
+            if design.metadata.get("plan_hash") != plan_hash:
+                raise ValidationError(
+                    "managed circuit plan does not match semantic design provenance"
+                )
+    elif plan is not None:
+        raise ValidationError(
+            "legacy managed project cannot contain a generic circuit plan"
+        )
     project = ManagedProject(
         root=root,
         requirements_path=paths["requirements"],
@@ -264,11 +360,12 @@ def open_managed_project(value: str | Path) -> ManagedProject:
         board_path=paths["board"],
         project_path=paths["kicad_project"],
         manifest_path=manifest_path,
+        plan_path=plan_path,
         design=design,
+        graph=graph,
+        plan=plan,
         manifest=manifest,
     )
-    # Parsing requirements catches corruption even when a caller only wants IR.
-    load_requirements(project.requirements_path)
     return project
 
 
@@ -287,7 +384,7 @@ def _validate_manifest(value: Any) -> None:
         raise ValidationError("managed project manifest fields are malformed")
     if value["schema"] != MANAGED_SCHEMA or value["version"] != MANAGED_VERSION:
         raise ValidationError("unsupported managed project manifest")
-    if not isinstance(value["files"], dict) or set(value["files"]) != {
+    legacy_files = {
         "manifest",
         "requirements",
         "ir",
@@ -295,7 +392,14 @@ def _validate_manifest(value: Any) -> None:
         "board",
         "kicad_project",
         "worker_receipt",
-    }:
+    }
+    project_local_files = legacy_files | {"part_catalog"}
+    generic_files = project_local_files | {"circuit_plan"}
+    if not isinstance(value["files"], dict) or set(value["files"]) not in (
+        legacy_files,
+        project_local_files,
+        generic_files,
+    ):
         raise ValidationError("managed project file map is malformed")
     if not isinstance(value["hashes"], dict) or set(value["hashes"]) != set(
         value["files"]
@@ -387,5 +491,21 @@ def _fsync_parent(parent: Path) -> None:
         os.close(descriptor)
 
 
-def requirements_hash(spec: RequirementsSpec) -> str:
+def load_generation_request(path: str | Path) -> GenerationRequest:
+    """Parse either the legacy fixture requirements or a generic agent request."""
+
+    value = load_json_limited(path, MANAGED_MANIFEST_LIMIT)
+    if not isinstance(value, dict):
+        raise ValidationError("managed project requirements must be an object")
+    schema = value.get("schema")
+    if schema == "copperwright-requirements":
+        return RequirementsSpec.from_dict(value)
+    if schema == "copperwright-agent-design-request":
+        return AgentDesignRequest.from_dict(value)
+    raise ValidationError(
+        "managed project contains an unknown generation request schema"
+    )
+
+
+def requirements_hash(spec: GenerationRequest) -> str:
     return hashlib.sha256(spec.canonical_bytes()).hexdigest()

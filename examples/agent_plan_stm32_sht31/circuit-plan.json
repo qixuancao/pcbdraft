@@ -1,0 +1,110 @@
+{
+  "schema": "copperwright-circuit-plan",
+  "version": 1,
+  "design_id": "generic-stm32-sht31",
+  "summary": "A provisional STM32F405/SHT31 I2C topology.",
+  "assumptions": [],
+  "notes": [
+    "Pin, MPN, power, decoupling, and layout review remain required."
+  ],
+  "components": [
+    {
+      "id": "mcu",
+      "reference": "U1",
+      "symbol": "MCU_ST_STM32F4:STM32F405RGTx",
+      "value": "STM32F405",
+      "role": "microcontroller",
+      "footprint": null,
+      "on_board": true,
+      "exact_name": "STM32F405",
+      "manufacturer": "STMicroelectronics",
+      "mpn": "STM32F405RGTx"
+    },
+    {
+      "id": "sensor",
+      "reference": "U2",
+      "symbol": "Sensor_Humidity:SHT31-DIS",
+      "value": "SHT31",
+      "role": "humidity_sensor",
+      "footprint": null,
+      "on_board": true,
+      "exact_name": "SHT31",
+      "manufacturer": "Sensirion",
+      "mpn": "SHT31-DIS"
+    }
+  ],
+  "nets": [
+    {
+      "id": "gnd",
+      "name": "GND",
+      "net_class": "power",
+      "intent": "Common return.",
+      "endpoints": [
+        {
+          "component": "mcu",
+          "pin": "12",
+          "role": "return"
+        },
+        {
+          "component": "sensor",
+          "pin": "8",
+          "role": "return"
+        }
+      ]
+    },
+    {
+      "id": "v3v3",
+      "name": "3V3",
+      "net_class": "power",
+      "intent": "Regulated logic supply.",
+      "endpoints": [
+        {
+          "component": "mcu",
+          "pin": "19",
+          "role": "load"
+        },
+        {
+          "component": "sensor",
+          "pin": "5",
+          "role": "load"
+        }
+      ]
+    },
+    {
+      "id": "i2c_sda",
+      "name": "I2C_SDA",
+      "net_class": "signal",
+      "intent": "I2C data.",
+      "endpoints": [
+        {
+          "component": "mcu",
+          "pin": "58",
+          "role": "controller"
+        },
+        {
+          "component": "sensor",
+          "pin": "1",
+          "role": "peripheral"
+        }
+      ]
+    },
+    {
+      "id": "i2c_scl",
+      "name": "I2C_SCL",
+      "net_class": "signal",
+      "intent": "I2C clock.",
+      "endpoints": [
+        {
+          "component": "mcu",
+          "pin": "59",
+          "role": "controller"
+        },
+        {
+          "component": "sensor",
+          "pin": "4",
+          "role": "peripheral"
+        }
+      ]
+    }
+  ]
+}

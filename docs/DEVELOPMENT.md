@@ -1,137 +1,112 @@
-# CopperWright development and release guide
+# CopperWright development guide
 
 ## Environment
 
-Install `uv`, Python 3.11+, Git, and KiCad 10 with symbols, footprints, 3D models,
-CLI, and system Python bindings. Then run:
+Install Python 3.11+, Git, and KiCad 10 with symbols, footprints, CLI, and system
+Python bindings. <code>uv</code> is the recommended environment manager.
 
-```bash
-uv sync --frozen --extra dev
-uv run copperwright doctor --json
-```
+    uv sync --frozen --extra dev
+    scripts/prepare-kicad-environment.sh
+    uv run copperwright doctor --json
 
-Codex is optional unless exercising the authenticated conversational provider,
-changing the AI reviewer, or running live model metrics. The builtin provider
-supports deterministic offline product development. Firefox plus geckodriver are
-required for the real browser acceptance journey.
+Codex is optional unless exercising the model-backed planner. The builtin provider
+is useful for offline requirement extraction but deliberately does not invent a
+circuit. Browser E2E tests additionally need Firefox and geckodriver.
 
-On a fresh noninteractive Linux account, initialize KiCad's user library tables
-after installing the KiCad 10 packages:
+The initializer copies only missing KiCad global library-table templates; it does
+not overwrite a valid user configuration.
 
-```bash
-scripts/prepare-kicad-environment.sh
-```
+## Verification
 
-The initializer copies only missing vendor `sym-lib-table` and `fp-lib-table`
-templates. It preserves valid existing user tables and never disables ERC or DRC.
+    scripts/test.sh
+    scripts/benchmark.sh
+    scripts/smoke.sh
+    scripts/python-matrix.sh
+    scripts/release-check.sh
 
-## Verification commands
+Focused examples:
 
-```bash
-scripts/test.sh
-scripts/benchmark.sh
-scripts/smoke.sh
-scripts/python-matrix.sh
-scripts/generate-brand-assets.sh --check
-scripts/chat-e2e.sh /tmp/copperwright-chat-e2e
-uv run python scripts/browser-e2e.py --output /tmp/copperwright-browser-e2e
-uv run python scripts/generate-product-examples.py --output-root /tmp/copperwright-profiles
-scripts/release-check.sh
-```
+    uv run python -m unittest tests.test_agent_design -v
+    uv run python -m unittest tests.test_application.ApplicationConversationTests -v
+    uv run copperwright symbols SHT31 --json
+    uv run copperwright agent-generate examples/basic_stock_board/request.json \
+      examples/basic_stock_board/circuit-plan.json /tmp/copperwright-basic
 
-Focused tests can use standard unittest module names, for example:
+The generic-path tests must prove all of the following:
 
-```bash
-uv run python -m unittest tests.test_transactions -v
-```
+- no fixed board/profile is selected from a named part;
+- local KiCad candidates are resolved from this host;
+- a plan that drops a named part, names an unknown pin, or contains geometry is
+  rejected;
+- a valid plan produces semantic IR and a project-local part graph;
+- the basic stock-KiCad example produces a native schematic and routed PCB and
+  passes real KiCad ERC/DRC;
+- a native generation failure retains evidence rather than inventing success.
 
-`scripts/test.sh` runs Ruff lint/format checks, byte compilation, the complete
-unittest suite, and whitespace validation. Compatible local KiCad enables native
-generation/sync/release cases; otherwise those cases are explicit skips.
+## Adding a generic capability
 
-`scripts/release-check.sh` additionally builds wheel/sdist, inspects their members,
-installs the wheel into a fresh environment, runs the complete terminal and real
-Firefox journeys against that installed wheel, runs a deterministic benchmark,
-generates and validates the acceptance project, creates two releases, compares
-content hashes, and verifies the bundle offline. Browser acceptance uses a private
-clean HOME and initializes only the missing KiCad global library tables there.
+Do not add a special branch such as “if the request contains device X, compile
+board Y.” A named part is input data, not a product mode.
 
-`scripts/generate-brand-assets.sh --check` regenerates every derived icon and the
-social preview in a private temporary directory and byte-compares them with the
-tracked assets.
+Instead:
 
-## Adding a part
+1. Extend the generic request or circuit-plan schema only when the fact belongs
+   to all future plans, not one board.
+2. Keep model output semantic: components, actual local symbols, pin endpoints,
+   nets, constraints, assumptions, and notes. Never add model-controlled KiCad
+   text, coordinates, shell code, or routes.
+3. Resolve selected symbols and footprints from the installed KiCad libraries and
+   persist the resulting project-local <code>PartGraph</code>.
+4. Add deterministic validation for any new electrical, layout, or manufacturing
+   claim, and state exactly what was checked.
+5. Add adversarial tests: dropped part identity, false pin number, unavailable
+   stock symbol, complex-domain non-rejection, and retention after a failed attempt.
+6. Update [PRODUCT_ACCEPTANCE.md](PRODUCT_ACCEPTANCE.md) only with evidence that
+   actually exists.
 
-Part data is CC0 and lives in `src/copperwright/data/parts/catalog.json`. A record must
-identify an exact orderable variant and include:
+Use the high-level runtime APIs rather than expanding a raw file-mutation tool
+surface. A plan should state intent; the compiler, solver, and KiCad adapters
+should decide representation and geometry.
 
-- canonical ID, manufacturer, MPN, package, symbol, and footprint;
-- every symbol pin and exact footprint pad mapping;
-- electrical ratings used by runtime decisions;
-- lifecycle status with dated source and honest stock/price state;
-- manufacturing contract and available model references;
-- trust state and provenance records with method/confidence.
+## Optional curated part knowledge
 
-Add tests that resolve the real installed symbol/footprint and exercise rating and
-pin contracts. Do not label scraped or model-extracted data `rule_validated` until
-those checks exist; do not label anything human/production verified without
-external evidence.
+The normal generator needs only installed stock KiCad symbols and footprints.
+Curated reusable data for legacy fixtures lives in
+<code>src/copperwright/data/parts/catalog.json</code>. A record promoted beyond
+local extraction must include:
 
-## Adding a generation profile
+- canonical identity, manufacturer, MPN/package variant, symbol, footprint, and
+  pin-to-pad mapping;
+- ratings and manufacturing facts used by code;
+- dated provenance and lifecycle/sourcing state;
+- a justified trust level; and
+- tests against the relevant local library and deterministic checks.
 
-A profile is not complete when it merely parses. It needs verified blocks,
-deterministic compilation, semantic rules, native KiCad generation, 2/4-layer
-tests as applicable, ERC/DRC/parity, manufacturing export, honest L5/L6/L7 states,
-and independent fault/clean benchmark cases. Only then extend
-`runtime.capabilities`.
+Do not call a model guess, a scraped field, or a generic KiCad symbol
+<code>rule_validated</code>. Do not claim human or production verification without
+attributed external evidence.
 
-High-risk domains remain rejected even if a caller supplies syntactically valid
-IR. New risk policy requires explicit review and tests.
+## Domain handling and truthful checks
 
-After a profile's full native chain passes, regenerate a reviewable copy outside
-the tracked tree first:
+Domain names are not generation gates. Requests involving mains, high power,
+DDR/PCIe/SerDes, RF, medical, aviation, safety-critical, or unfamiliar work are
+attempted through the normal stock-KiCad path. Diagnostics may warn that relevant
+specialized analysis is unavailable.
 
-```bash
-uv run python scripts/generate-product-examples.py \
-  --output-root /tmp/copperwright-product-profiles
-```
+Never weaken a validation or release gate merely to make a generated project look
+complete. ERC/DRC do not prove functional, thermal, EMC, SI/PI, sourcing, or
+manufacturing correctness.
 
-Promoting output into `examples/product_profiles` requires reviewing the native
-project, real ERC/DRC reports, L0–L7 states, preview receipt, source/license
-contract, and all machine-specific paths. A new profile is not advertised merely
-because the provider can classify its name.
+## Open-source reuse
 
-## Application and provider changes
-
-Keep business logic in `ApplicationService`; terminal and browser layers should
-only translate input/output and never create a second confirmation, transaction,
-or validation implementation. Persist a job before starting it, publish only at
-an atomic safe boundary, and make restart behavior explicit.
-
-Provider output is untrusted. Extend the shared strict interpretation schema and
-normalizer before adding fields. Never accept credentials in browser forms,
-command arguments, project files, transcripts, or receipts. An OpenAI-compatible
-contract test should use a private local test server and scan the resulting
-workspace for its sentinel secret.
-
-## Benchmark corpus
-
-The bundled corpus is independently authored CC0 data. Each case mutates one clean
-semantic fixture or is a clean control. Expected codes are used only by the
-deterministic evaluator; the optional model prompt is blinded.
-
-Contributions should include negative controls and avoid copying competitor-owned
-fixtures or annotations. Document limitations; do not tune a rule only to an ID or
-fixture-specific string. A repair case must use the public semantic operation path
-and be checked for new findings.
+Before borrowing code or data from another project, verify its license and record
+the source, revision, files/pattern used, and attribution/notice requirement in
+[OPEN_SOURCE_REUSE.md](OPEN_SOURCE_REUSE.md). Do not copy third-party fixtures,
+logos, screenshots, or unknown-license design files into the repository.
 
 ## Commit and artifact policy
 
-Keep commits coherent and run focused tests before the full suite. Preserve failed
-experiment receipts when they explain an engineering decision, but never replace a
-failed run with invented success output. Generated acceptance artifacts must name
-their tool versions and readiness limitations.
-
-Do not commit `.venv`, caches, transient locks, KiCad personal `.kicad_prl` files,
-or arbitrary user projects. Do commit independent corpus data, the canonical
-acceptance project, and selected evidence bundles used by traceability claims.
+Keep changes coherent and run focused tests before the full suite. Do not commit
+virtual environments, caches, private workspaces, KiCad personal files, locks, or
+arbitrary user projects. Preserve failed generic attempt receipts only when they
+are independently authored, sanitized, and useful engineering evidence.

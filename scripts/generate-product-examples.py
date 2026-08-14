@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate or verify the three accepted CopperWright product examples."""
+"""Generate or verify legacy deterministic KiCad regression fixtures.
+
+The fixtures exercise the lower compiler and must not be presented as the
+generic conversational product path.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +21,7 @@ from copperwright.io import (
 )
 from copperwright.managed import generate_managed_project, open_managed_project
 from copperwright.previews import generate_previews
-from copperwright.profiles import build_requirements, get_product_profile
+from copperwright.profiles import build_requirements
 from copperwright.project import sha256_file
 from copperwright.requirements import compile_requirements
 from copperwright.validation import validate_managed_project
@@ -134,29 +138,20 @@ def verify_existing(target: Path, example: Example) -> dict[str, object]:
 
 
 def readme(example: Example, component_count: int, constraint_count: int) -> str:
-    profile = get_product_profile(example.profile_id)
-    return f"""# {profile.title}
+    return f"""# Legacy deterministic fixture: {example.name}
 
-This is a generated, directly openable KiCad 10 example for the verified
-`{example.profile_id}` CopperWright profile.
+This generated, directly openable KiCad 10 project is a regression fixture for
+the old deterministic compiler. It is not a selectable conversational product
+mode and does not describe the generic agent-plan runtime.
 
 - Board: 45 mm × 30 mm, {example.layers} copper layers
 - Semantic components: {component_count}
 - Deterministic constraints: {constraint_count}
-- Candidate gate: passed locally through real KiCad ERC/DRC and CopperWright L0–L3
-- Production claim: **false**; live sourcing, human review, fabrication, bring-up,
-  EMC, and physical measurements remain external
+- Production claim: false; physical, sourcing, and human evidence remain external
 
-Open `project/{example.design_id}.kicad_pro` in KiCad. `requirements.json` is the
-human/version-control input, `project/design.pcbir.json` is authoritative semantic
-state, `validation/validation.json` is the full L0–L7 evidence report, and
-`previews/` contains real KiCad exports.
-
-Reproduce or verify all product examples from the repository root:
-
-```bash
-uv run python scripts/generate-product-examples.py
-```
+Its purpose is to exercise the lower KiCad backend, not to serve as a hidden
+substitute for a user named part. The current product path begins with a generic
+reviewed circuit plan; see README.md.
 """
 
 

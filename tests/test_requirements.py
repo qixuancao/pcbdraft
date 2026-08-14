@@ -130,13 +130,13 @@ class RequirementsCompilerTests(unittest.TestCase):
                 registry=self.registry,
             )
 
-    def test_high_risk_scope_is_never_silently_compiled(self) -> None:
+    def test_legacy_fixture_reports_its_actual_unimplemented_domain(self) -> None:
         value = copy.deepcopy(controller_requirements_dict())
         value["scope"]["domains"].append("mains")
         value["scope"]["max_voltage_v"] = 325
         value["scope"]["max_power_w"] = 1000
         with self.assertRaisesRegex(
-            ValidationError, "outside the automated acceptance scope"
+            ValidationError, "does not implement domains: mains"
         ):
             compile_requirements(
                 RequirementsSpec.from_dict(value),
@@ -216,7 +216,7 @@ class RequirementsCompilerTests(unittest.TestCase):
             {finding.code for finding in findings},
         )
 
-    def test_recognized_domain_without_bundled_generator_is_explicitly_rejected(
+    def test_legacy_fixture_reports_a_mismatched_domain_or_function(
         self,
     ) -> None:
         value = controller_requirements_dict()
@@ -234,14 +234,14 @@ class RequirementsCompilerTests(unittest.TestCase):
         ):
             RequirementsSpec.from_dict(value)
 
-    def test_every_product_profile_compiles_with_distinct_verified_contracts(
+    def test_legacy_fixture_profiles_compile_with_distinct_executable_contracts(
         self,
     ) -> None:
         expected = {
-            "low_voltage_i2c_controller_v1": ("i2c", "i2c_electrical_budget"),
-            "low_voltage_spi_environment_v1": ("spi", "spi_electrical_budget"),
+            "low_voltage_i2c_controller_v1": ({"i2c"}, "i2c_electrical_budget"),
+            "low_voltage_spi_environment_v1": ({"spi"}, "spi_electrical_budget"),
             "low_voltage_uart_ldo_controller_v1": (
-                "uart",
+                {"uart"},
                 "ldo_regulation_budget",
             ),
         }
@@ -261,11 +261,9 @@ class RequirementsCompilerTests(unittest.TestCase):
             design = compile_requirements(
                 spec, graph=self.graph, registry=self.registry
             )
-            interface_kind, constraint_kind = expected[profile.id]
+            interface_kinds, constraint_kind = expected[profile.id]
             self.assertEqual(design.metadata["profile"], profile.id)
-            self.assertEqual(
-                {item.kind for item in design.interfaces}, {interface_kind}
-            )
+            self.assertEqual({item.kind for item in design.interfaces}, interface_kinds)
             self.assertIn(constraint_kind, {item.kind for item in design.constraints})
             self.assertEqual(
                 evaluate_semantic_rules(design, self.graph, approximate_geometry=False),
