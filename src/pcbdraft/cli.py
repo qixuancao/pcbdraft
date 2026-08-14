@@ -97,8 +97,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--provider",
         choices=(
             "auto",
-            "codex",
-            "deepseek-harness",
             "openai-compatible",
             "builtin",
         ),
@@ -118,7 +116,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     subcommands = parser.add_subparsers(dest="command")
 
     doctor = subcommands.add_parser(
-        "doctor", help="check local Codex, KiCad, and Git tools"
+        "doctor", help="check local KiCad, Git, and model configuration"
     )
     doctor.add_argument(
         "--json", action="store_true", dest="as_json", help="emit machine-readable JSON"
@@ -311,8 +309,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--provider",
         choices=(
             "auto",
-            "codex",
-            "deepseek-harness",
             "openai-compatible",
             "builtin",
         ),
@@ -341,8 +337,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--provider",
         choices=(
             "auto",
-            "codex",
-            "deepseek-harness",
             "openai-compatible",
             "builtin",
         ),

@@ -1,7 +1,0 @@
-# Mount PCBDraft as a constrained DeepSeek Harness PCB agent extension.
-# The host profile supplies pcbdraftRoot and workspace configuration.
-# This package exposes no terminal UI and no general shell/filesystem tools.
-- insert:
-    - id: pcbdraft-pcb
-      name: '@pcbdraft/dsh-plugin'
-      inject: [tools, systemPrompt]

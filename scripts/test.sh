@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Runs lint, format, syntax, offline, and available real-KiCad tests.
 # Run: scripts/test.sh
-# Requires: uv. Codex is faked; compatible installed KiCad enables native tests.
+# Requires: uv. The model API is replaced by a test provider; compatible installed KiCad enables native tests.
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)

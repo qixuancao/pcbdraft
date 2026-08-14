@@ -9,7 +9,7 @@ Python bindings. <code>uv</code> is the recommended environment manager.
     scripts/prepare-kicad-environment.sh
     uv run pcbdraft doctor --json
 
-Codex is optional unless exercising the model-backed planner. The builtin provider
+model API is optional unless exercising the model-backed planner. The builtin provider
 is useful for offline requirement extraction but deliberately does not invent a
 circuit. Browser E2E tests additionally need Firefox and geckodriver.
 
@@ -29,9 +29,7 @@ Focused examples:
     uv run python -m unittest tests.test_agent_design -v
     uv run python -m unittest tests.test_application.ApplicationConversationTests -v
     uv run pcbdraft symbols SHT31 --json
-    uv run pcbdraft agent-generate examples/basic_stock_board/request.json \
-      examples/basic_stock_board/circuit-plan.json /tmp/pcbdraft-basic
-    scripts/test-deepseek-harness.sh
+    uv run pcbdraft doctor --json
 
 The generic-path tests must prove all of the following:
 
@@ -64,8 +62,8 @@ Instead:
    claim, and state exactly what was checked.
 5. Add adversarial tests: dropped part identity, false pin number, unavailable
    stock symbol, complex-domain non-rejection, and retention after a failed attempt.
-6. Update [PRODUCT_ACCEPTANCE.md](PRODUCT_ACCEPTANCE.md) only with evidence that
-   actually exists.
+6. Update tests and user-facing documentation only with evidence that actually
+   exists.
 
 Use the high-level runtime APIs rather than expanding a raw file-mutation tool
 surface. A plan should state intent; the compiler, solver, and KiCad adapters
@@ -102,10 +100,10 @@ manufacturing correctness.
 
 ## Open-source reuse
 
-Before borrowing code or data from another project, verify its license and record
-the source, revision, files/pattern used, and attribution/notice requirement in
-[OPEN_SOURCE_REUSE.md](OPEN_SOURCE_REUSE.md). Do not copy third-party fixtures,
-logos, screenshots, or unknown-license design files into the repository.
+Before borrowing code or data from another project, verify its license and add
+every required attribution or notice to <code>NOTICE</code>. Do not copy
+third-party fixtures, logos, screenshots, or unknown-license design files into
+the repository.
 
 ## Commit and artifact policy
 

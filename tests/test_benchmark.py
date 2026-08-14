@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,10 +66,9 @@ class IndependentBenchmarkTests(unittest.TestCase):
     def test_missing_model_is_reported_without_fabricating_consistency(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "benchmark.json"
-            real_which = shutil.which
             with patch(
-                "pcbdraft.benchmark.shutil.which",
-                side_effect=lambda name: None if name == "codex" else real_which(name),
+                "pcbdraft.benchmark.OpenAICompatibleSettings.from_config",
+                return_value=None,
             ):
                 result = run_benchmark(output, repetitions=2, model_runs=2)
             model = result.result["model_consistency"]

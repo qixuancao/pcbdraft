@@ -1,4 +1,4 @@
-"""Compact full-screen terminal conversation for PCBDraft.
+"""Controller and entry point for the PCBDraft terminal application.
 
 The terminal is deliberately a thin client over :class:`ApplicationService`.
 It owns no engineering state: project creation, planning, confirmation,
@@ -7,7 +7,6 @@ validation, recovery, and release actions remain in the application service.
 
 from __future__ import annotations
 
-import curses
 import os
 import re
 import sys
@@ -19,21 +18,17 @@ from .agent_events import AgentActivity, AgentUpdate
 from .agent_runtime import AgentRuntime
 from .application import ApplicationService
 from .errors import PCBDraftError, ValidationError
+from .model_config import connect_provider, select_model
 from .providers import resolve_provider
-from .terminal_text import cell_width as _cell_width
-from .terminal_text import split_to_cell_width as _split_to_cell_width
-from .terminal_text import tail_to_cell_width as _tail_to_cell_width
-from .tui_commands import SlashCommand, command_suggestions
+from .tui_commands import command_suggestions
 from .tui_review import review_sections
 from .tui_session import TuiSessionStore
 
+__all__ = ["TuiController", "command_suggestions", "run_tui_command"]
+
 _MAX_INPUT_CHARS = 8_192
-_MIN_HEIGHT = 16
-_MIN_WIDTH = 72
 _PROVIDER_NAMES = (
     "auto",
-    "codex",
-    "deepseek-harness",
     "openai-compatible",
     "builtin",
 )
@@ -71,6 +66,8 @@ class TuiController:
     activities: list[AgentActivity] = field(default_factory=list)
     active_job_status: str = ""
     logs_expanded: bool = False
+    pending_user_text: str = ""
+    pending_provider_id: str = ""
     _provider_details: dict[str, Any] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
@@ -100,17 +97,18 @@ class TuiController:
         provider_id = provider_id if isinstance(provider_id, str) else "configured"
         details = self._provider_details
         model = details.get("model")
-        reasoning_effort = details.get("reasoning_effort")
+        display_name = details.get("name")
+        provider_label = (
+            display_name
+            if isinstance(display_name, str) and display_name
+            else provider_id
+        )
         if isinstance(model, str) and model:
-            if isinstance(reasoning_effort, str) and reasoning_effort:
-                return f"{provider_id} / {model} · {reasoning_effort}"
-            return f"{provider_id} / {model}"
+            return f"{provider_label} / {model}"
         if model is False:
             return f"{provider_id} / no planning model"
         if provider_id == "builtin":
             return "builtin / offline"
-        if provider_id == "codex":
-            return "codex / model managed by local CLI"
         return f"{provider_id} / model not reported"
 
     @property
@@ -223,6 +221,10 @@ class TuiController:
         elif self.mode == "review":
             self.mode = "message"
             self.notice = "Review closed."
+        elif self.mode in {"provider_picker", "provider_form", "model_picker"}:
+            self.mode = "message"
+            self.pending_provider_id = ""
+            self.notice = "Model setup closed."
         elif self.mode in {"new_name", "new_request"}:
             self.mode = "message"
             self.new_name = ""
@@ -279,6 +281,7 @@ class TuiController:
                         self.project_id or "", clean, timeout=self.timeout
                     )
                 )
+                self.pending_user_text = clean
             except PCBDraftError as exc:
                 self.error = str(exc)
         else:
@@ -322,6 +325,12 @@ class TuiController:
         if name == "help":
             self.error = ""
             self.notice = "Type / for commands. ↑/↓ select · Tab complete · Enter run · Esc dismiss."
+            return "continue"
+        if name == "connect":
+            self.show_provider_picker()
+            return "continue"
+        if name in {"models", "model-picker"}:
+            self.show_model_picker()
             return "continue"
         if name == "stop":
             return self.stop_active()
@@ -409,6 +418,7 @@ class TuiController:
             try:
                 update = self.runtime.start_project(name, request, timeout=self.timeout)
                 self._start_update(update)
+                self.pending_user_text = request
                 self.mode = "message"
                 self.new_name = ""
             except PCBDraftError as exc:
@@ -457,6 +467,12 @@ class TuiController:
             return self.action("review")
         if command == "logs":
             return self._set_logs(argument)
+        if command == "connect":
+            self.show_provider_picker()
+            return "continue"
+        if command in {"models", "model-picker"}:
+            self.show_model_picker()
+            return "continue"
         if command == "model":
             return self._set_provider(argument)
         if command == "stop":
@@ -478,6 +494,75 @@ class TuiController:
         self.error = "Unknown command. Type / for the command list."
         return "continue"
 
+    def show_provider_picker(self) -> None:
+        if self.is_busy:
+            self.error = "Stop the active turn before changing the model connection."
+            return
+        self.mode = "provider_picker"
+        self.error = ""
+        self.notice = "Choose a provider to connect."
+
+    def begin_provider_form(self, provider_id: str) -> None:
+        self.pending_provider_id = provider_id
+        self.mode = "provider_form"
+
+    def save_provider_connection(
+        self,
+        *,
+        provider_id: str,
+        api_key: str,
+        base_url: str,
+        model: str,
+        name: str | None = None,
+    ) -> None:
+        if self.is_busy:
+            self.error = "Stop the active turn before changing the model connection."
+            return
+        try:
+            config = connect_provider(
+                provider_id,
+                api_key=api_key,
+                base_url=base_url,
+                model=model,
+                name=name,
+            )
+            self.service.provider = resolve_provider("auto")
+            self.pending_provider_id = ""
+            self.mode = "message"
+            self._refresh_provider_diagnostic()
+            active = config.active
+            self.error = ""
+            self.notice = (
+                f"Connected {active.name if active else provider_id}; "
+                f"active model is {config.active_model}."
+            )
+        except (PCBDraftError, ValidationError) as exc:
+            self.error = str(exc)
+            self.mode = "message"
+
+    def show_model_picker(self) -> None:
+        if self.is_busy:
+            self.error = "Stop the active turn before switching models."
+            return
+        self.mode = "model_picker"
+        self.error = ""
+        self.notice = "Choose the model for the next agent turn."
+
+    def choose_model(self, provider_id: str, model: str) -> None:
+        if self.is_busy:
+            self.error = "Stop the active turn before switching models."
+            return
+        try:
+            config = select_model(provider_id, model)
+            self.service.provider = resolve_provider("auto")
+            self.mode = "message"
+            self._refresh_provider_diagnostic()
+            self.error = ""
+            self.notice = f"Model switched to {config.active_model}."
+        except (PCBDraftError, ValidationError) as exc:
+            self.error = str(exc)
+            self.mode = "message"
+
     def _set_provider(self, argument: str) -> str:
         if self.is_busy:
             self.error = "Stop the active turn before switching providers."
@@ -486,15 +571,12 @@ class TuiController:
             self.error = ""
             self.notice = (
                 f"Planning provider: {self.provider_name} ({self.provider_status}). "
-                "Use /model [auto|codex|deepseek-harness|openai-compatible|builtin]."
+                "Use /connect to add a provider or /models to choose a model."
             )
             return "continue"
         provider_name = argument.casefold()
         if provider_name not in _PROVIDER_NAMES or " " in provider_name:
-            self.error = (
-                "Supported providers: auto, codex, deepseek-harness, "
-                "openai-compatible, or builtin."
-            )
+            self.error = "Supported providers: auto, openai-compatible, or builtin."
             return "continue"
         try:
             provider = resolve_provider(provider_name)
@@ -549,6 +631,7 @@ class TuiController:
                 self.error = str(exc)
         if not update.terminal:
             return bool(update.activities)
+        self.pending_user_text = ""
         if update.status == "failed":
             self.error = update.error or "The agent turn failed."
             self.notice = ""
@@ -704,656 +787,6 @@ class TuiController:
         return project.get("status") if isinstance(project, dict) else None
 
 
-class PCBDraftTui:
-    """Curses renderer and keyboard loop for :class:`TuiController`."""
-
-    def __init__(self, screen: Any, controller: TuiController) -> None:
-        self.screen = screen
-        self.controller = controller
-        self.input_text = ""
-        self.scroll = 0
-        self.busy = ""
-        self.height = 0
-        self.width = 0
-        self.palette_index = 0
-        self.palette_dismissed = False
-        self.review_scroll = 0
-        self._input_only_redraw = False
-        self._init_terminal()
-
-    def run(self) -> int:
-        self._render()
-        while True:
-            if self.controller.poll():
-                self._render()
-            try:
-                key = self.screen.get_wch()
-            except curses.error:
-                continue
-            self._input_only_redraw = False
-            try:
-                result = self._handle_key(key)
-            except _QuitTui:
-                return 0
-            if result == "quit":
-                return 0
-            if self._input_only_redraw:
-                self._render_input_only()
-            else:
-                self._render()
-
-    def _init_terminal(self) -> None:
-        self.screen.keypad(True)
-        timeout = getattr(self.screen, "timeout", None)
-        if self.controller.runtime is not None and callable(timeout):
-            timeout(100)
-        try:
-            curses.curs_set(1)
-        except curses.error:
-            pass
-        try:
-            has_colors = curses.has_colors()
-        except curses.error:
-            has_colors = False
-        if not has_colors:
-            return
-        try:
-            curses.start_color()
-            curses.use_default_colors()
-        except curses.error:
-            pass
-        for number, foreground in (
-            (1, curses.COLOR_BLACK),
-            (2, curses.COLOR_CYAN),
-            (3, curses.COLOR_GREEN),
-            (4, curses.COLOR_YELLOW),
-            (5, curses.COLOR_RED),
-            (6, curses.COLOR_MAGENTA),
-        ):
-            try:
-                curses.init_pair(number, foreground, -1)
-            except curses.error:
-                continue
-
-    def _handle_key(self, key: str | int) -> str:
-        if key == "\x11":  # Ctrl+Q
-            if self.controller.is_busy:
-                return self.controller.stop_active()
-            return "quit"
-        if self.controller.mode == "review":
-            return self._handle_review_key(key)
-        if key == "\x1b" and self.controller.is_busy:
-            return self.controller.stop_active()
-        if self.controller.mode == "project_picker":
-            return self._handle_picker_key(key)
-        if self._palette_visible():
-            if key in (curses.KEY_UP,):
-                self._move_palette(-1)
-                return "continue"
-            if key in (curses.KEY_DOWN,):
-                self._move_palette(1)
-                return "continue"
-            if key in ("\t",):
-                self._complete_selected_command()
-                return "continue"
-            if key == "\x1b":
-                self.palette_dismissed = True
-                return "continue"
-        if key in ("\x0e", curses.KEY_F2):  # Ctrl+N / F2
-            self._run_action("new")
-            return "continue"
-        if key in ("\x10", curses.KEY_F3):  # Ctrl+P / F3
-            self._run_action("projects")
-            return "continue"
-        if key in ("\x12", curses.KEY_F5):  # Ctrl+R / F5
-            self._run_action("status")
-            return "continue"
-        if key == curses.KEY_F4:
-            self.review_scroll = 0
-            self._run_action("review")
-            return "continue"
-        if key == "\x0c":  # Ctrl+L
-            self._run_action("logs")
-            return "continue"
-        if key in ("\x19", curses.KEY_F7):  # Ctrl+Y / F7
-            self._run_action("confirm")
-            return "continue"
-        if key in ("\x16", curses.KEY_F6):  # Ctrl+V / F6
-            self._run_action("validate")
-            return "continue"
-        if key == "\x1a":  # Ctrl+Z
-            self._run_action("undo")
-            return "continue"
-        if key == "\x04":  # Ctrl+D
-            self._run_action("discard")
-            return "continue"
-        if key == curses.KEY_PPAGE:
-            self.scroll += max(1, self.height // 3)
-            return "continue"
-        if key == curses.KEY_NPAGE:
-            self.scroll = max(0, self.scroll - max(1, self.height // 3))
-            return "continue"
-        if key == curses.KEY_UP:
-            self.scroll += 1
-            return "continue"
-        if key == curses.KEY_DOWN:
-            self.scroll = max(0, self.scroll - 1)
-            return "continue"
-        if key == "\x1b":
-            self.controller.cancel_overlay()
-            self.input_text = ""
-            self.palette_dismissed = False
-            return "continue"
-        if key in ("\n", "\r", curses.KEY_ENTER):
-            return self._submit()
-        if key in ("\b", "\x7f", curses.KEY_BACKSPACE):
-            had_palette = self._palette_visible()
-            self.input_text = self.input_text[:-1]
-            self._input_changed()
-            if not had_palette and not self._palette_visible():
-                self._input_only_redraw = True
-            return "continue"
-        if isinstance(key, str) and key.isprintable():
-            if len(self.input_text) >= _MAX_INPUT_CHARS:
-                self.controller.error = (
-                    f"Input is limited to {_MAX_INPUT_CHARS} characters."
-                )
-            else:
-                had_palette = self._palette_visible()
-                self.input_text += key
-                self._input_changed()
-                if not had_palette and not self._palette_visible():
-                    self._input_only_redraw = True
-        return "continue"
-
-    def _handle_picker_key(self, key: str | int) -> str:
-        if key in ("\x1b", "q", "Q"):
-            self.controller.cancel_overlay()
-        elif key in (curses.KEY_UP, "k"):
-            self.controller.move_picker(-1)
-        elif key in (curses.KEY_DOWN, "j"):
-            self.controller.move_picker(1)
-        elif key in ("\n", "\r", curses.KEY_ENTER):
-            self._run_controller(self.controller.select_picker, "Opening project")
-        return "continue"
-
-    def _handle_review_key(self, key: str | int) -> str:
-        if key in ("\x1b", "q", "Q", "\n", "\r", curses.KEY_ENTER):
-            self.controller.cancel_overlay()
-            self.review_scroll = 0
-        elif key in (curses.KEY_UP, "k"):
-            self.review_scroll = max(0, self.review_scroll - 1)
-        elif key in (curses.KEY_DOWN, "j"):
-            self.review_scroll += 1
-        elif key == curses.KEY_PPAGE:
-            self.review_scroll = max(0, self.review_scroll - max(1, self.height // 2))
-        elif key == curses.KEY_NPAGE:
-            self.review_scroll += max(1, self.height // 2)
-        return "continue"
-
-    def _input_changed(self) -> None:
-        self.palette_index = 0
-        self.palette_dismissed = False
-
-    def _palette_visible(self) -> bool:
-        return (
-            self.controller.mode == "message"
-            and self.input_text.startswith("/")
-            and not self.palette_dismissed
-        )
-
-    def _palette_commands(self) -> tuple[SlashCommand, ...]:
-        return command_suggestions(self.input_text) if self._palette_visible() else ()
-
-    def _move_palette(self, delta: int) -> None:
-        commands = self._palette_commands()
-        if not commands:
-            return
-        self.palette_index = (self.palette_index + delta) % len(commands)
-
-    def _selected_command(self) -> SlashCommand | None:
-        commands = self._palette_commands()
-        if not commands:
-            return None
-        self.palette_index = max(0, min(self.palette_index, len(commands) - 1))
-        return commands[self.palette_index]
-
-    def _complete_selected_command(self) -> bool:
-        command = self._selected_command()
-        if command is None:
-            return False
-        self.input_text = command.name + (" " if command.accepts_argument else "")
-        self.palette_index = 0
-        self.palette_dismissed = False
-        return True
-
-    def _submit(self) -> str:
-        if self._palette_visible():
-            command = self._selected_command()
-            if command is not None and self._command_needs_completion(command):
-                self._complete_selected_command()
-                return "continue"
-        text = self.input_text
-        if not text.strip() and self.controller.mode == "message":
-            return "continue"
-        self.input_text = ""
-        self.palette_index = 0
-        self.palette_dismissed = False
-        self.scroll = 0
-        result = self._run_controller(
-            lambda: self.controller.submit(text), "Working with PCBDraft"
-        )
-        return result if result == "quit" else "continue"
-
-    def _command_needs_completion(self, command: SlashCommand) -> bool:
-        typed = self.input_text[1:]
-        name, separator, _argument = typed.partition(" ")
-        if name.casefold() != command.name[1:].casefold():
-            return True
-        return command.requires_argument and not separator
-
-    def _run_action(self, action: str) -> None:
-        result = self._run_controller(
-            lambda: self.controller.action(action), self._action_label(action)
-        )
-        if result == "quit":
-            raise _QuitTui
-
-    def _run_controller(self, operation: Any, label: str) -> str:
-        self.busy = label + "…"
-        self._render()
-        self.screen.refresh()
-        try:
-            result = operation()
-            return result if isinstance(result, str) else "continue"
-        finally:
-            self.busy = ""
-
-    @staticmethod
-    def _action_label(action: str) -> str:
-        return {
-            "new": "Starting a project",
-            "projects": "Loading projects",
-            "status": "Refreshing project",
-            "review": "Opening engineering review",
-            "logs": "Changing activity detail",
-            "retry": "Retrying the last job",
-            "confirm": "Confirming generation",
-            "validate": "Running validation",
-            "undo": "Undoing change",
-            "discard": "Discarding change",
-            "release": "Building release evidence",
-        }.get(action, "Working")
-
-    def _render(self) -> None:
-        self.height, self.width = self.screen.getmaxyx()
-        self.screen.erase()
-        if self.height < _MIN_HEIGHT or self.width < _MIN_WIDTH:
-            self._render_too_small()
-            self.screen.refresh()
-            return
-        self._render_header()
-        palette_height = self._palette_height()
-        input_top = self.height - 2
-        palette_top = input_top - palette_height
-        content_top = 3
-        content_height = max(1, palette_top - content_top)
-        self._render_conversation(content_top, content_height, self.width - 2)
-        if palette_height:
-            self._render_palette(palette_top)
-        self._render_input(input_top)
-        if self.controller.mode == "project_picker":
-            self._render_project_picker()
-        elif self.controller.mode == "review":
-            self._render_review()
-        self.screen.refresh()
-
-    def _render_input_only(self) -> None:
-        """Update a normal text edit without reflowing the whole transcript."""
-
-        if self.screen.getmaxyx() != (self.height, self.width):
-            self._render()
-            return
-        input_top = self.height - 2
-        self._add(input_top + 1, 0, " " * max(0, self.width - 1))
-        self._render_input(input_top)
-        self.screen.refresh()
-
-    def _render_too_small(self) -> None:
-        self._add(
-            0,
-            0,
-            "PCBDraft needs a terminal at least "
-            f"{_MIN_WIDTH}×{_MIN_HEIGHT}; resize to continue.",
-            curses.A_BOLD,
-        )
-        self._add(2, 0, "Resize, then type /quit to exit.")
-
-    def _render_header(self) -> None:
-        project_name = "No project"
-        status = "ready"
-        if isinstance(self.controller.view, dict):
-            project = self.controller.view.get("project")
-            if isinstance(project, dict):
-                project_name = str(project.get("name", project_name))
-                status = str(project.get("status", status)).replace("_", " ")
-        left = f" PCBDraft · {project_name} · {status} "
-        right = f" {self.controller.provider_name} · {self.controller.provider_status} "
-        self._add(0, 0, " " * max(0, self.width - 1), self._style(1, curses.A_BOLD))
-        self._add(0, 0, left, self._style(1, curses.A_BOLD))
-        if len(left) + len(right) + 2 < self.width:
-            self._add(
-                0,
-                self.width - len(right) - 1,
-                right,
-                self._style(1, curses.A_BOLD),
-            )
-        subtitle = (
-            self.busy
-            or self.controller.error
-            or self.controller.notice
-            or self.controller.activity_label
-            or "Describe a board; PCBDraft chooses implementation details automatically."
-        )
-        tone = self._style(5) if self.controller.error else self._style(4)
-        self._add(1, 1, subtitle, tone)
-        self._add(2, 0, "─" * max(0, self.width - 1), self._style(4))
-
-    def _render_conversation(self, y: int, height: int, width: int) -> None:
-        lines = self._conversation_lines(width)
-        maximum_scroll = max(0, len(lines) - height)
-        self.scroll = max(0, min(self.scroll, maximum_scroll))
-        start = max(0, len(lines) - height - self.scroll)
-        for offset, (text, style) in enumerate(lines[start : start + height]):
-            self._add(y + offset, 1, text, style)
-        if self.scroll:
-            self._add(y, max(1, self.width - 10), "↑ older", self._style(4))
-        if start + height < len(lines):
-            self._add(
-                y + height - 1, max(1, self.width - 10), "↓ newer", self._style(4)
-            )
-
-    def _conversation_lines(self, width: int) -> list[tuple[str, int]]:
-        if not isinstance(self.controller.view, dict):
-            return [
-                ("Welcome to PCBDraft.", self._style(2, curses.A_BOLD)),
-                ("Describe the board you want to build to create a local project.", 0),
-                ("Use /new to name it first, or /projects to reopen one.", 0),
-                (
-                    "The agent chooses layers, plans the circuit, generates KiCad, and runs checks.",
-                    0,
-                ),
-            ]
-        conversation = self.controller.view.get("conversation")
-        messages = (
-            conversation.get("messages") if isinstance(conversation, dict) else []
-        )
-        result: list[tuple[str, int]] = []
-        if isinstance(messages, list):
-            for message in messages[-300:]:
-                if not isinstance(message, dict):
-                    continue
-                role = str(message.get("role", "system"))
-                text = str(message.get("text", "")).strip()
-                label, style = {
-                    "user": ("You", self._style(2, curses.A_BOLD)),
-                    "assistant": ("PCBDraft", self._style(3, curses.A_BOLD)),
-                }.get(role, ("System", self._style(4, curses.A_BOLD)))
-                result.append((label, style))
-                if text:
-                    result.extend(
-                        (line, 0) for line in self._wrap(text, max(12, width - 1))
-                    )
-                result.append(("", 0))
-        if not result:
-            result.extend(
-                [
-                    ("No messages yet.", self._style(4)),
-                    ("Describe a board or a requested change below.", 0),
-                ]
-            )
-        if self.controller.activities:
-            result.append(("", 0))
-            detail_hint = (
-                "expanded · /logs off"
-                if self.controller.logs_expanded
-                else "/logs to expand"
-            )
-            result.append(
-                (
-                    f"Agent activity ({detail_hint})",
-                    self._style(6, curses.A_BOLD),
-                )
-            )
-            activity_limit = 40 if self.controller.logs_expanded else 12
-            for activity in self.controller.activities[-activity_limit:]:
-                marker = {
-                    "queued": "○",
-                    "running": "●",
-                    "completed": "✓",
-                    "failed": "×",
-                    "info": "·",
-                }[activity.state]
-                style = (
-                    self._style(5)
-                    if activity.state == "failed"
-                    else self._style(3)
-                    if activity.state == "completed"
-                    else self._style(4)
-                )
-                result.append((f"{marker} {activity.tool} — {activity.label}", style))
-                if self.controller.logs_expanded and activity.message:
-                    detail = f"  {activity.created_at} · {activity.message}"
-                    result.extend(
-                        (line, self._style(4))
-                        for line in self._wrap(detail, max(12, width - 3))
-                    )
-        status = self.controller._project_status()
-        if status == "awaiting_confirmation":
-            result.extend(
-                [
-                    ("", 0),
-                    (
-                        "Plan ready for review. Use /confirm when you are ready.",
-                        self._style(4),
-                    ),
-                ]
-            )
-        elif status == "change_ready":
-            result.extend(
-                [
-                    ("", 0),
-                    (
-                        "Semantic change ready. Use /confirm to apply or /discard.",
-                        self._style(4),
-                    ),
-                ]
-            )
-        return result
-
-    def _palette_height(self) -> int:
-        commands = self._palette_commands()
-        if not commands:
-            return 0
-        return 2 + (len(commands) + 1) // 2
-
-    def _render_palette(self, y: int) -> None:
-        commands = self._palette_commands()
-        if not commands:
-            return
-        rows = (len(commands) + 1) // 2
-        self._add(
-            y,
-            1,
-            "Commands — filter by name; all commands are shown for /",
-            self._style(4),
-        )
-        column_width = max(30, (self.width - 4) // 2)
-        for index, command in enumerate(commands):
-            column = index % 2
-            row = index // 2
-            marker = "› " if index == self.palette_index else "  "
-            text = f"{marker}{command.usage} — {command.description}"
-            style = self._style(1, curses.A_BOLD) if index == self.palette_index else 0
-            self._add(y + 1 + row, 1 + column * column_width, text, style)
-        self._add(
-            y + rows + 1,
-            1,
-            "↑/↓ choose · Tab complete · Enter complete/run · Esc dismiss",
-            self._style(4),
-        )
-
-    def _render_input(self, y: int) -> None:
-        hint = "Enter sends · / commands · /quit exits"
-        if self.controller.is_busy:
-            hint = "Agent is working · Esc or /stop requests cancellation"
-        elif self.controller.mode == "new_name":
-            hint = "Enter continues · Esc cancels"
-        elif self.controller.mode == "new_request":
-            hint = "Enter creates the project · Esc cancels"
-        self._add(y, 1, hint, self._style(4))
-        prompt = self.controller.input_label + " › "
-        self._add(y + 1, 1, prompt, self._style(2, curses.A_BOLD))
-        if self.controller.mode != "project_picker":
-            prompt_width = _cell_width(prompt)
-            available = max(1, self.width - prompt_width - 3)
-            visible = _tail_to_cell_width(self.input_text, available)
-            self._add(y + 1, 1 + prompt_width, visible)
-            try:
-                self.screen.move(
-                    y + 1,
-                    min(self.width - 2, 1 + prompt_width + _cell_width(visible)),
-                )
-            except curses.error:
-                pass
-
-    def _render_project_picker(self) -> None:
-        box_width = min(max(48, self.width * 3 // 5), self.width - 8)
-        box_height = min(max(8, len(self.controller.projects) + 6), self.height - 6)
-        x = max(2, (self.width - box_width) // 2)
-        y = max(2, (self.height - box_height) // 2)
-        self._box(y, x, box_height, box_width, "Open local project")
-        if not self.controller.projects:
-            self._add(y + 2, x + 2, "No local projects. Esc closes this picker.")
-            return
-        visible = box_height - 4
-        first = max(
-            0,
-            min(
-                self.controller.picker_index - visible + 1,
-                len(self.controller.projects) - visible,
-            ),
-        )
-        for offset, item in enumerate(
-            self.controller.projects[first : first + visible]
-        ):
-            selected = first + offset == self.controller.picker_index
-            name = str(item.get("name", "Unnamed project"))
-            status = str(item.get("status", "unknown"))
-            project_id = str(item.get("id", ""))
-            text = f"{'› ' if selected else '  '}{name}  [{status}]  {project_id}"
-            self._add(
-                y + 2 + offset,
-                x + 2,
-                text,
-                self._style(1, curses.A_BOLD) if selected else 0,
-            )
-        self._add(
-            y + box_height - 2,
-            x + 2,
-            "↑/↓ or j/k select · Enter open · Esc cancel",
-            self._style(4),
-        )
-
-    def _render_review(self) -> None:
-        box_width = max(48, self.width - 8)
-        box_height = max(10, self.height - 6)
-        x = max(2, (self.width - box_width) // 2)
-        y = max(2, (self.height - box_height) // 2)
-        self._box(y, x, box_height, box_width, "Plan and change review")
-        sections = (
-            review_sections(self.controller.view)
-            if isinstance(self.controller.view, dict)
-            else ()
-        )
-        lines: list[tuple[str, int]] = []
-        content_width = max(12, box_width - 6)
-        for section in sections:
-            if lines:
-                lines.append(("", 0))
-            lines.append((section.title, self._style(2, curses.A_BOLD)))
-            for item in section.lines:
-                lines.extend(
-                    (line, 0) for line in self._wrap(f"• {item}", content_width)
-                )
-        visible = max(1, box_height - 4)
-        maximum_scroll = max(0, len(lines) - visible)
-        self.review_scroll = max(0, min(self.review_scroll, maximum_scroll))
-        start = self.review_scroll
-        for offset, (text, style) in enumerate(lines[start : start + visible]):
-            self._add(y + 2 + offset, x + 3, text, style)
-        footer = "↑/↓ or PgUp/PgDn scroll · Enter/Esc close"
-        if self.review_scroll:
-            footer += " · ↑ earlier"
-        if self.review_scroll < maximum_scroll:
-            footer += " · ↓ later"
-        self._add(y + box_height - 2, x + 3, footer, self._style(4))
-
-    def _box(self, y: int, x: int, height: int, width: int, title: str) -> None:
-        if height < 3 or width < 5:
-            return
-        horizontal = "-" * max(0, width - 2)
-        self._add(y, x, "+" + horizontal + "+", self._style(4))
-        self._add(y + height - 1, x, "+" + horizontal + "+", self._style(4))
-        for row in range(y + 1, y + height - 1):
-            self._add(row, x, "|", self._style(4))
-            self._add(row, x + width - 1, "|", self._style(4))
-        self._add(y, x + 2, f" {title} ", self._style(2, curses.A_BOLD))
-
-    def _add(self, y: int, x: int, text: str, style: int = 0) -> None:
-        if y < 0 or x < 0 or y >= self.height or x >= self.width - 1:
-            return
-        try:
-            self.screen.addnstr(
-                y, x, text.replace("\n", " "), self.width - x - 1, style
-            )
-        except curses.error:
-            return
-
-    @staticmethod
-    def _wrap(text: str, width: int) -> list[str]:
-        clean = " ".join(text.replace("\n", " ").split())
-        if not clean:
-            return [""]
-        line_width = max(1, width)
-        result: list[str] = []
-        current = ""
-        for word in clean.split(" "):
-            candidate = word if not current else f"{current} {word}"
-            if _cell_width(candidate) <= line_width:
-                current = candidate
-                continue
-            if current:
-                result.append(current)
-            chunks = _split_to_cell_width(word, line_width)
-            result.extend(chunks[:-1])
-            current = chunks[-1]
-        if current:
-            result.append(current)
-        return result
-
-    @staticmethod
-    def _style(pair: int, attributes: int = 0) -> int:
-        try:
-            return curses.color_pair(pair) | attributes
-        except curses.error:
-            return attributes
-
-
-class _QuitTui(Exception):
-    """Internal control-flow marker used after a shortcut requests exit."""
-
-
 def run_tui_command(
     *,
     workspace: str | Path | None,
@@ -1361,7 +794,7 @@ def run_tui_command(
     project_id: str | None,
     timeout: float,
 ) -> int:
-    """Launch the default full-screen terminal interface."""
+    """Launch the default full-screen Textual terminal interface."""
 
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         raise ValidationError(
@@ -1372,6 +805,11 @@ def run_tui_command(
         raise ValidationError(
             "the full-screen terminal interface requires cursor-addressing support"
         )
+
+    # Import the rendering layer lazily so controller-only consumers stay cheap and
+    # no UI toolkit types leak into the application/runtime boundary.
+    from .tui_app import PCBDraftApp
+
     service = ApplicationService(workspace, provider_name=provider)
     runtime = AgentRuntime(service)
     session_store = TuiSessionStore(service.root)
@@ -1383,8 +821,7 @@ def run_tui_command(
         project_id=project_id,
     )
     try:
-        return curses.wrapper(lambda screen: PCBDraftTui(screen, controller).run())
-    except curses.error as exc:
-        raise PCBDraftError("unable to initialize the terminal interface") from exc
+        result = PCBDraftApp(controller).run()
+        return int(result) if isinstance(result, int) else 0
     finally:
         runtime.shutdown()

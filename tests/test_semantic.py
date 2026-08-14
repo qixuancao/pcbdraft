@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import stat
 import tempfile
@@ -14,6 +15,7 @@ from pcbdraft.agent_design import (
     compile_agent_plan,
 )
 from pcbdraft.managed import generate_managed_project, materialize_managed_design
+from pcbdraft.model_config import connect_provider
 from pcbdraft.project import discover_project
 from pcbdraft.requirements import RequirementsSpec
 from pcbdraft.semantic import (
@@ -23,19 +25,40 @@ from pcbdraft.semantic import (
     collect_semantic_context,
 )
 from pcbdraft.workflows import run_review
+from scripts.fake_openai_provider import E2E_API_KEY, start_fake_provider
 from tests.requirements_factory import controller_requirements_dict
 from tests.test_agent_design import indicator_plan_dict, indicator_request_dict
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKE_KICAD = ROOT / "tests" / "fakes" / "kicad-cli"
-FAKE_CODEX = ROOT / "tests" / "fakes" / "codex"
 
 
 class SemanticContextTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        for executable in (FAKE_KICAD, FAKE_CODEX):
-            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+        FAKE_KICAD.chmod(FAKE_KICAD.stat().st_mode | stat.S_IXUSR)
+        cls.provider = start_fake_provider()
+        cls.config_root = tempfile.TemporaryDirectory()
+        cls.config_path = Path(cls.config_root.name) / "config.toml"
+        connect_provider(
+            "e2e",
+            api_key=E2E_API_KEY,
+            base_url=cls.provider.base_url,
+            model="fake-model",
+            name="Fake model",
+            path=cls.config_path,
+        )
+        cls.previous_config = os.environ.get("PCBDRAFT_CONFIG")
+        os.environ["PCBDRAFT_CONFIG"] = str(cls.config_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.provider.close()
+        cls.config_root.cleanup()
+        if cls.previous_config is None:
+            os.environ.pop("PCBDRAFT_CONFIG", None)
+        else:
+            os.environ["PCBDRAFT_CONFIG"] = cls.previous_config
 
     def test_large_context_is_bounded_without_looping(self) -> None:
         context = {
@@ -134,7 +157,6 @@ class SemanticContextTests(unittest.TestCase):
                 output_parent=str(root / "runs"),
                 timeout=30,
                 kicad_executable=str(FAKE_KICAD),
-                codex_executable=str(FAKE_CODEX),
             )
             context = json.loads(
                 (run / "semantic-context.json").read_text(encoding="utf-8")

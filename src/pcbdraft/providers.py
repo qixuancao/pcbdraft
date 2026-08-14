@@ -8,12 +8,7 @@ coordinates, run shell commands, or silently replace a user-named component.
 from __future__ import annotations
 
 import json
-import os
 import re
-import shutil
-import urllib.error
-import urllib.parse
-import urllib.request
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,12 +20,10 @@ from .agent_design import (
     circuit_plan_schema,
 )
 from .agent_repair import normalize_repair_feedback
-from .codex import CODEX_MODEL, CODEX_REASONING, invoke_structured_codex
 from .errors import PCBDraftError, ValidationError
-from .harness_bridge import HarnessBridgeClient, HarnessBridgeSettings
 from .io import make_directory
+from .model_api import OpenAICompatibleSettings, invoke_structured_model
 
-MAX_PROVIDER_RESPONSE_BYTES = 1_048_576
 MAX_USER_MESSAGE_BYTES = 16_384
 _INTERPRETATION_FIELDS = {
     "request_summary",
@@ -375,288 +368,40 @@ def _repair_prompt(
     )
 
 
-class CodexIntentProvider:
-    """Use the authenticated local Codex CLI in a read-only sandbox."""
-
-    provider_id = "codex"
-    supports_planning = True
-
-    def __init__(self, executable: str | None = None) -> None:
-        self.executable = executable
-
-    def diagnostic(self) -> dict[str, Any]:
-        executable = self.executable or shutil.which("codex")
-        return {
-            "id": self.provider_id,
-            "available": bool(executable),
-            "model": CODEX_MODEL,
-            "reasoning_effort": CODEX_REASONING,
-            "executable": str(Path(executable).resolve()) if executable else None,
-            "secret_storage": "Codex CLI authentication; not read by PCBDraft",
-            "planning": "structured circuit plan over installed KiCad symbols",
-        }
-
-    def interpret(
-        self,
-        context: ProviderContext,
-        *,
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> dict[str, Any]:
-        make_directory(run_dir)
-        value, _receipt = invoke_structured_codex(
-            project=project_dir,
-            run_dir=run_dir,
-            prompt=_provider_prompt(context),
-            schema=interpretation_schema(),
-            timeout=timeout,
-            executable=self.executable,
-            artifact_prefix="intent",
-        )
-        return validate_interpretation(value)
-
-    def plan(
-        self,
-        request: AgentDesignRequest,
-        *,
-        symbol_context: dict[str, list[dict[str, Any]]],
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> CircuitPlan:
-        make_directory(run_dir)
-        value, _receipt = invoke_structured_codex(
-            project=project_dir,
-            run_dir=run_dir,
-            prompt=_planning_prompt(request, symbol_context),
-            schema=circuit_plan_schema(),
-            timeout=timeout,
-            executable=self.executable,
-            artifact_prefix="circuit-plan",
-        )
-        return CircuitPlan.from_dict(value)
-
-    def revise_plan(
-        self,
-        request: AgentDesignRequest,
-        previous_plan: CircuitPlan,
-        feedback: dict[str, Any],
-        *,
-        symbol_context: dict[str, list[dict[str, Any]]],
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> CircuitPlan:
-        make_directory(run_dir)
-        value, _receipt = invoke_structured_codex(
-            project=project_dir,
-            run_dir=run_dir,
-            prompt=_repair_prompt(request, previous_plan, feedback, symbol_context),
-            schema=circuit_plan_schema(),
-            timeout=timeout,
-            executable=self.executable,
-            artifact_prefix=f"repair-plan-{feedback.get('attempt', 'unknown')}",
-        )
-        return CircuitPlan.from_dict(value)
-
-
-class DeepSeekHarnessIntentProvider:
-    """Use DeepSeek Harness as a replaceable, schema-bound planning backend."""
-
-    provider_id = "deepseek-harness"
-    supports_planning = True
-
-    def __init__(self, settings: HarnessBridgeSettings | None = None) -> None:
-        self.settings = settings or HarnessBridgeSettings.from_environment()
-        self.bridge = HarnessBridgeClient(self.settings)
-
-    def diagnostic(self) -> dict[str, Any]:
-        return self.settings.diagnostic()
-
-    def interpret(
-        self,
-        context: ProviderContext,
-        *,
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> dict[str, Any]:
-        value, _metadata = self.bridge.invoke(
-            "interpret",
-            prompt=_provider_prompt(context),
-            output_schema=interpretation_schema(),
-            project_dir=project_dir,
-            run_dir=run_dir,
-            timeout=timeout,
-        )
-        return validate_interpretation(value)
-
-    def plan(
-        self,
-        request: AgentDesignRequest,
-        *,
-        symbol_context: dict[str, list[dict[str, Any]]],
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> CircuitPlan:
-        value, _metadata = self.bridge.invoke(
-            "plan",
-            prompt=_planning_prompt(request, symbol_context),
-            output_schema=circuit_plan_schema(),
-            project_dir=project_dir,
-            run_dir=run_dir,
-            timeout=timeout,
-        )
-        return CircuitPlan.from_dict(value)
-
-    def revise_plan(
-        self,
-        request: AgentDesignRequest,
-        previous_plan: CircuitPlan,
-        feedback: dict[str, Any],
-        *,
-        symbol_context: dict[str, list[dict[str, Any]]],
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> CircuitPlan:
-        normalized = normalize_repair_feedback(feedback)
-        value, _metadata = self.bridge.invoke(
-            "revise_plan",
-            prompt=_repair_prompt(
-                request,
-                previous_plan,
-                normalized,
-                symbol_context,
-            ),
-            output_schema=circuit_plan_schema(),
-            project_dir=project_dir,
-            run_dir=run_dir,
-            timeout=timeout,
-        )
-        return CircuitPlan.from_dict(value)
-
-
-@dataclass(frozen=True)
-class OpenAICompatibleSettings:
-    base_url: str
-    model: str
-    api_key_env: str = "OPENAI_API_KEY"
-
-    @classmethod
-    def from_environment(cls) -> OpenAICompatibleSettings | None:
-        base_url = os.environ.get("PCBDRAFT_OPENAI_BASE_URL", "").strip()
-        model = os.environ.get("PCBDRAFT_OPENAI_MODEL", "").strip()
-        if not base_url and not model:
-            return None
-        if not base_url or not model:
-            raise ValidationError(
-                "PCBDRAFT_OPENAI_BASE_URL and PCBDRAFT_OPENAI_MODEL must be set together"
-            )
-        key_env = os.environ.get(
-            "PCBDRAFT_OPENAI_API_KEY_ENV", "OPENAI_API_KEY"
-        ).strip()
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", key_env):
-            raise ValidationError(
-                "OpenAI-compatible API key environment name is invalid"
-            )
-        return cls(base_url=base_url, model=model, api_key_env=key_env)
-
-
 class OpenAICompatibleIntentProvider:
-    """Small Chat Completions adapter; credentials remain process-local."""
+    """PCBDraft's configured structured-model adapter."""
 
     provider_id = "openai-compatible"
     supports_planning = True
 
     def __init__(self, settings: OpenAICompatibleSettings) -> None:
-        parsed = urllib.parse.urlsplit(settings.base_url)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValidationError("OpenAI-compatible base URL is invalid")
-        if not settings.model or len(settings.model) > 200:
-            raise ValidationError("OpenAI-compatible model is invalid")
-        self.settings = settings
-        self._endpoint = settings.base_url.rstrip("/") + "/chat/completions"
+        self.settings = settings.validated()
+        self.provider_id = self.settings.provider_id
 
     def diagnostic(self) -> dict[str, Any]:
-        return {
-            "id": self.provider_id,
-            "available": bool(os.environ.get(self.settings.api_key_env)),
-            "base_url": self.settings.base_url,
-            "model": self.settings.model,
-            "api_key_env": self.settings.api_key_env,
-            "secret_present": bool(os.environ.get(self.settings.api_key_env)),
-            "secret_storage": "runtime environment only",
-            "planning": "structured circuit plan over installed KiCad symbols",
-        }
+        return self.settings.diagnostic()
 
     def _structured(
-        self, prompt: str, schema_name: str, schema: dict[str, Any], timeout: float
+        self,
+        prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+        timeout: float,
+        *,
+        run_dir: Path,
+        artifact_prefix: str,
     ) -> dict[str, Any]:
-        if timeout <= 0 or timeout > 1800:
-            raise ValidationError("provider timeout must be in (0, 1800] seconds")
-        key = os.environ.get(self.settings.api_key_env)
-        if not key:
-            raise PCBDraftError(
-                f"provider credential is absent from environment: {self.settings.api_key_env}"
-            )
-        body = json.dumps(
-            {
-                "model": self.settings.model,
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0,
-                "max_tokens": 6000,
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": schema_name,
-                        "strict": True,
-                        "schema": schema,
-                    },
-                },
-            },
-            ensure_ascii=False,
-            separators=(",", ":"),
-        ).encode("utf-8")
-        request = urllib.request.Request(
-            self._endpoint,
-            data=body,
-            method="POST",
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "PCBDraft",
-            },
+        make_directory(run_dir)
+        value, _receipt = invoke_structured_model(
+            run_dir=run_dir,
+            prompt=prompt,
+            schema_name=schema_name,
+            schema=schema,
+            timeout=timeout,
+            artifact_prefix=artifact_prefix,
+            settings=self.settings,
         )
-        try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                payload = response.read(MAX_PROVIDER_RESPONSE_BYTES + 1)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
-            raise PCBDraftError(
-                f"OpenAI-compatible provider request failed: {type(exc).__name__}"
-            ) from exc
-        if len(payload) > MAX_PROVIDER_RESPONSE_BYTES:
-            raise PCBDraftError("provider response exceeded the 1 MiB limit")
-        try:
-            envelope = json.loads(payload)
-            content = envelope["choices"][0]["message"]["content"]
-            if not isinstance(content, str):
-                raise TypeError
-            return json.loads(content)
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise ValidationError(
-                "provider returned an invalid JSON response envelope"
-            ) from exc
+        return value
 
     def interpret(
         self,
@@ -666,13 +411,15 @@ class OpenAICompatibleIntentProvider:
         run_dir: Path,
         timeout: float,
     ) -> dict[str, Any]:
-        del project_dir, run_dir
+        del project_dir
         return validate_interpretation(
             self._structured(
                 _provider_prompt(context),
                 "pcbdraft_intent",
                 interpretation_schema(),
                 timeout,
+                run_dir=run_dir,
+                artifact_prefix="intent",
             )
         )
 
@@ -685,13 +432,15 @@ class OpenAICompatibleIntentProvider:
         run_dir: Path,
         timeout: float,
     ) -> CircuitPlan:
-        del project_dir, run_dir
+        del project_dir
         return CircuitPlan.from_dict(
             self._structured(
                 _planning_prompt(request, symbol_context),
                 "pcbdraft_circuit_plan",
                 circuit_plan_schema(),
                 timeout,
+                run_dir=run_dir,
+                artifact_prefix="circuit-plan",
             )
         )
 
@@ -706,7 +455,7 @@ class OpenAICompatibleIntentProvider:
         run_dir: Path,
         timeout: float,
     ) -> CircuitPlan:
-        del project_dir, run_dir
+        del project_dir
         normalized = normalize_repair_feedback(feedback)
         return CircuitPlan.from_dict(
             self._structured(
@@ -719,6 +468,8 @@ class OpenAICompatibleIntentProvider:
                 "pcbdraft_repair_plan",
                 circuit_plan_schema(),
                 timeout,
+                run_dir=run_dir,
+                artifact_prefix=f"repair-plan-{feedback.get('attempt', 'unknown')}",
             )
         )
 
@@ -755,7 +506,7 @@ class BuiltinIntentProvider:
             "id": self.provider_id,
             "available": True,
             "model": False,
-            "planning": "not available; install/configure Codex or an OpenAI-compatible planner",
+            "planning": "not available; configure a model API in PCBDraft",
             "secret_storage": "none",
         }
 
@@ -855,7 +606,7 @@ class BuiltinIntentProvider:
     ) -> CircuitPlan:
         del request, symbol_context, project_dir, run_dir, timeout
         raise PCBDraftError(
-            "the offline provider can interpret requirements but will not invent a circuit topology; use the Codex or OpenAI-compatible planning provider"
+            "the offline provider can interpret requirements but will not invent a circuit topology; configure the PCBDraft model API"
         )
 
     def revise_plan(
@@ -923,33 +674,15 @@ def resolve_provider(name: str = "auto") -> IntentProvider:
     normalized = name.strip().casefold()
     if normalized not in {
         "auto",
-        "codex",
-        "deepseek-harness",
         "openai-compatible",
         "builtin",
     }:
         raise ValidationError(f"unknown provider: {name}")
-    if normalized in {"auto", "codex"} and shutil.which("codex"):
-        return CodexIntentProvider()
-    if normalized == "codex":
-        raise PCBDraftError("Codex CLI is not available")
-    settings = OpenAICompatibleSettings.from_environment()
+    settings = OpenAICompatibleSettings.from_config()
     if normalized in {"auto", "openai-compatible"} and settings is not None:
         provider = OpenAICompatibleIntentProvider(settings)
         if normalized == "openai-compatible" or provider.diagnostic()["available"]:
             return provider
     if normalized == "openai-compatible":
         raise PCBDraftError("OpenAI-compatible provider is not configured")
-    if normalized in {"auto", "deepseek-harness"}:
-        provider = DeepSeekHarnessIntentProvider()
-        diagnostic = provider.diagnostic()
-        if normalized == "deepseek-harness":
-            if not diagnostic["runtime_available"]:
-                raise PCBDraftError(
-                    "DeepSeek Harness provider is unavailable; install the optional "
-                    "harness runtime or configure PCBDRAFT_DSH_BRIDGE"
-                )
-            return provider
-        if diagnostic["available"]:
-            return provider
     return BuiltinIntentProvider()

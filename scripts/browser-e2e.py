@@ -43,6 +43,32 @@ def initialize_clean_home(home: Path) -> None:
         shutil.copy2(source, target / name)
 
 
+def write_model_config(home: Path, base_url: str) -> Path:
+    """Give the browser process the same private config path as a real user."""
+
+    path = home / ".config" / "pcbdraft" / "config.toml"
+    path.parent.mkdir(parents=True, mode=0o700)
+    path.write_text(
+        "\n".join(
+            (
+                "version = 1",
+                'active_provider = "local-e2e"',
+                'active_model = "pcbdraft-e2e-model"',
+                "",
+                "[providers.local-e2e]",
+                'name = "Local E2E provider"',
+                f'base_url = "{base_url}"',
+                f'api_key = "{E2E_API_KEY}"',
+                'models = ["pcbdraft-e2e-model"]',
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    return path
+
+
 def start_server(
     executable: str,
     workspace: Path,
@@ -85,9 +111,7 @@ def start_server(
             if line.startswith("PCBDraft app: http://127.0.0.1:"):
                 return process, line.removeprefix("PCBDraft app: ")
     process.terminate()
-    raise RuntimeError(
-        f"timed out waiting for PCBDraft app URL; last output: {line}"
-    )
+    raise RuntimeError(f"timed out waiting for PCBDraft app URL; last output: {line}")
 
 
 def stop_server(process: subprocess.Popen[str]) -> None:
@@ -362,8 +386,9 @@ def primary_browser_flow(
         )
         setup_safe = browser.execute(
             "const dialog = document.querySelector('#setup-dialog'); "
-            "return dialog.textContent.includes('Active provider: openai-compatible') && "
-            "dialog.textContent.includes('OPENAI_API_KEY=<secret>') && "
+            "return dialog.textContent.includes('Active provider: local-e2e') && "
+            "dialog.textContent.includes('/connect') && "
+            "!dialog.textContent.includes('OPENAI_API_KEY') && "
             "dialog.querySelectorAll('input').length === 0;"
         )
         if not setup_safe:
@@ -616,27 +641,22 @@ def main() -> int:
         raise SystemExit("real KiCad is required")
 
     output = (
-        arguments.output
-        or Path(tempfile.mkdtemp(prefix="pcbdraft-browser-evidence-"))
+        arguments.output or Path(tempfile.mkdtemp(prefix="pcbdraft-browser-evidence-"))
     ).resolve()
     output.mkdir(parents=True, exist_ok=True)
     provider = start_fake_provider()
     try:
-        with tempfile.TemporaryDirectory(
-            prefix="pcbdraft-browser-e2e-"
-        ) as temporary:
+        with tempfile.TemporaryDirectory(prefix="pcbdraft-browser-e2e-") as temporary:
             root = Path(temporary)
             home = root / "home"
             home.mkdir(mode=0o700)
             initialize_clean_home(home)
+            config_path = write_model_config(home, provider.base_url)
             workspace = root / "workspace"
             environment = dict(os.environ)
             environment["HOME"] = str(home)
             environment["XDG_CONFIG_HOME"] = str(home / ".config")
-            environment["PCBDRAFT_OPENAI_BASE_URL"] = provider.base_url
-            environment["PCBDRAFT_OPENAI_MODEL"] = "pcbdraft-e2e-model"
-            environment["PCBDRAFT_OPENAI_API_KEY_ENV"] = "PCBDRAFT_E2E_API_KEY"
-            environment["PCBDRAFT_E2E_API_KEY"] = E2E_API_KEY
+            environment["PCBDRAFT_CONFIG"] = str(config_path)
 
             first_server, first_url = start_server(
                 arguments.executable, workspace, environment

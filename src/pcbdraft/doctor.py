@@ -7,6 +7,7 @@ from typing import Any
 
 from .errors import PCBDraftError
 from .kicad_support import evaluate_kicad_version
+from .model_config import load_model_config
 from .process import printable_first_line, run_command
 
 VERSION_TIMEOUT = 10.0
@@ -61,7 +62,6 @@ def _check(name: str, version_args: list[str]) -> dict[str, Any]:
 
 def doctor_report() -> dict[str, Any]:
     tools = {
-        "codex": _check("codex", ["--version"]),
         "kicad-cli": _check("kicad-cli", ["--version"]),
         "git": _check("git", ["--version"]),
     }
@@ -73,9 +73,20 @@ def doctor_report() -> dict[str, Any]:
         and tools["git"]["available"]
         and support.supported
     )
+    try:
+        config = load_model_config()
+        model = {
+            "configured": config.active is not None,
+            "provider": config.active.name if config.active else None,
+            "model": config.active_model,
+            "config": str(config.path),
+        }
+    except PCBDraftError as exc:
+        model = {"configured": False, "error": str(exc)}
     return {
         "ok": core_ok,
         "core_ok": core_ok,
-        "ai_review_available": tools["codex"]["available"],
+        "model_available": bool(model.get("configured")),
         "tools": tools,
+        "model": model,
     }

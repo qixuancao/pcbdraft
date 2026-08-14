@@ -62,8 +62,8 @@ execution, validation outcomes, or release identity.
 
 The application service is the only business write authority. `AgentRuntime`
 and `JobRunner` turn its synchronous, transactional operations into durable
-background turns and UI-neutral activity events; curses owns rendering and key
-handling only. The default full-screen terminal and browser render the same
+background turns and UI-neutral activity events; the Textual client owns
+rendering and input only. The default full-screen terminal and browser render the same
 persisted project, conversation, attempt, event, and decision records. The
 terminal derives a local project name from the first normal-language request,
 while its slash palette handles project selection and explicit engineering
@@ -170,18 +170,9 @@ human-required evidence never causes an automatic repair loop.
 
 Planning providers implement the same three operations: interpret requirements,
 propose a complete circuit plan, and revise a complete plan from bounded tool
-feedback. Codex, OpenAI-compatible endpoints, and DeepSeek Harness therefore do
-not own separate PCB workflows.
-
-The optional Harness adapter is split at a versioned JSON process boundary.
-Prompts and schemas travel on stdin, never argv; execution time and combined
-output are bounded; correlation IDs, protocol versions, metadata, and errors
-are validated before accepting a result. Its minimal Cordis composition has no
-model-facing mutation tools. PCBDraft then applies its normal strict schema,
-installed-symbol, semantic-plan, generation, validation, and transaction checks.
-The complementary DSH-hosted plugin discovers the JSON-RPC API capabilities and
-exposes only prepare, symbol-search, and generate/validate tools, with no second
-PCB implementation.
+feedback. The configured model API and OpenAI-compatible endpoints therefore do
+not own separate PCB workflows. Provider output always enters the same schema, installed-symbol,
+semantic-plan, generation, validation, and transaction boundaries.
 
 ## Validation and release
 
@@ -231,13 +222,3 @@ validation, and the error-injection corpus. They are not the conversational
 product routing and must not be presented as a list of boards that the AI can
 only generate. New product features extend the generic plan and high-level
 runtime above.
-
-## Upstream design influence
-
-The architecture takes compatible ideas, not copied implementation, from the
-declarative/component patterns of atopile, the circuit representation and
-separation of concerns in tscircuit, the Python-to-KiCad composition direction of
-circuit-synth, the small interaction-shell shape of Pi/π, and Hermes Agent's
-explicit UI/backend event boundary. PCBDraft's terminal implementation
-remains Python/curses; no Hermes TUI source was copied. The precise license/source
-record is in [OPEN_SOURCE_REUSE.md](OPEN_SOURCE_REUSE.md).

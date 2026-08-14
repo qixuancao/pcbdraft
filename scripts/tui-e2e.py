@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive the real curses TUI through a PTY and verify its durable project state."""
+"""Drive the real Textual TUI through a PTY and verify durable project state."""
 
 from __future__ import annotations
 
@@ -49,6 +49,32 @@ def initialize_clean_home(home: Path) -> None:
         shutil.copy2(source, target / name)
 
 
+def write_model_config(home: Path, base_url: str) -> Path:
+    """Give the E2E process the same private config path as a real user."""
+
+    path = home / ".config" / "pcbdraft" / "config.toml"
+    path.parent.mkdir(parents=True, mode=0o700)
+    path.write_text(
+        "\n".join(
+            (
+                "version = 1",
+                'active_provider = "local-e2e"',
+                'active_model = "pcbdraft-e2e-model"',
+                "",
+                "[providers.local-e2e]",
+                'name = "Local E2E provider"',
+                f'base_url = "{base_url}"',
+                f'api_key = "{E2E_API_KEY}"',
+                'models = ["pcbdraft-e2e-model"]',
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    path.chmod(0o600)
+    return path
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -92,6 +118,26 @@ def _drain(master: int, transcript: bytearray) -> None:
         transcript.extend(chunk)
         if len(transcript) > 8 * 1024 * 1024:
             del transcript[: len(transcript) - 8 * 1024 * 1024]
+
+
+def _quit_tui(
+    process: subprocess.Popen[bytes], master: int, transcript: bytearray
+) -> None:
+    """Quit even when the first request only asks an active turn to stop."""
+
+    deadline = time.monotonic() + 15
+    while process.poll() is None and time.monotonic() < deadline:
+        try:
+            os.write(master, b"/quit\r")
+        except OSError:
+            break
+        wait_until = min(deadline, time.monotonic() + 0.75)
+        while process.poll() is None and time.monotonic() < wait_until:
+            _drain(master, transcript)
+            time.sleep(0.1)
+    if process.poll() is None:
+        process.terminate()
+        process.wait(timeout=5)
 
 
 def _wait_for_status(
@@ -139,19 +185,19 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             home = root / "home"
             home.mkdir(mode=0o700)
             initialize_clean_home(home)
+            config_path = write_model_config(home, provider.base_url)
             workspace = root / "workspace"
             environment = dict(os.environ)
+            environment.pop("NO_COLOR", None)
             environment.update(
                 {
                     "HOME": str(home),
                     "XDG_CONFIG_HOME": str(home / ".config"),
                     "TERM": "xterm-256color",
+                    "COLORTERM": "truecolor",
                     "LANG": "C.UTF-8",
                     "LC_ALL": "C.UTF-8",
-                    "PCBDRAFT_OPENAI_BASE_URL": provider.base_url,
-                    "PCBDRAFT_OPENAI_MODEL": "pcbdraft-e2e-model",
-                    "PCBDRAFT_OPENAI_API_KEY_ENV": "PCBDRAFT_E2E_API_KEY",
-                    "PCBDRAFT_E2E_API_KEY": E2E_API_KEY,
+                    "PCBDRAFT_CONFIG": str(config_path),
                 }
             )
             master, slave = pty.openpty()
@@ -187,33 +233,29 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             request = (
                 "Design a small 3.3 V LED status indicator PCB with a power connector"
             )
-            os.write(master, request.encode() + b"\n")
+            # A PTY needs carriage return for Textual's Enter key; line-feed is
+            # inserted as text by the terminal input widget.
+            os.write(master, request.encode() + b"\r")
             project, validated = _wait_for_status(
                 workspace, master, transcript, "validated", timeout=180
             )
             validation = _read_json(project / validated["last_validation"]["report"])
-            os.write(master, b"/logs on\n")
+            os.write(master, b"/logs on\r")
             time.sleep(0.5)
             _drain(master, transcript)
-            os.write(master, b"/review\n")
+            os.write(master, b"/review\r")
             time.sleep(0.8)
             _drain(master, transcript)
             os.write(master, b"\x1b")
             time.sleep(0.2)
             _drain(master, transcript)
-            os.write(master, b"/release\n")
+            os.write(master, b"/release\r")
             project, released = _wait_for_status(
                 workspace, master, transcript, "released", timeout=180
             )
             time.sleep(0.5)
             _drain(master, transcript)
-            os.write(master, b"/quit\n")
-            try:
-                process.wait(timeout=15)
-            except subprocess.TimeoutExpired as exc:
-                process.terminate()
-                process.wait(timeout=5)
-                raise RuntimeError("TUI did not exit after /quit") from exc
+            _quit_tui(process, master, transcript)
             _drain(master, transcript)
             if process.returncode != 0:
                 raise RuntimeError(f"TUI exited with status {process.returncode}")
@@ -250,8 +292,7 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             slave = -1
             time.sleep(1.2)
             _drain(master, resume_transcript)
-            os.write(master, b"/quit\n")
-            process.wait(timeout=15)
+            _quit_tui(process, master, resume_transcript)
             _drain(master, resume_transcript)
             if process.returncode != 0:
                 raise RuntimeError(
@@ -281,7 +322,7 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
                     f"TUI did not render expected agent activity: {missing_activity}"
                 )
             for expected_text in (
-                "Plan and change review",
+                "Engineering review",
                 "Circuit plan",
                 "Expanded activity details are visible",
             ):
@@ -291,7 +332,7 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
                     )
             if "Resumed the last terminal project" not in resumed_plain:
                 raise RuntimeError("TUI did not resume its last project on restart")
-            if "released" not in resumed_plain:
+            if "Release built" not in resumed_plain:
                 raise RuntimeError("resumed TUI did not render the released project")
             if not managed_plan.is_file():
                 raise RuntimeError(
@@ -303,7 +344,9 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
                 )
             qualification = _read_json(managed_qualification)
             if qualification.get("summary", {}).get("pad_mapping_failures") != 0:
-                raise RuntimeError("TUI-generated project has an invalid footprint pad map")
+                raise RuntimeError(
+                    "TUI-generated project has an invalid footprint pad map"
+                )
             if not validation["readiness"]["engineering_candidate"]:
                 raise RuntimeError(
                     "TUI-generated project did not pass candidate checks"

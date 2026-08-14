@@ -54,12 +54,21 @@ if [[ ! -s "$PROVIDER_READY" ]]; then
     exit 2
 fi
 
-PCBDRAFT_OPENAI_BASE_URL=$(tr -d '\r\n' <"$PROVIDER_READY")
-PCBDRAFT_OPENAI_MODEL="pcbdraft-e2e-model"
-PCBDRAFT_OPENAI_API_KEY_ENV="PCBDRAFT_E2E_API_KEY"
-PCBDRAFT_E2E_API_KEY="pcbdraft-local-e2e-key"
-export PCBDRAFT_OPENAI_BASE_URL PCBDRAFT_OPENAI_MODEL
-export PCBDRAFT_OPENAI_API_KEY_ENV PCBDRAFT_E2E_API_KEY
+PCBDRAFT_CONFIG="$OUTPUT/model-config.toml"
+PCBDRAFT_MODEL_BASE_URL=$(tr -d '\r\n' <"$PROVIDER_READY")
+cat >"$PCBDRAFT_CONFIG" <<EOF
+version = 1
+active_provider = "local-e2e"
+active_model = "pcbdraft-e2e-model"
+
+[providers.local-e2e]
+name = "Local E2E provider"
+base_url = "$PCBDRAFT_MODEL_BASE_URL"
+api_key = "pcbdraft-local-e2e-key"
+models = ["pcbdraft-e2e-model"]
+EOF
+chmod 600 "$PCBDRAFT_CONFIG"
+export PCBDRAFT_CONFIG
 
 "${PCBDRAFT_COMMAND[@]}" chat \
     --workspace "$WORKSPACE" --provider openai-compatible \
@@ -81,7 +90,7 @@ PROJECT_ID=$("${PYTHON_COMMAND[@]}" -c \
     --workspace "$WORKSPACE" --provider openai-compatible --list --json \
     >"$OUTPUT/04-reopened-list.json"
 
-"${PYTHON_COMMAND[@]}" - "$OUTPUT" "$PCBDRAFT_OPENAI_BASE_URL" <<'PY'
+"${PYTHON_COMMAND[@]}" - "$OUTPUT" "$PCBDRAFT_MODEL_BASE_URL" <<'PY'
 import json
 import pathlib
 import sys

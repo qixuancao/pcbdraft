@@ -9,7 +9,9 @@ import unittest
 from pathlib import Path
 
 from pcbdraft.errors import PCBDraftError, TransactionRejected, ValidationError
+from pcbdraft.model_config import connect_provider
 from pcbdraft.workflows import run_apply, run_patch, run_review
+from scripts.fake_openai_provider import E2E_API_KEY, start_fake_provider
 
 ROOT = Path(__file__).resolve().parents[1]
 FAKES = ROOT / "tests" / "fakes"
@@ -31,8 +33,30 @@ def make_project(parent: Path) -> Path:
 class OfflineEndToEndTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        for executable in (FAKES / "codex", FAKES / "kicad-cli"):
-            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+        executable = FAKES / "kicad-cli"
+        executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+        cls.provider = start_fake_provider()
+        cls.config_root = tempfile.TemporaryDirectory()
+        cls.config_path = Path(cls.config_root.name) / "config.toml"
+        connect_provider(
+            "e2e",
+            api_key=E2E_API_KEY,
+            base_url=cls.provider.base_url,
+            model="fake-model",
+            name="Fake model",
+            path=cls.config_path,
+        )
+        cls.previous_config = os.environ.get("PCBDRAFT_CONFIG")
+        os.environ["PCBDRAFT_CONFIG"] = str(cls.config_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        cls.provider.close()
+        cls.config_root.cleanup()
+        if cls.previous_config is None:
+            os.environ.pop("PCBDRAFT_CONFIG", None)
+        else:
+            os.environ["PCBDRAFT_CONFIG"] = cls.previous_config
 
     def test_review_produces_complete_evidence_bundle(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -44,7 +68,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                 output_parent=str(runs),
                 timeout=30,
                 kicad_executable=str(FAKES / "kicad-cli"),
-                codex_executable=str(FAKES / "codex"),
             )
             expected = {
                 "gates/erc.json",
@@ -55,7 +78,7 @@ class OfflineEndToEndTests(unittest.TestCase):
                 "semantic/schematic.netlist.xml",
                 "semantic/board-stats.json",
                 "semantic/board-netlist.d356",
-                "codex-events.jsonl",
+                "model-review.receipt.json",
                 "report.json",
                 "report.md",
                 "receipt.json",
@@ -68,19 +91,12 @@ class OfflineEndToEndTests(unittest.TestCase):
             self.assertTrue(expected.issubset(present))
             receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
             self.assertEqual(receipt["status"], "complete")
-            self.assertTrue(receipt["codex"]["completed"])
-            self.assertTrue(receipt["codex"]["schema_valid"])
-            self.assertTrue(receipt["codex"]["completion_event"])
-            self.assertEqual(
-                receipt["tool_versions"]["codex"]["version"], "codex-cli 0.147.0-fake"
-            )
+            self.assertTrue(receipt["model"]["completed"])
+            self.assertTrue(receipt["model"]["schema_valid"])
+            self.assertEqual(receipt["model"]["provider"], "openai-compatible")
             self.assertEqual(
                 receipt["tool_versions"]["kicad-cli"]["version"], "10.0.5-fake"
             )
-            codex_argv = "\0".join(receipt["codex"]["argv"])
-            self.assertNotIn("Fake read-only heuristic review", codex_argv)
-            self.assertNotIn(str(project), codex_argv)
-            self.assertIn("<PROJECT>", codex_argv)
             report = (run_dir / "report.md").read_text(encoding="utf-8")
             self.assertIn("deterministic evidence", report)
             self.assertIn("AI heuristics", report)
@@ -101,7 +117,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                 output_parent=str(root / "runs"),
                 timeout=30,
                 kicad_executable=str(FAKES / "kicad-cli"),
-                codex_executable=str(FAKES / "codex"),
             )
             self.assertEqual(board.read_text(encoding="utf-8"), original)
             ready = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
@@ -135,7 +150,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                     output_parent=str(runs),
                     timeout=30,
                     kicad_executable=str(FAKES / "kicad-cli"),
-                    codex_executable=str(FAKES / "codex"),
                 )
             run_dir = next(runs.iterdir())
             receipt = json.loads((run_dir / "receipt.json").read_text(encoding="utf-8"))
@@ -163,7 +177,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                 output_parent=str(root / "runs"),
                 timeout=30,
                 kicad_executable=str(FAKES / "kicad-cli"),
-                codex_executable=str(FAKES / "codex"),
             )
             (project / "demo.kicad_pro").write_text(
                 '{"drift": true}\n', encoding="utf-8"
@@ -187,7 +200,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                 output_parent=str(root / "runs"),
                 timeout=30,
                 kicad_executable=str(FAKES / "kicad-cli"),
-                codex_executable=str(FAKES / "codex"),
             )
             previous = os.environ.get("PCBDRAFT_FAKE_APPLY_REGRESSION")
             os.environ["PCBDRAFT_FAKE_APPLY_REGRESSION"] = "1"
@@ -254,7 +266,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                     output_parent=str(output),
                     timeout=30,
                     kicad_executable=str(FAKES / "kicad-cli"),
-                    codex_executable=str(FAKES / "codex"),
                 )
             self.assertFalse(output.exists())
 
@@ -271,7 +282,6 @@ class OfflineEndToEndTests(unittest.TestCase):
                     output_parent=str(root / "runs"),
                     timeout=30,
                     kicad_executable=str(FAKES / "kicad-cli"),
-                    codex_executable=str(FAKES / "codex"),
                 )
 
 

@@ -253,12 +253,8 @@ class ApplicationService:
                 "validation_note": "results state only what PCBDraft and KiCad actually checked",
             },
             "credential_guidance": {
-                "codex": "Authenticate with the Codex CLI outside PCBDraft.",
-                "openai_compatible": (
-                    "Set PCBDRAFT_OPENAI_BASE_URL, PCBDRAFT_OPENAI_MODEL, "
-                    "and the configured API-key environment variable before launch."
-                ),
-                "persistence": "Credential values are never written to project records.",
+                "config": "Use /connect in the TUI; credentials stay in PCBDraft's private config file.",
+                "persistence": "Credential values are never written to project records or model receipts.",
                 "kicad": (
                     "Install the KiCad 10 global library tables in ~/.config/kicad/10.0; "
                     "scripts/prepare-kicad-environment.sh does this from a checkout."

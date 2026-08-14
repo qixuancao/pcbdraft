@@ -151,6 +151,51 @@ def _plan(prompt: str, *, repaired: bool) -> dict[str, Any]:
     }
 
 
+def _review() -> dict[str, Any]:
+    return {
+        "summary": "Fake structured heuristic review.",
+        "risk": "unknown",
+        "modules": ["fixture module"],
+        "interfaces": [],
+        "power_domains": [],
+        "missing_constraints": ["functional intent is not encoded"],
+        "findings": [
+            {
+                "severity": "info",
+                "category": "test",
+                "title": "Fixture finding",
+                "evidence": ["demo.kicad_pcb: OLD"],
+                "rationale": "Exercises the structured review path.",
+                "proposed_action": "Human review.",
+                "confidence": 0.5,
+                "requires_human": True,
+            }
+        ],
+        "unsupported_checks": ["SI", "PI", "thermal", "EMI", "functional correctness"],
+    }
+
+
+def _patch(prompt: str) -> dict[str, Any]:
+    old_text = "OLD"
+    new_text = "NEW"
+    if "CAUSE_REGRESSION" in prompt:
+        old_text = "DRC_ERROR=0\nDRC_WARNING=2\nOLD"
+        new_text = "DRC_ERROR=1\nDRC_WARNING=2\nNEW"
+    return {
+        "summary": "Replace the unique fixture marker.",
+        "operations": [
+            {
+                "op": "replace_text",
+                "relative_path": "demo.kicad_pcb",
+                "old_text": old_text,
+                "new_text": new_text,
+                "reason": "Offline end-to-end fixture change.",
+            }
+        ],
+        "unsupported_checks": ["functional correctness"],
+    }
+
+
 class _ProviderServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -169,6 +214,8 @@ class _ProviderHandler(BaseHTTPRequestHandler):
         "pcbdraft_intent",
         "pcbdraft_circuit_plan",
         "pcbdraft_repair_plan",
+        "pcbdraft_review",
+        "pcbdraft_patch",
     }
 
     def log_message(self, format: str, *args: object) -> None:
@@ -203,10 +250,12 @@ class _ProviderHandler(BaseHTTPRequestHandler):
             prompt = body["messages"][0]["content"]
             if schema_name == "pcbdraft_intent":
                 content = _intent(prompt)
+            elif schema_name == "pcbdraft_review":
+                content = _review()
+            elif schema_name == "pcbdraft_patch":
+                content = _patch(prompt)
             else:
-                content = _plan(
-                    prompt, repaired=schema_name == "pcbdraft_repair_plan"
-                )
+                content = _plan(prompt, repaired=schema_name == "pcbdraft_repair_plan")
             self.server.request_count += 1
             self._write(
                 HTTPStatus.OK,
