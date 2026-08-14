@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 from typing import Any
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.kicad.pcb import (
     _add_reference_stitching_vias,
+    _coupled_pair_length,
+    _differential_pair_metrics,
     _routing_failure_message,
 )
 from pcbdraft.kicad.routing import (
@@ -59,6 +62,51 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(result.unrouted, ())
         self.assertEqual({segment.layer for segment in result.segments}, {0, 1})
         self.assertEqual(len(result.vias), 2)
+
+    def test_parallel_pair_geometry_produces_exact_coupling_evidence(self) -> None:
+        coupled, gaps = _coupled_pair_length(
+            (RouteSegment("USB_DP", 0, 1, 2, 9, 2, 0.2),),
+            (RouteSegment("USB_DM", 0, 1, 2.4, 9, 2.4, 0.2),),
+            0.2,
+            0.01,
+        )
+        self.assertAlmostEqual(coupled, 8.0)
+        self.assertEqual(len(gaps), 1)
+        self.assertAlmostEqual(gaps[0], 0.2)
+
+    def test_differential_pair_pass_requires_measured_native_geometry(self) -> None:
+        metrics = _differential_pair_metrics(
+            SimpleNamespace(
+                nets=(
+                    SimpleNamespace(id="usb_dp", name="USB_DP"),
+                    SimpleNamespace(id="usb_dm", name="USB_DM"),
+                )
+            ),
+            SimpleNamespace(
+                targets=("usb_dp", "usb_dm"),
+                params={
+                    "gap_mm": 0.2,
+                    "gap_tolerance_mm": 0.01,
+                    "max_length_mismatch_mm": 0.1,
+                    "min_coupled_length_ratio": 0.99,
+                    "width_mm": 0.2,
+                },
+            ),
+            RoutingResult(
+                segments=(
+                    RouteSegment("USB_DP", 0, 1, 2, 9, 2, 0.2),
+                    RouteSegment("USB_DM", 0, 1, 2.4, 9, 2.4, 0.2),
+                ),
+                vias=(),
+                unrouted=(),
+                state="completed",
+                expanded_nodes=0,
+                diagnostics=(),
+            ),
+        )
+        self.assertEqual(metrics["outcome"], "pass")
+        self.assertEqual(metrics["coupled_length_ratio"], 1.0)
+        self.assertEqual(metrics["observed_edge_gaps_mm"], [0.2])
 
     def test_impossible_keepout_reports_unrouted_without_fabricating_success(
         self,

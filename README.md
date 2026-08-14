@@ -19,7 +19,7 @@ ERC、DRC 和每一步的证据留在本地。
 - 所有模型服务都通过 PCBDraft 自己的配置文件接入，不依赖其他 CLI；
 - 失败会保留计划、工程和错误信息，方便继续修改。
 
-## 安装（推荐）
+## 快速开始（推荐安装）
 
 这个仓库目前是私有仓库。已通过 `gh auth login` 登录 GitHub 的 Ubuntu 或其他
 Linux 用户，以普通用户运行下面这一条命令即可：
@@ -54,9 +54,10 @@ pcbdraft
 pcbdraft doctor --json
 ```
 
-模型服务和 API Key 保存在 `~/.config/pcbdraft/config.toml`；应用项目和运行
-记录保存在 `~/.local/share/pcbdraft/`。要更新或修复安装，重新运行上面的安装
-命令即可。
+模型服务和 API Key 保存在 `~/.config/pcbdraft/config.toml`。首次启动会创建并
+记录统一的 PCB 项目仓库 `~/PCBDraft/`；以后无论从哪个目录执行 `pcbdraft`，
+新项目、KiCad 原理图、`.kicad_pcb`、检查记录和发布文件都会位于这个仓库的
+`projects/` 下。要更新或修复安装，重新运行上面的安装命令即可。
 
 KiCad 是生成原理图和 PCB 所需的系统运行时，安装器不会替你以管理员权限安装
 它；请先安装 KiCad 10，再运行此命令。
@@ -109,6 +110,17 @@ chmod 600 ~/.config/pcbdraft/config.toml
 uv run pcbdraft
 ```
 
+默认项目仓库是首次启动时创建的 `~/PCBDraft/`。如要放在另一块磁盘或已有的
+工程目录中，只需设置一次：
+
+```bash
+pcbdraft repository /path/to/my-pcb-repository
+pcbdraft repository --json  # 查看当前位置
+```
+
+该位置记录在 `~/.config/pcbdraft/repository.json`。切换仓库只影响之后打开和
+创建的 PCBDraft 项目；原仓库中的文件不会被移动或删除。
+
 直接描述电路板即可。用户没有指定层数时，PCBDraft 会根据小型原型的约束
 自动选择保守的初始方案，不要求用户理解叠层设计。
 
@@ -151,8 +163,34 @@ uv run pcbdraft --provider builtin
 → 原理图与 PCB → 布局/布线 → 连接、ERC、DRC → 人工审查
 ```
 
+电路计划 v2 会把层级功能块、电源域、接口、连接器完整引脚表、网络标签、
+命名布局区域、锚点禁布区、差分对验收条件和可本地复算的断言送入同一套
+语义 IR。模型只能选择受限名称和尺寸，不能直接写坐标、走线或 KiCad 文件
+文本；布局、禁布和生成后几何指标都由本地确定性代码执行与记录。当前差分对
+能力验证实际线宽、边到边间距、耦合长度比例和长度差，不代表阻抗仿真，也不
+代表已有专用的耦合布线器。
+
 生成的工程可以直接用 KiCad 打开和继续编辑。PCBDraft 不锁定文件格式，
 也不把模型服务绑定到某一家供应商。
+
+## 源码结构
+
+实现代码不再平铺在包根目录，而是按职责分层：
+
+| 目录 | 职责 |
+| --- | --- |
+| `pcbdraft/core/` | 错误、文件安全、锁、进程和项目基础设施 |
+| `pcbdraft/domain/` | PCB IR、需求、器件、规则和变更模型 |
+| `pcbdraft/agent/` | Agent 计划、事件、运行时、修复和工具边界 |
+| `pcbdraft/model/` | 模型配置、结构化调用和供应商适配 |
+| `pcbdraft/kicad/` | KiCad 原理图、PCB、布局、布线、预览与同步 |
+| `pcbdraft/services/` | 应用服务、任务、托管工程、事务和工作流 |
+| `pcbdraft/verification/` | 证据、验证、评审、基准和发布门禁 |
+| `pcbdraft/interfaces/` | CLI、JSON-RPC、聊天、TUI 和本地 Web 界面 |
+
+`tests/` 使用相同的职责目录，能够直接找到每层对应的测试。详细边界和
+新增代码的放置规则见 [项目结构说明](docs/PROJECT_STRUCTURE.md)。1.0 版本
+暴露过的旧 Python 模块路径仍由惰性兼容层支持，新代码应使用上表中的规范路径。
 
 ## 开发
 
@@ -160,11 +198,12 @@ uv run pcbdraft --provider builtin
 scripts/test.sh
 ```
 
-主要模块位于 `src/pcbdraft/`：模型配置、模型传输、TUI、需求解析、KiCad
-生成、验证和事务应用彼此分离，方便替换任意一层。欢迎提交 Issue 和
-Pull Request。需要脚本化生成时，也可以使用 `agent-generate` 命令调用同一套
-受约束的电路计划和 KiCad 生成流程。
+如需清理可能污染 wheel 的本地构建缓存，运行 `scripts/clean.sh` 或
+`make clean`。发布检查会在构建前后自动执行这一步。
+
+欢迎提交 Issue 和 Pull Request。需要脚本化生成时，也可以使用
+`agent-generate` 命令调用同一套受约束的电路计划和 KiCad 生成流程。
 
 ## 许可证
 
-PCBDraft 使用 MIT 许可证，详见 [LICENSE](LICENSE)。
+PCBDraft 使用 Apache License 2.0，详见 [LICENSE](LICENSE)。

@@ -127,9 +127,50 @@ plan_path = pathlib.Path(generated["design"]["files"]["circuit_plan"])
 assert plan_path.is_file()
 plan = json.loads(plan_path.read_text(encoding="utf-8"))
 assert plan["schema"] == "pcbdraft-circuit-plan"
+assert plan["version"] == 2
+assert {block["id"] for block in plan["blocks"]} == {
+    "power_entry", "status_indicator"
+}
+assert {domain["id"] for domain in plan["power_domains"]} == {"logic_3v3"}
+assert {interface["id"] for interface in plan["interfaces"]} == {"status_led"}
+assert {constraint["kind"] for constraint in plan["constraints"]} >= {
+    "board_keepout",
+    "connector_pinout",
+    "functional_group",
+    "net_label",
+    "placement_region",
+    "routing",
+}
+assert {assertion["kind"] for assertion in plan["assertions"]} == {
+    "components_share_net"
+}
 assert {component["symbol"] for component in plan["components"]} >= {
     "Connector_Generic:Conn_01x02", "Device:LED", "Device:R"
 }
+ir_path = pathlib.Path(generated["design"]["files"]["ir"])
+ir = json.loads(ir_path.read_text(encoding="utf-8"))
+assert ir["metadata"]["generator"] == "agent_plan_v2"
+assert {domain["id"] for domain in ir["power_domains"]} == {"logic_3v3"}
+assert {interface["id"] for interface in ir["interfaces"]} == {"status_led"}
+assert any(constraint["kind"] == "assertion" for constraint in ir["constraints"])
+assert {constraint["kind"] for constraint in ir["constraints"]} >= {
+    "board_keepout",
+    "connector_pinout",
+    "net_label",
+    "placement_region",
+}
+checks = {
+    check["id"]: check["outcome"]
+    for level in generated["artifacts"]["validation"]["levels"]
+    for check in level["checks"]
+}
+for check_id in (
+    "l3.center_reserved",
+    "l3.indicator_region",
+    "l3.input_pinout",
+    "l3.status_net_label",
+):
+    assert checks[check_id] == "pass", (check_id, checks[check_id])
 
 assert released["project"]["status"] == "released"
 assert released["artifacts"]["release"]["offline_verification"]["verified"]

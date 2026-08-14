@@ -13,9 +13,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.domain.assertions import evaluate_assertion
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.scope import evaluate_scope
+from pcbdraft.domain.spatial_contracts import (
+    anchored_rectangle,
+    board_region_bounds,
+    rectangles_overlap,
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -112,18 +118,44 @@ def evaluate_semantic_rules(
                 finding = _source_ownership_finding(design, constraint)
             elif constraint.kind == "current_limit":
                 finding = _current_limit_finding(design, graph, constraint)
+            elif constraint.kind == "connector_pinout":
+                finding = _connector_pinout_finding(design, graph, constraint)
+            elif constraint.kind == "net_label":
+                finding = _net_label_finding(design, constraint)
             elif constraint.kind == "functional_group":
                 finding = _group_finding(constraint, position_map)
             elif constraint.kind == "edge_placement":
                 finding = _edge_finding(
                     design, constraint, position_map, footprint_bounds
                 )
+            elif constraint.kind == "placement_region":
+                finding = _placement_region_finding(
+                    design, constraint, position_map, footprint_bounds
+                )
+            elif constraint.kind == "board_keepout":
+                finding = _board_keepout_finding(
+                    design, constraint, position_map, footprint_bounds, routing
+                )
             elif constraint.kind == "manufacturing_rules":
                 finding = _manufacturing_finding(design, constraint)
             elif constraint.kind == "routing":
                 finding = _routing_finding(design, constraint, routing)
+            elif constraint.kind == "differential_pair":
+                finding = _differential_pair_finding(design, constraint, routing)
             elif constraint.kind == "power_budget":
                 finding = _power_budget_finding(design, constraint)
+            elif constraint.kind == "assertion":
+                failure = evaluate_assertion(design, graph, constraint)
+                finding = (
+                    _finding(
+                        "intent.assertion",
+                        constraint.id,
+                        failure,
+                        predicate=constraint.params.get("predicate"),
+                    )
+                    if failure is not None
+                    else None
+                )
             else:
                 finding = None
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
@@ -938,6 +970,221 @@ def _group_finding(
         "functional group diameter exceeds the declared bound",
         diameter_mm=round(diameter, 6),
         maximum_mm=maximum,
+    )
+
+
+def _connector_pinout_finding(
+    design: Design,
+    graph: PartGraph,
+    constraint: Any,
+) -> RuleFinding | None:
+    if len(constraint.targets) != 1:
+        return _finding(
+            "intent.connector_pinout",
+            constraint.id,
+            "connector pinout must target exactly one component",
+        )
+    component = next(
+        (item for item in design.components if item.id == constraint.targets[0]),
+        None,
+    )
+    if component is None:
+        return _finding(
+            "intent.connector_pinout",
+            constraint.id,
+            "connector pinout target is unavailable",
+        )
+    part = graph.get(component.part_id)
+    physical_pins = {pin.number for pin in part.pins}
+    declared = {
+        name.removeprefix("pin."): value
+        for name, value in constraint.params.items()
+        if name.startswith("pin.")
+    }
+    reasons: list[str] = []
+    if constraint.params.get("require_complete") is not True:
+        reasons.append("pinout does not require complete physical-pin coverage")
+    if set(declared) != physical_pins:
+        missing = physical_pins - set(declared)
+        unknown = set(declared) - physical_pins
+        if missing:
+            reasons.append("undeclared physical pins: " + ", ".join(sorted(missing)))
+        if unknown:
+            reasons.append("unknown physical pins: " + ", ".join(sorted(unknown)))
+    actual = {
+        endpoint.pin: net.id
+        for net in design.nets
+        for endpoint in net.endpoints
+        if endpoint.component == component.id
+    }
+    for pin, expected_net in sorted(declared.items()):
+        actual_net = actual.get(pin)
+        if actual_net != expected_net:
+            reasons.append(
+                f"pin {pin} expected {expected_net or 'unconnected'} but observed "
+                f"{actual_net or 'unconnected'}"
+            )
+    if not reasons:
+        return None
+    return _finding(
+        "intent.connector_pinout",
+        constraint.id,
+        "; ".join(reasons),
+        component=component.id,
+    )
+
+
+def _net_label_finding(design: Design, constraint: Any) -> RuleFinding | None:
+    if len(constraint.targets) != 1:
+        return _finding(
+            "intent.net_label",
+            constraint.id,
+            "net-label contract must target exactly one net",
+        )
+    net = next((item for item in design.nets if item.id == constraint.targets[0]), None)
+    expected = constraint.params.get("label")
+    if net is not None and net.name == expected:
+        return None
+    return _finding(
+        "intent.net_label",
+        constraint.id,
+        "net label differs from the declared external identity",
+        expected=expected,
+        observed=net.name if net is not None else "missing",
+    )
+
+
+def _placement_region_finding(
+    design: Design,
+    constraint: Any,
+    placements: dict[str, dict[str, Any]],
+    footprint_bounds: dict[str, tuple[float, float, float, float]] | None,
+) -> RuleFinding | None:
+    if footprint_bounds is None:
+        return None
+    region_name = str(constraint.params["region"])
+    region = board_region_bounds(
+        region_name,
+        design.board.width_mm,
+        design.board.height_mm,
+    )
+    outside: list[str] = []
+    for component_id in constraint.targets:
+        if component_id not in placements or component_id not in footprint_bounds:
+            outside.append(component_id)
+            continue
+        position = placements[component_id]
+        bx1, by1, bx2, by2 = footprint_bounds[component_id]
+        bounds = (
+            float(position["x_mm"]) + bx1,
+            float(position["y_mm"]) + by1,
+            float(position["x_mm"]) + bx2,
+            float(position["y_mm"]) + by2,
+        )
+        if not _rectangle_contains(region, bounds):
+            outside.append(component_id)
+    if not outside:
+        return None
+    return _finding(
+        "intent.placement_region",
+        constraint.id,
+        "components lie outside their declared named board region",
+        components=",".join(sorted(outside)),
+        region=region_name,
+    )
+
+
+def _board_keepout_finding(
+    design: Design,
+    constraint: Any,
+    placements: dict[str, dict[str, Any]],
+    footprint_bounds: dict[str, tuple[float, float, float, float]] | None,
+    routing: dict[str, Any] | None,
+) -> RuleFinding | None:
+    keepout = anchored_rectangle(
+        str(constraint.params["anchor"]),
+        float(constraint.params["width_mm"]),
+        float(constraint.params["height_mm"]),
+        design.board.width_mm,
+        design.board.height_mm,
+        design.board.edge_clearance_mm,
+    )
+    overlaps: list[str] = []
+    if footprint_bounds is not None:
+        for component_id, position in placements.items():
+            if component_id not in footprint_bounds:
+                continue
+            bx1, by1, bx2, by2 = footprint_bounds[component_id]
+            bounds = (
+                float(position["x_mm"]) + bx1,
+                float(position["y_mm"]) + by1,
+                float(position["x_mm"]) + bx2,
+                float(position["y_mm"]) + by2,
+            )
+            if rectangles_overlap(bounds, keepout):
+                overlaps.append(component_id)
+    metrics = (
+        routing.get("constraint_metrics", {}).get(constraint.id)
+        if routing is not None
+        else None
+    )
+    route_clear = routing is None or (
+        isinstance(metrics, dict) and metrics.get("outcome") == "pass"
+    )
+    if not overlaps and route_clear:
+        return None
+    reasons = []
+    if overlaps:
+        reasons.append("component overlap: " + ", ".join(sorted(overlaps)))
+    if not route_clear:
+        reasons.append("generated keepout evidence is missing or reports a violation")
+    return _finding(
+        "intent.board_keepout",
+        constraint.id,
+        "; ".join(reasons),
+        anchor=constraint.params["anchor"],
+    )
+
+
+def _differential_pair_finding(
+    design: Design,
+    constraint: Any,
+    routing: dict[str, Any] | None,
+) -> RuleFinding | None:
+    if len(constraint.targets) != 2:
+        return _finding(
+            "intent.differential_pair",
+            constraint.id,
+            "differential-pair contract must target exactly two nets",
+        )
+    known = {net.id for net in design.nets}
+    if not set(constraint.targets) <= known:
+        return _finding(
+            "intent.differential_pair",
+            constraint.id,
+            "differential-pair target net is unavailable",
+        )
+    if routing is None:
+        return None
+    metrics = routing.get("constraint_metrics", {}).get(constraint.id)
+    if isinstance(metrics, dict) and metrics.get("outcome") == "pass":
+        return None
+    return _finding(
+        "intent.differential_pair",
+        constraint.id,
+        "generated routes do not satisfy length, width, and coupled-gap evidence",
+    )
+
+
+def _rectangle_contains(
+    outer: tuple[float, float, float, float],
+    inner: tuple[float, float, float, float],
+) -> bool:
+    return (
+        outer[0] <= inner[0] + 1e-9
+        and outer[1] <= inner[1] + 1e-9
+        and outer[2] >= inner[2] - 1e-9
+        and outer[3] >= inner[3] - 1e-9
     )
 
 

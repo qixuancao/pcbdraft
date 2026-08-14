@@ -849,6 +849,10 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
                 checks.append(_check_source_ownership(design, constraint))
             elif constraint.kind == "current_limit":
                 checks.append(_check_current_limit(design, constraint, graph))
+            elif constraint.kind == "connector_pinout":
+                checks.append(_check_connector_pinout(design, constraint, graph))
+            elif constraint.kind == "net_label":
+                checks.append(_check_net_label(design, constraint))
             elif constraint.kind == "edge_placement":
                 checks.append(
                     _check_edge(
@@ -861,6 +865,14 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
                 )
             elif constraint.kind == "functional_group":
                 checks.append(_check_group(constraint, inspections, placements))
+            elif constraint.kind in {
+                "board_keepout",
+                "differential_pair",
+                "placement_region",
+            }:
+                checks.append(
+                    _check_recorded_constraint_metric(constraint, project.manifest)
+                )
             elif constraint.kind == "routing":
                 checks.append(
                     _check_routing(design, constraint, project.manifest, graph)
@@ -1478,6 +1490,118 @@ def _check_edge(
         {"edge": edge, "distance_mm": round(distance, 6), "maximum_mm": maximum},
         constraint.severity == "release_blocking",
         True,
+    )
+
+
+def _check_connector_pinout(
+    design: Any,
+    constraint: Any,
+    graph: PartGraph,
+) -> CheckResult:
+    component = next(
+        item for item in design.components if item.id == constraint.targets[0]
+    )
+    physical_pins = {pin.number for pin in graph.get(component.part_id).pins}
+    expected = {
+        name.removeprefix("pin."): value
+        for name, value in constraint.params.items()
+        if name.startswith("pin.")
+    }
+    observed = {
+        endpoint.pin: net.id
+        for net in design.nets
+        for endpoint in net.endpoints
+        if endpoint.component == component.id
+    }
+    passed = (
+        constraint.params.get("require_complete") is True
+        and set(expected) == physical_pins
+        and all(observed.get(pin) == net_id for pin, net_id in expected.items())
+    )
+    mismatches = sorted(
+        pin
+        for pin in set(expected) | physical_pins
+        if pin not in expected or observed.get(pin) != expected.get(pin)
+    )
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "Connector physical pins match the complete declared pinout."
+        if passed
+        else "Connector physical pins differ from the declared pinout.",
+        ("semantic IR connectivity", "project-local symbol pin contract"),
+        {
+            "component": component.id,
+            "declared_pin_count": len(expected),
+            "physical_pin_count": len(physical_pins),
+            "mismatched_pins": mismatches,
+        },
+        constraint.severity == "release_blocking",
+        constraint.severity in {"required", "release_blocking"},
+    )
+
+
+def _check_net_label(design: Any, constraint: Any) -> CheckResult:
+    net = next(item for item in design.nets if item.id == constraint.targets[0])
+    expected = str(constraint.params["label"])
+    passed = net.name == expected
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        "Net label preserves its declared external identity."
+        if passed
+        else "Net label differs from its declared external identity.",
+        ("semantic IR net identity",),
+        {"expected": expected, "observed": net.name},
+        constraint.severity == "release_blocking",
+        constraint.severity in {"required", "release_blocking"},
+    )
+
+
+def _check_recorded_constraint_metric(
+    constraint: Any,
+    manifest: dict[str, Any],
+) -> CheckResult:
+    metrics = (
+        manifest.get("generation", {})
+        .get("pcb", {})
+        .get("constraint_metrics", {})
+        .get(constraint.id)
+    )
+    passed = (
+        isinstance(metrics, dict)
+        and metrics.get("kind") == constraint.kind
+        and metrics.get("outcome") == "pass"
+    )
+    summaries = {
+        "board_keepout": (
+            "Placement and generated copper remain outside the declared board keepout.",
+            "Placement or generated copper violates the declared board keepout.",
+        ),
+        "differential_pair": (
+            "Differential-pair length, width, and coupled-gap evidence meets the contract.",
+            "Differential-pair geometry does not meet its declared contract.",
+        ),
+        "placement_region": (
+            "Components fit inside their declared named board region.",
+            "Components lie outside their declared named board region.",
+        ),
+    }
+    success, failure = summaries[constraint.kind]
+    return CheckResult(
+        f"l3.{constraint.id}",
+        "L3",
+        "completed",
+        "pass" if passed else "fail",
+        success if passed else failure,
+        ("generated native geometry receipt",),
+        dict(metrics) if isinstance(metrics, dict) else {"evidence": "missing"},
+        constraint.severity == "release_blocking",
+        constraint.severity in {"required", "release_blocking"},
     )
 
 

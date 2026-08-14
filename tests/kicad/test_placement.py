@@ -7,6 +7,8 @@ from pcbdraft.kicad.placement import (
     GroupConstraint,
     NearConstraint,
     PlacementItem,
+    PlacementKeepout,
+    RegionConstraint,
     optimize_placement,
 )
 
@@ -76,6 +78,19 @@ class PlacementTests(unittest.TestCase):
                 edge_clearance_mm=0.5,
                 near=(NearConstraint("a", "missing", 2),),
             )
+
+    def test_named_region_and_keepout_are_enforced_deterministically(self) -> None:
+        result = optimize_placement(
+            (PlacementItem("a", 6, 6, 1, 1),),
+            board_width_mm=12,
+            board_height_mm=12,
+            edge_clearance_mm=0.5,
+            regions=(RegionConstraint(("a",), "right"),),
+            keepouts=(PlacementKeepout("reserved", 4, 4, 8, 8),),
+        )
+        self.assertEqual(result.state, "completed")
+        self.assertEqual(result.diagnostics, ())
+        self.assertGreaterEqual(result.by_id()["a"].x_mm - 0.5, 8.0)
 
 
 if __name__ == "__main__":

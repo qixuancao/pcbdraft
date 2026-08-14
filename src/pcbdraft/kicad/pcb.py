@@ -17,17 +17,26 @@ from pcbdraft.core.project import sha256_file
 from pcbdraft.domain.ir import Component, Design
 from pcbdraft.domain.parts import PartGraph, PartRecord
 from pcbdraft.domain.scope import assert_supported
+from pcbdraft.domain.spatial_contracts import (
+    anchored_rectangle,
+    board_region_bounds,
+    copper_layer_indices,
+    rectangles_overlap,
+)
 from pcbdraft.kicad.placement import (
     GroupConstraint,
     NearConstraint,
     PlacementItem,
+    PlacementKeepout,
     PlacementResult,
+    RegionConstraint,
     optimize_placement,
 )
 from pcbdraft.kicad.routing import (
     GridRouter,
     RouteSegment,
     RouteVia,
+    RoutingKeepout,
     RoutingPad,
     RoutingResult,
 )
@@ -109,6 +118,10 @@ class PcbGeneration:
                 "via_count_by_net": _routing_vias(self.routing),
                 "width_range_mm_by_net": _routing_width_ranges(self.routing),
                 "reference_planes": [dict(item) for item in self.reference_planes],
+                "constraint_metrics": {
+                    key: dict(value)
+                    for key, value in sorted(self.constraint_metrics.items())
+                },
                 "diagnostics": list(self.routing.diagnostics),
             },
             "constraint_metrics": self.constraint_metrics,
@@ -247,6 +260,7 @@ def generate_pcb(
         resolved_graph,
         inspection,
         placements,
+        routing,
     )
 
     job = _build_job(
@@ -420,6 +434,41 @@ def _parse_pad(value: Any) -> InspectedPad:
     )
 
 
+def _board_routing_keepouts(design: Design) -> tuple[RoutingKeepout, ...]:
+    keepouts: list[RoutingKeepout] = []
+    for constraint in sorted(design.constraints, key=lambda item: item.id):
+        if constraint.kind != "board_keepout":
+            continue
+        try:
+            x1, y1, x2, y2 = anchored_rectangle(
+                str(constraint.params["anchor"]),
+                float(constraint.params["width_mm"]),
+                float(constraint.params["height_mm"]),
+                design.board.width_mm,
+                design.board.height_mm,
+                design.board.edge_clearance_mm,
+            )
+            layers = copper_layer_indices(
+                str(constraint.params["layers"]),
+                design.board.layers,
+            )
+        except (KeyError, TypeError, ValueError, OverflowError) as exc:
+            raise ValidationError(
+                f"board keepout {constraint.id} has invalid semantic geometry"
+            ) from exc
+        keepouts.append(
+            RoutingKeepout(
+                constraint.id,
+                x1,
+                y1,
+                x2,
+                y2,
+                layers,
+            )
+        )
+    return tuple(keepouts)
+
+
 def _place(
     design: Design,
     components: tuple[Component, ...],
@@ -458,6 +507,7 @@ def _place(
     )
     near: list[NearConstraint] = []
     groups: list[GroupConstraint] = []
+    regions: list[RegionConstraint] = []
     item_by_id = {item.id: item for item in items}
     for constraint in design.constraints:
         if constraint.kind == "decoupling":
@@ -489,6 +539,14 @@ def _place(
             maximum = constraint.params.get("max_diameter_mm")
             if len(targets) >= 2 and isinstance(maximum, (int, float)):
                 groups.append(GroupConstraint(targets, float(maximum), 20.0))
+        elif constraint.kind == "placement_region":
+            targets = tuple(
+                target for target in constraint.targets if target in board_ids
+            )
+            region = constraint.params.get("region")
+            if targets and isinstance(region, str):
+                regions.append(RegionConstraint(targets, region))
+    board_keepouts = _board_routing_keepouts(design)
     result = optimize_placement(
         items,
         board_width_mm=design.board.width_mm,
@@ -497,6 +555,17 @@ def _place(
         nets=nets,
         near=near,
         groups=groups,
+        regions=regions,
+        keepouts=tuple(
+            PlacementKeepout(
+                keepout.id,
+                keepout.x1_mm,
+                keepout.y1_mm,
+                keepout.x2_mm,
+                keepout.y2_mm,
+            )
+            for keepout in board_keepouts
+        ),
         grid_mm=0.25,
         max_iterations=60,
     )
@@ -582,7 +651,7 @@ def _route(
     widths = {net.name: max(design.board.min_track_mm, 0.25) for net in design.nets}
     net_name_by_id = {net.id: net.name for net in design.nets}
     for constraint in design.constraints:
-        if constraint.kind != "routing":
+        if constraint.kind not in {"routing", "differential_pair"}:
             continue
         width = constraint.params.get("width_mm")
         if not isinstance(width, (int, float)) or isinstance(width, bool):
@@ -609,6 +678,7 @@ def _route(
     routed = router.route(
         pads,
         widths=widths,
+        keepouts=_board_routing_keepouts(design),
         power_nets=(net.name for net in design.nets if net.net_class == "power"),
         seed_segments=escape_segments,
     )
@@ -999,8 +1069,9 @@ def _native_constraint_metrics(
     graph: PartGraph,
     inspections: dict[str, FootprintInspection],
     placements: dict[str, dict[str, float | str | bool]],
+    routing: RoutingResult,
 ) -> dict[str, Any]:
-    """Record exact native pad-rectangle metrics used by L3 decoupling checks."""
+    """Record exact native geometry metrics used by deterministic L3 checks."""
     component_by_id = {component.id: component for component in components}
     pad_positions: dict[tuple[str, str], tuple[float, float, float, float]] = {}
     for component in components:
@@ -1081,9 +1152,260 @@ def _native_constraint_metrics(
             and all(distance <= maximum + 1e-9 for distance in distances.values())
             else "fail",
         }
-    if any(metric["outcome"] != "pass" for metric in result.values()):
+    component_bounds = {
+        component.id: (
+            float(placements[component.id]["x_mm"])
+            + inspections[component.id].bbox_x_mm,
+            float(placements[component.id]["y_mm"])
+            + inspections[component.id].bbox_y_mm,
+            float(placements[component.id]["x_mm"])
+            + inspections[component.id].bbox_x_mm
+            + inspections[component.id].width_mm,
+            float(placements[component.id]["y_mm"])
+            + inspections[component.id].bbox_y_mm
+            + inspections[component.id].height_mm,
+        )
+        for component in components
+    }
+    keepout_by_id = {item.id: item for item in _board_routing_keepouts(design)}
+    for constraint in sorted(design.constraints, key=lambda item: item.id):
+        if constraint.kind == "placement_region":
+            region_name = str(constraint.params["region"])
+            region = board_region_bounds(
+                region_name,
+                design.board.width_mm,
+                design.board.height_mm,
+            )
+            outside = [
+                target
+                for target in constraint.targets
+                if target not in component_bounds
+                or not _rectangle_contains(region, component_bounds[target])
+            ]
+            result[constraint.id] = {
+                "kind": "placement_region",
+                "region": region_name,
+                "bounds_mm": [round(value, 6) for value in region],
+                "outside_components": sorted(outside),
+                "outcome": "pass" if not outside else "fail",
+            }
+        elif constraint.kind == "board_keepout":
+            keepout = keepout_by_id[constraint.id]
+            bounds = (
+                keepout.x1_mm,
+                keepout.y1_mm,
+                keepout.x2_mm,
+                keepout.y2_mm,
+            )
+            component_overlaps = sorted(
+                component_id
+                for component_id, component_bounds_value in component_bounds.items()
+                if rectangles_overlap(component_bounds_value, bounds)
+            )
+            copper_violations = _routing_keepout_violations(routing, keepout)
+            result[constraint.id] = {
+                "kind": "board_keepout",
+                "anchor": constraint.params["anchor"],
+                "layers": constraint.params["layers"],
+                "bounds_mm": [round(value, 6) for value in bounds],
+                "component_overlaps": component_overlaps,
+                "copper_violations": list(copper_violations),
+                "outcome": (
+                    "pass"
+                    if not component_overlaps and not copper_violations
+                    else "fail"
+                ),
+            }
+        elif constraint.kind == "differential_pair":
+            result[constraint.id] = _differential_pair_metrics(
+                design,
+                constraint,
+                routing,
+            )
+    if any(
+        metric["outcome"] != "pass" and metric["kind"] == "decoupling"
+        for metric in result.values()
+    ):
         raise ValidationError("native decoupling geometry violates its declared metric")
     return result
+
+
+def _rectangle_contains(
+    outer: tuple[float, float, float, float],
+    inner: tuple[float, float, float, float],
+) -> bool:
+    return (
+        outer[0] <= inner[0] + 1e-9
+        and outer[1] <= inner[1] + 1e-9
+        and outer[2] >= inner[2] - 1e-9
+        and outer[3] >= inner[3] - 1e-9
+    )
+
+
+def _routing_keepout_violations(
+    routing: RoutingResult,
+    keepout: RoutingKeepout,
+) -> tuple[str, ...]:
+    violations: list[str] = []
+    bounds = (keepout.x1_mm, keepout.y1_mm, keepout.x2_mm, keepout.y2_mm)
+    for index, segment in enumerate(routing.segments):
+        if segment.layer not in keepout.layers:
+            continue
+        radius = segment.width_mm / 2
+        segment_bounds = (
+            min(segment.x1_mm, segment.x2_mm) - radius,
+            min(segment.y1_mm, segment.y2_mm) - radius,
+            max(segment.x1_mm, segment.x2_mm) + radius,
+            max(segment.y1_mm, segment.y2_mm) + radius,
+        )
+        if rectangles_overlap(segment_bounds, bounds):
+            violations.append(f"segment:{index}:{segment.net}")
+    for index, via in enumerate(routing.vias):
+        if not set(range(via.from_layer, via.to_layer + 1)) & set(keepout.layers):
+            continue
+        radius = via.diameter_mm / 2
+        via_bounds = (
+            via.x_mm - radius,
+            via.y_mm - radius,
+            via.x_mm + radius,
+            via.y_mm + radius,
+        )
+        if rectangles_overlap(via_bounds, bounds):
+            violations.append(f"via:{index}:{via.net}")
+    return tuple(sorted(violations))
+
+
+def _differential_pair_metrics(
+    design: Design,
+    constraint: Any,
+    routing: RoutingResult,
+) -> dict[str, Any]:
+    net_by_id = {net.id: net.name for net in design.nets}
+    first_name, second_name = (
+        net_by_id[constraint.targets[0]],
+        net_by_id[constraint.targets[1]],
+    )
+    first_segments = tuple(
+        segment for segment in routing.segments if segment.net == first_name
+    )
+    second_segments = tuple(
+        segment for segment in routing.segments if segment.net == second_name
+    )
+    first_length = sum(_segment_length(segment) for segment in first_segments)
+    second_length = sum(_segment_length(segment) for segment in second_segments)
+    mismatch = abs(first_length - second_length)
+    expected_width = float(constraint.params["width_mm"])
+    width_ok = bool(first_segments and second_segments) and all(
+        abs(segment.width_mm - expected_width) <= 1e-9
+        for segment in (*first_segments, *second_segments)
+    )
+    coupled_length, observed_gaps = _coupled_pair_length(
+        first_segments,
+        second_segments,
+        float(constraint.params["gap_mm"]),
+        float(constraint.params["gap_tolerance_mm"]),
+    )
+    length_basis = min(first_length, second_length)
+    coupled_ratio = coupled_length / length_basis if length_basis > 0 else 0.0
+    passed = (
+        first_name not in routing.unrouted
+        and second_name not in routing.unrouted
+        and mismatch <= float(constraint.params["max_length_mismatch_mm"]) + 1e-9
+        and width_ok
+        and coupled_ratio + 1e-9 >= float(constraint.params["min_coupled_length_ratio"])
+    )
+    return {
+        "kind": "differential_pair",
+        "nets": [first_name, second_name],
+        "length_mm": {
+            first_name: round(first_length, 6),
+            second_name: round(second_length, 6),
+        },
+        "length_mismatch_mm": round(mismatch, 6),
+        "maximum_length_mismatch_mm": float(
+            constraint.params["max_length_mismatch_mm"]
+        ),
+        "coupled_length_mm": round(coupled_length, 6),
+        "coupled_length_ratio": round(coupled_ratio, 6),
+        "minimum_coupled_length_ratio": float(
+            constraint.params["min_coupled_length_ratio"]
+        ),
+        "observed_edge_gaps_mm": [round(value, 6) for value in observed_gaps],
+        "target_edge_gap_mm": float(constraint.params["gap_mm"]),
+        "gap_tolerance_mm": float(constraint.params["gap_tolerance_mm"]),
+        "width_mm": expected_width,
+        "width_ok": width_ok,
+        "outcome": "pass" if passed else "fail",
+    }
+
+
+def _coupled_pair_length(
+    first: tuple[RouteSegment, ...],
+    second: tuple[RouteSegment, ...],
+    target_gap_mm: float,
+    tolerance_mm: float,
+) -> tuple[float, tuple[float, ...]]:
+    coupled = 0.0
+    gaps: list[float] = []
+    for first_segment in first:
+        for second_segment in second:
+            if first_segment.layer != second_segment.layer:
+                continue
+            first_horizontal = abs(first_segment.y1_mm - first_segment.y2_mm) <= 1e-9
+            second_horizontal = abs(second_segment.y1_mm - second_segment.y2_mm) <= 1e-9
+            first_vertical = abs(first_segment.x1_mm - first_segment.x2_mm) <= 1e-9
+            second_vertical = abs(second_segment.x1_mm - second_segment.x2_mm) <= 1e-9
+            if first_horizontal and second_horizontal:
+                overlap = _interval_overlap(
+                    first_segment.x1_mm,
+                    first_segment.x2_mm,
+                    second_segment.x1_mm,
+                    second_segment.x2_mm,
+                )
+                center_distance = abs(first_segment.y1_mm - second_segment.y1_mm)
+            elif first_vertical and second_vertical:
+                overlap = _interval_overlap(
+                    first_segment.y1_mm,
+                    first_segment.y2_mm,
+                    second_segment.y1_mm,
+                    second_segment.y2_mm,
+                )
+                center_distance = abs(first_segment.x1_mm - second_segment.x1_mm)
+            else:
+                continue
+            if overlap <= 0:
+                continue
+            edge_gap = (
+                center_distance - (first_segment.width_mm + second_segment.width_mm) / 2
+            )
+            if abs(edge_gap - target_gap_mm) <= tolerance_mm + 1e-9:
+                coupled += overlap
+                gaps.append(edge_gap)
+    maximum = min(
+        sum(_segment_length(segment) for segment in first),
+        sum(_segment_length(segment) for segment in second),
+    )
+    return min(coupled, maximum), tuple(sorted(gaps))
+
+
+def _interval_overlap(
+    first_start: float,
+    first_stop: float,
+    second_start: float,
+    second_stop: float,
+) -> float:
+    return max(
+        0.0,
+        min(max(first_start, first_stop), max(second_start, second_stop))
+        - max(min(first_start, first_stop), min(second_start, second_stop)),
+    )
+
+
+def _segment_length(segment: RouteSegment) -> float:
+    return math.hypot(
+        segment.x2_mm - segment.x1_mm,
+        segment.y2_mm - segment.y1_mm,
+    )
 
 
 def _pad_rectangle_gap(

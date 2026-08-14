@@ -7,6 +7,28 @@ The product is model-agnostic: a model can interpret requirements and propose
 topology, but it never owns raw KiCad text, geometry, filesystem writes, command
 execution, validation outcomes, or release identity.
 
+## Code organization
+
+Implementation modules live in responsibility-focused packages rather than the
+package root:
+
+    pcbdraft/
+      core/          shared safety and runtime primitives
+      domain/        PCB IR, requirements, parts, blocks, and deterministic rules
+      agent/         constrained planning, events, tools, repair, and runtime
+      model/         model configuration, transport, review, and providers
+      kicad/         native KiCad generation, layout, routing, preview, and sync
+      services/      application use cases, jobs, managed projects, transactions
+      verification/  evidence, validation, review, benchmark, and release gates
+      interfaces/    CLI, JSON-RPC, chat, browser, and Textual TUI
+
+The dependency direction starts with `core` and `domain`. KiCad and model
+adapters implement external boundaries. Services orchestrate those capabilities,
+verification evaluates their persisted results, and interfaces translate user
+input without becoming a second business-logic layer. See
+[`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) for placement rules and the
+compatibility policy for historical module paths.
+
 ## Product path
 
     full-screen terminal / parameterized chat / local browser / JSON-RPC
@@ -27,8 +49,9 @@ execution, validation outcomes, or release identity.
                        |
                        v
              schema-constrained circuit plan
-             - components, symbols, pin endpoints, nets, notes
-             - no coordinates, KiCad syntax, code, commands, or routing
+             - functional blocks, components, nets, power domains, interfaces
+             - scalar constraints and locally evaluated assertions
+             - no coordinates, traces, KiCad syntax, code, or commands
                        |
                        v
              local KiCad resolver
@@ -79,18 +102,40 @@ incomplete job interrupted rather than replaying its side effects.
 board envelope, scope, named parts, functions, power assumptions, and source
 context. It does not encode a board profile.
 
-<code>CircuitPlan</code> is a compact plan proposed by a configured planner. It
-contains only:
+<code>CircuitPlan</code> is a compact, versioned plan proposed by a configured
+planner. Version 2 contains only:
 
 - component identity, KiCad symbol, optional footprint, role, and exact user name;
-- nets whose endpoints use real component IDs and symbol pin numbers;
+- functional blocks with acyclic parent links and complete component ownership;
+- nets whose endpoints use real component IDs and symbol pin numbers, with
+  optional links to declared power domains and interfaces;
+- power-domain sources and interface membership expressed with those same
+  endpoints;
+- supported semantic constraints with named scalar parameters, including
+  complete connector pinouts, exact net labels, named placement regions,
+  anchored rectangular board keepouts, and differential-pair acceptance
+  criteria, plus a finite set of assertions that the runtime evaluates locally;
+  and
 - assumptions, summary, and review notes.
 
 The runtime looks up actual local symbol candidates before planning. It rejects
-unknown symbols, invalid pins, duplicate pin-to-net assignments, raw geometry,
-and a plan that drops an explicitly requested part. This is not a guarantee that
-the plan is electrically correct; it is a controlled boundary between model text
-and engineering data.
+unknown symbols, invalid pins, duplicate pin-to-net assignments, incomplete or
+cyclic block ownership, dangling domain/interface references, raw geometry,
+executable expressions, and a plan that drops an explicitly requested part.
+Persisted version-1 plans remain readable and compile through their original
+component-per-block compatibility path; providers receive only the version-2
+schema. This is not a guarantee that the plan is electrically correct; it is a
+controlled boundary between model text and engineering data.
+
+Spatial intent is deliberately symbolic at that boundary. The model selects a
+finite region or anchor name, dimensions, and a copper-layer scope; deterministic
+code derives the rectangle from the reviewed board envelope, applies it to
+placement and bounded routing, and records exact generated-geometry metrics.
+Differential-pair checks measure routed width, edge-to-edge gap, coupled-length
+ratio, and length mismatch. They do not infer impedance and the current router
+does not synthesize coupled pairs. Board keepouts are currently generator
+constraints and receipts, not native KiCad rule-area objects, so later manual
+editing still requires a fresh engineering review.
 
 After compile, the runtime produces deterministic <code>plan_review</code>
 evidence from the selected local symbols and topology. It flags missing
@@ -127,11 +172,11 @@ user. They do not turn a library symbol into an authoritative electrical model.
 
 The semantic IR is compiled through the existing KiCad adapters:
 
-- <code>kicad_schematic.py</code> emits a native schematic through
+- <code>kicad/schematic.py</code> emits a native schematic through
   <code>kicad-sch-api</code>;
-- <code>kicad_pcb.py</code> uses deterministic placement seeds plus the bounded
+- <code>kicad/pcb.py</code> uses deterministic placement seeds plus the bounded
   placement/routing backend and KiCad's PCB API;
-- <code>managed.py</code> stages all files in a sibling directory and publishes
+- <code>services/managed.py</code> stages all files in a sibling directory and publishes
   only on success.
 
 Fine-pitch escape segments are checked against exact pad/track rectangles before

@@ -13,6 +13,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.domain.spatial_contracts import (
+    BOARD_REGIONS,
+    board_region_bounds,
+    rectangles_overlap,
+)
 
 MAX_ITEMS = 200
 MAX_NETS = 1000
@@ -70,6 +75,22 @@ class GroupConstraint:
     weight: float = 5.0
 
 
+@dataclass(frozen=True, order=True)
+class RegionConstraint:
+    members: tuple[str, ...]
+    region: str
+    weight: float = 1_000_000.0
+
+
+@dataclass(frozen=True, order=True)
+class PlacementKeepout:
+    id: str
+    x1_mm: float
+    y1_mm: float
+    x2_mm: float
+    y2_mm: float
+
+
 @dataclass(frozen=True)
 class PlacementResult:
     items: tuple[PlacementItem, ...]
@@ -91,6 +112,8 @@ def optimize_placement(
     nets: Iterable[Iterable[str]] = (),
     near: Iterable[NearConstraint] = (),
     groups: Iterable[GroupConstraint] = (),
+    regions: Iterable[RegionConstraint] = (),
+    keepouts: Iterable[PlacementKeepout] = (),
     grid_mm: float = 0.5,
     max_iterations: int = 40,
 ) -> PlacementResult:
@@ -117,6 +140,8 @@ def optimize_placement(
         raise ValidationError(f"placement supports at most {MAX_NETS} nets")
     near_constraints = tuple(sorted(near))
     group_constraints = tuple(sorted(groups))
+    region_constraints = tuple(sorted(regions))
+    placement_keepouts = tuple(sorted(keepouts))
     referenced = (
         {item for net in net_groups for item in net}
         | {
@@ -125,6 +150,7 @@ def optimize_placement(
             for item in (constraint.first, constraint.second)
         }
         | {item for constraint in group_constraints for item in constraint.members}
+        | {item for constraint in region_constraints for item in constraint.members}
     )
     unknown = referenced - known
     if unknown:
@@ -146,6 +172,33 @@ def optimize_placement(
             raise ValidationError(
                 "group constraints require two members and positive bounds"
             )
+    for constraint in region_constraints:
+        if (
+            not constraint.members
+            or constraint.region not in BOARD_REGIONS
+            or constraint.weight <= 0
+        ):
+            raise ValidationError(
+                "region constraints require members, a supported region, and positive weight"
+            )
+    for keepout in placement_keepouts:
+        if (
+            not keepout.id
+            or not all(
+                math.isfinite(value)
+                for value in (
+                    keepout.x1_mm,
+                    keepout.y1_mm,
+                    keepout.x2_mm,
+                    keepout.y2_mm,
+                )
+            )
+            or keepout.x1_mm >= keepout.x2_mm
+            or keepout.y1_mm >= keepout.y2_mm
+        ):
+            raise ValidationError(
+                "placement keepouts require valid rectangular geometry"
+            )
 
     fixed = tuple(item for item in sequence if item.fixed)
     hard_issues = _hard_geometry_issues(
@@ -153,6 +206,7 @@ def optimize_placement(
         board_width_mm,
         board_height_mm,
         edge_clearance_mm,
+        placement_keepouts,
     )
     if hard_issues:
         raise ValidationError("invalid fixed placement: " + "; ".join(hard_issues))
@@ -175,6 +229,8 @@ def optimize_placement(
         net_groups,
         near_constraints,
         group_constraints,
+        region_constraints,
+        placement_keepouts,
     )
     completed_iterations = 0
     for iteration in range(max_iterations):
@@ -202,6 +258,8 @@ def optimize_placement(
                     net_groups,
                     near_constraints,
                     group_constraints,
+                    region_constraints,
+                    placement_keepouts,
                 )
                 # Stable coordinate tie-break makes repeated runs byte-for-byte equal.
                 if score < best_score - 1e-9 or (
@@ -223,8 +281,16 @@ def optimize_placement(
         board_width_mm,
         board_height_mm,
         edge_clearance_mm,
+        placement_keepouts,
     )
-    soft_issues = _constraint_issues(current, near_constraints, group_constraints)
+    soft_issues = _constraint_issues(
+        current,
+        near_constraints,
+        group_constraints,
+        region_constraints,
+        board_width_mm,
+        board_height_mm,
+    )
     diagnostics = tuple(sorted((*issues, *soft_issues)))
     state = "completed" if not diagnostics else "heuristic"
     return PlacementResult(
@@ -297,6 +363,8 @@ def _objective(
     nets: tuple[tuple[str, ...], ...],
     near: tuple[NearConstraint, ...],
     groups: tuple[GroupConstraint, ...],
+    regions: tuple[RegionConstraint, ...],
+    keepouts: tuple[PlacementKeepout, ...],
 ) -> float:
     result = 0.0
     sequence = tuple(items[key] for key in sorted(items))
@@ -317,6 +385,23 @@ def _objective(
                 first.half_height + second.half_height - abs(first.y_mm - second.y_mm),
             )
             result += 1_000_000 * overlap_x * overlap_y
+    for item in sequence:
+        item_bounds = _item_bounds(item)
+        for keepout in keepouts:
+            keepout_bounds = (
+                keepout.x1_mm,
+                keepout.y1_mm,
+                keepout.x2_mm,
+                keepout.y2_mm,
+            )
+            if rectangles_overlap(item_bounds, keepout_bounds):
+                overlap_x = min(item_bounds[2], keepout_bounds[2]) - max(
+                    item_bounds[0], keepout_bounds[0]
+                )
+                overlap_y = min(item_bounds[3], keepout_bounds[3]) - max(
+                    item_bounds[1], keepout_bounds[1]
+                )
+                result += 1_000_000 * overlap_x * overlap_y
     for net in nets:
         # Half-perimeter wire length is stable and inexpensive for multi-terminal nets.
         xs = [items[item].x_mm for item in net]
@@ -336,6 +421,12 @@ def _objective(
         result += (
             constraint.weight * max(0.0, diameter - constraint.max_diameter_mm) ** 2
         )
+    for constraint in regions:
+        bounds = board_region_bounds(constraint.region, board_width, board_height)
+        for member in constraint.members:
+            item = items[member]
+            violation = _rectangle_containment_violation(_item_bounds(item), bounds)
+            result += constraint.weight * violation
     return result
 
 
@@ -348,6 +439,7 @@ def _hard_geometry_issues(
     board_width: float,
     board_height: float,
     edge: float,
+    keepouts: tuple[PlacementKeepout, ...],
 ) -> tuple[str, ...]:
     issues: list[str] = []
     sequence = tuple(sorted(items, key=lambda item: item.id))
@@ -368,6 +460,14 @@ def _hard_geometry_issues(
                 < first.half_height + second.half_height - 1e-9
             ):
                 issues.append(f"{first.id} overlaps {second.id}")
+    for item in sequence:
+        bounds = _item_bounds(item)
+        for keepout in keepouts:
+            if rectangles_overlap(
+                bounds,
+                (keepout.x1_mm, keepout.y1_mm, keepout.x2_mm, keepout.y2_mm),
+            ):
+                issues.append(f"{item.id} overlaps placement keepout {keepout.id}")
     return tuple(issues)
 
 
@@ -375,6 +475,9 @@ def _constraint_issues(
     items: Mapping[str, PlacementItem],
     near: tuple[NearConstraint, ...],
     groups: tuple[GroupConstraint, ...],
+    regions: tuple[RegionConstraint, ...],
+    board_width: float,
+    board_height: float,
 ) -> tuple[str, ...]:
     issues: list[str] = []
     for constraint in near:
@@ -393,4 +496,39 @@ def _constraint_issues(
             issues.append(
                 f"group {'/'.join(constraint.members)} diameter {diameter:.3f} mm exceeds {constraint.max_diameter_mm:.3f} mm"
             )
+    for constraint in regions:
+        region = board_region_bounds(
+            constraint.region,
+            board_width,
+            board_height,
+        )
+        for member in constraint.members:
+            if (
+                _rectangle_containment_violation(_item_bounds(items[member]), region)
+                > 1e-9
+            ):
+                issues.append(
+                    f"{member} lies outside placement region {constraint.region}"
+                )
     return tuple(issues)
+
+
+def _item_bounds(item: PlacementItem) -> tuple[float, float, float, float]:
+    return (
+        item.x_mm - item.half_width,
+        item.y_mm - item.half_height,
+        item.x_mm + item.half_width,
+        item.y_mm + item.half_height,
+    )
+
+
+def _rectangle_containment_violation(
+    inner: tuple[float, float, float, float],
+    outer: tuple[float, float, float, float],
+) -> float:
+    return (
+        max(0.0, outer[0] - inner[0])
+        + max(0.0, outer[1] - inner[1])
+        + max(0.0, inner[2] - outer[2])
+        + max(0.0, inner[3] - outer[3])
+    )

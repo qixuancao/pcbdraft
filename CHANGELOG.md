@@ -5,11 +5,23 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
 
 ## Unreleased
 
+- Reorganized the flat Python package and test suite into responsibility-focused
+  core, domain, agent, model, KiCad, service, verification, and interface areas;
+  historical 1.0 module imports remain available through lazy identity aliases.
+- Restricted wheel discovery to the current package and added a guarded cleanup
+  step so persistent setuptools output cannot reintroduce retired packages.
 - Replaced the erroneous hard-coded RP2040/TMP117 product route with a generic
   request → circuit plan → local KiCad resolution → semantic IR path.
 - Added <code>AgentDesignRequest</code>, a schema-constrained
   <code>CircuitPlan</code>, local installed-symbol discovery, and project-local
   extracted <code>PartGraph</code> records.
+- Added <code>CircuitPlan</code> version 2 with hierarchical functional blocks,
+  power domains, interfaces, complete connector pinouts, exact net labels,
+  named placement regions, anchored board keepouts, measurable differential-pair
+  criteria, and a bounded assertion vocabulary. Deterministic compile,
+  placement, routing receipts, preflight, and L3 checks recompute the applicable
+  facts without exposing raw coordinates to the model. Version-1 plan reads
+  remain compatible.
 - Explicitly named parts must survive from the request into the reviewed plan and
   compiled part graph. A missing symbol, invalid pin, or routing failure is
   retained as evidence, never silently replaced by a demo board.

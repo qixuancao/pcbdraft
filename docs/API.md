@@ -18,6 +18,16 @@ explicit command. Plan/change review and expanded logs are terminal
 presentations over persisted application evidence, not a second source of
 project truth.
 
+Normal application launches use one persistent PCB project repository. On
+first run PCBDraft creates <code>~/PCBDraft</code> and records its location in
+<code>~/.config/pcbdraft/repository.json</code>. Every application project is
+created below <code>projects/</code> in that repository; the process working
+directory is never used as a project destination. Use
+<code>pcbdraft repository /path/to/repository</code> to choose a different
+location, or <code>pcbdraft repository --json</code> to inspect it. The
+explicit <code>--workspace</code> options remain isolated automation/test
+overrides and do not change the persisted location.
+
 The default terminal flow is:
 
     user request
@@ -73,9 +83,16 @@ than tracebacks.
 
 The request document has schema
 <code>pcbdraft-agent-design-request</code>. The plan document has schema
-<code>pcbdraft-circuit-plan</code>. The planner may declare semantic
-components/pins/nets only; raw KiCad, geometry, routing, commands, and executable
-text are rejected by the schema and compiler.
+<code>pcbdraft-circuit-plan</code>. Providers receive the strict version-2 plan
+schema and may declare functional blocks, components/pins/nets, power domains,
+interfaces, supported semantic constraints, and locally evaluated assertions.
+Those constraints include complete connector pinouts, exact net labels, named
+placement regions, anchored rectangular board keepouts, and measurable
+differential-pair acceptance criteria. Region and anchor names are converted to
+coordinates only inside deterministic code. Raw KiCad, coordinates, trace
+geometry, commands, and executable text are rejected by the schema and
+compiler. Persisted version-1 plans remain accepted for read/compile
+compatibility but are not emitted to planners.
 
 <code>plan_review</code> checks only facts that can be determined from the
 reviewed topology and local libraries: real symbol-to-footprint pad coverage,

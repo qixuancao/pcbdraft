@@ -12,6 +12,11 @@ and a configured model API, create a schema-constrained circuit plan, resolve in
 KiCad symbols and footprints, generate native schematic/PCB/project files, make
 a bounded deterministic placement/routing attempt, run available KiCad and
 PCBDraft checks, repair at most twice, and preserve inspectable evidence.
+Circuit-plan version 2 carries hierarchical functional blocks, power domains,
+interfaces, complete connector pinouts, exact net labels, named placement
+regions, anchored board keepouts, measurable differential-pair acceptance
+criteria, and locally evaluated assertions into the existing semantic IR.
+Coordinates remain local deterministic output. Version-1 plans remain readable.
 
 Release acceptance currently includes three materially different small boards:
 
@@ -30,9 +35,11 @@ gates for missing power pins, rail source, decoupling, and pull-ups.
 
 Priority work should improve generality rather than add named-board branches:
 
-1. Add semantic constraints for connector pinout, net labels, mounting holes,
-   board outline intent, placement regions, current classes, differential pairs,
-   and keepouts without granting the model raw coordinates or KiCad text.
+1. Extend the version-2 semantic contract with mounting holes, board-outline
+   intent, current classes, and stackup-aware route profiles. Emit native KiCad
+   rule areas for keepouts and add pair-aware coupled routing; the current
+   differential-pair contract measures generated geometry but does not claim
+   controlled impedance.
 2. Expand deterministic circuit review for regulator feedback, reset/boot/debug,
    protection, crystal/clock networks, USB basics, pull direction, analog bias,
    and device-specific power-pin families.

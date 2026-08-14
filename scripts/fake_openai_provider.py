@@ -67,7 +67,7 @@ def _plan(prompt: str, *, repaired: bool) -> dict[str, Any]:
         )
     return {
         "schema": "pcbdraft-circuit-plan",
-        "version": 1,
+        "version": 2,
         "design_id": request["design_id"],
         "summary": "A generic connector, bypass capacitor, resistor, and LED topology.",
         "assumptions": ["The external source is regulated to 3.3 V."],
@@ -119,6 +119,8 @@ def _plan(prompt: str, *, repaired: bool) -> dict[str, Any]:
                 "id": "gnd",
                 "name": "GND",
                 "net_class": "power",
+                "power_domain": "logic_3v3",
+                "interface": None,
                 "intent": "Common return.",
                 "endpoints": [
                     {"component": "capacitor", "pin": "2", "role": "return"},
@@ -130,6 +132,8 @@ def _plan(prompt: str, *, repaired: bool) -> dict[str, Any]:
                 "id": "v3v3",
                 "name": "3V3",
                 "net_class": "power",
+                "power_domain": "logic_3v3",
+                "interface": None,
                 "intent": "External regulated source.",
                 "endpoints": [
                     {"component": "capacitor", "pin": "1", "role": "load"},
@@ -141,12 +145,127 @@ def _plan(prompt: str, *, repaired: bool) -> dict[str, Any]:
                 "id": "led_a",
                 "name": "LED_A",
                 "net_class": "signal",
+                "power_domain": None,
+                "interface": "status_led",
                 "intent": "Current-limited LED anode.",
                 "endpoints": [
                     {"component": "resistor", "pin": "2", "role": "load"},
                     {"component": "led", "pin": "2", "role": "load"},
                 ],
             },
+        ],
+        "blocks": [
+            {
+                "id": "power_entry",
+                "kind": "power_entry",
+                "name": "Power entry",
+                "intent": "Accept and bypass the regulated external supply.",
+                "parent": None,
+                "components": ["capacitor", "input"],
+            },
+            {
+                "id": "status_indicator",
+                "kind": "status_indicator",
+                "name": "Status indicator",
+                "intent": "Limit current and emit visible status.",
+                "parent": None,
+                "components": ["led", "resistor"],
+            },
+        ],
+        "power_domains": [
+            {
+                "id": "logic_3v3",
+                "nominal_v": 3.3,
+                "min_v": 3.3,
+                "max_v": 3.3,
+                "max_current_a": 0.02,
+                "source": {"component": "input", "pin": "1", "role": "source"},
+                "intent": "Regulated external logic and indicator supply.",
+            }
+        ],
+        "interfaces": [
+            {
+                "id": "status_led",
+                "kind": "status_indicator",
+                "power_domain": "logic_3v3",
+                "members": [
+                    {"component": "resistor", "pin": "2", "role": "load"},
+                    {"component": "led", "pin": "2", "role": "load"},
+                ],
+                "controller": None,
+                "parameters": [],
+                "intent": "Current-limited visible indicator path.",
+            }
+        ],
+        "constraints": [
+            {
+                "id": "indicator_group",
+                "kind": "functional_group",
+                "targets": ["led", "resistor"],
+                "parameters": [{"name": "max_diameter_mm", "value": 15.0}],
+                "severity": "required",
+                "rationale": "Keep the series element near the indicator.",
+            },
+            {
+                "id": "indicator_route_width",
+                "kind": "routing",
+                "targets": ["led_a"],
+                "parameters": [{"name": "width_mm", "value": 0.25}],
+                "severity": "required",
+                "rationale": "Retain a normal prototype signal width.",
+            },
+            {
+                "id": "input_pinout",
+                "kind": "connector_pinout",
+                "targets": ["input"],
+                "parameters": [
+                    {"name": "pin.1", "value": "v3v3"},
+                    {"name": "pin.2", "value": "gnd"},
+                    {"name": "require_complete", "value": True},
+                ],
+                "severity": "required",
+                "rationale": "Preserve the reviewed external power pinout.",
+            },
+            {
+                "id": "status_net_label",
+                "kind": "net_label",
+                "targets": ["led_a"],
+                "parameters": [{"name": "label", "value": "LED_A"}],
+                "severity": "required",
+                "rationale": "Preserve the reviewed status-net identity.",
+            },
+            {
+                "id": "indicator_region",
+                "kind": "placement_region",
+                "targets": ["led", "resistor"],
+                "parameters": [{"name": "region", "value": "right"}],
+                "severity": "required",
+                "rationale": "Place the visible indicator in the right board third.",
+            },
+            {
+                "id": "center_reserved",
+                "kind": "board_keepout",
+                "targets": ["board"],
+                "parameters": [
+                    {"name": "anchor", "value": "center"},
+                    {"name": "height_mm", "value": 2.0},
+                    {"name": "layers", "value": "all"},
+                    {"name": "width_mm", "value": 2.0},
+                ],
+                "severity": "required",
+                "rationale": "Reserve a small central placement and routing area.",
+            },
+        ],
+        "assertions": [
+            {
+                "id": "indicator_series_path",
+                "kind": "components_share_net",
+                "targets": ["led", "resistor"],
+                "minimum": None,
+                "maximum": None,
+                "severity": "required",
+                "rationale": "The resistor and LED must share their series net.",
+            }
         ],
     }
 

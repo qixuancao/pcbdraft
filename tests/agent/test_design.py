@@ -21,6 +21,7 @@ from pcbdraft.agent.design import (
 )
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.domain.component_qualification import ComponentQualificationReport
+from pcbdraft.domain.semantic_rules import evaluate_semantic_rules
 from pcbdraft.interfaces.cli import main as cli_main
 from pcbdraft.kicad.schematic import generate_schematic
 from pcbdraft.services.managed import materialize_managed_design, open_managed_project
@@ -259,6 +260,144 @@ def indicator_plan_dict() -> dict[str, object]:
     }
 
 
+def indicator_plan_v2_dict() -> dict[str, object]:
+    plan = copy.deepcopy(indicator_plan_dict())
+    plan["version"] = 2
+    for net in plan["nets"]:
+        net["power_domain"] = "logic_3v3" if net["id"] in {"gnd", "v3v3"} else None
+        net["interface"] = "status_led" if net["id"] == "led_a" else None
+    plan.update(
+        {
+            "blocks": [
+                {
+                    "id": "prototype",
+                    "kind": "board_system",
+                    "name": "Indicator prototype",
+                    "intent": "Top-level functional assembly.",
+                    "parent": None,
+                    "components": [],
+                },
+                {
+                    "id": "power_entry",
+                    "kind": "power_entry",
+                    "name": "Power entry",
+                    "intent": "Accept and bypass the external supply.",
+                    "parent": "prototype",
+                    "components": ["capacitor", "input"],
+                },
+                {
+                    "id": "status_indicator",
+                    "kind": "status_indicator",
+                    "name": "Status indicator",
+                    "intent": "Limit current and emit visible status.",
+                    "parent": "prototype",
+                    "components": ["led", "resistor"],
+                },
+            ],
+            "power_domains": [
+                {
+                    "id": "logic_3v3",
+                    "nominal_v": 3.3,
+                    "min_v": 3.3,
+                    "max_v": 3.3,
+                    "max_current_a": 0.02,
+                    "source": {
+                        "component": "input",
+                        "pin": "1",
+                        "role": "source",
+                    },
+                    "intent": "Regulated indicator supply.",
+                }
+            ],
+            "interfaces": [
+                {
+                    "id": "status_led",
+                    "kind": "status_indicator",
+                    "power_domain": "logic_3v3",
+                    "members": [
+                        {"component": "led", "pin": "2", "role": "load"},
+                        {"component": "resistor", "pin": "2", "role": "load"},
+                    ],
+                    "controller": None,
+                    "parameters": [],
+                    "intent": "Current-limited visible indicator path.",
+                }
+            ],
+            "constraints": [
+                {
+                    "id": "indicator_group",
+                    "kind": "functional_group",
+                    "targets": ["led", "resistor"],
+                    "parameters": [{"name": "max_diameter_mm", "value": 15.0}],
+                    "severity": "required",
+                    "rationale": "Keep the series element near the indicator.",
+                },
+                {
+                    "id": "indicator_route_width",
+                    "kind": "routing",
+                    "targets": ["led_a"],
+                    "parameters": [{"name": "width_mm", "value": 0.25}],
+                    "severity": "required",
+                    "rationale": "Retain a normal prototype signal width.",
+                },
+                {
+                    "id": "input_pinout",
+                    "kind": "connector_pinout",
+                    "targets": ["input"],
+                    "parameters": [
+                        {"name": "pin.1", "value": "v3v3"},
+                        {"name": "pin.2", "value": "gnd"},
+                        {"name": "require_complete", "value": True},
+                    ],
+                    "severity": "required",
+                    "rationale": "Preserve the external power connector contract.",
+                },
+                {
+                    "id": "status_net_label",
+                    "kind": "net_label",
+                    "targets": ["led_a"],
+                    "parameters": [{"name": "label", "value": "LED_A"}],
+                    "severity": "required",
+                    "rationale": "Preserve the reviewed status-net identity.",
+                },
+                {
+                    "id": "indicator_region",
+                    "kind": "placement_region",
+                    "targets": ["led", "resistor"],
+                    "parameters": [{"name": "region", "value": "right"}],
+                    "severity": "required",
+                    "rationale": "Place the visible indicator in the right board third.",
+                },
+                {
+                    "id": "center_reserved",
+                    "kind": "board_keepout",
+                    "targets": ["board"],
+                    "parameters": [
+                        {"name": "anchor", "value": "center"},
+                        {"name": "height_mm", "value": 2.0},
+                        {"name": "layers", "value": "all"},
+                        {"name": "width_mm", "value": 2.0},
+                    ],
+                    "severity": "required",
+                    "rationale": "Reserve a small central routing and placement area.",
+                },
+            ],
+            "assertions": [
+                {
+                    "id": "indicator_series_path",
+                    "kind": "components_share_net",
+                    "targets": ["led", "resistor"],
+                    "minimum": None,
+                    "maximum": None,
+                    "severity": "required",
+                    "rationale": "The resistor and LED must share their series net.",
+                }
+            ],
+        }
+    )
+    return plan
+
+
 class GenericAgentDesignTests(unittest.TestCase):
     def test_provider_schema_constants_have_explicit_json_types(self) -> None:
         properties = circuit_plan_schema()["properties"]
@@ -266,7 +405,11 @@ class GenericAgentDesignTests(unittest.TestCase):
             properties["schema"],
             {"type": "string", "const": "pcbdraft-circuit-plan"},
         )
-        self.assertEqual(properties["version"], {"type": "integer", "const": 1})
+        self.assertEqual(properties["version"], {"type": "integer", "const": 2})
+        self.assertTrue(
+            {"blocks", "power_domains", "interfaces", "constraints", "assertions"}
+            <= set(circuit_plan_schema()["required"])
+        )
 
     def test_stock_plan_schema_does_not_require_procurement_metadata(self) -> None:
         schema = circuit_plan_schema()
@@ -276,6 +419,243 @@ class GenericAgentDesignTests(unittest.TestCase):
         self.assertNotIn("manufacturer", component["required"])
         self.assertNotIn("mpn", component["required"])
         CircuitPlan.from_dict(indicator_plan_dict())
+
+    def test_legacy_plan_round_trip_remains_byte_compatible(self) -> None:
+        source = indicator_plan_dict()
+        plan = CircuitPlan.from_dict(source)
+        serialized = plan.to_dict()
+        self.assertEqual(plan.version, 1)
+        self.assertNotIn("blocks", serialized)
+        self.assertNotIn("power_domains", serialized)
+        self.assertNotIn("interface", serialized["nets"][0])
+        self.assertEqual(
+            CircuitPlan.from_dict(serialized).canonical_bytes(),
+            plan.canonical_bytes(),
+        )
+
+    def test_boolean_plan_version_is_rejected(self) -> None:
+        source = indicator_plan_dict()
+        source["version"] = True
+        with self.assertRaisesRegex(ValidationError, "unsupported circuit plan"):
+            CircuitPlan.from_dict(source)
+
+    def test_v2_plan_populates_hierarchical_semantic_ir(self) -> None:
+        plan = CircuitPlan.from_dict(indicator_plan_v2_dict())
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()), plan
+        )
+
+        design = compilation.design
+        self.assertEqual(design.metadata["generator"], "agent_plan_v2")
+        self.assertEqual(
+            design.metadata["block_hierarchy"],
+            [
+                {"id": "power_entry", "parent": "prototype"},
+                {"id": "prototype", "parent": None},
+                {"id": "status_indicator", "parent": "prototype"},
+            ],
+        )
+        self.assertEqual(
+            {block.id for block in design.blocks},
+            {"power_entry", "prototype", "status_indicator"},
+        )
+        self.assertEqual([domain.id for domain in design.power_domains], ["logic_3v3"])
+        self.assertEqual(
+            [interface.id for interface in design.interfaces], ["status_led"]
+        )
+        self.assertEqual(
+            next(net for net in design.nets if net.id == "led_a").interface,
+            "status_led",
+        )
+        self.assertEqual(
+            {constraint.kind for constraint in design.constraints},
+            {
+                "assertion",
+                "board_keepout",
+                "connector_pinout",
+                "functional_group",
+                "manufacturing_rules",
+                "net_label",
+                "placement_region",
+                "routing",
+            },
+        )
+        outcomes = {
+            finding.id: finding.outcome for finding in compilation.review.findings
+        }
+        self.assertEqual(outcomes["assertion.indicator_series_path"], "pass")
+        serialized = plan.to_dict()
+        self.assertEqual(serialized["version"], 2)
+        self.assertIn("blocks", serialized)
+        self.assertEqual(
+            CircuitPlan.from_dict(serialized).canonical_bytes(),
+            plan.canonical_bytes(),
+        )
+
+    def test_v2_plan_rejects_incomplete_block_coverage(self) -> None:
+        source = indicator_plan_v2_dict()
+        source["blocks"][1]["components"].remove("input")
+        with self.assertRaisesRegex(ValidationError, "cover every component"):
+            CircuitPlan.from_dict(source)
+
+    def test_v2_failed_assertion_is_reported_before_generation(self) -> None:
+        source = indicator_plan_v2_dict()
+        source["assertions"] = [
+            {
+                "id": "too_many_led_endpoints",
+                "kind": "net_endpoint_count",
+                "targets": ["led_a"],
+                "minimum": 3,
+                "maximum": None,
+                "severity": "required",
+                "rationale": "Exercise deterministic assertion failure.",
+            }
+        ]
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(source),
+        )
+        finding = next(
+            item
+            for item in compilation.review.findings
+            if item.id == "assertion.too_many_led_endpoints"
+        )
+        self.assertEqual(finding.outcome, "fail")
+        self.assertIn("below minimum", finding.summary)
+        semantic_finding = next(
+            item
+            for item in evaluate_semantic_rules(
+                compilation.design,
+                compilation.graph,
+                allow_provisional=True,
+            )
+            if item.code == "intent.assertion"
+            and item.object_id == "assert.too_many_led_endpoints"
+        )
+        self.assertIn("below minimum", semantic_finding.message)
+
+    def test_v2_plan_rejects_cyclic_blocks_and_unbound_interfaces(self) -> None:
+        cyclic = indicator_plan_v2_dict()
+        cyclic["blocks"][0]["parent"] = "status_indicator"
+        with self.assertRaisesRegex(ValidationError, "hierarchy contains a cycle"):
+            CircuitPlan.from_dict(cyclic)
+
+        unbound = indicator_plan_v2_dict()
+        next(net for net in unbound["nets"] if net["id"] == "led_a")["interface"] = None
+        with self.assertRaisesRegex(ValidationError, "assigned to at least one net"):
+            CircuitPlan.from_dict(unbound)
+
+    def test_v2_connector_pinout_is_recomputed_from_local_symbol_pins(self) -> None:
+        alphanumeric = indicator_plan_v2_dict()
+        alphanumeric_pinout = next(
+            item for item in alphanumeric["constraints"] if item["id"] == "input_pinout"
+        )
+        next(
+            item
+            for item in alphanumeric_pinout["parameters"]
+            if item["name"] == "pin.1"
+        )["name"] = "pin.A1"
+        parsed = CircuitPlan.from_dict(alphanumeric)
+        parsed_pinout = next(
+            item for item in parsed.constraints if item.id == "input_pinout"
+        )
+        self.assertIn("pin.A1", parsed_pinout.parameters)
+
+        source = indicator_plan_v2_dict()
+        pinout = next(
+            item for item in source["constraints"] if item["id"] == "input_pinout"
+        )
+        next(item for item in pinout["parameters"] if item["name"] == "pin.1")[
+            "value"
+        ] = "led_a"
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(source),
+        )
+        finding = next(
+            item
+            for item in evaluate_semantic_rules(
+                compilation.design,
+                compilation.graph,
+                allow_provisional=True,
+            )
+            if item.code == "intent.connector_pinout"
+        )
+        self.assertIn("pin 1 expected led_a", finding.message)
+
+    def test_v2_rejects_label_drift_and_undersized_differential_gap(self) -> None:
+        label_drift = indicator_plan_v2_dict()
+        label = next(
+            item
+            for item in label_drift["constraints"]
+            if item["id"] == "status_net_label"
+        )
+        label["parameters"][0]["value"] = "STATUS_CHANGED"
+        with self.assertRaisesRegex(ValidationError, "label disagrees"):
+            CircuitPlan.from_dict(label_drift)
+
+        pair = indicator_plan_v2_dict()
+        pair["constraints"].append(
+            {
+                "id": "test_pair",
+                "kind": "differential_pair",
+                "targets": ["gnd", "v3v3"],
+                "parameters": [
+                    {"name": "gap_mm", "value": 0.1},
+                    {"name": "gap_tolerance_mm", "value": 0.05},
+                    {"name": "max_length_mismatch_mm", "value": 1.0},
+                    {"name": "min_coupled_length_ratio", "value": 0.8},
+                    {"name": "width_mm", "value": 0.25},
+                ],
+                "severity": "release_blocking",
+                "rationale": "Exercise board-rule enforcement.",
+            }
+        )
+        with self.assertRaisesRegex(ValidationError, "gap is below the board minimum"):
+            compile_agent_plan(
+                AgentDesignRequest.from_dict(indicator_request_dict()),
+                CircuitPlan.from_dict(pair),
+            )
+
+        conflict = indicator_plan_v2_dict()
+        conflict["constraints"].append(
+            {
+                "id": "conflicting_pair",
+                "kind": "differential_pair",
+                "targets": ["gnd", "led_a"],
+                "parameters": [
+                    {"name": "gap_mm", "value": 0.2},
+                    {"name": "gap_tolerance_mm", "value": 0.05},
+                    {"name": "max_length_mismatch_mm", "value": 1.0},
+                    {"name": "min_coupled_length_ratio", "value": 0.8},
+                    {"name": "width_mm", "value": 0.3},
+                ],
+                "severity": "release_blocking",
+                "rationale": "Exercise conflicting-width rejection.",
+            }
+        )
+        with self.assertRaisesRegex(ValidationError, "conflicting route widths"):
+            compile_agent_plan(
+                AgentDesignRequest.from_dict(indicator_request_dict()),
+                CircuitPlan.from_dict(conflict),
+            )
+
+    def test_v2_keepout_does_not_pass_when_native_receipt_is_missing(self) -> None:
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(indicator_plan_v2_dict()),
+        )
+        finding = next(
+            item
+            for item in evaluate_semantic_rules(
+                compilation.design,
+                compilation.graph,
+                routing={"constraint_metrics": {}},
+                allow_provisional=True,
+            )
+            if item.code == "intent.board_keepout"
+        )
+        self.assertIn("evidence is missing", finding.message)
 
     def test_installed_kicad_symbols_are_discovered_without_a_profile(self) -> None:
         resolver = LocalKiCadPartResolver()
@@ -431,6 +811,48 @@ class GenericAgentDesignTests(unittest.TestCase):
                 compilation.review.qualification.to_dict(),
             )
             self.assertEqual(reopened.drift(), ())
+
+    def test_v2_spatial_and_identity_constraints_reach_native_validation(
+        self,
+    ) -> None:
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(indicator_plan_v2_dict()),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            generated = materialize_managed_design(
+                compilation.request,
+                compilation.design,
+                root / "project",
+                graph=compilation.graph,
+                plan=compilation.plan,
+            )
+            self.assertEqual(generated.pcb.routing.state, "completed")
+            self.assertEqual(generated.pcb.routing.unrouted, ())
+            metrics = generated.project.manifest["generation"]["pcb"][
+                "constraint_metrics"
+            ]
+            self.assertEqual(metrics["indicator_region"]["outcome"], "pass")
+            self.assertEqual(metrics["center_reserved"]["outcome"], "pass")
+            self.assertEqual(metrics["center_reserved"]["copper_violations"], [])
+
+            validation = validate_managed_project(
+                generated.project,
+                output=root / "validation",
+            )
+            checks = {
+                check.id: check.outcome
+                for level in validation.levels
+                for check in level.checks
+            }
+            for check_id in (
+                "l3.center_reserved",
+                "l3.indicator_region",
+                "l3.input_pinout",
+                "l3.status_net_label",
+            ):
+                self.assertEqual(checks[check_id], "pass", check_id)
 
     @unittest.skipUnless(shutil.which("kicad-cli"), "real KiCad CLI unavailable")
     def test_stock_kicad_example_routes_and_passes_real_erc_drc(self) -> None:
