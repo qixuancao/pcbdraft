@@ -1,5 +1,5 @@
 {
-  "schema": "copperwright-circuit-plan",
+  "schema": "pcbdraft-circuit-plan",
   "version": 1,
   "design_id": "generic-stm32-sht31",
   "summary": "A provisional STM32F405/SHT31 I2C topology.",

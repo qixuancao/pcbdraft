@@ -1,4 +1,4 @@
-# CopperWright changelog
+# PCBDraft changelog
 
 All notable changes are documented here. The project follows semantic versioning
 for the CLI/API package; individual on-disk schemas are independently versioned.
@@ -14,21 +14,41 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   compiled part graph. A missing symbol, invalid pin, or routing failure is
   retained as evidence, never silently replaced by a demo board.
 - Added generic planner operations to the application, CLI, and JSON-RPC:
-  <code>symbols.find</code>, <code>agent.plan.compile</code>, and
-  <code>agent.project.generate</code>.
+  <code>agent.request.prepare</code>, <code>symbols.find</code>,
+  <code>agent.plan.compile</code>, and <code>agent.project.generate</code>.
 - Application attempts retain request, plan, IR, part graph, available native
   staging, phase, and sanitized error. The generic CLI now also retains failed
   native staging by default.
-- Local-library generic data is marked provisional and blocks candidate/manufacturing
-  release claims until independent engineering evidence exists.
+- Added a UI-neutral Python <code>AgentRuntime</code>, durable non-blocking jobs,
+  persisted activity events, cooperative stop, explicit retry, review/log views,
+  restart recovery without replay, and a single-window slash-command TUI.
+- Added bounded repair for generation and completed deterministic L1–L3 failures.
+  Replacement plans pass through the same compiler, staged validation, atomic
+  application, and exact undo; unknown/human evidence never self-approves.
+- Added optional DeepSeek Harness support in both directions: a strict Python
+  planner-provider bridge and a constrained Harness-hosted PCB tool plugin.
+- Added versioned component-qualification evidence with actual native footprint
+  pad-number checks, honest datasheet/identity states, and deterministic power,
+  source, contention, passive, LED, I2C, and decoupling preflight rules.
+- Fixed fine-pitch escape routing by separating exact physical-clearance checks
+  from the bounded grid, preserving half-pitch spacing, and reporting detailed
+  unrouted-net evidence before reference-plane work. Reference-plane ties are
+  now added from actual connectivity need instead of a universal via count.
+- Added LED, passive RC, and I2C pull-up stock-library examples that route and
+  reach the candidate gate under real KiCad checks. The intentionally incomplete
+  STM32F405/SHT31 fixture now routes but remains correctly blocked by electrical
+  evidence gates.
+- Local-library generic data remains provisional. Exact mapping and deterministic
+  electrical failures block candidate readiness; unqualified identity/datasheet
+  evidence blocks production claims without pretending generation failed.
 - Rewrote README, architecture, API, acceptance, traceability, development, and
   open-source-reuse records to distinguish the generic product path from legacy
   deterministic fixtures.
 
 ## 1.0.0 — 2026-08-13
 
-- Added one authoritative application service shared by `copperwright chat` and
-  the loopback-only `copperwright app` browser application.
+- Added one authoritative application service shared by `pcbdraft chat` and
+  the loopback-only `pcbdraft app` browser application.
 - Added focused conversational clarification, human-readable briefs, explicit
   confirmation, persistent projects/sessions/events/jobs, crash recovery,
   progress/cancel/retry states, real previews, safe open-in-KiCad actions, and
@@ -47,10 +67,10 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   safety-critical design remain explicitly unsupported; no physical or
   production sign-off is claimed.
 
-## 0.2.0 — 2026-08-13 (first CopperWright release)
+## 0.2.0 — 2026-08-13 (first PCBDraft release)
 
-- Established the CopperWright brand, durable mark/icon/social-preview assets,
-  the `copperwright` distribution name, CLI, package, schemas, and on-disk
+- Established the PCBDraft brand, durable mark/icon/social-preview assets,
+  the `pcbdraft` distribution name, CLI, package, schemas, and on-disk
   namespaces.
 
 - Added strict semantic circuit/PCB IR, trusted parts, and verified block registry.

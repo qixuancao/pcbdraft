@@ -1,36 +1,59 @@
-# CopperWright application and agent API reference
+# PCBDraft application and agent API reference
 
 ## Conversational application
 
-<code>copperwright</code> with no subcommand, <code>copperwright chat</code>, and
-<code>copperwright app</code> all use <code>ApplicationService</code>. The default
+<code>pcbdraft</code> with no subcommand, <code>pcbdraft chat</code>, and
+<code>pcbdraft app</code> all use <code>ApplicationService</code>. The default
 full-screen terminal creates a local project from its first plain-language
 message and presents slash commands through an in-place palette. <code>chat</code>
 retains its noninteractive argument surface and requires an explicit action; it
 does not fall back to a line REPL. The service owns project state, confirmation,
 events, locks, recovery, generation attempts, and validation; clients do not
-reimplement engineering logic.
+reimplement engineering logic. The terminal wraps it in a durable,
+non-blocking <code>AgentRuntime</code>; it renders persisted activity events and
+can request cooperative cancellation at the next safe tool boundary.
+The terminal stores only a mode-0600 pointer to the last local project. It
+restores retained history without replaying an interrupted action; retry is an
+explicit command. Plan/change review and expanded logs are terminal
+presentations over persisted application evidence, not a second source of
+project truth.
 
-The normal flow is:
+The default terminal flow is:
 
     user request
       → requirement interpretation
       → clarification only for material facts
       → reviewed generic circuit plan
-      → explicit confirmation
+      → automatic advance across the transactional generation boundary
       → native KiCad generation attempt
-      → optional KiCad/CopperWright checks
+      → previews and KiCad/PCBDraft checks
+      → at most two schema-constrained plan repairs for generation or completed
+        deterministic L1-L3 failures, with staged validation and atomic application
+
+The service and parameterized clients still expose explicit confirmation for
+manually staged and recovered projects. Automatic terminal progression does not
+remove the persisted plan or the transaction boundary.
+
+Automatic repair is an application-service capability, not raw model authority.
+Feedback has the versioned <code>pcbdraft-agent-repair-feedback</code> shape;
+the provider returns a full replacement plan through the normal compiler. Failed
+native candidates and their validation reports remain under
+<code>transactions/</code>. Non-deterministic and human-required findings are
+reported to the user but are not fed back as automatic repair triggers.
 
 The browser listens only on loopback by design. Its HTTP/SSE routes are an
 internal UI transport, not a public remote API.
 
 The builtin provider can collect requirements without a network credential, but
-it does not invent an electrical topology. A Codex or OpenAI-compatible provider
-is needed to produce a generic circuit plan.
+it does not invent an electrical topology. Codex, DeepSeek Harness, or an
+OpenAI-compatible provider is needed to produce a generic circuit plan. The
+DeepSeek Harness adapter is optional and uses a versioned subprocess bridge;
+Harness output still passes the same strict intent/plan validators and repair
+compiler as every other provider.
 
 ## JSON-RPC
 
-<code>copperwright api</code> runs newline-delimited JSON-RPC 2.0 over
+<code>pcbdraft api</code> runs newline-delimited JSON-RPC 2.0 over
 stdin/stdout. It has no network listener. Start by discovering the actual
 runtime capabilities:
 
@@ -45,24 +68,29 @@ than tracebacks.
 
 | Method | Required params | What it does |
 |---|---|---|
+| <code>agent.request.prepare</code> | <code>request_summary</code>, <code>design_name</code>, <code>layers</code>, <code>requested_parts</code>, <code>functions</code> | creates a bounded generic request, resolves relevant installed symbol context, and returns the exact plan schema; conversational clients normally choose layers internally before this call |
 | <code>symbols.find</code> | <code>query</code>; optional <code>limit</code> | searches the installed stock KiCad symbols and returns actual symbols, default footprints, descriptions, and pins |
 | <code>agent.plan.compile</code> | <code>request</code>, <code>plan</code> | validates the generic request/plan, resolves local symbols, preserves named parts, and returns semantic IR, a project-local part graph, and deterministic <code>plan_review</code> evidence |
 | <code>agent.project.generate</code> | <code>request</code>, <code>plan</code>, <code>output</code>; optional <code>retain_failed_attempt</code> | compiles and creates a new native KiCad managed-project attempt; successful projects retain the reviewed <code>circuit-plan.json</code> in their manifest, and the optional directory receives available staging on failure |
 
 The request document has schema
-<code>copperwright-agent-design-request</code>. The plan document has schema
-<code>copperwright-circuit-plan</code>. The planner may declare semantic
+<code>pcbdraft-agent-design-request</code>. The plan document has schema
+<code>pcbdraft-circuit-plan</code>. The planner may declare semantic
 components/pins/nets only; raw KiCad, geometry, routing, commands, and executable
 text are rejected by the schema and compiler.
 
 <code>plan_review</code> checks only facts that can be determined from the
-reviewed topology and local symbol metadata: power-input coverage, declared
-non-ground rail sources, applicable I2C pull-up/decoupling evidence, and the
-board rules. Findings do not block an otherwise valid generation attempt.
+reviewed topology and local libraries: real symbol-to-footprint pad coverage,
+power-input coverage and polarity, plausible non-ground rail sources, output
+contention, two-terminal shorts, ground-referenced LED polarity, per-line I2C
+pull-ups, applicable decoupling evidence, and board rules. Findings do not block
+a generation attempt. Completed deterministic failures do block engineering-
+candidate readiness and may enter bounded repair; reference-only datasheets and
+human-required evidence do not trigger repair.
 
 Example:
 
-    copperwright api <<'EOF'
+    pcbdraft api <<'EOF'
     {"jsonrpc":"2.0","id":"symbols","method":"symbols.find","params":{"query":"SHT31"}}
     {"jsonrpc":"2.0","id":"caps","method":"runtime.capabilities","params":{}}
     EOF
@@ -92,7 +120,8 @@ current semantic IR, and native KiCad evidence.
 for the old deterministic fixture corpus. They are explicitly compatibility
 methods, not the general conversational generation route. Consumers building new
 agent tooling should use <code>symbols.find</code>,
-<code>agent.plan.compile</code>, and <code>agent.project.generate</code>.
+<code>agent.request.prepare</code>, <code>agent.plan.compile</code>, and
+<code>agent.project.generate</code>.
 
 ## Stability and output truthfulness
 
@@ -101,6 +130,9 @@ request/plan, manifest, validation, release, and evidence records have their own
 schema/version fields. Write targets are create-only except for explicitly
 transactional publication and lock-protected evidence indexes.
 
-Domain labels do not trigger API rejection. The current native backend accepts
-2- and 4-layer board requests; complex domains may produce diagnostic warnings.
+Domain labels do not trigger API rejection. Layer count can be omitted and
+selected by the agent as an internal design parameter. The API carries every
+positive user-specified or agent-selected layer count; installed KiCad
+determines actual stackup support during generation and reports unavailable
+requests from that attempt. Complex domains may produce diagnostic warnings.
 Only tool results that actually ran are reported as validation evidence.

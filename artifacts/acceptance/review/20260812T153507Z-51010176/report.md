@@ -1,7 +1,7 @@
 # PCB design review
 
 Run: 20260812T153507Z-51010176<br>
-Project: /mnt/2T/copperwright/examples/attiny\_sensor\_controller/project<br>
+Project: /mnt/2T/pcbdraft/examples/attiny\_sensor\_controller/project<br>
 Schematic: attiny\_sensor\_controller.kicad\_sch<br>
 Board: attiny\_sensor\_controller.kicad\_pcb
 

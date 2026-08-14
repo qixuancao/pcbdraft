@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from copperwright.process import run_command
+from pcbdraft.process import run_command
 
 
 class BoundedProcessTests(unittest.TestCase):

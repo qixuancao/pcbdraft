@@ -3,14 +3,14 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "copperwright"
+name = "pcbdraft"
 version = "1.0.0"
-description = "CopperWright: local agent-safe PCB planning and KiCad runtime"
+description = "PCBDraft: local agent-safe PCB planning and KiCad runtime"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
-authors = [{name = "CopperWright contributors"}]
+authors = [{name = "PCBDraft contributors"}]
 keywords = ["pcb", "kicad", "eda", "agent", "electronics", "automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -30,16 +30,17 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/qixuancao/copperwright"
-Repository = "https://github.com/qixuancao/copperwright.git"
-Issues = "https://github.com/qixuancao/copperwright/issues"
-Changelog = "https://github.com/qixuancao/copperwright/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/qixuancao/pcbdraft"
+Repository = "https://github.com/qixuancao/pcbdraft.git"
+Issues = "https://github.com/qixuancao/pcbdraft/issues"
+Changelog = "https://github.com/qixuancao/pcbdraft/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["build>=1.2", "ruff>=0.12"]
+harness = ["deepseek-harness-sdk>=0.1.0rc5,<0.2"]
 
 [project.scripts]
-copperwright = "copperwright.cli:main"
+pcbdraft = "pcbdraft.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
@@ -48,4 +49,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-copperwright = ["data/**/*.json", "data/**/*.md", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]
+pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]

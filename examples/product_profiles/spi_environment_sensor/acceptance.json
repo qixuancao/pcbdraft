@@ -48,15 +48,15 @@
   "production_ready": false,
   "profile": "low_voltage_spi_environment_v1",
   "project_files": {
-    "board": "copperwright_spi_environment_sensor.kicad_pcb",
+    "board": "pcbdraft_spi_environment_sensor.kicad_pcb",
     "ir": "design.pcbir.json",
-    "kicad_project": "copperwright_spi_environment_sensor.kicad_pro",
-    "manifest": "project.copperwright.json",
+    "kicad_project": "pcbdraft_spi_environment_sensor.kicad_pro",
+    "manifest": "project.pcbdraft.json",
     "requirements": "requirements.pcbreq.json",
-    "schematic": "copperwright_spi_environment_sensor.kicad_sch",
-    "worker_receipt": "copperwright_spi_environment_sensor.worker-result.json"
+    "schematic": "pcbdraft_spi_environment_sensor.kicad_sch",
+    "worker_receipt": "pcbdraft_spi_environment_sensor.worker-result.json"
   },
-  "schema": "copperwright-product-example-acceptance",
+  "schema": "pcbdraft-product-example-acceptance",
   "validation_report_sha256": "be2d47605eb46a78617787329e3babc13a6d50faff7b5605025e2fce556f2a01",
   "version": 1
 }

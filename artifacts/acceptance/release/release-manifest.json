@@ -131,7 +131,7 @@
       "size": 18540
     },
     {
-      "path": "source/project.copperwright.json",
+      "path": "source/project.pcbdraft.json",
       "sha256": "0c005e14e2da93452cf9012524bea1eae755be898e4c6dabe4701947a9a6dbca",
       "size": 79322
     },
@@ -224,7 +224,7 @@
     "normalized_fields": "creation-time metadata and SVG trailing whitespace",
     "normalized_timestamp": "1980-01-01T00:00:00Z"
   },
-  "schema": "copperwright-manufacturing-release",
+  "schema": "pcbdraft-manufacturing-release",
   "tool_runs": [
     {
       "argv": [

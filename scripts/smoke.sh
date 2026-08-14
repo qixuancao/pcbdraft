@@ -14,7 +14,7 @@ if [[ ! -d "$DEMO_SOURCE" ]]; then
     exit 2
 fi
 
-SMOKE_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/copperwright-smoke.XXXXXX")
+SMOKE_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/pcbdraft-smoke.XXXXXX")
 cleanup() {
     rm -rf -- "$SMOKE_ROOT"
 }
@@ -25,7 +25,7 @@ RUNS_DIR="$SMOKE_ROOT/runs"
 cp -a -- "$DEMO_SOURCE" "$PROJECT_COPY"
 
 cd "$REPO_DIR"
-uv run ./copperwright doctor --json
+uv run ./pcbdraft doctor --json
 
 mapfile -t SCHEMATICS < <(find "$PROJECT_COPY" -maxdepth 1 -type f -name '*.kicad_sch' -print | sort)
 mapfile -t BOARDS < <(find "$PROJECT_COPY" -maxdepth 1 -type f -name '*.kicad_pcb' -print | sort)
@@ -44,14 +44,14 @@ chmod 600 "$GATE_DIR/erc.json" "$GATE_DIR/drc.json"
 
 if [[ "$REAL_CODEX" == "1" ]]; then
     # ecc83 currently contains two matching root projects; select one without
-    # touching the system demo so CopperWright's ambiguity behavior remains strict.
+    # touching the system demo so PCBDraft's ambiguity behavior remains strict.
     SELECTED="$SMOKE_ROOT/selected-project"
     mkdir -m 700 -- "$SELECTED"
     STEM=$(basename -- "${SCHEMATICS[0]}" .kicad_sch)
     cp -a -- "$PROJECT_COPY/." "$SELECTED/"
     find "$SELECTED" -maxdepth 1 -type f \( -name '*.kicad_sch' -o -name '*.kicad_pcb' \) \
         ! -name "$STEM.kicad_sch" ! -name "$STEM.kicad_pcb" -delete
-    timeout 960s uv run ./copperwright review "$SELECTED" --output "$RUNS_DIR" --timeout 900
+    timeout 960s uv run ./pcbdraft review "$SELECTED" --output "$RUNS_DIR" --timeout 900
 else
     echo "smoke: REAL_CODEX=0, skipped live Codex review"
 fi

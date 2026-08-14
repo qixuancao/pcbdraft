@@ -27,7 +27,7 @@
   "project_status": "awaiting_confirmation",
   "proposed_profile": "low_voltage_spi_environment_v1",
   "provider": "codex",
-  "schema": "copperwright-codex-provider-acceptance",
+  "schema": "pcbdraft-codex-provider-acceptance",
   "scope_decision": "supported",
   "version": 1
 }

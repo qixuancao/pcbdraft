@@ -8,21 +8,21 @@ import time
 import unittest
 from pathlib import Path
 
-from copperwright.agent_design import (
+from pcbdraft.agent_design import (
     AgentDesignRequest,
     CircuitPlan,
     compile_agent_plan,
 )
-from copperwright.managed import generate_managed_project, materialize_managed_design
-from copperwright.project import discover_project
-from copperwright.requirements import RequirementsSpec
-from copperwright.semantic import (
+from pcbdraft.managed import generate_managed_project, materialize_managed_design
+from pcbdraft.project import discover_project
+from pcbdraft.requirements import RequirementsSpec
+from pcbdraft.semantic import (
     PROMPT_CONTEXT_LIMIT,
     _fit_prompt_context,
     _managed_semantic_context,
     collect_semantic_context,
 )
-from copperwright.workflows import run_review
+from pcbdraft.workflows import run_review
 from tests.requirements_factory import controller_requirements_dict
 from tests.test_agent_design import indicator_plan_dict, indicator_request_dict
 

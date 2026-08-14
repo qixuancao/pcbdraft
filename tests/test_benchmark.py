@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from copperwright.benchmark import _select_model_cases, load_corpus, run_benchmark
-from copperwright.errors import ValidationError
+from pcbdraft.benchmark import _select_model_cases, load_corpus, run_benchmark
+from pcbdraft.errors import ValidationError
 
 
 class IndependentBenchmarkTests(unittest.TestCase):
@@ -15,8 +15,8 @@ class IndependentBenchmarkTests(unittest.TestCase):
         document, cases = load_corpus()
         self.assertEqual(document["license"], "CC0-1.0")
         self.assertEqual(len(cases), 90)
-        self.assertEqual(sum(case.label == "fault" for case in cases), 66)
-        self.assertEqual(sum(case.label == "clean" for case in cases), 24)
+        self.assertEqual(sum(case.label == "fault" for case in cases), 64)
+        self.assertEqual(sum(case.label == "clean" for case in cases), 26)
         self.assertGreaterEqual(len({case.category for case in cases}), 15)
         self.assertIn("No competitor fixture", document["methodology"])
         self.assertTrue(
@@ -37,14 +37,14 @@ class IndependentBenchmarkTests(unittest.TestCase):
             self.assertEqual(
                 metrics["confusion_matrix"],
                 {
-                    "true_positive": 66,
+                    "true_positive": 64,
                     "false_negative": 0,
                     "false_positive": 0,
-                    "true_negative": 24,
+                    "true_negative": 26,
                 },
             )
             self.assertEqual(metrics["detection"]["targeted_code_recall"], 1.0)
-            self.assertEqual(metrics["repair"]["eligible"], 65)
+            self.assertEqual(metrics["repair"]["eligible"], 63)
             self.assertEqual(metrics["repair"]["success_rate"], 1.0)
             self.assertEqual(metrics["repair"]["introduced_regression_cases"], 0)
             self.assertEqual(metrics["repeatability"]["rate"], 1.0)
@@ -69,7 +69,7 @@ class IndependentBenchmarkTests(unittest.TestCase):
             output = Path(temporary) / "benchmark.json"
             real_which = shutil.which
             with patch(
-                "copperwright.benchmark.shutil.which",
+                "pcbdraft.benchmark.shutil.which",
                 side_effect=lambda name: None if name == "codex" else real_which(name),
             ):
                 result = run_benchmark(output, repetitions=2, model_runs=2)

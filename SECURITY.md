@@ -1,4 +1,4 @@
-# CopperWright security policy and threat model
+# PCBDraft security policy and threat model
 
 ## Supported versions
 
@@ -79,7 +79,7 @@ substitute for qualified engineering review.
 
 The Codex provider reuses the CLI's existing authenticated state and never reads or
 prints its token. The OpenAI-compatible provider reads its API key from the named
-runtime environment variable only. CopperWright does not offer a browser credential
+runtime environment variable only. PCBDraft does not offer a browser credential
 input, copy credentials into subprocess arguments, or persist them in projects,
 conversations, jobs, events, diagnostics, or receipts. User text is redacted for
 common credential forms before provider invocation and durable storage.

@@ -1,4 +1,4 @@
-# CopperWright 1.0 产品完成报告
+# PCBDraft 1.0 产品完成报告
 
 > **历史记录，已不代表当前产品状态。** 本文记录的是固定确定性夹具曾经的产品
 > 叙述；它已经被通用“请求 → 电路计划 → 本地 KiCad 解析 → 语义 IR”路径取代。
@@ -10,9 +10,9 @@
 
 ## 结论
 
-CopperWright 已从有边界的 PCB 工程运行时扩展为一款可由普通用户使用的、本地优先
-的对话式 PCB 应用。`copperwright chat` 和仅监听 `127.0.0.1` 的
-`copperwright app` 共用一个权威应用服务。用户无需手写 JSON：可以用自然语言建项、
+PCBDraft 已从有边界的 PCB 工程运行时扩展为一款可由普通用户使用的、本地优先
+的对话式 PCB 应用。`pcbdraft chat` 和仅监听 `127.0.0.1` 的
+`pcbdraft app` 共用一个权威应用服务。用户无需手写 JSON：可以用自然语言建项、
 回答聚焦问题、检查简报/BOM/约束、明确确认、生成真实 KiCad 工程、查看预览与
 L0–L7 验证、通过语义事务修改/撤销，并导出和离线校验制造候选包。
 
@@ -21,7 +21,7 @@ L0–L7 验证、通过语义事务修改/撤销，并导出和离线校验制�
 合格人工审查、制造、上电、EMC 或物理测试。
 
 [`FINAL_REPORT_ZH.md`](FINAL_REPORT_ZH.md) 保留工程基线背景；本报告记录当前
-CopperWright 产品层和重建后的验收证据。
+PCBDraft 产品层和重建后的验收证据。
 
 ## 已交付产品
 
@@ -65,7 +65,7 @@ CopperWright 产品层和重建后的验收证据。
 
 ```bash
 uv run python scripts/browser-e2e.py \
-  --executable .venv/bin/copperwright \
+  --executable .venv/bin/pcbdraft \
   --geckodriver /snap/bin/geckodriver \
   --output artifacts/product-e2e
 ```
@@ -85,7 +85,7 @@ BME280/SPI 自然语言请求、2 层澄清、确认前无设计副作用、真�
 命令：
 
 ```bash
-scripts/chat-e2e.sh /tmp/copperwright-chat-e2e-v1
+scripts/chat-e2e.sh /tmp/pcbdraft-chat-e2e-v1
 ```
 
 结果：自然语言建项、澄清、确认前无副作用、生成、验证、语义预览保持权威哈希、
@@ -109,7 +109,7 @@ Fast/hooks/multi-agent/network tools 关闭、approval `never`，通过 stdin �
 - 四语 README：15 个章节、12 个 bash 块、20 个相对链接、20 个表格行保持对齐；
   命令字面量与链接目标由 `tests.test_branding` 校验。
 - `scripts/release-check.sh`：355.23 s，完成锁定依赖测试、wheel/sdist 构建和归档
-  校验、隔离 Python 3.11 安装、`copperwright` 1.0.0 启动、终端 E2E、
+  校验、隔离 Python 3.11 安装、`pcbdraft` 1.0.0 启动、终端 E2E、
   clean-HOME Firefox E2E、90 例 benchmark、真实生成/验证、两次逐字节可复现发布及
   离线校验，最终输出 `release check passed`。
 - 当前五次重复 benchmark：70/70 故障检出、20/20 clean 判定、0 假阳性、0 假
@@ -119,7 +119,7 @@ Fast/hooks/multi-agent/network tools 关闭、approval `never`，通过 stdin �
   工件则真实记录 2 次、48/48 正确、24/24 一致，且本次 1.0 又单独实跑了已认证
   Codex 提供方契约。
 
-验收工具版本：CopperWright 1.0.0、KiCad/kicad-cli 10.0.5、Firefox 153.0.3、
+验收工具版本：PCBDraft 1.0.0、KiCad/kicad-cli 10.0.5、Firefox 153.0.3、
 geckodriver 0.37.0、uv 0.12.1。
 
 ## 工件路径

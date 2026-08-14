@@ -6,8 +6,8 @@ import tomllib
 import unittest
 from pathlib import Path
 
-from copperwright.api import capabilities
-from copperwright.cli import build_parser
+from pcbdraft.api import capabilities
+from pcbdraft.cli import build_parser
 
 ROOT = Path(__file__).resolve().parents[1]
 BRAND = ROOT / "docs" / "assets" / "brand"
@@ -20,35 +20,35 @@ def png_dimensions(path: Path) -> tuple[int, int]:
     return struct.unpack(">II", data[16:24])
 
 
-class CopperWrightBrandingTests(unittest.TestCase):
+class PCBDraftBrandingTests(unittest.TestCase):
     def test_distribution_and_canonical_cli_entry_point_are_declared(self) -> None:
         document = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
         project = document["project"]
-        self.assertEqual(project["name"], "copperwright")
-        self.assertEqual(project["scripts"]["copperwright"], "copperwright.cli:main")
-        self.assertEqual(build_parser(prog="copperwright").prog, "copperwright")
+        self.assertEqual(project["name"], "pcbdraft")
+        self.assertEqual(project["scripts"]["pcbdraft"], "pcbdraft.cli:main")
+        self.assertEqual(build_parser(prog="pcbdraft").prog, "pcbdraft")
 
     def test_api_advertises_current_brand_and_module_surface(self) -> None:
         product = capabilities()["product"]
-        self.assertEqual(product["name"], "CopperWright")
-        self.assertEqual(product["distribution"], "copperwright")
-        self.assertEqual(product["primary_cli"], "copperwright")
-        self.assertEqual(product["python_module"], "copperwright")
+        self.assertEqual(product["name"], "PCBDraft")
+        self.assertEqual(product["distribution"], "pcbdraft")
+        self.assertEqual(product["primary_cli"], "pcbdraft")
+        self.assertEqual(product["python_module"], "pcbdraft")
 
     def test_source_mark_is_preserved_and_derivative_dimensions_are_exact(self) -> None:
-        source = BRAND / "copperwright-mark-v1-source.png"
+        source = BRAND / "pcbdraft-mark-v1-source.png"
         self.assertEqual(
             hashlib.sha256(source.read_bytes()).hexdigest(),
-            "eb9a60f013b0e9413ee58442779884e2fed67f8080b105038367412b406b4004",
+            "abbe8e65746ad62ce7a70e4a81200f1a6f2ec17d56894bc513b41d1466a3b60a",
         )
         self.assertEqual(png_dimensions(source), (1254, 1254))
         for size in (32, 64, 128, 256, 512):
             self.assertEqual(
-                png_dimensions(BRAND / f"copperwright-mark-{size}.png"),
+                png_dimensions(BRAND / f"pcbdraft-mark-{size}.png"),
                 (size, size),
             )
         self.assertEqual(
-            png_dimensions(BRAND / "copperwright-social-preview-1280x640.png"),
+            png_dimensions(BRAND / "pcbdraft-social-preview-1280x640.png"),
             (1280, 640),
         )
 
@@ -65,8 +65,8 @@ class CopperWrightBrandingTests(unittest.TestCase):
             normalized = document.casefold()
             for name in expected_navigation:
                 self.assertIn(f'href="{name}"', document)
-            self.assertIn("docs/assets/brand/copperwright-mark-256.png", document)
-            for literal in ("agent-safe", "KiCad", "copperwright app", "copperwright"):
+            self.assertIn("docs/assets/brand/pcbdraft-mark-256.png", document)
+            for literal in ("agent-safe", "KiCad", "pcbdraft app", "pcbdraft"):
                 self.assertIn(literal.casefold(), normalized)
             self.assertNotIn("low_voltage_i2c_controller_v1", document)
             self.assertNotIn("EXPERIMENTAL_RP2040_TMP117", document)

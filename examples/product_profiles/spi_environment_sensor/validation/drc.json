@@ -17,7 +17,7 @@
   ],
   "kicad_version": "10.0.5",
   "schematic_parity": [],
-  "source": "copperwright_spi_environment_sensor.kicad_pcb",
+  "source": "pcbdraft_spi_environment_sensor.kicad_pcb",
   "unconnected_items": [],
   "violations": []
 }

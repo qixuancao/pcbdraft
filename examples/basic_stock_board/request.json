@@ -1,5 +1,5 @@
 {
-  "schema": "copperwright-agent-design-request",
+  "schema": "pcbdraft-agent-design-request",
   "version": 1,
   "design_id": "basic-stock-board",
   "name": "Basic stock KiCad board",

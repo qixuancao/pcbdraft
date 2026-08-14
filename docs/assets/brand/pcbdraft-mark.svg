@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1254" height="1254" viewBox="0 0 1024 1024" role="img" aria-labelledby="title">
+  <title id="title">PCBDraft terminal trace mark</title>
+  <rect
+    x="96"
+    y="96"
+    width="832"
+    height="832"
+    rx="184"
+    fill="#111a18"
+    stroke="#f28a35"
+    stroke-width="56"
+  />
+  <g
+    fill="none"
+    stroke="#f28a35"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  >
+    <path d="M 254 332 L 438 512 L 254 692" stroke-width="76" />
+    <path d="M 462 456 H 566 Q 606 456 636 426 L 764 310" stroke-width="42" />
+    <path d="M 462 512 H 815" stroke-width="42" />
+    <path d="M 462 568 H 566 Q 606 568 636 598 L 764 714" stroke-width="42" />
+  </g>
+  <g fill="#f28a35">
+    <circle cx="764" cy="310" r="70" />
+    <circle cx="815" cy="512" r="70" />
+    <circle cx="764" cy="714" r="70" />
+  </g>
+  <g fill="#fff8eb">
+    <circle cx="764" cy="310" r="27" />
+    <circle cx="815" cy="512" r="27" />
+    <circle cx="764" cy="714" r="27" />
+  </g>
+</svg>

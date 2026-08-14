@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from copperwright.errors import ValidationError
-from copperwright.patching import apply_operations, regression_reasons
+from pcbdraft.errors import ValidationError
+from pcbdraft.patching import apply_operations, regression_reasons
 
 
 def operation(old: str, new: str) -> dict[str, str]:

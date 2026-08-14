@@ -10,7 +10,7 @@
     "thickness_mm": 1.6,
     "width_mm": 45.0
   },
-  "design_id": "copperwright_i2c_temperature_controller",
+  "design_id": "pcbdraft_i2c_temperature_controller",
   "functions": [
     {
       "id": "controller",
@@ -69,7 +69,7 @@
       "speed_hz": 100000
     }
   ],
-  "name": "CopperWright I2C temperature controller",
+  "name": "PCBDraft I2C temperature controller",
   "power": {
     "max_current_a": 0.1,
     "max_v": 3.465,
@@ -82,7 +82,7 @@
     "compact_sensor_group"
   ],
   "revision": "1.0",
-  "schema": "copperwright-requirements",
+  "schema": "pcbdraft-requirements",
   "scope": {
     "domains": [
       "i2c",
@@ -100,7 +100,7 @@
   "source": {
     "acquired_at": "2026-08-13",
     "locator": "examples/product_profiles/i2c_temperature_controller/requirements.json",
-    "name": "confirmed CopperWright conversation"
+    "name": "confirmed PCBDraft conversation"
   },
   "version": 1
 }

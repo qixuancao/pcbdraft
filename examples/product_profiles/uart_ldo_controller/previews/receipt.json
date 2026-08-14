@@ -19,11 +19,11 @@
     },
     "schematic_svg": {
       "bytes": 224382,
-      "path": "schematic-svg/copperwright_uart_ldo_controller.svg",
+      "path": "schematic-svg/pcbdraft_uart_ldo_controller.svg",
       "sha256": "4c5591bd4b8c2899157781bb32eb7db4b028b4c72adb25f04add2ded4c61c78d"
     }
   },
-  "schema": "copperwright-preview-bundle",
+  "schema": "pcbdraft-preview-bundle",
   "tool_runs": [
     {
       "duration_seconds": 0.251,

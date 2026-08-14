@@ -3,35 +3,35 @@
   "clean_home": true,
   "loopback_only": true,
   "primary_flow": {
-    "applied_hash": "2966634f19a44f8bba3758a01273cf1677b9050315a2e88ae0225ba61eac60e2",
     "candidate_ready": true,
-    "clarification": "Should this board use 2 or 4 copper layers?",
+    "complex_domain_warned_not_rejected": true,
+    "design_hash": "47f2aea68c3d8c23b667b5288073a3fc455ea7e5d25bb1674249644ae352660d",
+    "layer_selection_was_internal": true,
     "offline_release_verified": true,
-    "original_hash": "e1ac4515d3c5c14d1134e5ee49b496f1f70c5f22059a2ea852ccf7e5c86029dc",
     "production_ready": false,
-    "project_id": "browser-greenhouse-2f34717d",
-    "release_archive_bytes": 193182,
-    "undo_restored_original_hash": true,
-    "unsupported_scope_visible": true,
+    "project_id": "browser-led-prototype-1d25496b",
+    "release_archive_bytes": 150144,
+    "reviewed_plan_was_generic": true,
     "validation_levels": 8
   },
-  "provider": "builtin",
+  "provider": "local-openai-compatible",
+  "provider_requests": 4,
   "reopen_flow": {
     "active_job": false,
     "design": true,
-    "messages": 11,
-    "project_id": "browser-greenhouse-2f34717d",
+    "messages": 5,
+    "project_id": "browser-led-prototype-1d25496b",
     "release_verified": true,
     "selected_from_project_list": true,
     "status": "released"
   },
-  "schema": "copperwright-browser-e2e",
+  "schema": "pcbdraft-browser-e2e",
   "screenshots": [
-    "copperwright-app-brief.png",
-    "copperwright-app-reopened.png",
-    "copperwright-app-unsupported.png",
-    "copperwright-app-validation.png",
-    "copperwright-app-visuals.png"
+    "pcbdraft-app-brief.png",
+    "pcbdraft-app-domain-warnings.png",
+    "pcbdraft-app-reopened.png",
+    "pcbdraft-app-validation.png",
+    "pcbdraft-app-visuals.png"
   ],
-  "version": 1
+  "version": 2
 }

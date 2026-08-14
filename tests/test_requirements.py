@@ -4,13 +4,13 @@ import copy
 import unittest
 from pathlib import Path
 
-from copperwright.blocks import BlockRegistry
-from copperwright.errors import ValidationError
-from copperwright.ir import Design
-from copperwright.parts import PartGraph
-from copperwright.profiles import build_requirements, product_profiles
-from copperwright.requirements import RequirementsSpec, compile_requirements
-from copperwright.semantic_rules import evaluate_semantic_rules
+from pcbdraft.blocks import BlockRegistry
+from pcbdraft.errors import ValidationError
+from pcbdraft.ir import Design
+from pcbdraft.parts import PartGraph
+from pcbdraft.profiles import build_requirements, product_profiles
+from pcbdraft.requirements import RequirementsSpec, compile_requirements
+from pcbdraft.semantic_rules import evaluate_semantic_rules
 from tests.requirements_factory import controller_requirements_dict
 
 

@@ -9,19 +9,19 @@ import unittest
 import zipfile
 from pathlib import Path
 
-from copperwright.errors import ValidationError
-from copperwright.external_evidence import (
+from pcbdraft.errors import ValidationError
+from pcbdraft.external_evidence import (
     load_external_evidence,
     record_external_evidence,
 )
-from copperwright.managed import generate_managed_project
-from copperwright.profiles import build_requirements
-from copperwright.release import (
+from pcbdraft.managed import generate_managed_project
+from pcbdraft.profiles import build_requirements
+from pcbdraft.release import (
     build_manufacturing_release,
     verify_manufacturing_release,
 )
-from copperwright.requirements import RequirementsSpec
-from copperwright.validation import validate_managed_project
+from pcbdraft.requirements import RequirementsSpec
+from pcbdraft.validation import validate_managed_project
 from tests.requirements_factory import controller_requirements_dict
 
 
@@ -46,7 +46,7 @@ def _real_kicad_available() -> bool:
 class ManagedPipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.temporary = tempfile.TemporaryDirectory(prefix="copperwright-managed-test-")
+        cls.temporary = tempfile.TemporaryDirectory(prefix="pcbdraft-managed-test-")
         cls.parent = Path(cls.temporary.name)
         cls.spec = RequirementsSpec.from_dict(controller_requirements_dict())
         cls.generated = generate_managed_project(cls.spec, cls.parent / "project")
@@ -72,20 +72,20 @@ class ManagedPipelineTests(unittest.TestCase):
             second.project.manifest["native_snapshots"],
         )
 
-    def test_four_layer_generation_and_real_validation_pass(self) -> None:
+    def test_six_layer_generation_and_real_validation_pass(self) -> None:
         value = copy.deepcopy(controller_requirements_dict())
-        value["scope"]["layers"] = 4
-        value["board"]["layers"] = 4
+        value["scope"]["layers"] = 6
+        value["board"]["layers"] = 6
         generated = generate_managed_project(
-            RequirementsSpec.from_dict(value), self.parent / "four-layer"
+            RequirementsSpec.from_dict(value), self.parent / "six-layer"
         )
         validation = validate_managed_project(
-            generated.project, output=self.parent / "four-layer-validation"
+            generated.project, output=self.parent / "six-layer-validation"
         )
         self.assertTrue(validation.candidate_ready)
         self.assertEqual(
             generated.project.manifest["native_snapshots"]["board"]["board"]["layers"],
-            4,
+            6,
         )
         zones = generated.project.manifest["native_snapshots"]["board"]["zones"]
         self.assertEqual(len(zones), 1)

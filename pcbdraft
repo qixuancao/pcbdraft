@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Runs this checkout through its uv-managed PCBDraft environment.
+# Run: ./pcbdraft [args]
+# Requires: uv and a PCBDraft repository checkout.
+set -euo pipefail
+
+REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+exec uv run --project "$REPO_DIR" python -m pcbdraft "$@"

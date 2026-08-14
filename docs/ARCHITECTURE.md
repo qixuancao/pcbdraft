@@ -1,7 +1,7 @@
-# CopperWright architecture
+# PCBDraft architecture
 
-CopperWright is an agent-safe runtime around KiCad, not a replacement EDA GUI.
-It exists to turn a user-approved, semantic circuit plan into reviewable KiCad
+PCBDraft is an agent-safe runtime around KiCad, not a replacement EDA GUI.
+It exists to turn a schema-constrained semantic circuit plan into reviewable KiCad
 artifacts while retaining enough evidence to explain either success or failure.
 The product is model-agnostic: a model can interpret requirements and propose
 topology, but it never owns raw KiCad text, geometry, filesystem writes, command
@@ -10,6 +10,10 @@ execution, validation outcomes, or release identity.
 ## Product path
 
     full-screen terminal / parameterized chat / local browser / JSON-RPC
+                       |
+                       v
+             AgentRuntime / durable JobRunner / project event stream
+             (the terminal uses this asynchronous path)
                        |
                        v
              ApplicationService: projects, events, locks,
@@ -49,15 +53,25 @@ execution, validation outcomes, or release identity.
     KiCad schematic / bounded PCB attempt     L0–L7 evidence gates
              |                                 |
              +------------- retained attempt --+
+                             |
+                 bounded semantic repair (max 2)
+                 - sanitized generation evidence
+                 - completed deterministic L1-L3 failures only
+                 - replacement plan through the same compiler
+                 - staged validation before atomic apply
 
-The application service is the only business write authority. The default
-full-screen terminal and browser render the same persisted project,
-conversation, attempt, event, and decision records. The terminal derives a
-local project name from the first normal-language request, while its slash
-palette handles project selection and explicit engineering actions. The
-parameterized <code>chat</code> command is for automation and does not start a
-line-oriented session. A restart marks an incomplete job interrupted rather
-than replaying its side effects.
+The application service is the only business write authority. `AgentRuntime`
+and `JobRunner` turn its synchronous, transactional operations into durable
+background turns and UI-neutral activity events; curses owns rendering and key
+handling only. The default full-screen terminal and browser render the same
+persisted project, conversation, attempt, event, and decision records. The
+terminal derives a local project name from the first normal-language request,
+while its slash palette handles project selection and explicit engineering
+actions. It automatically advances a completed pending plan across the existing
+confirmation transaction boundary. Manual clients can retain the staged plan
+and confirm it explicitly. The parameterized <code>chat</code> command is for
+automation and does not start a line-oriented session. A restart marks an
+incomplete job interrupted rather than replaying its side effects.
 
 ## Generic request and plan
 
@@ -80,20 +94,28 @@ and engineering data.
 
 After compile, the runtime produces deterministic <code>plan_review</code>
 evidence from the selected local symbols and topology. It flags missing
-power-input coverage, undeclared rail sources, and applicable I2C pull-up or
-decoupling evidence. These are not a fixed part template or a general-part
-denylist: a finding explains what an attempted project still needs, while the
-user may choose to preserve and generate that attempt.
+power-input coverage, supply/ground polarity, implausible rail sources, output
+contention, two-terminal shorts, ground-referenced LED polarity, per-line I2C
+pull-ups, and applicable decoupling evidence. A separate versioned component
+qualification report verifies installed symbol/footprint availability and exact
+symbol-pin-to-native-pad coverage. KiCad datasheet URLs remain explicitly
+reference-only, and extracted manufacturer/MPN claims remain unverified. These
+are not a fixed part template or a general-part denylist: a finding explains
+what an attempted project still needs. The default terminal continues the
+bounded attempt automatically, while manual clients may leave the plan staged
+for review.
 
 ## Stock KiCad component resolution
 
 <code>PartGraph</code> owns canonical component records. For the generic path,
 the resolver extracts a record from the locally installed KiCad symbol and
-footprint libraries. Such records have:
+footprint libraries. Such records and their retained
+<code>component-qualification.json</code> have:
 
 - trust state <code>extracted</code>;
 - lifecycle state <code>unknown</code>;
-- a local-library provenance record; and
+- local-library and generation-time pad-map provenance;
+- a datasheet locator classified as reference-only when KiCad supplies one; and
 - no claimed manufacturer verification, sourcing status, rating, simulation, or
   layout qualification.
 
@@ -112,6 +134,15 @@ The semantic IR is compiled through the existing KiCad adapters:
 - <code>managed.py</code> stages all files in a sibling directory and publishes
   only on success.
 
+Fine-pitch escape segments are checked against exact pad/track rectangles before
+their terminals are reserved on the bounded routing grid. Half-grid coordinates
+use one stable rounding rule, so a 0.5 mm pad array cannot alternately collapse
+to 0.4 mm. If routing is incomplete, reference-plane work is skipped and the
+error retains the unrouted nets, bounded-search count, and concrete pad/escape
+diagnostics. Reference-plane connections are demand-driven: an existing
+through-hole ground pad or routed ground via counts as a real connection; a
+pure-SMD board receives one safe tie instead of an arbitrary universal via count.
+
 For a generic success, the exact reviewed <code>circuit-plan.json</code> is a
 tracked managed member alongside the request, IR, and project-local part graph.
 Its hash must match the IR provenance before publication; the parsed plan is
@@ -120,7 +151,37 @@ therefore available to later review without trusting arbitrary adjacent JSON.
 For an application generation failure, the attempt directory retains the approved
 request, circuit plan, IR, project-local part graph, error, and every native
 artifact that had already been produced. A router failure is therefore a useful,
-inspectable result, not a hidden substitution or a false success.
+inspectable result, not a hidden substitution, a later stitching error that masks
+the cause, or a false success.
+
+The autonomous terminal may make at most two repair attempts. A repair provider
+receives a bounded JSON feedback record and must return a complete replacement
+<code>CircuitPlan</code>; it cannot patch native KiCad text. The replacement is
+resolved against the same installed symbols and compiled through the same
+semantic boundary. For an already generated project, native files and validation
+evidence are first created under a retained transaction. A failed candidate never
+changes the authoritative design. A candidate without completed deterministic
+L1-L3 failures is
+exposed as a semantic diff and atomically applied by the agent; the exact previous
+managed project remains available for undo. Unknown, heuristic, and
+human-required evidence never causes an automatic repair loop.
+
+## Replaceable planning providers
+
+Planning providers implement the same three operations: interpret requirements,
+propose a complete circuit plan, and revise a complete plan from bounded tool
+feedback. Codex, OpenAI-compatible endpoints, and DeepSeek Harness therefore do
+not own separate PCB workflows.
+
+The optional Harness adapter is split at a versioned JSON process boundary.
+Prompts and schemas travel on stdin, never argv; execution time and combined
+output are bounded; correlation IDs, protocol versions, metadata, and errors
+are validated before accepting a result. Its minimal Cordis composition has no
+model-facing mutation tools. PCBDraft then applies its normal strict schema,
+installed-symbol, semantic-plan, generation, validation, and transaction checks.
+The complementary DSH-hosted plugin discovers the JSON-RPC API capabilities and
+exposes only prepare, symbol-search, and generate/validate tools, with no second
+PCB implementation.
 
 ## Validation and release
 
@@ -128,7 +189,8 @@ L0–L7 reports distinguish completed, unavailable, heuristic, human-required, a
 not-applicable evidence. In particular:
 
 - L0 checks project/file/IR coherence;
-- L1 checks symbols, pins, footprint mapping, and trust state;
+- L1 checks symbols, pins, actual footprint pad numbers, generic electrical
+  topology, component evidence, and trust state;
 - L2 runs the applicable KiCad ERC/DRC checks;
 - L3 checks semantic/interface rules when the design supplies such rules;
 - L4–L7 require sourcing/manufacturing, simulation/physical analysis, human
@@ -148,12 +210,18 @@ created KiCad project into a failed application operation.
 
 ## Domain handling
 
-The current PCB backend implements 2- and 4-layer boards. Domain classification
-does not gate the request: mains, high power, DDR, PCIe, SerDes, RF, medical,
-aviation, safety-critical, and unfamiliar domains use the same plan and
-generation path. Diagnostics state which domain-specific electrical, regulatory,
-RF, thermal, or safety checks were not performed. Generation, routing, ERC/DRC,
-and export failures are reported from the actual attempted operation.
+Layer count is an internal design parameter when the user does not specify it;
+the requirement interpreter selects an initial stackup without asking the user
+to understand PCB layer planning. If the user does specify a positive count,
+the backend preserves it through the planning path. The installed KiCad build
+determines actual stackup support during generation; an unavailable stackup is
+reported from the attempt rather than being preemptively rejected. Domain
+classification does not gate the request: mains, high power, DDR, PCIe, SerDes,
+RF, medical, aviation, safety-critical, and unfamiliar domains use the same
+plan and generation path. Diagnostics state which domain-specific electrical,
+regulatory, RF, thermal, or safety checks were not performed. Generation,
+routing, ERC/DRC, and export failures are reported from the actual attempted
+operation.
 
 ## Existing deterministic fixtures
 
@@ -169,5 +237,7 @@ runtime above.
 The architecture takes compatible ideas, not copied implementation, from the
 declarative/component patterns of atopile, the circuit representation and
 separation of concerns in tscircuit, the Python-to-KiCad composition direction of
-circuit-synth, and the small interaction-shell shape of Pi/π. The precise
-license/source record is in [OPEN_SOURCE_REUSE.md](OPEN_SOURCE_REUSE.md).
+circuit-synth, the small interaction-shell shape of Pi/π, and Hermes Agent's
+explicit UI/backend event boundary. PCBDraft's terminal implementation
+remains Python/curses; no Hermes TUI source was copied. The precise license/source
+record is in [OPEN_SOURCE_REUSE.md](OPEN_SOURCE_REUSE.md).

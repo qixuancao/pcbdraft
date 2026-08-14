@@ -10,7 +10,7 @@
     "thickness_mm": 1.6,
     "width_mm": 45.0
   },
-  "design_id": "copperwright_uart_ldo_controller",
+  "design_id": "pcbdraft_uart_ldo_controller",
   "functions": [
     {
       "id": "controller",
@@ -83,7 +83,7 @@
       "stop_bits": 1
     }
   ],
-  "name": "CopperWright UART LDO controller",
+  "name": "PCBDraft UART LDO controller",
   "power": {
     "max_current_a": 0.1,
     "max_v": 5.25,
@@ -96,7 +96,7 @@
     "manufacturability"
   ],
   "revision": "1.0",
-  "schema": "copperwright-requirements",
+  "schema": "pcbdraft-requirements",
   "scope": {
     "domains": [
       "ldo",
@@ -114,7 +114,7 @@
   "source": {
     "acquired_at": "2026-08-13",
     "locator": "examples/product_profiles/uart_ldo_controller/requirements.json",
-    "name": "confirmed CopperWright conversation"
+    "name": "confirmed PCBDraft conversation"
   },
   "version": 1
 }

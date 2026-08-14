@@ -19,12 +19,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Self
 
+from fake_openai_provider import E2E_API_KEY, start_fake_provider
+
 REPO = Path(__file__).resolve().parent.parent
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--executable", default=shutil.which("copperwright"))
+    parser.add_argument("--executable", default=shutil.which("pcbdraft"))
     parser.add_argument("--geckodriver", default=shutil.which("geckodriver"))
     parser.add_argument("--output", type=Path)
     return parser.parse_args()
@@ -51,7 +53,7 @@ def start_server(
             executable,
             "app",
             "--provider",
-            "builtin",
+            "openai-compatible",
             "--workspace",
             str(workspace),
             "--host",
@@ -76,15 +78,15 @@ def start_server(
         if process.poll() is not None:
             stderr = process.stderr.read() if process.stderr else ""
             raise RuntimeError(
-                f"CopperWright app exited early ({process.returncode}): {stderr[-2000:]}"
+                f"PCBDraft app exited early ({process.returncode}): {stderr[-2000:]}"
             )
         if selector.select(timeout=0.25):
             line = process.stdout.readline().strip()
-            if line.startswith("CopperWright app: http://127.0.0.1:"):
-                return process, line.removeprefix("CopperWright app: ")
+            if line.startswith("PCBDraft app: http://127.0.0.1:"):
+                return process, line.removeprefix("PCBDraft app: ")
     process.terminate()
     raise RuntimeError(
-        f"timed out waiting for CopperWright app URL; last output: {line}"
+        f"timed out waiting for PCBDraft app URL; last output: {line}"
     )
 
 
@@ -350,7 +352,7 @@ def primary_browser_flow(
         browser.wait(
             "return document.readyState === 'complete' && "
             "document.querySelector('#diagnostics')?.textContent.includes('Workspace');",
-            "CopperWright bootstrap",
+            "PCBDraft bootstrap",
             timeout=30,
         )
         browser.execute("document.querySelector('#provider-setup').click();")
@@ -360,7 +362,7 @@ def primary_browser_flow(
         )
         setup_safe = browser.execute(
             "const dialog = document.querySelector('#setup-dialog'); "
-            "return dialog.textContent.includes('Active provider: builtin') && "
+            "return dialog.textContent.includes('Active provider: openai-compatible') && "
             "dialog.textContent.includes('OPENAI_API_KEY=<secret>') && "
             "dialog.querySelectorAll('input').length === 0;"
         )
@@ -376,45 +378,29 @@ def primary_browser_flow(
             "new-project dialog",
         )
         browser.execute(
-            "document.querySelector('#new-project-name').value = 'Browser greenhouse'; "
+            "document.querySelector('#new-project-name').value = 'Browser LED prototype'; "
             "document.querySelector('#new-project-request').value = "
-            "'Create a BME280 SPI environmental sensor and controller board powered by regulated 3.3 V'; "
+            "'Design a small 3.3 V LED status indicator PCB with a power connector'; "
             "document.querySelector('#new-project-form').requestSubmit();"
         )
         browser.wait(
             "return document.querySelector('#project-eyebrow').textContent"
-            ".startsWith('needs clarification');",
-            "focused layer clarification",
-        )
-        question = str(
-            browser.execute(
-                "return document.querySelector('#messages article:last-of-type "
-                ".message-body p')?.textContent || '';"
-            )
-        )
-        if "2 or 4 copper layers" not in question:
-            raise RuntimeError(f"unexpected clarification: {question}")
-        browser.execute(
-            "[...document.querySelectorAll('#messages .scope-chips button')]"
-            ".find((item) => item.textContent === '2 layers').click();"
-        )
-        browser.wait(
-            "return document.querySelector('#project-eyebrow').textContent"
             ".startsWith('awaiting confirmation');",
-            "reviewable proposal",
+            "reviewable generic proposal without a layer question",
         )
         review_ready = browser.execute(
             "const brief = document.querySelector('#tab-brief').textContent; "
-            "return brief.includes('BME280') && brief.includes('BOM') && "
-            "brief.includes('Constraints') && "
-            "brief.includes('human engineering review') && "
+            "const messages = document.querySelector('#messages').textContent; "
+            "return brief.includes('LED') && brief.includes('POWER') && "
+            "brief.includes('Stock KiCad parts') && brief.includes('2 layers') && "
+            "!messages.includes('2 or 4 copper layers') && "
             "document.querySelector('#open-kicad').disabled;"
         )
         if not review_ready:
             raise RuntimeError(
                 "pre-generation brief/BOM/constraint review is incomplete"
             )
-        browser.screenshot(output / "copperwright-app-brief.png")
+        browser.screenshot(output / "pcbdraft-app-brief.png")
 
         project_id = str(
             browser.execute(
@@ -460,94 +446,30 @@ def primary_browser_flow(
             "real KiCad browser previews",
             timeout=60,
         )
-        browser.screenshot(output / "copperwright-app-visuals.png")
-
-        browser.execute(
-            "const input = document.querySelector('#message-input'); "
-            "input.value = 'Change this board to 4 layers'; "
-            "document.querySelector('#composer').requestSubmit();"
-        )
-        browser.wait(
-            "return document.querySelector('#project-eyebrow').textContent"
-            ".startsWith('change ready');",
-            "validated semantic diff",
-        )
-        staged = wait_value(
-            lambda: project_view(base_url, project_id),
-            no_active_jobs,
-            "completed semantic preview job",
-        )
-        change = staged["active_change"]
-        layer_diff = change["diff"]["board_fields"]["layers"]
-        if (
-            not change["validation"]["candidate_ready"]
-            or layer_diff != {"before": 2, "after": 4}
-            or staged["design"]["content_hash"] != first_hash
-        ):
-            raise RuntimeError(
-                "semantic preview changed authoritative files or omitted the layer diff"
-            )
-        browser.execute("document.querySelector('#confirm').click();")
-        browser.wait(
-            "return document.querySelector('#project-eyebrow').textContent"
-            ".startsWith('validated');",
-            "atomic semantic apply",
-        )
-        applied = wait_value(
-            lambda: project_view(base_url, project_id),
-            lambda view: (
-                view.get("design", {}).get("content_hash") != first_hash
-                and no_active_jobs(view)
-            ),
-            "applied semantic hash",
-        )
-        applied_hash = applied["design"]["content_hash"]
-        browser.wait(
-            "const panel = document.querySelector('#job-panel'); "
-            "const title = document.querySelector('#job-title')?.textContent || ''; "
-            "return panel.classList.contains('hidden') || "
-            "title.includes('completed');",
-            "stable post-transaction UI",
-        )
+        browser.screenshot(output / "pcbdraft-app-visuals.png")
 
         browser.execute(
             "[...document.querySelectorAll('.tab')]"
             ".find((item) => item.dataset.tab === 'validation').click();"
         )
         browser.wait(
-            "return document.querySelectorAll('#tab-validation .level-row').length === 8;",
-            "L0-L7 results",
-        )
-        external_gates = browser.execute(
             "const text = document.querySelector('#tab-validation').textContent; "
-            "return text.includes('l6.engineering_review') && "
-            "text.includes('l7.physical_build_test') && "
-            "text.includes('Not production-signed');"
+            "return text.includes('Checks passed') && "
+            "text.includes('No compliance claim') && "
+            "text.includes('do not establish circuit function');",
+            "honest validation summary",
         )
-        if not external_gates:
-            raise RuntimeError("honest human/physical gates are not visible")
-        browser.screenshot(output / "copperwright-app-validation.png")
-        browser.wait(
-            "return ![...document.querySelectorAll('#tab-validation button')]"
-            ".find((item) => item.textContent === 'Undo last change').disabled;",
-            "enabled undo action",
+        undo_disabled = browser.execute(
+            "return [...document.querySelectorAll('#tab-validation button')]"
+            ".find((item) => item.textContent === 'Undo last change').disabled;"
         )
-        browser.execute(
-            "[...document.querySelectorAll('#tab-validation button')]"
-            ".find((item) => item.textContent === 'Undo last change').click();"
-        )
-        wait_value(
-            lambda: project_view(base_url, project_id),
-            lambda view: (
-                view.get("design", {}).get("content_hash") == first_hash
-                and no_active_jobs(view)
-            ),
-            "exact semantic undo",
-        )
+        if not undo_disabled:
+            raise RuntimeError("undo was enabled even though no change was applied")
+        browser.screenshot(output / "pcbdraft-app-validation.png")
 
         browser.wait(
             "return !document.querySelector('#release').disabled;",
-            "enabled candidate export after undo",
+            "enabled candidate export",
         )
         browser.execute("document.querySelector('#release').click();")
         browser.wait(
@@ -571,33 +493,44 @@ def primary_browser_flow(
         )
         if len(report.get("levels", [])) != 8 or len(archive) < 1000:
             raise RuntimeError("browser validation/release artifacts are incomplete")
+        report_checks = {
+            check["id"] for level in report["levels"] for check in level["checks"]
+        }
+        if not {
+            "l2.erc",
+            "l2.drc_connectivity",
+            "l6.engineering_review",
+            "l7.physical_build_test",
+        }.issubset(report_checks):
+            raise RuntimeError("full validation report omitted required evidence gates")
 
         browser.execute("document.querySelector('#new-project').click();")
         browser.wait(
             "return document.querySelector('#new-project-dialog').open;",
-            "unsupported-project dialog",
+            "complex-domain project dialog",
         )
         browser.execute(
-            "document.querySelector('#new-project-name').value = 'Unsupported USB'; "
+            "document.querySelector('#new-project-name').value = 'Complex warning example'; "
             "document.querySelector('#new-project-request').value = "
-            "'Create a USB-C mains-powered medical board'; "
+            "'Create a mains-powered medical RF status board'; "
             "document.querySelector('#new-project-form').requestSubmit();"
         )
         browser.wait(
             "return document.querySelector('#project-eyebrow').textContent"
-            ".startsWith('unsupported');",
-            "explicit unsupported scope",
+            ".startsWith('awaiting confirmation');",
+            "complex domain reaching the normal planning path",
         )
-        unsupported_visible = browser.execute(
+        warnings_visible = browser.execute(
             "const brief = document.querySelector('#tab-brief'); "
             "return !brief.classList.contains('hidden') && "
             "document.querySelector('[data-tab=brief]').getAttribute('aria-selected') === 'true' && "
-            "brief.textContent.includes('Rejected') && "
-            "brief.textContent.includes('outside the supported');"
+            "brief.textContent.includes('Normal generation path') && "
+            "brief.textContent.includes('mains') && brief.textContent.includes('medical') && "
+            "brief.textContent.includes('rf');"
         )
-        if not unsupported_visible:
-            raise RuntimeError("unsupported scope was not clearly visible")
-        browser.screenshot(output / "copperwright-app-unsupported.png")
+        if not warnings_visible:
+            raise RuntimeError("complex domain warnings were not clearly visible")
+        browser.screenshot(output / "pcbdraft-app-domain-warnings.png")
         browser.execute(
             "[...document.querySelectorAll('.project-button')]"
             f".find((item) => item.dataset.projectId === {json.dumps(project_id)}).click();"
@@ -609,16 +542,15 @@ def primary_browser_flow(
         )
         return {
             "project_id": project_id,
-            "clarification": question,
-            "original_hash": first_hash,
-            "applied_hash": applied_hash,
-            "undo_restored_original_hash": True,
+            "layer_selection_was_internal": True,
+            "design_hash": first_hash,
+            "reviewed_plan_was_generic": True,
             "candidate_ready": True,
             "production_ready": False,
             "offline_release_verified": True,
             "validation_levels": len(report["levels"]),
             "release_archive_bytes": len(archive),
-            "unsupported_scope_visible": True,
+            "complex_domain_warned_not_rejected": True,
         }
 
 
@@ -664,20 +596,20 @@ def reopen_browser_flow(
         }
         if (
             result["status"] != "released"
-            or result["messages"] < 7
+            or result["messages"] < 5
             or not result["design"]
             or not result["release_verified"]
             or result["active_job"]
         ):
             raise RuntimeError(f"persisted project did not reopen cleanly: {result}")
-        browser.screenshot(output / "copperwright-app-reopened.png")
+        browser.screenshot(output / "pcbdraft-app-reopened.png")
         return result
 
 
 def main() -> int:
     arguments = parse_args()
     if not arguments.executable or not Path(arguments.executable).is_file():
-        raise SystemExit("copperwright executable is required")
+        raise SystemExit("pcbdraft executable is required")
     if not arguments.geckodriver or not Path(arguments.geckodriver).is_file():
         raise SystemExit("geckodriver is required for the real browser flow")
     if not shutil.which("kicad-cli"):
@@ -685,47 +617,59 @@ def main() -> int:
 
     output = (
         arguments.output
-        or Path(tempfile.mkdtemp(prefix="copperwright-browser-evidence-"))
+        or Path(tempfile.mkdtemp(prefix="pcbdraft-browser-evidence-"))
     ).resolve()
     output.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="copperwright-browser-e2e-") as temporary:
-        root = Path(temporary)
-        home = root / "home"
-        home.mkdir(mode=0o700)
-        initialize_clean_home(home)
-        workspace = root / "workspace"
-        environment = dict(os.environ)
-        environment["HOME"] = str(home)
-        environment["XDG_CONFIG_HOME"] = str(home / ".config")
+    provider = start_fake_provider()
+    try:
+        with tempfile.TemporaryDirectory(
+            prefix="pcbdraft-browser-e2e-"
+        ) as temporary:
+            root = Path(temporary)
+            home = root / "home"
+            home.mkdir(mode=0o700)
+            initialize_clean_home(home)
+            workspace = root / "workspace"
+            environment = dict(os.environ)
+            environment["HOME"] = str(home)
+            environment["XDG_CONFIG_HOME"] = str(home / ".config")
+            environment["PCBDRAFT_OPENAI_BASE_URL"] = provider.base_url
+            environment["PCBDRAFT_OPENAI_MODEL"] = "pcbdraft-e2e-model"
+            environment["PCBDRAFT_OPENAI_API_KEY_ENV"] = "PCBDRAFT_E2E_API_KEY"
+            environment["PCBDRAFT_E2E_API_KEY"] = E2E_API_KEY
 
-        first_server, first_url = start_server(
-            arguments.executable, workspace, environment
-        )
-        try:
-            primary = primary_browser_flow(arguments.geckodriver, first_url, output)
-        finally:
-            stop_server(first_server)
-
-        second_server, second_url = start_server(
-            arguments.executable, workspace, environment
-        )
-        try:
-            reopened = reopen_browser_flow(
-                arguments.geckodriver,
-                second_url,
-                output,
-                str(primary["project_id"]),
+            first_server, first_url = start_server(
+                arguments.executable, workspace, environment
             )
-        finally:
-            stop_server(second_server)
+            try:
+                primary = primary_browser_flow(arguments.geckodriver, first_url, output)
+            finally:
+                stop_server(first_server)
+
+            second_server, second_url = start_server(
+                arguments.executable, workspace, environment
+            )
+            try:
+                reopened = reopen_browser_flow(
+                    arguments.geckodriver,
+                    second_url,
+                    output,
+                    str(primary["project_id"]),
+                )
+            finally:
+                stop_server(second_server)
+        provider_requests = provider.server.request_count
+    finally:
+        provider.close()
 
     report = {
-        "schema": "copperwright-browser-e2e",
-        "version": 1,
+        "schema": "pcbdraft-browser-e2e",
+        "version": 2,
         "browser": "firefox-webdriver",
         "clean_home": True,
         "loopback_only": True,
-        "provider": "builtin",
+        "provider": "local-openai-compatible",
+        "provider_requests": provider_requests,
         "primary_flow": primary,
         "reopen_flow": reopened,
         "screenshots": sorted(path.name for path in output.glob("*.png")),

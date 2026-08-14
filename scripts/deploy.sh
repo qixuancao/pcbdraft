@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs CopperWright into this repository's uv environment.
+# Installs PCBDraft into this repository's uv environment.
 # Run: scripts/deploy.sh
 # Requires: uv, KiCad 10, and git. Codex is optional for AI review.
 set -euo pipefail
@@ -9,4 +9,4 @@ REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
 cd "$REPO_DIR"
 uv sync --frozen
-.venv/bin/copperwright doctor --json
+.venv/bin/pcbdraft doctor --json

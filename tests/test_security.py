@@ -9,19 +9,19 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from copperwright.api import serve
-from copperwright.benchmark import bundled_requirements_path
-from copperwright.errors import CopperWrightError, ValidationError
-from copperwright.external_evidence import MAX_ARTIFACTS, record_external_evidence
-from copperwright.managed import generate_managed_project, open_managed_project
-from copperwright.project import TREE_MEMBER_LIMIT, validate_agent_tree
-from copperwright.release import build_manufacturing_release
+from pcbdraft.api import serve
+from pcbdraft.benchmark import bundled_requirements_path
+from pcbdraft.errors import PCBDraftError, ValidationError
+from pcbdraft.external_evidence import MAX_ARTIFACTS, record_external_evidence
+from pcbdraft.managed import generate_managed_project, open_managed_project
+from pcbdraft.project import TREE_MEMBER_LIMIT, validate_agent_tree
+from pcbdraft.release import build_manufacturing_release
 
 
 class HostileInputSecurityTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.temporary = tempfile.TemporaryDirectory(prefix="copperwright-security-")
+        cls.temporary = tempfile.TemporaryDirectory(prefix="pcbdraft-security-")
         cls.root = Path(cls.temporary.name)
         cls.project = generate_managed_project(
             bundled_requirements_path(), cls.root / "project"
@@ -34,7 +34,7 @@ class HostileInputSecurityTests(unittest.TestCase):
     def test_managed_manifest_path_escape_and_hardlink_are_rejected(self) -> None:
         escaped = self.root / "escaped"
         shutil.copytree(self.project.root, escaped)
-        manifest_path = escaped / "project.copperwright.json"
+        manifest_path = escaped / "project.pcbdraft.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         manifest["files"]["ir"] = "../outside.pcbir.json"
         manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
@@ -121,7 +121,7 @@ class HostileInputSecurityTests(unittest.TestCase):
 
         source = StringIO("x" * (4 * 1024 * 1024 + 1) + "\n")
         destination = StringIO()
-        with patch("copperwright.api.handle_request") as handler:
+        with patch("pcbdraft.api.handle_request") as handler:
             self.assertEqual(serve(source, destination), 0)
         handler.assert_not_called()
         response = json.loads(destination.getvalue())
@@ -136,7 +136,7 @@ class HostileInputSecurityTests(unittest.TestCase):
             validate_agent_tree(root)
 
     def test_missing_system_pcbnew_python_fails_closed(self) -> None:
-        with self.assertRaisesRegex(CopperWrightError, "unavailable"):
+        with self.assertRaisesRegex(PCBDraftError, "unavailable"):
             generate_managed_project(
                 bundled_requirements_path(),
                 self.root / "missing-python",

@@ -11,13 +11,19 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from copperwright.agent_design import CircuitPlan
-from copperwright.application import ApplicationService
-from copperwright.errors import ValidationError
-from copperwright.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
-from copperwright.providers import (
+from pcbdraft.agent_design import CircuitPlan
+from pcbdraft.agent_repair import (
+    generation_feedback,
+    validation_feedback_from_levels,
+)
+from pcbdraft.application import ApplicationService
+from pcbdraft.errors import ValidationError
+from pcbdraft.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
+from pcbdraft.project import sha256_file
+from pcbdraft.providers import (
     BuiltinIntentProvider,
     OpenAICompatibleIntentProvider,
     OpenAICompatibleSettings,
@@ -25,8 +31,8 @@ from copperwright.providers import (
     interpretation_schema,
     validate_interpretation,
 )
-from copperwright.webapp import create_app_server
-from tests.test_agent_design import circuit_plan_dict
+from pcbdraft.webapp import create_app_server
+from tests.test_agent_design import circuit_plan_dict, indicator_plan_dict
 
 
 class GenericPlanningProvider:
@@ -34,6 +40,9 @@ class GenericPlanningProvider:
 
     provider_id = "generic-test-planner"
     supports_planning = True
+
+    def __init__(self) -> None:
+        self.repair_feedbacks: list[dict[str, object]] = []
 
     def diagnostic(self) -> dict[str, object]:
         return {
@@ -62,7 +71,12 @@ class GenericPlanningProvider:
             if "controller" in lowered
             else []
         )
-        layers = 2 if "2-layer" in lowered or "2 layers" in lowered else None
+        layer_match = __import__("re").search(
+            r"(?:\b(\d+)\s*[- ]?layers?\b|(\d+)\s*层)", lowered
+        )
+        layers = (
+            int(layer_match.group(1) or layer_match.group(2)) if layer_match else None
+        )
         return validate_interpretation(
             {
                 "request_summary": request,
@@ -78,7 +92,7 @@ class GenericPlanningProvider:
                     "max_current_a": 0.5,
                     "max_power_w": 1.65,
                 },
-                "missing_fields": ["layers"] if layers is None else [],
+                "missing_fields": [],
             }
         )
 
@@ -97,9 +111,57 @@ class GenericPlanningProvider:
         plan["design_id"] = request.design_id  # type: ignore[attr-defined]
         return CircuitPlan.from_dict(plan)
 
+    def revise_plan(
+        self,
+        request: object,
+        previous_plan: CircuitPlan,
+        feedback: dict[str, object],
+        *,
+        symbol_context: dict[str, list[dict[str, object]]],
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> CircuitPlan:
+        del previous_plan, symbol_context, project_dir, run_dir, timeout
+        self.repair_feedbacks.append(feedback)
+        plan = circuit_plan_dict()
+        plan["design_id"] = request.design_id  # type: ignore[attr-defined]
+        plan["notes"] = [
+            "Pin, power, and layout review remain required.",
+            f"Revised from retained tool evidence on attempt {feedback['attempt']}.",
+        ]
+        return CircuitPlan.from_dict(plan)
+
 
 class ApplicationConversationTests(unittest.TestCase):
-    def test_generic_request_stops_at_reviewable_confirmation(self) -> None:
+    def test_completed_l1_topology_failure_is_bounded_repair_feedback(self) -> None:
+        feedback = validation_feedback_from_levels(
+            [
+                {
+                    "level": "L1",
+                    "checks": [
+                        {
+                            "id": "l1.agent_plan_electrical_preflight",
+                            "state": "completed",
+                            "outcome": "fail",
+                            "summary": "LED polarity is reversed",
+                        },
+                        {
+                            "id": "l1.component_evidence_qualification",
+                            "state": "human_required",
+                            "outcome": "unknown",
+                            "summary": "datasheet review remains required",
+                        },
+                    ],
+                }
+            ],
+            attempt=1,
+        )
+        self.assertIsNotNone(feedback)
+        self.assertEqual(len(feedback["findings"]), 1)
+        self.assertIn("LED polarity", feedback["findings"][0])
+
+    def test_generic_request_uses_default_stackup_without_asking(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             provider = GenericPlanningProvider()
             service = ApplicationService(temporary, provider=provider)
@@ -108,16 +170,11 @@ class ApplicationConversationTests(unittest.TestCase):
                 "Create an STM32F405 board with an SHT31 sensor",
             )
             project_id = view["project"]["id"]
-            self.assertEqual(view["project"]["status"], "needs_clarification")
-            self.assertFalse((service.project_root(project_id) / "design").exists())
-            self.assertEqual(
-                view["conversation"]["proposal"]["clarifications"][0]["id"],
-                "layers",
-            )
-
-            view = service.send_message(project_id, "2 layers")
             proposal = view["conversation"]["proposal"]
             self.assertEqual(view["project"]["status"], "awaiting_confirmation")
+            self.assertFalse((service.project_root(project_id) / "design").exists())
+            self.assertEqual(proposal["clarifications"], [])
+            self.assertEqual(proposal["decisions"]["layers"], 2)
             self.assertEqual(proposal["scope"]["decision"], "attempted")
             self.assertEqual(proposal["planning"]["state"], "ready")
             self.assertEqual(
@@ -138,12 +195,42 @@ class ApplicationConversationTests(unittest.TestCase):
             root = service.project_root(project_id)
             self.assertTrue((root / "pending-agent-request.json").is_file())
             self.assertTrue((root / "pending-circuit-plan.json").is_file())
-            self.assertTrue((root / "pending-parts.copperwright.json").is_file())
+            self.assertTrue((root / "pending-parts.pcbdraft.json").is_file())
 
             reopened = ApplicationService(temporary, provider=provider)
             self.assertEqual(
                 reopened.open_project(project_id)["conversation"]["proposal"], proposal
             )
+
+    def test_explicit_six_layer_request_is_preserved_without_a_question(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider=GenericPlanningProvider())
+            view = service.create_project(
+                "Six layer sensor",
+                "Create a 6-layer STM32F405 board with an SHT31 sensor",
+            )
+
+        proposal = view["conversation"]["proposal"]
+        self.assertEqual(view["project"]["status"], "awaiting_confirmation")
+        self.assertEqual(proposal["clarifications"], [])
+        self.assertEqual(proposal["decisions"]["layers"], 6)
+        self.assertEqual(proposal["scope"]["decision"], "attempted")
+
+    def test_explicit_65_layer_request_is_preserved_until_kicad_generation(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider=GenericPlanningProvider())
+            view = service.create_project(
+                "65 layer sensor",
+                "Create a 65-layer STM32F405 board with an SHT31 sensor",
+            )
+
+        proposal = view["conversation"]["proposal"]
+        self.assertEqual(view["project"]["status"], "awaiting_confirmation")
+        self.assertEqual(proposal["clarifications"], [])
+        self.assertEqual(proposal["decisions"]["layers"], 65)
+        self.assertEqual(proposal["scope"]["decision"], "attempted")
 
     def test_builtin_preserves_unknown_named_parts_and_requests_a_planner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -207,7 +294,7 @@ class ApplicationConversationTests(unittest.TestCase):
             project_id = view["project"]["id"]
             with (
                 patch(
-                    "copperwright.application.materialize_managed_design",
+                    "pcbdraft.application.materialize_managed_design",
                     side_effect=ValidationError("router left I2C_SDA unrouted"),
                 ),
                 self.assertRaisesRegex(ValidationError, "I2C_SDA"),
@@ -223,13 +310,213 @@ class ApplicationConversationTests(unittest.TestCase):
             self.assertTrue((attempt_root / "request.json").is_file())
             self.assertTrue((attempt_root / "circuit-plan.json").is_file())
             self.assertTrue((attempt_root / "design.pcbir.json").is_file())
-            self.assertTrue((attempt_root / "parts.copperwright.json").is_file())
+            self.assertTrue((attempt_root / "parts.pcbdraft.json").is_file())
+
+    def test_failed_generation_can_compile_a_bounded_replacement_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            provider = GenericPlanningProvider()
+            service = ApplicationService(temporary, provider=provider)
+            view = service.create_project(
+                "Repairable generic attempt",
+                "Create a 2-layer STM32F405 board with an SHT31 sensor",
+            )
+            project_id = view["project"]["id"]
+            failure = ValidationError("router left I2C_SDA unrouted")
+            with (
+                patch(
+                    "pcbdraft.application.materialize_managed_design",
+                    side_effect=failure,
+                ),
+                self.assertRaisesRegex(ValidationError, "I2C_SDA"),
+            ):
+                service.confirm_project(project_id, validate=False)
+            failed = service.open_project(project_id)
+
+            repaired = service.prepare_agent_repair(
+                project_id,
+                generation_feedback(failed, failure, attempt=1),
+                timeout=10,
+            )
+
+            self.assertEqual(repaired["project"]["status"], "awaiting_confirmation")
+            self.assertEqual(len(provider.repair_feedbacks), 1)
+            self.assertEqual(provider.repair_feedbacks[0]["phase"], "generation")
+            pending = json.loads(
+                (
+                    service.project_root(project_id) / "pending-circuit-plan.json"
+                ).read_text(encoding="utf-8")
+            )
+            self.assertIn("retained tool evidence", " ".join(pending["notes"]))
+            self.assertEqual(
+                service.events(project_id)[-1]["kind"], "repair.plan_ready"
+            )
+
+    def test_unchanged_repair_plan_is_rejected_without_regeneration(self) -> None:
+        class NoOpRepairProvider(GenericPlanningProvider):
+            def revise_plan(
+                self,
+                request: object,
+                previous_plan: CircuitPlan,
+                *args: object,
+                **kwargs: object,
+            ) -> CircuitPlan:
+                del request, args, kwargs
+                return previous_plan
+
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider=NoOpRepairProvider())
+            view = service.create_project(
+                "No-op repair",
+                "Create a 2-layer STM32F405 board with an SHT31 sensor",
+            )
+            project_id = view["project"]["id"]
+            failure = ValidationError("router left I2C_SDA unrouted")
+            with (
+                patch(
+                    "pcbdraft.application.materialize_managed_design",
+                    side_effect=failure,
+                ),
+                self.assertRaises(ValidationError),
+            ):
+                service.confirm_project(project_id, validate=False)
+            failed = service.open_project(project_id)
+
+            with self.assertRaisesRegex(ValidationError, "unchanged"):
+                service.prepare_agent_repair(
+                    project_id,
+                    generation_feedback(failed, failure, attempt=1),
+                    timeout=10,
+                )
+            self.assertEqual(
+                service.open_project(project_id)["project"]["status"],
+                "repair_failed",
+            )
+
+    def test_generated_repair_is_staged_applied_and_undoable(self) -> None:
+        class IndicatorRepairProvider(GenericPlanningProvider):
+            def plan(self, request: object, **kwargs: object) -> CircuitPlan:
+                del kwargs
+                value = indicator_plan_dict()
+                value["design_id"] = request.design_id  # type: ignore[attr-defined]
+                return CircuitPlan.from_dict(value)
+
+            def revise_plan(
+                self,
+                request: object,
+                previous_plan: CircuitPlan,
+                feedback: dict[str, object],
+                **kwargs: object,
+            ) -> CircuitPlan:
+                del previous_plan, kwargs
+                value = indicator_plan_dict()
+                value["design_id"] = request.design_id  # type: ignore[attr-defined]
+                value["notes"] = [
+                    "LED current requires review.",
+                    f"Repair attempt {feedback['attempt']} used retained evidence.",
+                ]
+                return CircuitPlan.from_dict(value)
+
+        failed_levels = [
+            {
+                "level": "L2",
+                "name": "deterministic",
+                "state": "completed",
+                "outcome": "fail",
+                "checks": [
+                    {
+                        "id": "kicad.erc",
+                        "level": "L2",
+                        "state": "completed",
+                        "outcome": "fail",
+                        "summary": "injected repair trigger",
+                        "evidence": [],
+                        "blocks_candidate": True,
+                        "blocks_production": True,
+                    }
+                ],
+            }
+        ]
+        passed_levels = [
+            {
+                "level": "L2",
+                "name": "deterministic",
+                "state": "completed",
+                "outcome": "pass",
+                "checks": [
+                    {
+                        "id": "kicad.erc",
+                        "level": "L2",
+                        "state": "completed",
+                        "outcome": "pass",
+                        "summary": "clean candidate",
+                        "evidence": [],
+                        "blocks_candidate": False,
+                        "blocks_production": False,
+                    }
+                ],
+            }
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider=IndicatorRepairProvider())
+            view = service.create_project(
+                "Atomic repair", "Create a small LED indicator board"
+            )
+            project_id = view["project"]["id"]
+            with patch.object(
+                service,
+                "generate_project_previews",
+                side_effect=lambda value, **kwargs: service.open_project(value),
+            ):
+                generated = service.confirm_project(
+                    project_id, validate=False, timeout=90
+                )
+            before_hash = generated["design"]["content_hash"]
+            feedback = validation_feedback_from_levels(failed_levels, attempt=1)
+            assert feedback is not None
+
+            def fake_validation(
+                project: object, *, output: Path, timeout: float, **kwargs: object
+            ) -> SimpleNamespace:
+                del project, timeout, kwargs
+                output.mkdir(parents=True)
+                report = output / "validation.json"
+                report.write_text(
+                    json.dumps({"levels": passed_levels}, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                return SimpleNamespace(
+                    report_path=report,
+                    report_sha256=sha256_file(report),
+                    candidate_ready=True,
+                    production_ready=False,
+                )
+
+            with patch(
+                "pcbdraft.application.validate_managed_project",
+                side_effect=fake_validation,
+            ):
+                staged = service.prepare_agent_repair(project_id, feedback, timeout=90)
+            self.assertEqual(staged["project"]["status"], "change_ready")
+            self.assertEqual(
+                service.open_project(project_id)["design"]["content_hash"],
+                before_hash,
+            )
+            with patch.object(
+                service,
+                "generate_project_previews",
+                side_effect=lambda value, **kwargs: service.open_project(value),
+            ):
+                applied = service.apply_modification(project_id)
+            self.assertEqual(applied["project"]["status"], "validated")
+            self.assertNotEqual(applied["design"]["content_hash"], before_hash)
+            undone = service.undo_last_modification(project_id)
+            self.assertEqual(undone["design"]["content_hash"], before_hash)
 
     def test_secrets_are_redacted_before_provider_and_storage(self) -> None:
         sentinel = "test-provider-secret-value-123456789"
         with tempfile.TemporaryDirectory() as temporary:
-            previous = os.environ.get("COPPERWRIGHT_TEST_API_KEY")
-            os.environ["COPPERWRIGHT_TEST_API_KEY"] = sentinel
+            previous = os.environ.get("PCBDRAFT_TEST_API_KEY")
+            os.environ["PCBDRAFT_TEST_API_KEY"] = sentinel
             try:
                 service = ApplicationService(temporary, provider_name="builtin")
                 view = service.create_project(
@@ -238,9 +525,9 @@ class ApplicationConversationTests(unittest.TestCase):
                 )
             finally:
                 if previous is None:
-                    os.environ.pop("COPPERWRIGHT_TEST_API_KEY", None)
+                    os.environ.pop("PCBDRAFT_TEST_API_KEY", None)
                 else:
-                    os.environ["COPPERWRIGHT_TEST_API_KEY"] = previous
+                    os.environ["PCBDRAFT_TEST_API_KEY"] = previous
             self.assertEqual(view["project"]["status"], "planning_required")
             combined = b""
             for item in Path(temporary).rglob("*"):
@@ -266,6 +553,10 @@ class ApplicationConversationTests(unittest.TestCase):
         schema = interpretation_schema()
         serialized = json.dumps(schema, sort_keys=True)
         self.assertNotIn("uniqueItems", serialized)
+        self.assertEqual(
+            schema["properties"]["layers"]["anyOf"][0],
+            {"type": "integer", "minimum": 1},
+        )
         self.assertFalse(
             any(
                 key not in {"type", "enum"}
@@ -289,6 +580,22 @@ class ApplicationConversationTests(unittest.TestCase):
         self.assertEqual(result["layers"], 2)
         self.assertIn("UART serial interface", result["functions"])
         self.assertNotIn("proposed_profile", result)
+
+    def test_builtin_provider_preserves_any_explicit_layer_count(self) -> None:
+        provider = BuiltinIntentProvider()
+        with tempfile.TemporaryDirectory() as temporary:
+            result = provider.interpret(
+                ProviderContext(
+                    "Build a 6-layer UART controller with 5V input",
+                    "Six layer controller",
+                    {},
+                ),
+                project_dir=Path(temporary),
+                run_dir=Path(temporary),
+                timeout=1,
+            )
+        self.assertEqual(result["layers"], 6)
+        self.assertNotIn("layers", result["missing_fields"])
 
     def test_builtin_provider_keeps_a_chinese_generic_request_generic(self) -> None:
         provider = BuiltinIntentProvider()
@@ -350,7 +657,7 @@ class ApplicationConversationTests(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        key_name = "COPPERWRIGHT_TEST_PROVIDER_KEY"
+        key_name = "PCBDRAFT_TEST_PROVIDER_KEY"
         sentinel = "test-only-provider-secret-123456789"
         previous = os.environ.get(key_name)
         os.environ[key_name] = sentinel
@@ -540,7 +847,7 @@ class BrowserSecurityTests(unittest.TestCase):
         if origin is not None:
             headers["Origin"] = origin
         if csrf is not None:
-            headers["X-CopperWright-CSRF"] = csrf
+            headers["X-PCBDraft-CSRF"] = csrf
         request = urllib.request.Request(self.base + path, data=data, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
@@ -558,7 +865,7 @@ class BrowserSecurityTests(unittest.TestCase):
     def test_loopback_bootstrap_security_headers_and_csrf(self) -> None:
         status, bootstrap, headers = self.request("/api/bootstrap")
         self.assertEqual(status, 200)
-        self.assertEqual(bootstrap["schema"], "copperwright-browser-bootstrap")
+        self.assertEqual(bootstrap["schema"], "pcbdraft-browser-bootstrap")
         self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
         self.assertEqual(headers["X-Frame-Options"], "DENY")
         csrf = str(bootstrap["csrf_token"])
@@ -585,11 +892,14 @@ class BrowserSecurityTests(unittest.TestCase):
             status, view, _ = self.request(f"/api/projects/{project_id}")
             self.assertEqual(status, 200)
             job = next(item for item in view["jobs"] if item["id"] == job_id)
-            if job["status"] not in {"queued", "running", "cancel_requested"}:
+            if (
+                job["status"] not in {"queued", "running", "cancel_requested"}
+                and view["project"]["status"] != "draft"
+            ):
                 break
             time.sleep(0.02)
         self.assertEqual(job["status"], "completed")
-        self.assertEqual(view["project"]["status"], "needs_clarification")
+        self.assertEqual(view["project"]["status"], "planning_required")
 
     def test_nonloopback_bind_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValidationError, "loopback"):
@@ -603,7 +913,7 @@ class BrowserSecurityTests(unittest.TestCase):
     def test_static_browser_shell_has_safe_setup_and_actionable_validation(
         self,
     ) -> None:
-        web = files("copperwright").joinpath("web")
+        web = files("pcbdraft").joinpath("web")
         html = web.joinpath("index.html").read_text(encoding="utf-8")
         script = web.joinpath("app.js").read_text(encoding="utf-8")
         self.assertIn('id="setup-dialog"', html)

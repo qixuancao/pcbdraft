@@ -269,7 +269,7 @@ wheels = [
 ]
 
 [[package]]
-name = "copperwright"
+name = "pcbdraft"
 version = "1.0.0"
 source = { editable = "." }
 dependencies = [
@@ -281,14 +281,18 @@ dev = [
     { name = "build" },
     { name = "ruff" },
 ]
+harness = [
+    { name = "deepseek-harness-sdk" },
+]
 
 [package.metadata]
 requires-dist = [
     { name = "build", marker = "extra == 'dev'", specifier = ">=1.2" },
+    { name = "deepseek-harness-sdk", marker = "extra == 'harness'", specifier = ">=0.1.0rc5,<0.2" },
     { name = "kicad-sch-api", specifier = "==0.5.6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["dev", "harness"]
 
 [[package]]
 name = "cryptography"
@@ -359,6 +363,28 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/be/05/689617b7e86503417c172f577d791524cb13b9697303d5d44409a971ba10/cyclopts-4.22.5.tar.gz", hash = "sha256:94044506317462cad90fb01a917dadce1f48a0915ba3605dc8d178dea1229e24", size = 195144, upload-time = "2026-08-04T13:53:00.303Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/83/58/bcab9c33fb7a25a1f5970f357c5b19729bc81d50615d2f737b20c4255909/cyclopts-4.22.5-py3-none-any.whl", hash = "sha256:cf9ce285836053d156730ea4ea0ad0c75cf63beb3f3d8edf222a795bc57666ab", size = 234557, upload-time = "2026-08-04T13:52:58.509Z" },
+]
+
+[[package]]
+name = "deepseek-harness-runtime-bin"
+version = "0.1.0rc6"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/72/19/548c84e9d02683612b6a3a23571d68480c657ef5f4aa1e3c656898ee1824/deepseek_harness_runtime_bin-0.1.0rc6-py3-none-macosx_14_0_arm64.whl", hash = "sha256:2bbd65edd52dfc340d74f88a890e8031a272a820e58406c2de1f5f5dee51bd9f", size = 52313658, upload-time = "2026-08-13T12:51:03.522Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/0b/d9128f0b3edc5ab5fc6d8746e669c924bd23fd017e645796b3b439dd0eb3/deepseek_harness_runtime_bin-0.1.0rc6-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:99d0ef334a4e3cb178d7b0302bbdd01c8dde6068ee5fe8b01e074541db5c7747", size = 56774186, upload-time = "2026-08-13T12:51:07.783Z" },
+    { url = "https://files.pythonhosted.org/packages/c6/26/1c6bc9c26618ca5b2f155a428d4c0c5d5174b68077cccbc10a1629bb3611/deepseek_harness_runtime_bin-0.1.0rc6-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:d7261d3bdadfa8d10ab03fd06c6bbc66a182ae27d39892a0eb7c2ce9d63a5448", size = 57038106, upload-time = "2026-08-13T12:51:11.387Z" },
+]
+
+[[package]]
+name = "deepseek-harness-sdk"
+version = "0.1.0rc6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "deepseek-harness-runtime-bin" },
+    { name = "pydantic" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/47/10/efd7ad88cd6140be4883d055abf9acd7fa8e5424a20de8a224d310e67f2f/deepseek_harness_sdk-0.1.0rc6-py3-none-any.whl", hash = "sha256:8a05421be4298196cf94383e0a3164b020f5f5977a8d30019cc5add64cb208eb", size = 12880, upload-time = "2026-08-13T12:52:09.047Z" },
 ]
 
 [[package]]

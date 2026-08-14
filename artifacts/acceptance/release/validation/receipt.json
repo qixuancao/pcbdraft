@@ -6,7 +6,7 @@
   "project": "examples/attiny_sensor_controller/project",
   "report": "validation.json",
   "report_sha256": "86a79ed3eed04da7d8287e368991e67426c927ec81195ecfc616e5b60148ac36",
-  "schema": "copperwright-validation-receipt",
+  "schema": "pcbdraft-validation-receipt",
   "started_at": "2026-08-13T06:13:45Z",
   "status": "complete",
   "tool_runs": {

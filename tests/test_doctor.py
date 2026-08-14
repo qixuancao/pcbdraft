@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from unittest.mock import patch
 
-from copperwright.doctor import doctor_report
+from pcbdraft.doctor import doctor_report
 
 
 class DoctorTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class DoctorTests(unittest.TestCase):
             version = "10.0.5" if name == "kicad-cli" else "git version 2.50.0"
             return {"available": True, "version": version}
 
-        with patch("copperwright.doctor._check", side_effect=fake_check):
+        with patch("pcbdraft.doctor._check", side_effect=fake_check):
             report = doctor_report()
         self.assertTrue(report["ok"])
         self.assertTrue(report["core_ok"])
@@ -25,7 +25,7 @@ class DoctorTests(unittest.TestCase):
             version = "11.0.0" if name == "kicad-cli" else f"{name} 1.0"
             return {"available": True, "version": version}
 
-        with patch("copperwright.doctor._check", side_effect=fake_check):
+        with patch("pcbdraft.doctor._check", side_effect=fake_check):
             report = doctor_report()
         self.assertFalse(report["ok"])
         self.assertFalse(report["core_ok"])

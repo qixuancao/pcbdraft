@@ -7,13 +7,14 @@ from contextlib import redirect_stderr
 from typing import Any
 from unittest.mock import patch
 
-from copperwright.chat import run_chat_command
-from copperwright.cli import build_parser
-from copperwright.cli import main as cli_main
-from copperwright.errors import ValidationError
-from copperwright.providers import CodexIntentProvider
-from copperwright.tui import (
-    CopperWrightTui,
+from pcbdraft.agent_events import AgentActivity, AgentUpdate
+from pcbdraft.chat import run_chat_command
+from pcbdraft.cli import build_parser
+from pcbdraft.cli import main as cli_main
+from pcbdraft.errors import ValidationError
+from pcbdraft.providers import CodexIntentProvider
+from pcbdraft.tui import (
+    PCBDraftTui,
     TuiController,
     command_suggestions,
     run_tui_command,
@@ -184,13 +185,67 @@ class SwitchedProvider:
         return {"id": "builtin", "model": False, "available": True}
 
 
-class CopperWrightTuiTests(unittest.TestCase):
-    def _ui(self, controller: TuiController) -> tuple[CopperWrightTui, FakeScreen]:
-        screen = FakeScreen()
-        with patch("copperwright.tui.curses.has_colors", return_value=False):
-            return CopperWrightTui(screen, controller), screen
+class FakeRuntime:
+    def __init__(self, service: FakeService) -> None:
+        self.service = service
+        self.active = False
+        self.started: tuple[str, str, float] | None = None
+        self.cancelled = False
 
-    def test_first_message_creates_a_project_with_the_same_service(self) -> None:
+    def start_project(self, name: str, message: str, *, timeout: float) -> AgentUpdate:
+        self.started = (name, message, timeout)
+        self.active = True
+        self.service.views["terminal-board"] = _view("terminal-board", status="draft")
+        self.service.views["terminal-board"]["project"]["name"] = name
+        return AgentUpdate(
+            project_id="terminal-board",
+            job_id="20260814T000000Z-acde1234",
+            action="agent_message",
+            status="queued",
+            view=self.service.views["terminal-board"],
+        )
+
+    def poll(self) -> AgentUpdate:
+        self.active = False
+        view = self.service.views["terminal-board"]
+        view["project"]["status"] = "validated"
+        return AgentUpdate(
+            project_id="terminal-board",
+            job_id="20260814T000000Z-acde1234",
+            action="agent_message",
+            status="completed",
+            activities=(
+                AgentActivity(
+                    sequence=1,
+                    kind="provider.started",
+                    tool="pcb_requirements",
+                    label="Understanding board requirements",
+                    message="Interpreting request",
+                    state="running",
+                    level="info",
+                    created_at="2026-08-14T00:00:00Z",
+                ),
+            ),
+            view=view,
+        )
+
+    def cancel(self) -> AgentUpdate:
+        self.cancelled = True
+        return AgentUpdate(
+            project_id="terminal-board",
+            job_id="20260814T000000Z-acde1234",
+            action="agent_message",
+            status="cancel_requested",
+        )
+
+
+class PCBDraftTuiTests(unittest.TestCase):
+    def _ui(self, controller: TuiController) -> tuple[PCBDraftTui, FakeScreen]:
+        screen = FakeScreen()
+        with patch("pcbdraft.tui.curses.has_colors", return_value=False):
+            return PCBDraftTui(screen, controller), screen
+
+    def test_first_message_creates_and_immediately_generates_a_project(self) -> None:
         service = FakeService()
         controller = TuiController(service=service, timeout=123.0)
 
@@ -198,6 +253,7 @@ class CopperWrightTuiTests(unittest.TestCase):
 
         self.assertEqual(controller.project_id, "terminal-board")
         self.assertEqual(controller.mode, "message")
+        self.assertEqual(controller.view["project"]["status"], "generated")
         self.assertEqual(
             service.calls,
             [
@@ -208,8 +264,59 @@ class CopperWrightTuiTests(unittest.TestCase):
                     "Create a low-voltage indicator board",
                     123.0,
                 ),
+                ("confirm_project", "terminal-board", 123.0),
             ],
         )
+
+    def test_runtime_submission_is_non_blocking_and_renders_tool_activity(self) -> None:
+        service = FakeService()
+        runtime = FakeRuntime(service)
+        controller = TuiController(
+            service=service,
+            runtime=runtime,
+            timeout=123.0,  # type: ignore[arg-type]
+        )
+
+        controller.submit("Create a small indicator board")
+
+        self.assertTrue(controller.is_busy)
+        self.assertEqual(
+            runtime.started,
+            ("small indicator board", "Create a small indicator board", 123.0),
+        )
+        self.assertFalse(any(call[0] == "send_message" for call in service.calls))
+        self.assertTrue(controller.poll())
+        self.assertFalse(controller.is_busy)
+        self.assertEqual(controller.view["project"]["status"], "validated")
+
+        ui, screen = self._ui(controller)
+        ui._render()
+        self.assertIn("pcb_requirements", screen.text)
+
+    def test_quit_requests_stop_before_leaving_an_active_turn(self) -> None:
+        service = FakeService()
+        runtime = FakeRuntime(service)
+        controller = TuiController(
+            service=service,
+            runtime=runtime,
+            timeout=123.0,  # type: ignore[arg-type]
+        )
+        controller.submit("Create a small indicator board")
+
+        self.assertEqual(controller.submit("/quit"), "continue")
+        self.assertTrue(runtime.cancelled)
+        self.assertIn("Stop requested", controller.notice)
+
+    def test_new_command_accepts_the_board_request_without_a_name_step(self) -> None:
+        service = FakeService()
+        controller = TuiController(service=service, timeout=123.0)
+
+        controller.submit("/new")
+        self.assertEqual(controller.mode, "new_request")
+        controller.submit("Create a low-voltage indicator board")
+
+        self.assertEqual(controller.project_id, "terminal-board")
+        self.assertEqual(controller.view["project"]["status"], "generated")
 
     def test_confirm_and_project_commands_route_through_controller(self) -> None:
         service = FakeService()
@@ -235,7 +342,11 @@ class CopperWrightTuiTests(unittest.TestCase):
                 "/projects",
                 "/open",
                 "/status",
+                "/review",
+                "/logs",
                 "/model",
+                "/stop",
+                "/retry",
                 "/confirm",
                 "/validate",
                 "/undo",
@@ -261,7 +372,7 @@ class CopperWrightTuiTests(unittest.TestCase):
         self.assertIn("test-model", controller.notice)
 
         with patch(
-            "copperwright.tui.resolve_provider", return_value=SwitchedProvider()
+            "pcbdraft.tui.resolve_provider", return_value=SwitchedProvider()
         ) as resolve:
             controller.submit("/model builtin")
         resolve.assert_called_once_with("builtin")
@@ -270,7 +381,50 @@ class CopperWrightTuiTests(unittest.TestCase):
         self.assertEqual(service.calls, [])
 
         controller.submit("/model arbitrary-model-id")
-        self.assertIn("auto, codex, openai-compatible, or builtin", controller.error)
+        self.assertIn(
+            "auto, codex, deepseek-harness, openai-compatible, or builtin",
+            controller.error,
+        )
+
+    def test_review_overlay_and_expandable_activity_details(self) -> None:
+        service = FakeService()
+        controller = TuiController(service=service, project_id="existing-project")
+        controller.view = _view("existing-project")
+        controller.view["conversation"]["proposal"]["brief"]["identity"] = {
+            "requested_parts": ["STM32F405"],
+            "planned_symbols": [
+                {
+                    "reference": "U1",
+                    "symbol": "MCU_ST_STM32F4:STM32F405RGTx",
+                }
+            ],
+        }
+        controller.activities = [
+            AgentActivity(
+                sequence=1,
+                kind="plan.ready",
+                tool="pcb_circuit_plan",
+                label="Designing the circuit topology",
+                message="Plan retained with one review finding.",
+                state="completed",
+                level="info",
+                created_at="2026-08-14T00:00:00Z",
+            )
+        ]
+
+        controller.submit("/logs on")
+        ui, screen = self._ui(controller)
+        ui._render()
+        self.assertIn("Plan retained with one review finding", screen.text)
+
+        controller.submit("/review")
+        ui._render()
+        self.assertEqual(controller.mode, "review")
+        self.assertIn("Plan and change review", screen.text)
+        self.assertIn("Circuit plan", screen.text)
+        self.assertIn("STM32F405", screen.text)
+        ui._handle_key("\x1b")
+        self.assertEqual(controller.mode, "message")
 
     def test_codex_diagnostic_reports_the_pinned_model(self) -> None:
         provider = CodexIntentProvider(executable="/not-a-real-codex")
@@ -335,11 +489,11 @@ class CopperWrightTuiTests(unittest.TestCase):
         service.provider = provider
         controller = TuiController(service=service)
         with (
-            patch("copperwright.tui.curses.raw") as raw,
-            patch("copperwright.tui.curses.curs_set"),
-            patch("copperwright.tui.curses.has_colors", return_value=False),
+            patch("pcbdraft.tui.curses.raw") as raw,
+            patch("pcbdraft.tui.curses.curs_set"),
+            patch("pcbdraft.tui.curses.has_colors", return_value=False),
         ):
-            ui = CopperWrightTui(screen, controller)
+            ui = PCBDraftTui(screen, controller)
             self.assertEqual(ui.run(), 0)
 
         raw.assert_not_called()
@@ -361,16 +515,16 @@ class CopperWrightTuiTests(unittest.TestCase):
 
     def test_unicode_conversation_wraps_by_terminal_cell_width(self) -> None:
         self.assertEqual(
-            CopperWrightTui._wrap("你" * 70, 70),
+            PCBDraftTui._wrap("你" * 70, 70),
             ["你" * 35, "你" * 35],
         )
 
     def test_root_parser_launches_tui_and_agent_is_not_a_command(self) -> None:
-        parser = build_parser(prog="copperwright")
+        parser = build_parser(prog="pcbdraft")
         parsed = parser.parse_args(
             [
                 "--workspace",
-                "/tmp/copperwright-workspace",
+                "/tmp/pcbdraft-workspace",
                 "--provider",
                 "builtin",
                 "--project",
@@ -409,12 +563,12 @@ class CopperWrightTuiTests(unittest.TestCase):
                     parser.parse_args([legacy_command])
                 self.assertEqual(rejected.exception.code, 2)
 
-        with patch("copperwright.cli.run_tui_command", return_value=0) as run_tui:
+        with patch("pcbdraft.cli.run_tui_command", return_value=0) as run_tui:
             self.assertEqual(
                 cli_main(
                     [
                         "--workspace",
-                        "/tmp/copperwright-workspace",
+                        "/tmp/pcbdraft-workspace",
                         "--provider",
                         "builtin",
                         "--project",
@@ -426,7 +580,7 @@ class CopperWrightTuiTests(unittest.TestCase):
                 0,
             )
         run_tui.assert_called_once_with(
-            workspace="/tmp/copperwright-workspace",
+            workspace="/tmp/pcbdraft-workspace",
             provider="builtin",
             project_id="existing-project",
             timeout=12.0,
@@ -434,7 +588,7 @@ class CopperWrightTuiTests(unittest.TestCase):
 
     def test_chat_without_an_explicit_action_does_not_open_a_repl(self) -> None:
         with (
-            patch("copperwright.chat.ApplicationService") as service,
+            patch("pcbdraft.chat.ApplicationService") as service,
             self.assertRaisesRegex(
                 ValidationError, "requires --new, --project, or --list"
             ),
@@ -457,8 +611,8 @@ class CopperWrightTuiTests(unittest.TestCase):
 
     def test_tui_requires_an_interactive_terminal(self) -> None:
         with (
-            patch("copperwright.tui.sys.stdin", io.StringIO()),
-            patch("copperwright.tui.sys.stdout", io.StringIO()),
+            patch("pcbdraft.tui.sys.stdin", io.StringIO()),
+            patch("pcbdraft.tui.sys.stdout", io.StringIO()),
             self.assertRaisesRegex(ValidationError, "interactive terminal"),
         ):
             run_tui_command(
