@@ -24,12 +24,25 @@ not overwrite a valid user configuration.
     scripts/python-matrix.sh
     scripts/release-check.sh
 
+`scripts/clean.sh` removes only repository-local `build/`, `dist/`, and
+`src/pcbdraft.egg-info/` products. Release checks call it before and after
+packaging so a stale package from an earlier source layout cannot enter a wheel.
+
 Focused examples:
 
-    uv run python -m unittest tests.test_agent_design -v
-    uv run python -m unittest tests.test_application.ApplicationConversationTests -v
+    uv run python -m unittest tests.agent.test_design -v
+    uv run python -m unittest tests.services.test_application.ApplicationConversationTests -v
     uv run pcbdraft symbols SHT31 --json
     uv run pcbdraft doctor --json
+
+## Placing new code
+
+Use the responsibility packages documented in
+[`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md). Keep package roots free of new
+implementation modules, use canonical `pcbdraft.<area>.<module>` imports, and
+place focused tests under the matching `tests/<area>/` directory. Historical
+flat module paths exist only for downstream 1.0 compatibility and must not be
+used by new source or tests.
 
 The generic-path tests must prove all of the following:
 

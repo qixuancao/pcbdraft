@@ -14,7 +14,7 @@
       "ports": ["vcc", "gnd", "sda", "scl"],
       "constraints": ["edge_connector", "external_power_source", "qwiic_pin_order"],
       "evidence": ["KiCad official symbol/footprint mappings", "Qwiic-compatible GND/3V3/SDA/SCL order"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_parts.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/domain/test_parts.py"]
     },
     {
       "id": "attiny402_core",
@@ -26,7 +26,7 @@
       "ports": ["vcc", "gnd", "i2c_sda", "i2c_scl", "spi_mosi", "spi_miso", "spi_sck", "spi_cs", "uart_tx", "uart_rx", "status_gpio", "updi"],
       "constraints": ["decoupling_distance", "updi_access", "functional_group"],
       "evidence": ["Microchip ATtiny202/402 datasheet", "KiCad official mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_kicad_generation.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/kicad/test_generation.py"]
     },
     {
       "id": "tmp102_i2c_sensor",
@@ -38,7 +38,7 @@
       "ports": ["vcc", "gnd", "sda", "scl"],
       "constraints": ["decoupling_distance", "i2c_pullups", "address_strap", "functional_group"],
       "evidence": ["Texas Instruments TMP102 datasheet", "KiCad official mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/services/test_managed.py"]
     },
     {
       "id": "gpio_status_led",
@@ -50,7 +50,7 @@
       "ports": ["gpio", "anode", "gnd"],
       "constraints": ["led_current_budget", "polarity"],
       "evidence": ["LED and resistor manufacturer records", "Ohm-law current bound"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_semantic.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/verification/test_semantic.py"]
     },
     {
       "id": "spi_power_input",
@@ -62,7 +62,7 @@
       "ports": ["vcc", "gnd"],
       "constraints": ["edge_connector", "external_power_source", "polarity"],
       "evidence": ["Microchip ATtiny202/402 and Bosch BME280 datasheets", "KiCad official symbol/footprint mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/services/test_managed.py"]
     },
     {
       "id": "bme280_spi_sensor",
@@ -74,7 +74,7 @@
       "ports": ["vcc", "gnd", "mosi", "miso", "sck", "cs"],
       "constraints": ["decoupling_distance", "spi_clock_budget", "chip_select_bias", "functional_group"],
       "evidence": ["Bosch BME280 datasheet", "KiCad official symbol/footprint mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/services/test_managed.py"]
     },
     {
       "id": "regulated_5v_input",
@@ -86,7 +86,7 @@
       "ports": ["vin", "gnd"],
       "constraints": ["edge_connector", "external_power_source", "polarity"],
       "evidence": ["Samtec TSW manufacturer record", "KiCad official symbol/footprint mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/services/test_managed.py"]
     },
     {
       "id": "ap2112_3v3_ldo",
@@ -98,7 +98,7 @@
       "ports": ["vin", "vout", "gnd"],
       "constraints": ["ldo_voltage_budget", "input_decoupling", "output_stability", "functional_group"],
       "evidence": ["Diodes Incorporated AP2112 datasheet", "KiCad official symbol/footprint mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/services/test_managed.py"]
     },
     {
       "id": "uart_service_connector",
@@ -110,7 +110,7 @@
       "ports": ["vcc", "gnd", "tx", "rx"],
       "constraints": ["edge_connector", "uart_pin_order", "voltage_sense_only"],
       "evidence": ["Microchip ATtiny202/402 datasheet", "KiCad official symbol/footprint mappings"],
-      "verification_tests": ["tests/test_requirements.py", "tests/test_managed_pipeline.py"]
+      "verification_tests": ["tests/domain/test_requirements.py", "tests/services/test_managed.py"]
     }
   ]
 }

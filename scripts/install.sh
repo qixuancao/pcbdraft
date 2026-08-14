@@ -106,6 +106,7 @@ main() {
     printf '启动：pcbdraft\n'
     printf '诊断：pcbdraft doctor --json\n'
     printf '配置：%s/.config/pcbdraft/config.toml\n' "$HOME"
+    printf 'PCB 项目仓库：首次启动将创建并记录 %s/PCBDraft（可用 `pcbdraft repository /路径` 更改）\n' "$HOME"
 }
 
 main "$@"

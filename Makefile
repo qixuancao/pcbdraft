@@ -1,7 +1,10 @@
-.PHONY: install test benchmark smoke python-matrix release-check
+.PHONY: install clean test benchmark smoke python-matrix release-check
 
 install:
 	scripts/deploy.sh
+
+clean:
+	scripts/clean.sh
 
 test:
 	scripts/test.sh

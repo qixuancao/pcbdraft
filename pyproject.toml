@@ -40,13 +40,15 @@ Changelog = "https://github.com/qixuancao/pcbdraft/blob/main/CHANGELOG.md"
 dev = ["build>=1.2", "ruff>=0.12"]
 
 [project.scripts]
-pcbdraft = "pcbdraft.cli:main"
+pcbdraft = "pcbdraft.interfaces.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
+include = ["pcbdraft*"]
+exclude = ["copperwright*"]
 
 [tool.setuptools.package-data]
-pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml", "*.tcss", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]
+pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml", "interfaces/tui/*.tcss", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]

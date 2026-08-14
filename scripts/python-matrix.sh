@@ -15,14 +15,14 @@ for version in $MATRIX_VERSIONS; do
             python -m unittest discover -s tests -v
     else
         uv run --frozen --python "$version" python -m unittest -v \
-            tests.test_api \
-            tests.test_benchmark \
-            tests.test_ir \
-            tests.test_operations \
-            tests.test_parts \
-            tests.test_requirements \
-            tests.test_scope \
-            tests.test_security \
-            tests.test_transactions
+            tests.interfaces.test_api \
+            tests.verification.test_benchmark \
+            tests.domain.test_ir \
+            tests.domain.test_operations \
+            tests.domain.test_parts \
+            tests.domain.test_requirements \
+            tests.domain.test_scope \
+            tests.integration.test_security \
+            tests.services.test_transactions
     fi
 done

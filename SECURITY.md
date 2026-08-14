@@ -50,9 +50,9 @@ their provenance.
 - provider output uses an exact bounded schema and is normalized and scope-checked
   before deterministic code can act on it.
 
-Tests in `tests/test_security.py`, `tests/test_process.py`,
-`tests/test_transactions.py`, `tests/test_integration.py`, and
-`tests/test_application.py` exercise these boundaries.
+Tests in `tests/integration/test_security.py`, `tests/core/test_process.py`,
+`tests/services/test_transactions.py`, `tests/integration/test_workflows.py`, and
+`tests/services/test_application.py` exercise these boundaries.
 
 ## Residual risks
 

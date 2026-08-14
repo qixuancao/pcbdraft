@@ -6,12 +6,14 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 CHECK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/pcbdraft-release-check.XXXXXX")
 cleanup() {
+    "$REPO_DIR/scripts/clean.sh" >/dev/null
     rm -rf -- "$CHECK_ROOT"
 }
 trap cleanup EXIT INT TERM
 
 cd "$REPO_DIR"
 scripts/test.sh
+"$REPO_DIR/scripts/clean.sh"
 
 DIST_DIR="$CHECK_ROOT/dist"
 uv build --out-dir "$DIST_DIR"
@@ -24,16 +26,16 @@ fi
 uv run python -m zipfile -t "$WHEEL"
 tar -tzf "$SDIST" >/dev/null
 uv run python -c \
-    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/scripts/tui-e2e.py", "/src/pcbdraft/tui.tcss"); assert all(any(name.endswith(item) for name in names) for item in required)' \
+    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/scripts/tui-e2e.py", "/src/pcbdraft/interfaces/tui/styles.tcss"); assert all(any(name.endswith(item) for name in names) for item in required)' \
     "$SDIST"
 
 uv venv --python 3.11 "$CHECK_ROOT/venv"
 uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
 "$CHECK_ROOT/venv/bin/pcbdraft" --version
 "$CHECK_ROOT/venv/bin/python" -c \
-    'from pcbdraft.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
+    'from pcbdraft.verification.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 "$CHECK_ROOT/venv/bin/python" -c \
-    'from importlib.resources import files; assert files("pcbdraft").joinpath("tui.tcss").is_file()'
+    'from importlib.resources import files; assert files("pcbdraft").joinpath("interfaces", "tui", "styles.tcss").is_file()'
 
 PCBDRAFT_EXE="$CHECK_ROOT/venv/bin/pcbdraft" \
 PCBDRAFT_PYTHON="$CHECK_ROOT/venv/bin/python" \

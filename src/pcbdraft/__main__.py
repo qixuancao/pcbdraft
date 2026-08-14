@@ -1,5 +1,5 @@
 """Allow ``python -m pcbdraft``."""
 
-from .cli import main
+from pcbdraft.interfaces.cli import main
 
 raise SystemExit(main())
