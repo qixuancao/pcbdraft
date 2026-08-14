@@ -19,7 +19,49 @@ ERC、DRC 和每一步的证据留在本地。
 - 所有模型服务都通过 PCBDraft 自己的配置文件接入，不依赖其他 CLI；
 - 失败会保留计划、工程和错误信息，方便继续修改。
 
-## 快速开始
+## 安装（推荐）
+
+这个仓库目前是私有仓库。已通过 `gh auth login` 登录 GitHub 的 Ubuntu 或其他
+Linux 用户，以普通用户运行下面这一条命令即可：
+
+```bash
+gh api 'repos/qixuancao/pcbdraft/contents/scripts/install.sh?ref=main' --jq .content | base64 --decode | bash
+```
+
+如尚未登录，先执行 `gh auth login`。安装器通过已授权的 Git 访问仓库；它不会
+把 GitHub Token 写入配置文件或工程目录。
+
+安装器遵循用户级安装：不使用 `sudo`，不修改系统 Python，也不覆盖已有的
+KiCad 配置。它会：
+
+- 检查已安装的 KiCad 10 和 `kicad-cli`；
+- 检查 Git；
+- 必要时把 `uv` 安装到当前用户目录；
+- 用 `uv tool install` 把 `pcbdraft` 安装为独立命令；
+- 只在缺失时初始化 `~/.config/kicad/10.0/` 中的符号和封装库表。
+
+安装后的命令位于 `~/.local/bin/pcbdraft`。若首次运行提示找不到命令，执行：
+
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+然后启动并检查运行环境：
+
+```bash
+pcbdraft
+pcbdraft doctor --json
+```
+
+模型服务和 API Key 保存在 `~/.config/pcbdraft/config.toml`；应用项目和运行
+记录保存在 `~/.local/share/pcbdraft/`。要更新或修复安装，重新运行上面的安装
+命令即可。
+
+KiCad 是生成原理图和 PCB 所需的系统运行时，安装器不会替你以管理员权限安装
+它；请先安装 KiCad 10，再运行此命令。
+
+## 从源码运行（开发）
 
 需要 Linux、Python 3.11 或更高版本、[uv](https://docs.astral.sh/uv/)，以及
 KiCad 10 和 `kicad-cli`。
