@@ -145,7 +145,7 @@
   ],
   "production_ready": false,
   "project": "examples/attiny_sensor_controller/project",
-  "schema": "copperwright-release-receipt",
+  "schema": "pcbdraft-release-receipt",
   "status": "complete",
   "tool_runs": [
     {

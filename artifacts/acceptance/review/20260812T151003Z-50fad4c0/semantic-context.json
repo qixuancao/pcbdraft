@@ -788,7 +788,7 @@
         }
       ],
       "metadata": {
-        "compiler": "copperwright",
+        "compiler": "pcbdraft",
         "priorities": [
           "electrical_correctness",
           "manufacturability",
@@ -1054,7 +1054,7 @@
           "locator": "data/blocks/catalog.json#attiny402_core@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "copperwright bundled block catalog"
+          "source": "pcbdraft bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1064,7 +1064,7 @@
           "locator": "data/blocks/catalog.json#gpio_status_led@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "copperwright bundled block catalog"
+          "source": "pcbdraft bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1074,7 +1074,7 @@
           "locator": "data/blocks/catalog.json#qwiic_power_input@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "copperwright bundled block catalog"
+          "source": "pcbdraft bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1084,7 +1084,7 @@
           "locator": "data/blocks/catalog.json#tmp102_i2c_sensor@1.0.0",
           "method": "rule_validated",
           "notes": "State=rule_validated; not human or production validated.",
-          "source": "copperwright bundled block catalog"
+          "source": "pcbdraft bundled block catalog"
         },
         {
           "acquired_at": "2026-08-12",
@@ -1168,7 +1168,7 @@
         }
       ],
       "revision": "1.0",
-      "schema": "copperwright-ir",
+      "schema": "pcbdraft-ir",
       "scope": {
         "domains": [
           "i2c",
@@ -1529,7 +1529,7 @@
         ],
         "kicad_version": "10.0.5-10.0.5~ubuntu26.04.1",
         "mode": "inspect_board",
-        "schema": "copperwright-pcbnew-result",
+        "schema": "pcbdraft-pcbnew-result",
         "tracks": [
           {
             "drill_mm": 0.3,
@@ -3693,7 +3693,7 @@
         "compact_sensor_group"
       ],
       "revision": "1.0",
-      "schema": "copperwright-requirements",
+      "schema": "pcbdraft-requirements",
       "scope": {
         "domains": [
           "i2c",
@@ -3715,7 +3715,7 @@
       },
       "version": 1
     },
-    "schema": "copperwright-managed-review-context",
+    "schema": "pcbdraft-managed-review-context",
     "semantic_rule_evaluation": {
       "findings": [],
       "method": "deterministic_typed_ir_rules_without_approximate_geometry",

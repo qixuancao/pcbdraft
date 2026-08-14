@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from copperwright.errors import CopperWrightError
-from copperwright.kicad_support import (
+from pcbdraft.errors import PCBDraftError
+from pcbdraft.kicad_support import (
     assert_supported_kicad_version,
     evaluate_kicad_version,
 )
@@ -20,7 +20,7 @@ class KiCadSupportTests(unittest.TestCase):
 
     def test_other_majors_and_unparseable_versions_fail_closed(self) -> None:
         for version in ("9.0.6", "11.0.0-rc1", "unknown"):
-            with self.subTest(version=version), self.assertRaises(CopperWrightError):
+            with self.subTest(version=version), self.assertRaises(PCBDraftError):
                 assert_supported_kicad_version(version)
 
     def test_untested_patch_in_supported_major_is_declared_not_exact(self) -> None:

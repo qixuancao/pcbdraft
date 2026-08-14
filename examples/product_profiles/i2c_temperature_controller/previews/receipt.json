@@ -19,11 +19,11 @@
     },
     "schematic_svg": {
       "bytes": 249908,
-      "path": "schematic-svg/copperwright_i2c_temperature_controller.svg",
+      "path": "schematic-svg/pcbdraft_i2c_temperature_controller.svg",
       "sha256": "602efeb4030e5e11bacf98b6921649c2125f95b9d069b2ccb92aa10e39c7d5a5"
     }
   },
-  "schema": "copperwright-preview-bundle",
+  "schema": "pcbdraft-preview-bundle",
   "tool_runs": [
     {
       "duration_seconds": 0.318,

@@ -13,18 +13,18 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from copperwright.io import (
+from pcbdraft.io import (
     atomic_write_json,
     atomic_write_text,
     load_json_limited,
     make_directory,
 )
-from copperwright.managed import generate_managed_project, open_managed_project
-from copperwright.previews import generate_previews
-from copperwright.profiles import build_requirements
-from copperwright.project import sha256_file
-from copperwright.requirements import compile_requirements
-from copperwright.validation import validate_managed_project
+from pcbdraft.managed import generate_managed_project, open_managed_project
+from pcbdraft.previews import generate_previews
+from pcbdraft.profiles import build_requirements
+from pcbdraft.project import sha256_file
+from pcbdraft.requirements import compile_requirements
+from pcbdraft.validation import validate_managed_project
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -42,22 +42,22 @@ EXAMPLES = (
     Example(
         "i2c_temperature_controller",
         "low_voltage_i2c_controller_v1",
-        "CopperWright I2C temperature controller",
-        "copperwright_i2c_temperature_controller",
+        "PCBDraft I2C temperature controller",
+        "pcbdraft_i2c_temperature_controller",
         2,
     ),
     Example(
         "spi_environment_sensor",
         "low_voltage_spi_environment_v1",
-        "CopperWright SPI environment sensor",
-        "copperwright_spi_environment_sensor",
+        "PCBDraft SPI environment sensor",
+        "pcbdraft_spi_environment_sensor",
         2,
     ),
     Example(
         "uart_ldo_controller",
         "low_voltage_uart_ldo_controller_v1",
-        "CopperWright UART LDO controller",
-        "copperwright_uart_ldo_controller",
+        "PCBDraft UART LDO controller",
+        "pcbdraft_uart_ldo_controller",
         4,
     ),
 )
@@ -185,7 +185,7 @@ def generate(output_root: Path, example: Example) -> dict[str, object]:
         )
         normalize_preview_svgs(staging / "previews")
         summary: dict[str, object] = {
-            "schema": "copperwright-product-example-acceptance",
+            "schema": "pcbdraft-product-example-acceptance",
             "version": 1,
             "profile": example.profile_id,
             "design_content_hash": design.content_hash(),

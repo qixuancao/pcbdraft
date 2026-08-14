@@ -7,12 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from copperwright.blocks import BlockRegistry
-from copperwright.kicad_pcb import generate_pcb
-from copperwright.kicad_schematic import generate_schematic
-from copperwright.parts import PartGraph
-from copperwright.process import run_command
-from copperwright.requirements import RequirementsSpec, compile_requirements
+from pcbdraft.blocks import BlockRegistry
+from pcbdraft.kicad_pcb import generate_pcb
+from pcbdraft.kicad_schematic import generate_schematic
+from pcbdraft.parts import PartGraph
+from pcbdraft.process import run_command
+from pcbdraft.requirements import RequirementsSpec, compile_requirements
 from tests.requirements_factory import controller_requirements_dict
 
 
@@ -45,9 +45,7 @@ class NativeKiCadGenerationTests(unittest.TestCase):
         )
 
     def test_native_project_is_reproducible_and_passes_erc_drc_parity(self) -> None:
-        with tempfile.TemporaryDirectory(
-            prefix="copperwright-kicad-test-"
-        ) as temporary:
+        with tempfile.TemporaryDirectory(prefix="pcbdraft-kicad-test-") as temporary:
             root = Path(temporary)
             generated = []
             for directory_name in ("first", "second"):

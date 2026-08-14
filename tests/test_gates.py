@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from copperwright.gates import count_severities
+from pcbdraft.gates import count_severities
 
 
 class GateJsonTests(unittest.TestCase):

@@ -1,0 +1,435 @@
+{
+  "schema": "pcbdraft-part-catalog",
+  "version": 1,
+  "license": "CC0-1.0",
+  "catalog_id": "pcbdraft-seed-2026-08",
+  "notes": "Independently curated seed records. rule_validated means schema, pin-map, and local-library checks only; it does not mean human or production validation. Stock is intentionally not asserted.",
+  "parts": [
+    {
+      "id": "microchip.attiny402-ssn",
+      "manufacturer": "Microchip Technology",
+      "mpn": "ATtiny402-SSN",
+      "description": "8-bit tinyAVR MCU, 4 KiB flash, SOIC-8",
+      "kind": "microcontroller",
+      "symbol": "MCU_Microchip_ATtiny:ATtiny402-SS",
+      "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+      "pins": [
+        {"number": "1", "name": "VCC", "electrical_type": "power_in", "functions": ["supply"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "PA6", "electrical_type": "bidirectional", "functions": ["gpio", "pwm", "spi_cs", "status_led"], "required": false, "footprint_pad": "2"},
+        {"number": "3", "name": "PA7", "electrical_type": "bidirectional", "functions": ["gpio"], "required": false, "footprint_pad": "3"},
+        {"number": "4", "name": "PA1", "electrical_type": "bidirectional", "functions": ["gpio", "i2c_sda", "spi_mosi", "uart_tx"], "required": false, "footprint_pad": "4"},
+        {"number": "5", "name": "PA2", "electrical_type": "bidirectional", "functions": ["gpio", "i2c_scl", "spi_miso", "uart_rx"], "required": false, "footprint_pad": "5"},
+        {"number": "6", "name": "~RESET~/PA0", "electrical_type": "bidirectional", "functions": ["gpio", "reset", "updi"], "required": true, "footprint_pad": "6"},
+        {"number": "7", "name": "PA3", "electrical_type": "bidirectional", "functions": ["gpio", "spi_sck"], "required": false, "footprint_pad": "7"},
+        {"number": "8", "name": "GND", "electrical_type": "power_in", "functions": ["ground"], "required": true, "footprint_pad": "8"}
+      ],
+      "ratings": {"supply_voltage_v": {"min": 1.8, "max": 5.5}, "absolute_max_voltage_v": 6.0, "operating_temperature_c": {"min": -40, "max": 125}},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.microchip.com/en-us/product/attiny402"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "SOIC-8", "assembly": "reflow_or_hand", "pitch_mm": 1.27, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Package_SO.3dshapes/SOIC-8_3.9x4.9mm_P1.27mm.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "Microchip", "locator": "https://ww1.microchip.com/downloads/aemDocuments/documents/MCU08/ProductDocuments/DataSheets/ATtiny202-402-DataSheet-DS40002318A.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.9},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "/usr/share/kicad/symbols/MCU_Microchip_ATtiny.kicad_sym + /usr/share/kicad/footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.95}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "ti.tmp102bdrlr",
+      "manufacturer": "Texas Instruments",
+      "mpn": "TMP102BDRLR",
+      "description": "Low-power digital temperature sensor with I2C/SMBus interface, SOT-563",
+      "kind": "temperature_sensor",
+      "symbol": "Sensor_Temperature:TMP102xxDRL",
+      "footprint": "Package_TO_SOT_SMD:SOT-563",
+      "pins": [
+        {"number": "1", "name": "SCL", "electrical_type": "input", "functions": ["i2c_scl"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "GND", "electrical_type": "power_in", "functions": ["ground"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "ALERT", "electrical_type": "open_collector", "functions": ["alert"], "required": false, "footprint_pad": "3"},
+        {"number": "4", "name": "ADD0", "electrical_type": "input", "functions": ["address_strap"], "required": true, "footprint_pad": "4"},
+        {"number": "5", "name": "V+", "electrical_type": "power_in", "functions": ["supply"], "required": true, "footprint_pad": "5"},
+        {"number": "6", "name": "SDA", "electrical_type": "bidirectional", "functions": ["i2c_sda"], "required": true, "footprint_pad": "6"}
+      ],
+      "ratings": {"supply_voltage_v": {"min": 1.4, "max": 3.6}, "absolute_max_voltage_v": 4.0, "operating_temperature_c": {"min": -40, "max": 125}},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.ti.com/product/TMP102"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "SOT-563", "assembly": "reflow", "pitch_mm": 0.5, "minimum_pad_gap_mm": 0.15, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-563.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "Texas Instruments", "locator": "https://www.ti.com/lit/ds/symlink/tmp102.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.9},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "/usr/share/kicad/symbols/Sensor_Temperature.kicad_sym + /usr/share/kicad/footprints/Package_TO_SOT_SMD.pretty/SOT-563.kicad_mod", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.95}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "yageo.rc0603fr-074k7l",
+      "manufacturer": "YAGEO",
+      "mpn": "RC0603FR-074K7L",
+      "description": "4.7 kOhm 1% 0603 thick-film resistor",
+      "kind": "resistor",
+      "symbol": "Device:R",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": [
+        {"number": "1", "name": "1", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "2", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"resistance_ohm": 4700, "tolerance_percent": 1, "power_w": 0.1, "absolute_max_voltage_v": 50},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.yageo.com/en/ProductSearch/PartNumberSearch"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "0603_metric_1608", "assembly": "reflow_or_hand", "pitch_mm": 0.8, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": {"kind": "resistor", "value_ohm": 4700}, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "YAGEO", "locator": "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_13.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Device:R + Resistor_SMD:R_0603_1608Metric", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "yageo.rc0603fr-071kl",
+      "manufacturer": "YAGEO",
+      "mpn": "RC0603FR-071KL",
+      "description": "1 kOhm 1% 0603 thick-film resistor",
+      "kind": "resistor",
+      "symbol": "Device:R",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": [
+        {"number": "1", "name": "1", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "2", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"resistance_ohm": 1000, "tolerance_percent": 1, "power_w": 0.1, "absolute_max_voltage_v": 50},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.yageo.com/en/ProductSearch/PartNumberSearch"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "0603_metric_1608", "assembly": "reflow_or_hand", "pitch_mm": 0.8, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": {"kind": "resistor", "value_ohm": 1000}, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "YAGEO", "locator": "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_13.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Device:R + Resistor_SMD:R_0603_1608Metric", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "murata.grm188r71c104ka01d",
+      "manufacturer": "Murata Manufacturing",
+      "mpn": "GRM188R71C104KA01D",
+      "description": "100 nF 10% 16 V X7R 0603 ceramic capacitor",
+      "kind": "capacitor",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "pins": [
+        {"number": "1", "name": "1", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "2", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"capacitance_f": 1e-7, "tolerance_percent": 10, "absolute_max_voltage_v": 16, "dielectric": "X7R"},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.murata.com/en-global/products/productdetail?partno=GRM188R71C104KA01%23"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "0603_metric_1608", "assembly": "reflow_or_hand", "pitch_mm": 0.8, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": {"kind": "capacitor", "value_f": 1e-7}, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "Murata", "locator": "https://www.murata.com/en-global/products/productdetail?partno=GRM188R71C104KA01%23", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Device:C + Capacitor_SMD:C_0603_1608Metric", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "liteon.ltst-c190kgkt",
+      "manufacturer": "Lite-On",
+      "mpn": "LTST-C190KGKT",
+      "description": "Green 0603 indicator LED",
+      "kind": "led",
+      "symbol": "Device:LED",
+      "footprint": "LED_SMD:LED_0603_1608Metric",
+      "pins": [
+        {"number": "1", "name": "K", "electrical_type": "passive", "functions": ["cathode"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "A", "electrical_type": "passive", "functions": ["anode"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"forward_voltage_v_typ": 2.1, "max_current_a": 0.02, "absolute_max_reverse_voltage_v": 5},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://optoelectronics.liteon.com/en-global/Led/led-component/Detail/23"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "0603_metric_1608", "assembly": "reflow_or_hand", "pitch_mm": 0.8, "courtyard_required": true, "polarity_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/LED_SMD.3dshapes/LED_0603_1608Metric.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "Lite-On", "locator": "https://optoelectronics.liteon.com/upload/download/DS22-2000-229/LTST-C190KGKT.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.8},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Device:LED + LED_SMD:LED_0603_1608Metric", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "bosch.bme280",
+      "manufacturer": "Bosch Sensortec",
+      "mpn": "BME280",
+      "description": "Digital temperature, humidity, and pressure sensor with SPI/I2C, LGA-8",
+      "kind": "environmental_sensor",
+      "symbol": "Sensor:BME280",
+      "footprint": "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+      "pins": [
+        {"number": "1", "name": "GND", "electrical_type": "power_in", "functions": ["ground"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "CSB", "electrical_type": "input", "functions": ["spi_cs"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "SDI", "electrical_type": "bidirectional", "functions": ["i2c_sda", "spi_mosi"], "required": true, "footprint_pad": "3"},
+        {"number": "4", "name": "SCK", "electrical_type": "input", "functions": ["i2c_scl", "spi_sck"], "required": true, "footprint_pad": "4"},
+        {"number": "5", "name": "SDO", "electrical_type": "bidirectional", "functions": ["address_strap", "spi_miso"], "required": true, "footprint_pad": "5"},
+        {"number": "6", "name": "VDDIO", "electrical_type": "power_in", "functions": ["supply_io"], "required": true, "footprint_pad": "6"},
+        {"number": "7", "name": "GND", "electrical_type": "power_in", "functions": ["ground"], "required": true, "footprint_pad": "7"},
+        {"number": "8", "name": "VDD", "electrical_type": "power_in", "functions": ["supply"], "required": true, "footprint_pad": "8"}
+      ],
+      "ratings": {"supply_voltage_v": {"min": 1.71, "max": 3.6}, "absolute_max_voltage_v": 4.25, "max_spi_clock_hz": 10000000, "operating_temperature_c": {"min": -40, "max": 85}},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.bosch-sensortec.com/products/environmental-sensors/humidity-sensors-bme280/"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "LGA-8_2.5x2.5_P0.65", "assembly": "reflow", "pitch_mm": 0.65, "minimum_pad_gap_mm": 0.25, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Package_LGA.3dshapes/Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "Bosch Sensortec", "locator": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme280-ds002.pdf", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.9},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Sensor:BME280 + Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "diodes.ap2112k-3.3trg1",
+      "manufacturer": "Diodes Incorporated",
+      "mpn": "AP2112K-3.3TRG1",
+      "description": "600 mA fixed 3.3 V low-dropout regulator, SOT-23-5",
+      "kind": "ldo_regulator",
+      "symbol": "Regulator_Linear:AP2112K-3.3",
+      "footprint": "Package_TO_SOT_SMD:SOT-23-5",
+      "pins": [
+        {"number": "1", "name": "VIN", "electrical_type": "power_in", "functions": ["input_supply"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "GND", "electrical_type": "power_in", "functions": ["ground"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "EN", "electrical_type": "input", "functions": ["enable"], "required": true, "footprint_pad": "3"},
+        {"number": "4", "name": "NC", "electrical_type": "no_connect", "functions": ["no_connect"], "required": false, "footprint_pad": "4"},
+        {"number": "5", "name": "VOUT", "electrical_type": "power_out", "functions": ["regulated_output"], "required": true, "footprint_pad": "5"}
+      ],
+      "ratings": {"input_voltage_v": {"min": 3.8, "max": 6.0}, "output_voltage_v": 3.3, "max_output_current_a": 0.6, "minimum_input_capacitance_f": 0.000001, "minimum_output_capacitance_f": 0.000001, "operating_temperature_c": {"min": -40, "max": 85}},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.diodes.com/part/view/AP2112"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "SOT-23-5", "assembly": "reflow", "pitch_mm": 0.95, "courtyard_required": true, "polarity_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-23-5.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "Diodes Incorporated", "locator": "https://www.diodes.com/assets/Datasheets/AP2112.pdf", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.9},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Regulator_Linear:AP2112K-3.3 + Package_TO_SOT_SMD:SOT-23-5", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "murata.grm188r71a105ka61d",
+      "manufacturer": "Murata Manufacturing",
+      "mpn": "GRM188R71A105KA61D",
+      "description": "1 uF 10% 10 V X7R 0603 ceramic capacitor",
+      "kind": "capacitor",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0603_1608Metric",
+      "pins": [
+        {"number": "1", "name": "1", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "2", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"capacitance_f": 0.000001, "tolerance_percent": 10, "absolute_max_voltage_v": 10, "dielectric": "X7R"},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.murata.com/en-global/products/productdetail?partno=GRM188R71A105KA61D"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "0603_metric_1608", "assembly": "reflow_or_hand", "pitch_mm": 0.8, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": {"kind": "capacitor", "value_f": 0.000001}, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Capacitor_SMD.3dshapes/C_0603_1608Metric.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "Murata", "locator": "https://www.murata.com/en-global/products/productdetail?partno=GRM188R71A105KA61D", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Device:C + Capacitor_SMD:C_0603_1608Metric", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "yageo.rc0603fr-0710kl",
+      "manufacturer": "YAGEO",
+      "mpn": "RC0603FR-0710KL",
+      "description": "10 kOhm 1% 0603 thick-film resistor",
+      "kind": "resistor",
+      "symbol": "Device:R",
+      "footprint": "Resistor_SMD:R_0603_1608Metric",
+      "pins": [
+        {"number": "1", "name": "1", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "2", "electrical_type": "passive", "functions": ["passive"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"resistance_ohm": 10000, "tolerance_percent": 1, "power_w": 0.1, "absolute_max_voltage_v": 50},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.yageo.com/en/ProductSearch/PartNumberSearch"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "0603_metric_1608", "assembly": "reflow_or_hand", "pitch_mm": 0.8, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": {"kind": "resistor", "value_ohm": 10000}, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Resistor_SMD.3dshapes/R_0603_1608Metric.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "datasheet", "kind": "datasheet", "source": "YAGEO", "locator": "https://www.yageo.com/upload/media/product/productsearch/datasheet/rchip/PYu-RC_Group_51_RoHS_L_13.pdf", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Device:R + Resistor_SMD:R_0603_1608Metric", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "jst.sm04b-srss-tb",
+      "manufacturer": "JST",
+      "mpn": "SM04B-SRSS-TB(LF)(SN)",
+      "description": "4-position 1.0 mm pitch horizontal SH-series wire-to-board connector",
+      "kind": "connector",
+      "symbol": "Connector_Generic:Conn_01x04",
+      "footprint": "Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal",
+      "pins": [
+        {"number": "1", "name": "GND", "electrical_type": "passive", "functions": ["ground"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "3V3", "electrical_type": "passive", "functions": ["supply"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "SDA", "electrical_type": "passive", "functions": ["i2c_sda"], "required": true, "footprint_pad": "3"},
+        {"number": "4", "name": "SCL", "electrical_type": "passive", "functions": ["i2c_scl"], "required": true, "footprint_pad": "4"}
+      ],
+      "ratings": {"absolute_max_voltage_v": 50, "max_current_a": 1.0},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.jst-mfg.com/product/index.php?series=231"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "jst_sh_1x04_horizontal", "assembly": "reflow", "pitch_mm": 1.0, "courtyard_required": true, "edge_mount_intent": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Connector_JST.3dshapes/JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "JST", "locator": "https://www.jst-mfg.com/product/pdf/eng/eSH.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Connector_Generic:Conn_01x04 + Connector_JST:JST_SH_SM04B-SRSS-TB_1x04-1MP_P1.00mm_Horizontal", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.95}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "samtec.tsw-106-07-g-s",
+      "manufacturer": "Samtec",
+      "mpn": "TSW-106-07-G-S",
+      "description": "6-position 2.54 mm vertical through-hole header",
+      "kind": "connector",
+      "symbol": "Connector_Generic:Conn_01x06",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical",
+      "pins": [
+        {"number": "1", "name": "GND", "electrical_type": "passive", "functions": ["ground"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "3V3", "electrical_type": "passive", "functions": ["supply"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "MOSI", "electrical_type": "passive", "functions": ["spi_mosi"], "required": true, "footprint_pad": "3"},
+        {"number": "4", "name": "MISO", "electrical_type": "passive", "functions": ["spi_miso"], "required": true, "footprint_pad": "4"},
+        {"number": "5", "name": "SCK", "electrical_type": "passive", "functions": ["spi_sck"], "required": true, "footprint_pad": "5"},
+        {"number": "6", "name": "CS", "electrical_type": "passive", "functions": ["spi_cs"], "required": true, "footprint_pad": "6"}
+      ],
+      "ratings": {"absolute_max_voltage_v": 250, "max_current_a": 3.0},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.samtec.com/products/tsw"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "pin_header_1x06_p2.54", "assembly": "through_hole", "pitch_mm": 2.54, "courtyard_required": true, "edge_mount_intent": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x06_P2.54mm_Vertical.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "Samtec", "locator": "https://www.samtec.com/products/tsw", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Connector_Generic:Conn_01x06 + Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "samtec.tsw-104-07-g-s",
+      "manufacturer": "Samtec",
+      "mpn": "TSW-104-07-G-S",
+      "description": "4-position 2.54 mm vertical through-hole header",
+      "kind": "connector",
+      "symbol": "Connector_Generic:Conn_01x04",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical",
+      "pins": [
+        {"number": "1", "name": "GND", "electrical_type": "passive", "functions": ["ground"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "3V3", "electrical_type": "passive", "functions": ["supply"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "TX", "electrical_type": "passive", "functions": ["uart_tx"], "required": true, "footprint_pad": "3"},
+        {"number": "4", "name": "RX", "electrical_type": "passive", "functions": ["uart_rx"], "required": true, "footprint_pad": "4"}
+      ],
+      "ratings": {"absolute_max_voltage_v": 250, "max_current_a": 3.0},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.samtec.com/products/tsw"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "pin_header_1x04_p2.54", "assembly": "through_hole", "pitch_mm": 2.54, "courtyard_required": true, "edge_mount_intent": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x04_P2.54mm_Vertical.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "Samtec", "locator": "https://www.samtec.com/products/tsw", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Connector_Generic:Conn_01x04 + Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "samtec.tsw-102-07-g-s",
+      "manufacturer": "Samtec",
+      "mpn": "TSW-102-07-G-S",
+      "description": "2-position 2.54 mm vertical through-hole power header",
+      "kind": "connector",
+      "symbol": "Connector_Generic:Conn_01x02",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical",
+      "pins": [
+        {"number": "1", "name": "VIN", "electrical_type": "passive", "functions": ["input_supply"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "GND", "electrical_type": "passive", "functions": ["ground"], "required": true, "footprint_pad": "2"}
+      ],
+      "ratings": {"absolute_max_voltage_v": 250, "max_current_a": 3.0},
+      "lifecycle": {"status": "active", "as_of": "2026-08-13", "source": "https://www.samtec.com/products/tsw"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "pin_header_1x02_p2.54", "assembly": "through_hole", "pitch_mm": 2.54, "courtyard_required": true, "edge_mount_intent": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x02_P2.54mm_Vertical.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "Samtec", "locator": "https://www.samtec.com/products/tsw", "acquired_at": "2026-08-13", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Connector_Generic:Conn_01x02 + Connector_PinHeader_2.54mm:PinHeader_1x02_P2.54mm_Vertical", "acquired_at": "2026-08-13", "method": "library_verified", "confidence": 0.98}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "samtec.tsw-103-07-g-s",
+      "manufacturer": "Samtec",
+      "mpn": "TSW-103-07-G-S",
+      "description": "3-position 2.54 mm vertical through-hole header",
+      "kind": "connector",
+      "symbol": "Connector_Generic:Conn_01x03",
+      "footprint": "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical",
+      "pins": [
+        {"number": "1", "name": "UPDI", "electrical_type": "passive", "functions": ["updi"], "required": true, "footprint_pad": "1"},
+        {"number": "2", "name": "VTREF", "electrical_type": "passive", "functions": ["voltage_sense"], "required": true, "footprint_pad": "2"},
+        {"number": "3", "name": "GND", "electrical_type": "passive", "functions": ["ground"], "required": true, "footprint_pad": "3"}
+      ],
+      "ratings": {"absolute_max_voltage_v": 250, "max_current_a": 3.0},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.samtec.com/products/tsw"},
+      "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
+      "manufacturing": {"package": "pin_header_1x03_p2.54", "assembly": "through_hole", "pitch_mm": 2.54, "courtyard_required": true, "rohs_evidence": "source_required"},
+      "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Connector_PinHeader_2.54mm.3dshapes/PinHeader_1x03_P2.54mm_Vertical.wrl"},
+      "bom": true,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "product_data", "kind": "manufacturer_record", "source": "Samtec", "locator": "https://www.samtec.com/products/tsw", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.85},
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "Connector_Generic:Conn_01x03 + Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.95}
+      ],
+      "alternates": []
+    },
+    {
+      "id": "kicad.pwr_flag",
+      "manufacturer": "KiCad",
+      "mpn": "PWR_FLAG",
+      "description": "Virtual ERC power-source marker; never appears in the BOM or PCB",
+      "kind": "virtual_power",
+      "symbol": "power:PWR_FLAG",
+      "footprint": null,
+      "pins": [
+        {"number": "1", "name": "power", "electrical_type": "power_out", "functions": ["power_flag"], "required": true, "footprint_pad": "1"}
+      ],
+      "ratings": {},
+      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://gitlab.com/kicad/libraries/kicad-symbols"},
+      "sourcing": {"authorized_sources": [], "stock_status": "not_applicable", "price_status": "not_applicable"},
+      "manufacturing": {"package": "virtual", "assembly": "not_applicable", "courtyard_required": false},
+      "models": {"spice": null, "ibis": null, "model_3d": null},
+      "bom": false,
+      "trust": "rule_validated",
+      "evidence": [
+        {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "/usr/share/kicad/symbols/power.kicad_sym:PWR_FLAG", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.99}
+      ],
+      "alternates": []
+    }
+  ]
+}

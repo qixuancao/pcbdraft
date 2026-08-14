@@ -1,13 +1,18 @@
-CopperWright
-Copyright 2026 CopperWright contributors
+PCBDraft
+Copyright 2026 PCBDraft contributors
 
 The runtime source and documentation are licensed under Apache License 2.0.
 
-Bundled records under src/copperwright/data/ are independently authored data
-dedicated under CC0-1.0; see src/copperwright/data/LICENSE.md.
+Bundled records under src/pcbdraft/data/ are independently authored data
+dedicated under CC0-1.0; see src/pcbdraft/data/LICENSE.md.
 
 The runtime depends on kicad-sch-api 0.5.6, distributed separately under the MIT
 License. See https://github.com/circuit-synth/kicad-sch-api.
+
+The optional DeepSeek Harness provider depends on deepseek-harness-sdk and its
+matching runtime carrier, distributed separately under the MIT License. See
+https://github.com/deepseek-ai/deepseek-harness. It is not installed by the
+default dependency set.
 
 Generated example designs use symbols, footprints, and model references from the
 official KiCad libraries. Those libraries are CC-BY-SA 4.0 with an exception for
@@ -17,8 +22,8 @@ https://www.kicad.org/libraries/license/.
 
 KiCad is a trademark of its respective owner. No endorsement is implied.
 
-CopperWright's generic runtime architecture was independently implemented after
+PCBDraft's generic runtime architecture was independently implemented after
 studying public MIT-licensed projects including atopile, tscircuit,
-circuit-synth, and Pi/π. No source code, fixture, design, logo, screenshot, or
-dataset from those projects is vendored here. The detailed source/revision record
-is in docs/OPEN_SOURCE_REUSE.md.
+circuit-synth, Pi/π, Hermes Agent, and DeepSeek Harness. No source code, fixture,
+design, logo, screenshot, or dataset from those projects is vendored here. The
+detailed source/revision record is in docs/OPEN_SOURCE_REUSE.md.

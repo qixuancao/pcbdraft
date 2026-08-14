@@ -1,4 +1,4 @@
-# CopperWright benchmark report
+# PCBDraft benchmark report
 
 Measured on 2026-08-13. The machine-readable result is
 [`artifacts/benchmark/benchmark-20260812.json`](artifacts/benchmark/benchmark-20260812.json).
@@ -88,7 +88,7 @@ BENCHMARK_OUTPUT=/tmp/benchmark-model.json MODEL_RUNS=2 scripts/benchmark.sh
 ```
 
 The corpus and methodology are in
-[`src/copperwright/data/benchmark`](src/copperwright/data/benchmark).
+[`src/pcbdraft/data/benchmark`](src/pcbdraft/data/benchmark).
 
 ## Historical competitor smoke
 

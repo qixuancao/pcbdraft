@@ -1,5 +1,5 @@
 {
-  "schema": "copperwright-agent-design-request",
+  "schema": "pcbdraft-agent-design-request",
   "version": 1,
   "design_id": "generic-stm32-sht31",
   "name": "Generic STM32 sensor board",

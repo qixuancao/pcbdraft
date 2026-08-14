@@ -1,0 +1,38 @@
+{
+  "schema": "pcbdraft-agent-design-request",
+  "version": 1,
+  "design_id": "i2c-pullup-adapter",
+  "name": "I2C pull-up adapter",
+  "revision": "A",
+  "request_summary": "A small inline I2C adapter with explicit SDA and SCL pull-up resistors.",
+  "scope": {
+    "domains": ["i2c", "simple_control"],
+    "max_voltage_v": 3.3,
+    "max_current_a": 0.1,
+    "max_power_w": 0.33,
+    "layers": 2,
+    "intended_use": "prototype I2C interconnect",
+    "risk_class": "prototype"
+  },
+  "board": {
+    "width_mm": 55.0,
+    "height_mm": 35.0,
+    "layers": 2,
+    "thickness_mm": 1.6,
+    "edge_clearance_mm": 0.5,
+    "min_track_mm": 0.2,
+    "min_clearance_mm": 0.15,
+    "min_drill_mm": 0.3,
+    "finish": "hasl"
+  },
+  "assumptions": ["The upstream connector supplies a regulated 3.3 V rail."],
+  "requested_parts": [],
+  "functions": ["I2C interconnect", "I2C pull-ups"],
+  "power": {
+    "nominal_v": 3.3,
+    "max_voltage_v": 3.3,
+    "max_current_a": 0.1,
+    "max_power_w": 0.33
+  },
+  "source": {"locator": "examples/i2c_pullup_adapter/request.json"}
+}

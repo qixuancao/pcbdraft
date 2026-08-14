@@ -19,11 +19,11 @@
     },
     "schematic_svg": {
       "bytes": 245604,
-      "path": "schematic-svg/copperwright_spi_environment_sensor.svg",
+      "path": "schematic-svg/pcbdraft_spi_environment_sensor.svg",
       "sha256": "32499b3db0bcef13c76a0345793c97aa217179690a03f1b138b57855e2828f25"
     }
   },
-  "schema": "copperwright-preview-bundle",
+  "schema": "pcbdraft-preview-bundle",
   "tool_runs": [
     {
       "duration_seconds": 0.253,

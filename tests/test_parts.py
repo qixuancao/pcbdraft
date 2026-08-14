@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from copperwright.ir import Design
-from copperwright.parts import PartGraph
+from pcbdraft.ir import Design
+from pcbdraft.parts import PartGraph
 from tests.design_factory import minimal_design_dict
 
 

@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 : "${FIXTURE_DIR:?set FIXTURE_DIR to one unambiguous KiCad project}"
 FIXTURE_DIR=$(realpath -e -- "$FIXTURE_DIR")
-BENCH_ROOT=$(realpath -m -- "${BENCH_ROOT:-/tmp/copperwright-reviewer-benchmark}")
+BENCH_ROOT=$(realpath -m -- "${BENCH_ROOT:-/tmp/pcbdraft-reviewer-benchmark}")
 TIMEOUT=${TIMEOUT:-420}
 REQUEST=${REQUEST:-}
 
@@ -25,13 +25,13 @@ install -d -m 700 "$BENCH_ROOT/project" "$BENCH_ROOT/runs"
 cp -a -- "$FIXTURE_DIR"/. "$BENCH_ROOT/project"/
 
 start=$SECONDS
-"$ROOT_DIR/copperwright" review "$BENCH_ROOT/project" \
+"$ROOT_DIR/pcbdraft" review "$BENCH_ROOT/project" \
     --output "$BENCH_ROOT/runs" --timeout "$TIMEOUT"
 review_seconds=$((SECONDS - start))
 
 if [[ -n "$REQUEST" ]]; then
     start=$SECONDS
-    "$ROOT_DIR/copperwright" patch "$BENCH_ROOT/project" \
+    "$ROOT_DIR/pcbdraft" patch "$BENCH_ROOT/project" \
         --request "$REQUEST" --output "$BENCH_ROOT/runs" --timeout "$TIMEOUT"
     patch_seconds=$((SECONDS - start))
 else

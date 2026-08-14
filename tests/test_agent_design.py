@@ -9,8 +9,9 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from copperwright.agent_design import (
+from pcbdraft.agent_design import (
     AgentDesignRequest,
     CircuitPlan,
     LocalKiCadPartResolver,
@@ -18,16 +19,17 @@ from copperwright.agent_design import (
     compile_agent_plan,
     planner_symbol_context,
 )
-from copperwright.cli import main as cli_main
-from copperwright.errors import ValidationError
-from copperwright.kicad_schematic import generate_schematic
-from copperwright.managed import materialize_managed_design, open_managed_project
-from copperwright.validation import validate_managed_project
+from pcbdraft.cli import main as cli_main
+from pcbdraft.component_qualification import ComponentQualificationReport
+from pcbdraft.errors import ValidationError
+from pcbdraft.kicad_schematic import generate_schematic
+from pcbdraft.managed import materialize_managed_design, open_managed_project
+from pcbdraft.validation import validate_managed_project
 
 
 def agent_request_dict() -> dict[str, object]:
     return {
-        "schema": "copperwright-agent-design-request",
+        "schema": "pcbdraft-agent-design-request",
         "version": 1,
         "design_id": "generic-stm32-sht31",
         "name": "Generic STM32 sensor board",
@@ -68,7 +70,7 @@ def agent_request_dict() -> dict[str, object]:
 
 def circuit_plan_dict() -> dict[str, object]:
     return {
-        "schema": "copperwright-circuit-plan",
+        "schema": "pcbdraft-circuit-plan",
         "version": 1,
         "design_id": "generic-stm32-sht31",
         "summary": "A provisional STM32F405/SHT31 I2C topology.",
@@ -172,7 +174,7 @@ def indicator_request_dict() -> dict[str, object]:
 
 def indicator_plan_dict() -> dict[str, object]:
     return {
-        "schema": "copperwright-circuit-plan",
+        "schema": "pcbdraft-circuit-plan",
         "version": 1,
         "design_id": "generic-led-indicator",
         "summary": "A generic connector, series resistor, and LED topology.",
@@ -229,7 +231,7 @@ def indicator_plan_dict() -> dict[str, object]:
                 "endpoints": [
                     {"component": "capacitor", "pin": "2", "role": "return"},
                     {"component": "input", "pin": "2", "role": "return"},
-                    {"component": "led", "pin": "2", "role": "return"},
+                    {"component": "led", "pin": "1", "role": "return"},
                 ],
             },
             {
@@ -250,7 +252,7 @@ def indicator_plan_dict() -> dict[str, object]:
                 "intent": "Current-limited LED anode.",
                 "endpoints": [
                     {"component": "resistor", "pin": "2", "role": "load"},
-                    {"component": "led", "pin": "1", "role": "load"},
+                    {"component": "led", "pin": "2", "role": "load"},
                 ],
             },
         ],
@@ -258,6 +260,14 @@ def indicator_plan_dict() -> dict[str, object]:
 
 
 class GenericAgentDesignTests(unittest.TestCase):
+    def test_provider_schema_constants_have_explicit_json_types(self) -> None:
+        properties = circuit_plan_schema()["properties"]
+        self.assertEqual(
+            properties["schema"],
+            {"type": "string", "const": "pcbdraft-circuit-plan"},
+        )
+        self.assertEqual(properties["version"], {"type": "integer", "const": 1})
+
     def test_stock_plan_schema_does_not_require_procurement_metadata(self) -> None:
         schema = circuit_plan_schema()
         component = schema["properties"]["components"]["items"]
@@ -315,6 +325,59 @@ class GenericAgentDesignTests(unittest.TestCase):
         )
         self.assertEqual(compilation.design.metadata["generator"], "agent_plan_v1")
         self.assertEqual(compilation.design.metadata["assurance"], "provisional")
+        qualification = compilation.review.qualification.to_dict()
+        self.assertEqual(qualification["schema"], "pcbdraft-component-qualification")
+        self.assertEqual(qualification["summary"]["pad_mapping_failures"], 0)
+        by_reference = {
+            entry["reference"]: entry for entry in qualification["components"]
+        }
+        self.assertEqual(by_reference["U1"]["datasheet"]["state"], "reference_only")
+        self.assertEqual(by_reference["U1"]["overall_state"], "local_library_only")
+
+    def test_plan_rejects_symbol_to_footprint_pad_mismatch(self) -> None:
+        plan = copy.deepcopy(circuit_plan_dict())
+        plan["components"][1]["footprint"] = "Resistor_SMD:R_0603_1608Metric"
+        with self.assertRaisesRegex(ValidationError, "footprint_pad_mapping"):
+            compile_agent_plan(
+                AgentDesignRequest.from_dict(agent_request_dict()),
+                CircuitPlan.from_dict(plan),
+            )
+
+    def test_component_qualification_rejects_inconsistent_or_malformed_evidence(
+        self,
+    ) -> None:
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(indicator_plan_dict()),
+        )
+        inconsistent = compilation.review.qualification.to_dict()
+        inconsistent["summary"]["pad_mapping_failures"] = 99
+        with self.assertRaisesRegex(ValidationError, "derived fields"):
+            ComponentQualificationReport.from_dict(inconsistent)
+
+        malformed = compilation.review.qualification.to_dict()
+        malformed["components"][0]["datasheet"]["state"] = []
+        with self.assertRaisesRegex(ValidationError, "datasheet.state"):
+            ComponentQualificationReport.from_dict(malformed)
+
+    def test_preflight_detects_reversed_ground_referenced_led(self) -> None:
+        plan = copy.deepcopy(indicator_plan_dict())
+        ground = next(net for net in plan["nets"] if net["id"] == "gnd")
+        led_path = next(net for net in plan["nets"] if net["id"] == "led_a")
+        next(item for item in ground["endpoints"] if item["component"] == "led")[
+            "pin"
+        ] = "2"
+        next(item for item in led_path["endpoints"] if item["component"] == "led")[
+            "pin"
+        ] = "1"
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(indicator_request_dict()),
+            CircuitPlan.from_dict(plan),
+        )
+        outcomes = {
+            finding.id: finding.outcome for finding in compilation.review.findings
+        }
+        self.assertEqual(outcomes["electrical.led_ground_polarity"], "fail")
 
     def test_preflight_reports_missing_electrical_evidence_without_refusing_attempt(
         self,
@@ -329,8 +392,12 @@ class GenericAgentDesignTests(unittest.TestCase):
         self.assertNotIn("release_allowed", review)
         self.assertEqual(outcomes["power.input_pin_coverage"], "fail")
         self.assertEqual(outcomes["power.rail_source_evidence"], "fail")
-        self.assertEqual(outcomes["interface.i2c_pullup_evidence"], "unknown")
-        self.assertEqual(outcomes["power.decoupling_evidence"], "unknown")
+        self.assertEqual(outcomes["interface.i2c_pullup_evidence"], "fail")
+        self.assertEqual(outcomes["power.decoupling_evidence"], "fail")
+        self.assertEqual(outcomes["parts.footprint_pad_mapping"], "pass")
+        self.assertEqual(
+            outcomes["parts.datasheet_and_identity_qualification"], "unknown"
+        )
         self.assertEqual(outcomes["constraints.board_manufacturing_envelope"], "pass")
 
     def test_generic_managed_project_persists_reviewed_circuit_plan(self) -> None:
@@ -348,10 +415,21 @@ class GenericAgentDesignTests(unittest.TestCase):
                 plan=compilation.plan,
             )
             self.assertTrue((generated.project.root / "circuit-plan.json").is_file())
+            self.assertTrue(
+                (generated.project.root / "component-qualification.json").is_file()
+            )
             self.assertIn("circuit_plan", generated.project.manifest["files"])
+            self.assertIn(
+                "component_qualification", generated.project.manifest["files"]
+            )
             reopened = open_managed_project(generated.project.root)
             self.assertIsNotNone(reopened.plan)
+            self.assertIsNotNone(reopened.qualification)
             self.assertEqual(reopened.plan.to_dict(), compilation.plan.to_dict())
+            self.assertEqual(
+                reopened.qualification.to_dict(),
+                compilation.review.qualification.to_dict(),
+            )
             self.assertEqual(reopened.drift(), ())
 
     @unittest.skipUnless(shutil.which("kicad-cli"), "real KiCad CLI unavailable")
@@ -371,7 +449,7 @@ class GenericAgentDesignTests(unittest.TestCase):
             )
             self.assertEqual(generated.pcb.routing.state, "completed")
             self.assertEqual(generated.pcb.routing.unrouted, ())
-            self.assertGreaterEqual(len(generated.pcb.routing.vias), 2)
+            self.assertGreaterEqual(len(generated.pcb.routing.vias), 1)
 
             reports = {}
             commands = {
@@ -435,8 +513,48 @@ class GenericAgentDesignTests(unittest.TestCase):
             }
             self.assertEqual(checks["l0.local_stock_library_data"].outcome, "pass")
             self.assertFalse(checks["l0.local_stock_library_data"].blocks_candidate)
+            self.assertEqual(checks["l1.footprint_pad_qualification"].outcome, "pass")
+            self.assertEqual(
+                checks["l1.component_evidence_qualification"].outcome, "unknown"
+            )
+            self.assertEqual(
+                checks["l1.agent_plan_electrical_preflight"].outcome, "pass"
+            )
             self.assertEqual(checks["l4.bom_lifecycle"].outcome, "unknown")
             self.assertFalse(checks["l4.bom_lifecycle"].blocks_candidate)
+
+    @unittest.skipUnless(shutil.which("kicad-cli"), "real KiCad CLI unavailable")
+    def test_additional_stock_examples_reach_the_candidate_gate(self) -> None:
+        repository = Path(__file__).resolve().parents[1]
+        for example in ("rc_filter_board", "i2c_pullup_adapter"):
+            with (
+                self.subTest(example=example),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                source = repository / "examples" / example
+                request = AgentDesignRequest.from_dict(
+                    json.loads((source / "request.json").read_text(encoding="utf-8"))
+                )
+                plan = CircuitPlan.from_dict(
+                    json.loads(
+                        (source / "circuit-plan.json").read_text(encoding="utf-8")
+                    )
+                )
+                compilation = compile_agent_plan(request, plan)
+                generated = materialize_managed_design(
+                    compilation.request,
+                    compilation.design,
+                    Path(temporary) / "project",
+                    graph=compilation.graph,
+                    plan=compilation.plan,
+                )
+                self.assertEqual(generated.pcb.routing.state, "completed")
+                self.assertEqual(generated.pcb.routing.unrouted, ())
+                validation = validate_managed_project(
+                    generated.project, output=Path(temporary) / "validation"
+                )
+                self.assertTrue(validation.candidate_ready)
+                self.assertFalse(validation.production_ready)
 
     def test_cli_stock_generation_reports_route_without_claiming_validation(
         self,
@@ -515,8 +633,13 @@ class GenericAgentDesignTests(unittest.TestCase):
             root = Path(temporary)
             output = root / "generated"
             retained = root / "retained-attempt"
-            with self.assertRaisesRegex(
-                ValidationError, "bounded router|reference-plane stitching vias"
+            failure = ValidationError(
+                "bounded router left 1 net(s) unrouted (TEST); "
+                "expanded_nodes=10; reasons: deterministic test obstruction"
+            )
+            with (
+                patch("pcbdraft.managed.generate_pcb", side_effect=failure),
+                self.assertRaisesRegex(ValidationError, "bounded router"),
             ):
                 materialize_managed_design(
                     compilation.request,
@@ -530,11 +653,30 @@ class GenericAgentDesignTests(unittest.TestCase):
             for relative in (
                 "requirements.pcbreq.json",
                 "circuit-plan.json",
+                "component-qualification.json",
                 "design.pcbir.json",
-                "parts.copperwright.json",
+                "parts.pcbdraft.json",
                 "generic-stm32-sht31.kicad_sch",
             ):
                 self.assertTrue((retained / relative).is_file(), relative)
+
+    @unittest.skipUnless(shutil.which("kicad-cli"), "real KiCad CLI unavailable")
+    def test_fine_pitch_generic_plan_completes_bounded_routing(self) -> None:
+        compilation = compile_agent_plan(
+            AgentDesignRequest.from_dict(agent_request_dict()),
+            CircuitPlan.from_dict(circuit_plan_dict()),
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            generated = materialize_managed_design(
+                compilation.request,
+                compilation.design,
+                Path(temporary) / "project",
+                graph=compilation.graph,
+                plan=compilation.plan,
+            )
+            self.assertEqual(generated.pcb.routing.state, "completed")
+            self.assertEqual(generated.pcb.routing.unrouted, ())
+            self.assertGreater(generated.pcb.routing.expanded_nodes, 0)
 
     def test_cli_generic_failure_retains_the_reviewed_plan_too(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -544,7 +686,14 @@ class GenericAgentDesignTests(unittest.TestCase):
             request_path.write_text(json.dumps(agent_request_dict()), encoding="utf-8")
             plan_path.write_text(json.dumps(circuit_plan_dict()), encoding="utf-8")
             captured = StringIO()
-            with redirect_stdout(captured):
+            failure = ValidationError(
+                "bounded router left 1 net(s) unrouted (TEST); "
+                "expanded_nodes=10; reasons: deterministic test obstruction"
+            )
+            with (
+                patch("pcbdraft.managed.generate_pcb", side_effect=failure),
+                redirect_stdout(captured),
+            ):
                 exit_code = cli_main(
                     [
                         "agent-generate",

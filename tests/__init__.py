@@ -1,1 +1,1 @@
-"""CopperWright test package."""
+"""PCBDraft test package."""

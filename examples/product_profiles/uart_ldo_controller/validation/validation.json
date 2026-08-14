@@ -2,7 +2,7 @@
   "design": {
     "board_sha256": "1be8ec8d8adab7dc55cff389cdce80c7308eae0ba0775f4640cf2ee338aa0587",
     "content_hash": "8330d3b74ae722d0ec7ef38b8045e934f14abea8d3847b0ee8c3c98aac70fa5e",
-    "id": "copperwright_uart_ldo_controller"
+    "id": "pcbdraft_uart_ldo_controller"
   },
   "levels": [
     {
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.copperwright.json"
+            "project.pcbdraft.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -376,7 +376,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "copperwright_uart_ldo_controller.kicad_pcb"
+            "pcbdraft_uart_ldo_controller.kicad_pcb"
           ],
           "id": "l3.power_input_edge",
           "level": "L3",
@@ -480,7 +480,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "copperwright_uart_ldo_controller.kicad_pcb"
+            "pcbdraft_uart_ldo_controller.kicad_pcb"
           ],
           "id": "l3.uart_edge",
           "level": "L3",
@@ -517,7 +517,7 @@
           "blocks_candidate": false,
           "blocks_production": true,
           "evidence": [
-            "copperwright_uart_ldo_controller.kicad_pcb"
+            "pcbdraft_uart_ldo_controller.kicad_pcb"
           ],
           "id": "l3.updi_edge",
           "level": "L3",
@@ -738,7 +738,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "copperwright-validation",
+  "schema": "pcbdraft-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

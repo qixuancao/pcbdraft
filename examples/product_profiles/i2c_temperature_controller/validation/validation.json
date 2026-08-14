@@ -2,7 +2,7 @@
   "design": {
     "board_sha256": "1590e8cabcf3246007c4d554c7b1728e7cdfc1d270961e8f1037636dcf2bb268",
     "content_hash": "5ce0faeded134f02b8adce95ec1d66919b7a9bef259ea026e2a61eac3fb7d722",
-    "id": "copperwright_i2c_temperature_controller"
+    "id": "pcbdraft_i2c_temperature_controller"
   },
   "levels": [
     {
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.copperwright.json"
+            "project.pcbdraft.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -337,7 +337,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "copperwright_i2c_temperature_controller.kicad_pcb"
+            "pcbdraft_i2c_temperature_controller.kicad_pcb"
           ],
           "id": "l3.qwiic_edge",
           "level": "L3",
@@ -453,7 +453,7 @@
           "blocks_candidate": false,
           "blocks_production": true,
           "evidence": [
-            "copperwright_i2c_temperature_controller.kicad_pcb"
+            "pcbdraft_i2c_temperature_controller.kicad_pcb"
           ],
           "id": "l3.updi_edge",
           "level": "L3",
@@ -674,7 +674,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "copperwright-validation",
+  "schema": "pcbdraft-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

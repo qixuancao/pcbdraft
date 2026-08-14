@@ -1,4 +1,4 @@
-# CopperWright development guide
+# PCBDraft development guide
 
 ## Environment
 
@@ -7,7 +7,7 @@ Python bindings. <code>uv</code> is the recommended environment manager.
 
     uv sync --frozen --extra dev
     scripts/prepare-kicad-environment.sh
-    uv run copperwright doctor --json
+    uv run pcbdraft doctor --json
 
 Codex is optional unless exercising the model-backed planner. The builtin provider
 is useful for offline requirement extraction but deliberately does not invent a
@@ -28,9 +28,10 @@ Focused examples:
 
     uv run python -m unittest tests.test_agent_design -v
     uv run python -m unittest tests.test_application.ApplicationConversationTests -v
-    uv run copperwright symbols SHT31 --json
-    uv run copperwright agent-generate examples/basic_stock_board/request.json \
-      examples/basic_stock_board/circuit-plan.json /tmp/copperwright-basic
+    uv run pcbdraft symbols SHT31 --json
+    uv run pcbdraft agent-generate examples/basic_stock_board/request.json \
+      examples/basic_stock_board/circuit-plan.json /tmp/pcbdraft-basic
+    scripts/test-deepseek-harness.sh
 
 The generic-path tests must prove all of the following:
 
@@ -39,8 +40,10 @@ The generic-path tests must prove all of the following:
 - a plan that drops a named part, names an unknown pin, or contains geometry is
   rejected;
 - a valid plan produces semantic IR and a project-local part graph;
-- the basic stock-KiCad example produces a native schematic and routed PCB and
-  passes real KiCad ERC/DRC;
+- the LED, passive RC, and I2C pull-up stock-KiCad examples produce native routed
+  projects and reach the candidate gate under real KiCad ERC/DRC/parity checks;
+- the incomplete fine-pitch STM32/SHT31 fixture routes but remains blocked by
+  deterministic electrical evidence rather than being called usable;
 - a native generation failure retains evidence rather than inventing success.
 
 ## Adding a generic capability
@@ -72,7 +75,7 @@ should decide representation and geometry.
 
 The normal generator needs only installed stock KiCad symbols and footprints.
 Curated reusable data for legacy fixtures lives in
-<code>src/copperwright/data/parts/catalog.json</code>. A record promoted beyond
+<code>src/pcbdraft/data/parts/catalog.json</code>. A record promoted beyond
 local extraction must include:
 
 - canonical identity, manufacturer, MPN/package variant, symbol, footprint, and

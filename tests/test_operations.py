@@ -3,9 +3,9 @@ from __future__ import annotations
 import copy
 import unittest
 
-from copperwright.errors import ValidationError
-from copperwright.ir import Design
-from copperwright.operations import ChangeSet, apply_change_set, semantic_diff
+from pcbdraft.errors import ValidationError
+from pcbdraft.ir import Design
+from pcbdraft.operations import ChangeSet, apply_change_set, semantic_diff
 from tests.design_factory import minimal_design_dict
 
 
@@ -14,7 +14,7 @@ def change_set(
 ) -> ChangeSet:
     return ChangeSet.from_dict(
         {
-            "schema": "copperwright-change-set",
+            "schema": "pcbdraft-change-set",
             "version": 1,
             "id": change_id,
             "base_hash": design.content_hash(),
@@ -132,7 +132,7 @@ class SemanticOperationTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValidationError, "required_pin_unconnected"):
             # IR mutation itself is valid; the part graph validator owns this contract.
-            from copperwright.parts import PartGraph
+            from pcbdraft.parts import PartGraph
 
             result = apply_change_set(design, changes)
             PartGraph.bundled().assert_design(result)

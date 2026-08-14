@@ -1,7 +1,7 @@
-# CopperWright persisted verification artifacts
+# PCBDraft persisted verification artifacts
 
 These artifacts are selected real acceptance evidence, not test mocks. They are
-regenerated under the CopperWright package, schema, and path namespace.
+regenerated under the PCBDraft package, schema, and path namespace.
 
 ## `acceptance/release`
 
@@ -11,7 +11,7 @@ project. `release-manifest.json` inventories 31 stable content artifacts;
 pre-normalization hashes, and three raw audit artifacts. Verify it with:
 
 ```bash
-copperwright release-verify artifacts/acceptance/release --json
+pcbdraft release-verify artifacts/acceptance/release --json
 ```
 
 Expected hashes:

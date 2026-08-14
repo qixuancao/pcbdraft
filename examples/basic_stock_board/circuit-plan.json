@@ -1,5 +1,5 @@
 {
-  "schema": "copperwright-circuit-plan",
+  "schema": "pcbdraft-circuit-plan",
   "version": 1,
   "design_id": "basic-stock-board",
   "summary": "A stock KiCad connector, bypass capacitor, series resistor, and LED.",
@@ -55,7 +55,7 @@
       "endpoints": [
         {"component": "capacitor", "pin": "2", "role": "return"},
         {"component": "input", "pin": "2", "role": "return"},
-        {"component": "led", "pin": "2", "role": "return"}
+        {"component": "led", "pin": "1", "role": "return"}
       ]
     },
     {
@@ -64,7 +64,7 @@
       "net_class": "signal",
       "intent": "Current-limited LED anode.",
       "endpoints": [
-        {"component": "led", "pin": "1", "role": "load"},
+        {"component": "led", "pin": "2", "role": "load"},
         {"component": "resistor", "pin": "2", "role": "load"}
       ]
     },

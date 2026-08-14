@@ -48,15 +48,15 @@
   "production_ready": false,
   "profile": "low_voltage_i2c_controller_v1",
   "project_files": {
-    "board": "copperwright_i2c_temperature_controller.kicad_pcb",
+    "board": "pcbdraft_i2c_temperature_controller.kicad_pcb",
     "ir": "design.pcbir.json",
-    "kicad_project": "copperwright_i2c_temperature_controller.kicad_pro",
-    "manifest": "project.copperwright.json",
+    "kicad_project": "pcbdraft_i2c_temperature_controller.kicad_pro",
+    "manifest": "project.pcbdraft.json",
     "requirements": "requirements.pcbreq.json",
-    "schematic": "copperwright_i2c_temperature_controller.kicad_sch",
-    "worker_receipt": "copperwright_i2c_temperature_controller.worker-result.json"
+    "schematic": "pcbdraft_i2c_temperature_controller.kicad_sch",
+    "worker_receipt": "pcbdraft_i2c_temperature_controller.worker-result.json"
   },
-  "schema": "copperwright-product-example-acceptance",
+  "schema": "pcbdraft-product-example-acceptance",
   "validation_report_sha256": "fc6baf2e2c17470d39db1c6244927bd1c410cde8680d239bde86ccdb513c10d6",
   "version": 1
 }

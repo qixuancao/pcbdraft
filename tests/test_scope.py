@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import unittest
 
-from copperwright.ir import Design, Scope
-from copperwright.scope import evaluate_scope
+from pcbdraft.ir import Design, Scope
+from pcbdraft.scope import evaluate_scope
 from tests.design_factory import minimal_design_dict
 
 
@@ -12,13 +12,13 @@ class AcceptanceScopeTests(unittest.TestCase):
         design = Design.from_dict(minimal_design_dict())
         self.assertTrue(evaluate_scope(design.scope).accepted)
 
-    def test_odd_copper_stackup_is_rejected_before_native_generation(self) -> None:
+    def test_six_layer_stackup_is_accepted_for_native_generation(self) -> None:
         value = minimal_design_dict()
-        value["scope"]["layers"] = 3
-        value["board"]["layers"] = 3
+        value["scope"]["layers"] = 6
+        value["board"]["layers"] = 6
         decision = evaluate_scope(Design.from_dict(value).scope)
-        self.assertFalse(decision.accepted)
-        self.assertIn("2- or 4-copper-layer", "; ".join(decision.reasons))
+        self.assertTrue(decision.accepted)
+        self.assertEqual(decision.reasons, ())
 
     def test_complex_domains_are_warned_about_without_blocking_generation(self) -> None:
         value = minimal_design_dict()["scope"]

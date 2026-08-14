@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from copperwright.api import handle_request
+from pcbdraft.api import handle_request
 from tests.requirements_factory import controller_requirements_dict
 from tests.test_agent_design import (
     agent_request_dict,
@@ -34,7 +34,10 @@ class JsonRpcApiTests(unittest.TestCase):
         self.assertIn("release.verify", result["methods"])
         self.assertNotIn("accepted_scope", result)
         self.assertNotIn("scope_policy", result)
-        self.assertEqual(result["generation"]["layers"], [2, 4])
+        self.assertEqual(
+            result["generation"]["layers"],
+            "agent_selected_or_user_specified; checked by installed KiCad during generation",
+        )
         self.assertEqual(
             result["generation"]["domain_requests"],
             "attempted_without_preemptive_rejection",
@@ -44,7 +47,7 @@ class JsonRpcApiTests(unittest.TestCase):
             "installed_stock_kicad_only",
         )
         self.assertEqual(
-            result["agent_runtime"]["plan_schema"], "copperwright-circuit-plan"
+            result["agent_runtime"]["plan_schema"], "pcbdraft-circuit-plan"
         )
         self.assertIn("requirements.compile", result["legacy_fixture_methods"])
 
@@ -58,8 +61,35 @@ class JsonRpcApiTests(unittest.TestCase):
             }
         )
         self.assertNotIn("error", response)
-        self.assertEqual(response["result"]["design"]["schema"], "copperwright-ir")
+        self.assertEqual(response["result"]["design"]["schema"], "pcbdraft-ir")
         self.assertEqual(len(response["result"]["content_hash"]), 64)
+
+    def test_dsh_agent_request_prepare_keeps_agent_selected_stackup(self) -> None:
+        response = handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": "dsh-prepare",
+                "method": "agent.request.prepare",
+                "params": {
+                    "request_summary": "Design a 6-layer 3.3 V SPI BME280 sensor board",
+                    "design_name": "BME280 sensor board",
+                    "layers": 6,
+                    "requested_parts": ["BME280"],
+                    "functions": ["SPI sensor interface"],
+                },
+            }
+        )
+        self.assertNotIn("error", response)
+        result = response["result"]
+        request = result["request"]
+        self.assertEqual(request["board"]["layers"], 6)
+        self.assertEqual(request["scope"]["layers"], 6)
+        self.assertEqual(request["requested_parts"], ["BME280"])
+        self.assertIn("_runtime_primitives", result["symbol_context"])
+        self.assertEqual(
+            result["plan_schema"]["properties"]["schema"]["const"],
+            "pcbdraft-circuit-plan",
+        )
 
     def test_generic_agent_plan_compiles_local_symbols_without_profiles(self) -> None:
         response = handle_request(
@@ -77,6 +107,10 @@ class JsonRpcApiTests(unittest.TestCase):
         result = response["result"]
         self.assertEqual(result["assurance"], "provisional")
         self.assertEqual(result["design"]["metadata"]["generator"], "agent_plan_v1")
+        self.assertEqual(
+            result["component_qualification"]["summary"]["pad_mapping_failures"],
+            0,
+        )
         self.assertNotIn("attempt_allowed", result["plan_review"])
         self.assertNotIn("release_allowed", result["plan_review"])
         self.assertIn(
@@ -103,6 +137,7 @@ class JsonRpcApiTests(unittest.TestCase):
             self.assertNotIn("error", response)
             result = response["result"]
             self.assertIn("circuit_plan", result["files"])
+            self.assertIn("component_qualification", result["files"])
             self.assertNotIn("attempt_allowed", result["plan_review"])
             self.assertNotIn("release_allowed", result["plan_review"])
 

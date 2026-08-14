@@ -3,8 +3,18 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
-from copperwright.errors import ValidationError
-from copperwright.routing import GridRouter, RouteSegment, RoutingKeepout, RoutingPad
+from pcbdraft.errors import ValidationError
+from pcbdraft.kicad_pcb import (
+    _add_reference_stitching_vias,
+    _routing_failure_message,
+)
+from pcbdraft.routing import (
+    GridRouter,
+    RouteSegment,
+    RoutingKeepout,
+    RoutingPad,
+    RoutingResult,
+)
 
 
 def _router(**overrides: Any) -> GridRouter:
@@ -64,9 +74,10 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(result.unrouted, ("N",))
         self.assertIn("could not connect", result.diagnostics[0])
 
-    def test_router_enforces_grid_and_layer_bounds(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "only 2-4"):
-            _router(layers=1)
+    def test_router_enforces_grid_bounds_without_a_static_layer_cap(self) -> None:
+        self.assertEqual(_router(layers=1).layer_count, 1)
+        self.assertEqual(_router(layers=6).layer_count, 6)
+        self.assertEqual(_router(layers=65).layer_count, 65)
         with self.assertRaisesRegex(ValidationError, "bounded limit"):
             _router(board_width_mm=1000, board_height_mm=1000, grid_mm=0.01)
 
@@ -116,6 +127,45 @@ class RoutingTests(unittest.TestCase):
         self.assertTrue(
             any("omitted obstructed optional" in item for item in result.diagnostics)
         )
+
+    def test_exact_seed_clearance_avoids_fine_pitch_grid_false_positive(self) -> None:
+        seeds = (
+            RouteSegment("A", 0, 2.0, 2.15, 4.0, 2.15, 0.2),
+            RouteSegment("B", 0, 2.0, 2.65, 4.0, 2.65, 0.2),
+        )
+        result = _router(grid_mm=0.1, clearance_mm=0.21).route(
+            (
+                RoutingPad("fine-a", "A", 2.0, 2.15, 0.6, 0.3, (0,)),
+                RoutingPad("fine-b", "B", 2.0, 2.65, 0.6, 0.3, (0,)),
+            ),
+            seed_segments=seeds,
+        )
+        self.assertEqual(result.state, "completed")
+        self.assertTrue(set(seeds) <= set(result.segments))
+        self.assertFalse(
+            any("omitted obstructed optional" in item for item in result.diagnostics)
+        )
+
+    def test_unrouted_diagnostics_are_not_masked_by_reference_stitching(self) -> None:
+        routing = RoutingResult(
+            segments=(),
+            vias=(),
+            unrouted=("N\nunsafe",),
+            state="heuristic",
+            expanded_nodes=42,
+            diagnostics=tuple(f"reason {index}" for index in range(12)),
+        )
+        result = _add_reference_stitching_vias(None, (), None, (), routing)  # type: ignore[arg-type]
+        message = _routing_failure_message(result)
+        self.assertIn("expanded_nodes=42", message)
+        self.assertTrue(
+            any(
+                "reference-plane stitching skipped" in item
+                for item in result.diagnostics
+            )
+        )
+        self.assertIn("additional diagnostic(s) omitted", message)
+        self.assertNotIn("\n", message)
 
 
 if __name__ == "__main__":

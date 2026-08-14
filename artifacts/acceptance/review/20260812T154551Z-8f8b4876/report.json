@@ -219,7 +219,7 @@
     "ai_heuristic": "Codex interpretation; not an engineering sign-off",
     "deterministic": "Local kicad-cli ERC/DRC evidence"
   },
-  "project": "/mnt/2T/copperwright/examples/attiny_sensor_controller/project",
+  "project": "/mnt/2T/pcbdraft/examples/attiny_sensor_controller/project",
   "report_version": 1,
   "run_id": "20260812T154551Z-8f8b4876",
   "selected_files": {

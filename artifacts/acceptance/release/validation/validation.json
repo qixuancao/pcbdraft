@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.copperwright.json"
+            "project.pcbdraft.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -674,7 +674,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "copperwright-validation",
+  "schema": "pcbdraft-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

@@ -1,8 +1,0 @@
-#!/usr/bin/env bash
-# Runs this checkout through its uv-managed CopperWright environment.
-# Run: ./copperwright [args]
-# Requires: uv and a CopperWright repository checkout.
-set -euo pipefail
-
-REPO_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec uv run --project "$REPO_DIR" python -m copperwright "$@"

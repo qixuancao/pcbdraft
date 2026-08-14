@@ -2,7 +2,7 @@
   "design": {
     "board_sha256": "2900bfe0bb7be83978a948324c62f241d8b6d1997069475ddc973f26b5832a58",
     "content_hash": "7ee307abb58b16fcc5c7043149df544686a26851abc720cd4e6b7d395719b9bf",
-    "id": "copperwright_spi_environment_sensor"
+    "id": "pcbdraft_spi_environment_sensor"
   },
   "levels": [
     {
@@ -11,7 +11,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "project.copperwright.json"
+            "project.pcbdraft.json"
           ],
           "id": "l0.manifest_integrity",
           "level": "L0",
@@ -394,7 +394,7 @@
           "blocks_candidate": true,
           "blocks_production": true,
           "evidence": [
-            "copperwright_spi_environment_sensor.kicad_pcb"
+            "pcbdraft_spi_environment_sensor.kicad_pcb"
           ],
           "id": "l3.spi_edge",
           "level": "L3",
@@ -435,7 +435,7 @@
           "blocks_candidate": false,
           "blocks_production": true,
           "evidence": [
-            "copperwright_spi_environment_sensor.kicad_pcb"
+            "pcbdraft_spi_environment_sensor.kicad_pcb"
           ],
           "id": "l3.updi_edge",
           "level": "L3",
@@ -641,7 +641,7 @@
     "production": false,
     "production_claimed": false
   },
-  "schema": "copperwright-validation",
+  "schema": "pcbdraft-validation",
   "tool_runs": {
     "drc": {
       "failure": null,

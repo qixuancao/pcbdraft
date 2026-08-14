@@ -1,0 +1,88 @@
+{
+  "board": {
+    "edge_clearance_mm": 0.5,
+    "finish": "hasl_lead_free",
+    "height_mm": 30,
+    "layers": 2,
+    "min_clearance_mm": 0.1,
+    "min_drill_mm": 0.3,
+    "min_track_mm": 0.2,
+    "thickness_mm": 1.6,
+    "width_mm": 45
+  },
+  "design_id": "attiny_sensor_controller",
+  "functions": [
+    {
+      "id": "controller",
+      "intent": "Run deterministic sensor acquisition and status firmware.",
+      "kind": "microcontroller",
+      "parameters": {"programming": "updi"}
+    },
+    {
+      "id": "external_bus",
+      "intent": "Accept regulated 3.3 V and expose the sensor bus on a JST-SH connector.",
+      "kind": "i2c_connector",
+      "parameters": {"pin_order": ["GND", "3V3", "SDA", "SCL"]}
+    },
+    {
+      "id": "programming",
+      "intent": "Expose UPDI, target-voltage sense, and ground on a serviceable header.",
+      "kind": "updi_programming",
+      "parameters": {
+        "connector_pitch_mm": 2.54,
+        "power_pin_mode": "target_voltage_sense_only"
+      }
+    },
+    {
+      "id": "status",
+      "intent": "Expose a current-limited green status indication.",
+      "kind": "status_indicator",
+      "parameters": {"color": "green"}
+    },
+    {
+      "id": "temperature",
+      "intent": "Measure local board temperature over I2C.",
+      "kind": "temperature_sensor",
+      "parameters": {"accuracy_class": "general_purpose"}
+    }
+  ],
+  "interfaces": [
+    {
+      "bus_capacitance_pf_max": 200,
+      "external_connector": true,
+      "external_pullups": "forbidden",
+      "id": "sensor_i2c",
+      "kind": "i2c",
+      "speed_hz": 100000
+    }
+  ],
+  "name": "ATtiny temperature controller",
+  "power": {
+    "max_current_a": 0.1,
+    "max_v": 3.465,
+    "min_v": 3,
+    "nominal_v": 3.3
+  },
+  "priorities": [
+    "electrical_correctness",
+    "manufacturability",
+    "compact_sensor_group"
+  ],
+  "revision": "1.0",
+  "schema": "pcbdraft-requirements",
+  "scope": {
+    "domains": ["i2c", "low_voltage_mcu", "sensor", "simple_control"],
+    "intended_use": "Non-safety-critical environmental sensing prototype.",
+    "layers": 2,
+    "max_current_a": 0.1,
+    "max_power_w": 0.3465,
+    "max_voltage_v": 3.465,
+    "risk_class": "prototype"
+  },
+  "source": {
+    "acquired_at": "2026-08-12",
+    "locator": "src/pcbdraft/data/benchmark/acceptance_requirements.json",
+    "name": "independent CC0 acceptance fixture"
+  },
+  "version": 1
+}

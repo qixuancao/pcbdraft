@@ -1,21 +1,21 @@
-# CopperWright 工程基线：最终完成报告
+# PCBDraft 工程基线：最终完成报告
 
 > **历史记录，已不代表当前产品状态。** 本文保留的是固定确定性夹具时代的
-> 2026-08-13 验收背景，不应被理解为 CopperWright 当前的通用 AI PCB 产品说明。
+> 2026-08-13 验收背景，不应被理解为 PCBDraft 当前的通用 AI PCB 产品说明。
 > 当前架构、能力边界和证据状态以
 > [ARCHITECTURE.md](ARCHITECTURE.md)、
 > [PRODUCT_ACCEPTANCE.md](PRODUCT_ACCEPTANCE.md) 和
 > [SPEC_TRACEABILITY.md](SPEC_TRACEABILITY.md) 为准。
 
 > 本报告保留 2026-08-13 工程验收背景。当前产品名、主命令、schema、工件路径和
-> 记录的运行名称均使用 CopperWright / `copperwright`。
+> 记录的运行名称均使用 PCBDraft / `pcbdraft`。
 
 完成日期：2026-08-13（Asia/Shanghai）
 
 ## 结论
 
 仓库已从 reviewer/safe-patcher MVP 完成到规范所要求的、有明确支持边界的
-CopperWright 0.2.0。需求追踪表中的本地可实现项 R01–R44 均有代码和
+PCBDraft 0.2.0。需求追踪表中的本地可实现项 R01–R44 均有代码和
 自动验证路径；R45 仅保留必须来自供应商、合格工程师、制造和实物测试的
 外部门禁。当前 ATtiny402/TMP102 验收设计为 `engineering_candidate=true`，
 并且诚实保持 `production=false`、`production_claimed=false`。
@@ -163,7 +163,7 @@ scripts/test.sh
 scripts/python-matrix.sh
 scripts/benchmark.sh
 scripts/release-check.sh
-copperwright release-verify artifacts/acceptance/release --json
+pcbdraft release-verify artifacts/acceptance/release --json
 ```
 
 需要现有已认证 Codex CLI 才运行模型重复；生成、验证、制造发布、离线校验
