@@ -15,6 +15,7 @@ from pcbdraft import (
     PRIMARY_CLI,
     PRODUCT_NAME,
     __version__,
+    build_identity,
 )
 from pcbdraft.agent.design import (
     AgentDesignRequest,
@@ -53,6 +54,7 @@ def capabilities() -> dict[str, Any]:
     return {
         "api_version": API_VERSION,
         "runtime_version": __version__,
+        "runtime": build_identity(),
         "product": {
             "name": PRODUCT_NAME,
             "distribution": DISTRIBUTION_NAME,
@@ -244,6 +246,7 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             "report": str(result.report_path),
             "report_sha256": result.report_sha256,
             "candidate_ready": result.candidate_ready,
+            "production_evidence_complete": result.production_evidence_complete,
             "production_ready": result.production_ready,
             "levels": [level.to_dict() for level in result.levels],
         }
@@ -261,6 +264,7 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             "archive": str(result.archive_path),
             "archive_sha256": result.archive_sha256,
             "candidate_ready": result.candidate_ready,
+            "production_evidence_complete": result.production_evidence_complete,
             "production_ready": result.production_ready,
         }
     if method == "release.verify":

@@ -13,8 +13,8 @@ if ! command -v kicad-cli >/dev/null 2>&1; then
 fi
 
 KICAD_VERSION=$(kicad-cli --version)
-if [[ "$KICAD_VERSION" != 10.* ]]; then
-    printf 'KiCad 10 is required, found: %s\n' "$KICAD_VERSION" >&2
+if [[ "$KICAD_VERSION" != "10.0.5" ]]; then
+    printf 'The accepted KiCad version is 10.0.5, found: %s\n' "$KICAD_VERSION" >&2
     exit 2
 fi
 

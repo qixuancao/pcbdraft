@@ -36,19 +36,28 @@ their provenance.
 - staging, backups, rollback, undo, and recovery receipts;
 - exact archive inventory, safe-name, hash, encryption, timestamp, and expansion
   verification;
-- model requests use a bounded JSON schema and the credential is sent only in
-  the HTTPS Authorization header; prompts and API keys are not written to receipts.
+- remote model requests require HTTPS; plaintext HTTP is accepted only for a
+  literal loopback host. Authorization credentials are never redirected, and
+  returned JSON is independently validated against the requested schema before
+  it is accepted. Provider errors are classified without persisting response
+  bodies; retries are limited to transient classes, three attempts, and the
+  caller's original deadline. Prompts and API keys are not written to receipts.
 - `/connect` writes credentials only to the user-owned PCBDraft config with mode
   `0600`; project files and application records never contain provider secrets.
 - the browser binds to loopback only, rejects non-loopback configuration, validates
-  Host and Origin, requires per-process CSRF tokens for writes, sends a restrictive
-  CSP/security headers, limits request bodies, and serves only allow-listed project
-  artifacts;
-- private application workspaces, per-project locks, durable jobs/events, explicit
-  confirmation, and restart recovery prevent browser/terminal races and implicit
-  replay of interrupted side effects;
+  Host and Origin, and requires an unguessable per-process session capability for
+  every API, event-stream, and artifact request. The capability is delivered in a
+  launch-URL fragment, never by an unauthenticated endpoint. Writes additionally
+  require a CSRF token. Restrictive CSP/security headers and body/artifact allow
+  lists remain enforced;
+- private application workspaces, cross-process project/job locks, durable
+  jobs/events, explicit confirmation, and restart recovery prevent duplicate
+  active jobs, browser/terminal races, and implicit replay of interrupted effects;
 - provider output uses an exact bounded schema and is normalized and scope-checked
   before deterministic code can act on it.
+- release installation requires a full immutable Git commit, uses a runtime
+  constraint export with artifact hashes, pins build tooling and CI actions, and
+  audits the locked dependency graph for known vulnerabilities.
 
 Tests in `tests/integration/test_security.py`, `tests/core/test_process.py`,
 `tests/services/test_transactions.py`, `tests/integration/test_workflows.py`, and
@@ -72,7 +81,9 @@ can still require explicit recovery. Use version control and durable backups.
 External L4/L6/L7 artifacts are copied, hashed, and attributed, not cryptographically
 signed or independently authenticated. The runtime cannot prove supplier/fabricator
 claims, reviewer identity, test-lab competence, board serial provenance, or physical
-measurement integrity.
+measurement integrity. Such records may complete an evidence checklist, but the
+runtime always reports `production_ready=false` and cannot issue a production
+attestation.
 
 No check in this project is a safety certification, regulatory approval, or
 substitute for qualified engineering review.
@@ -91,7 +102,8 @@ interpret the request; use the offline provider for data that must not leave the
 machine. Do not commit confidential receipts, model events, or board designs
 without reviewing them.
 
-The local web UI is not a multi-user service. Loopback prevents ordinary remote
-access, but another process running as the same OS user may still read the private
-workspace or connect locally. Use separate accounts or a VM when users do not share
-a trust boundary.
+The local web UI is not a multi-user service. The session capability prevents a
+blind local connection from reading project data, but another process running as
+the same OS user may still inspect that user's browser/process state or read the
+private workspace. Use separate accounts or a VM when users do not share a trust
+boundary.

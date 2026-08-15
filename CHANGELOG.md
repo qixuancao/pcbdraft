@@ -5,6 +5,30 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
 
 ## Unreleased
 
+- Hardened model transport: remote endpoints now require HTTPS, loopback HTTP is
+  explicitly identified, redirects cannot forward Authorization credentials,
+  and returned objects undergo local Draft 2020-12 JSON Schema validation.
+- Added declarative provider wire profiles for DeepSeek, MiniMax, Kimi, OpenAI,
+  OpenRouter, and Ollama. Structured-output modes, sampling/token fields, and
+  OpenRouter capability routing now match their endpoints; transient failures use
+  classified, deadline-bounded retries with Retry-After and safe receipts.
+- Added a per-process browser session capability for every API, event stream, and
+  artifact request; bootstrap no longer discloses an authorization token to any
+  process that can reach the loopback port.
+- Made the one-active-job invariant atomic across threads and processes, including
+  retry-source validation, with a concurrent regression test.
+- Split external evidence completeness from production attestation. Imported
+  L4/L6/L7 records can set `production_evidence_complete`, while
+  `production_ready` remains false because PCBDraft cannot authenticate signers or
+  independently verify physical evidence.
+- Advanced the development version to 1.1.0.dev0 and added PEP 610 commit
+  provenance to diagnostics and evidence. Installation now requires a full commit
+  SHA, hash-pinned runtime constraints, a preinstalled verified `uv`, and the exact
+  accepted KiCad version.
+- Pinned CI actions and KiCad acceptance, added dependency auditing, branch
+  coverage, a type-checking ratchet for critical trust-boundary modules, security
+  linting, and a cyclomatic-complexity ceiling.
+
 - Reorganized the flat Python package and test suite into responsibility-focused
   core, domain, agent, model, KiCad, service, verification, and interface areas;
   historical 1.0 module imports remain available through lazy identity aliases.

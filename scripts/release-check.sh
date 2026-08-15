@@ -26,11 +26,14 @@ fi
 uv run python -m zipfile -t "$WHEEL"
 tar -tzf "$SDIST" >/dev/null
 uv run python -c \
-    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/scripts/tui-e2e.py", "/src/pcbdraft/interfaces/tui/styles.tcss"); assert all(any(name.endswith(item) for name in names) for item in required)' \
+    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/constraints/build.txt", "/constraints/runtime.txt", "/scripts/tui-e2e.py", "/src/pcbdraft/interfaces/tui/styles.tcss"); assert all(any(name.endswith(item) for name in names) for item in required)' \
     "$SDIST"
 
 uv venv --python 3.11 "$CHECK_ROOT/venv"
-uv pip install --python "$CHECK_ROOT/venv/bin/python" "$WHEEL"
+uv pip install \
+    --python "$CHECK_ROOT/venv/bin/python" \
+    --constraints "$REPO_DIR/constraints/runtime.txt" \
+    "$WHEEL"
 "$CHECK_ROOT/venv/bin/pcbdraft" --version
 "$CHECK_ROOT/venv/bin/python" -c \
     'from pcbdraft.verification.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'

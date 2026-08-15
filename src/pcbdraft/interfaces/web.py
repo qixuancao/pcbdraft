@@ -18,7 +18,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any, ClassVar
 
-from pcbdraft import __version__
+from pcbdraft import __version__, build_identity
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.services.application import ApplicationService, sanitize_user_text
 from pcbdraft.services.jobs import JobRunner
@@ -55,9 +55,16 @@ class PCBDraftHTTPServer(ThreadingHTTPServer):
         self.service = service
         self.jobs = JobRunner(service)
         self.csrf_token = secrets.token_urlsafe(32)
+        self.session_token = secrets.token_urlsafe(32)
         host, port = self.server_address[:2]
-        public_host = "127.0.0.1" if host in {"0.0.0.0", "::"} else host
-        self.base_url = f"http://{public_host}:{port}"
+        if host not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValidationError("PCBDraft app only binds to loopback")
+        public_host = host
+        public_netloc = (
+            f"[{public_host}]:{port}" if ":" in public_host else f"{public_host}:{port}"
+        )
+        self.base_url = f"http://{public_netloc}"
+        self.launch_url = f"{self.base_url}/#session={self.session_token}"
         origins = {self.base_url}
         if host in {"127.0.0.1", "localhost", "::1"}:
             origins.add(f"http://localhost:{port}")
@@ -100,12 +107,15 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
             if path in self._STATIC:
                 self._serve_static(path)
                 return
+            if path.startswith("/api/") and not self._valid_session(parsed):
+                return
             if path == "/api/bootstrap":
                 self._json_response(
                     {
                         "schema": "pcbdraft-browser-bootstrap",
                         "version": 1,
                         "product_version": __version__,
+                        "product_build": build_identity(),
                         "csrf_token": self.server.csrf_token,
                         "diagnostics": self.server.service.diagnostics(),
                         "projects": self.server.service.list_projects(),
@@ -136,10 +146,12 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, "internal application error")
 
     def do_POST(self) -> None:
-        if not self._valid_host() or not self._valid_mutation_request():
+        if not self._valid_host():
             return
         parsed = self._parsed_path()
         if parsed is None:
+            return
+        if not self._valid_session(parsed) or not self._valid_mutation_request():
             return
         try:
             body = self._json_body()
@@ -240,13 +252,26 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
             return False
         return True
 
+    def _valid_session(self, parsed: urllib.parse.SplitResult) -> bool:
+        supplied = self.headers.get("X-PCBDraft-Session", "")
+        if not supplied:
+            values = urllib.parse.parse_qs(
+                parsed.query, keep_blank_values=True, strict_parsing=False
+            ).get("session", [])
+            if len(values) == 1:
+                supplied = values[0]
+        if not _secret_matches(supplied, self.server.session_token):
+            self._error(HTTPStatus.UNAUTHORIZED, "invalid local session token")
+            return False
+        return True
+
     def _valid_mutation_request(self) -> bool:
         origin = self.headers.get("Origin", "")
         if origin not in self.server.allowed_origins:
             self._error(HTTPStatus.FORBIDDEN, "same-origin request required")
             return False
         supplied = self.headers.get("X-PCBDraft-CSRF", "")
-        if not hmac.compare_digest(supplied, self.server.csrf_token):
+        if not _secret_matches(supplied, self.server.csrf_token):
             self._error(HTTPStatus.FORBIDDEN, "invalid CSRF token")
             return False
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
@@ -396,7 +421,7 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
         if not project_file.is_relative_to(root) or project_file.is_symlink():
             raise ValidationError("KiCad project path is unsafe")
         try:
-            subprocess.Popen(
+            subprocess.Popen(  # noqa: S603 - fixed executable and argv; no shell
                 [executable, str(project_file)],
                 cwd=project_file.parent,
                 stdin=subprocess.DEVNULL,
@@ -469,6 +494,12 @@ def create_app_server(
     return PCBDraftHTTPServer((host, port), service)
 
 
+def _secret_matches(supplied: str, expected: str) -> bool:
+    return hmac.compare_digest(
+        supplied.encode("utf-8", errors="surrogatepass"), expected.encode("ascii")
+    )
+
+
 def run_app(
     *,
     host: str,
@@ -480,10 +511,10 @@ def run_app(
     server = create_app_server(
         host=host, port=port, workspace=workspace, provider=provider
     )
-    print(f"PCBDraft app: {server.base_url}", flush=True)
+    print(f"PCBDraft app: {server.launch_url}", flush=True)
     print("Local-only session; press Ctrl+C to stop.", flush=True)
     if open_browser:
-        webbrowser.open(server.base_url, new=2)
+        webbrowser.open(server.launch_url, new=2)
     try:
         server.serve_forever(poll_interval=0.25)
     except KeyboardInterrupt:

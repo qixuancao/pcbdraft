@@ -219,6 +219,16 @@ feedback. The configured model API and OpenAI-compatible endpoints therefore do
 not own separate PCB workflows. Provider output always enters the same schema, installed-symbol,
 semantic-plan, generation, validation, and transaction boundaries.
 
+Provider identity is resolved to a small declarative wire profile before the
+shared Chat Completions transport builds a request. Profiles select native JSON
+Schema, JSON Object, or prompt-constrained JSON; the output is always decoded and
+validated again with the full local Draft 2020-12 schema. They also own compatible
+token and sampling parameter names. Transient 408/409/425/429 and 5xx responses,
+timeouts, and network failures have one three-attempt retry policy bounded by the
+caller's original deadline. Authentication, billing, malformed requests, TLS
+verification, redirects, and schema failures are never retried. No policy silently
+changes the configured provider or model.
+
 ## Validation and release
 
 L0–L7 reports distinguish completed, unavailable, heuristic, human-required, and

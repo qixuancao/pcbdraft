@@ -2,6 +2,7 @@
 
 const state = {
   csrf: "",
+  session: "",
   diagnostics: null,
   projects: [],
   current: null,
@@ -21,7 +22,10 @@ const node = (tag, className, text) => {
 const clear = (element) => { while (element.firstChild) element.firstChild.remove(); };
 
 async function api(path, options = {}) {
-  const request = { method: options.method || "GET", headers: {} };
+  const request = {
+    method: options.method || "GET",
+    headers: { "X-PCBDraft-Session": state.session },
+  };
   if (request.method !== "GET") {
     request.headers["Content-Type"] = "application/json";
     request.headers["X-PCBDraft-CSRF"] = state.csrf;
@@ -31,6 +35,12 @@ async function api(path, options = {}) {
   const content = await response.json();
   if (!response.ok) throw new Error(content.error?.message || `Request failed (${response.status})`);
   return content;
+}
+
+function sessionUrl(path) {
+  const url = new URL(path, window.location.origin);
+  url.searchParams.set("session", state.session);
+  return `${url.pathname}${url.search}`;
 }
 
 function toast(message, error = false) {
@@ -241,7 +251,7 @@ function renderBrief(view) {
 
 function artifactLink(projectId, key, text) {
   const link = node("a", "", text);
-  link.href = `/api/projects/${projectId}/artifact/${key}`;
+  link.href = sessionUrl(`/api/projects/${projectId}/artifact/${key}`);
   link.target = "_blank";
   link.rel = "noopener";
   return link;
@@ -276,12 +286,12 @@ function renderArtifacts(view) {
   }
   const board = card("PCB 3D render");
   const boardImage = node("img", "preview");
-  boardImage.src = `/api/projects/${projectId}/artifact/board_render`;
+  boardImage.src = sessionUrl(`/api/projects/${projectId}/artifact/board_render`);
   boardImage.alt = "Top-side KiCad 3D render of the generated board";
   board.append(boardImage); target.append(board);
   const schematic = card("Schematic preview");
   const schematicImage = node("img", "preview");
-  schematicImage.src = `/api/projects/${projectId}/artifact/schematic_svg`;
+  schematicImage.src = sessionUrl(`/api/projects/${projectId}/artifact/schematic_svg`);
   schematicImage.alt = "KiCad schematic preview";
   schematic.append(schematicImage); target.append(schematic);
   const links = card("Artifacts & source");
@@ -443,7 +453,7 @@ async function selectProject(projectId) {
 function connectEvents(projectId) {
   if (state.eventSource) state.eventSource.close();
   state.eventCursor = 0;
-  const source = new EventSource(`/api/projects/${projectId}/events?after=0`);
+  const source = new EventSource(sessionUrl(`/api/projects/${projectId}/events?after=0`));
   state.eventSource = source;
   source.addEventListener("progress", (event) => {
     const value = JSON.parse(event.data);
@@ -541,6 +551,8 @@ function bindEvents() {
 }
 
 async function start() {
+  const fragment = new URLSearchParams(window.location.hash.slice(1));
+  state.session = fragment.get("session") || "";
   bindEvents();
   try {
     await refreshProjects();

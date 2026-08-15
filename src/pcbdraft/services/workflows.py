@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from pcbdraft import PRODUCT_NAME, __version__
+from pcbdraft import PRODUCT_NAME, build_identity
 from pcbdraft.core.errors import PCBDraftError, TransactionRejected, ValidationError
 from pcbdraft.core.io import (
     atomic_write_bytes,
@@ -58,7 +58,7 @@ PROMPT_INVENTORY_ENTRIES = 200
 def _receipt_base(*, run_id: str, kind: str, project: Path) -> dict[str, Any]:
     return {
         "receipt_version": 1,
-        "runtime": {"name": PRODUCT_NAME, "version": __version__},
+        "runtime": {"name": PRODUCT_NAME, **build_identity()},
         "run_id": run_id,
         "kind": kind,
         "project": str(project),

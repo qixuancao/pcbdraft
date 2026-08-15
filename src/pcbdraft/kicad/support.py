@@ -7,7 +7,6 @@ from dataclasses import dataclass
 
 from pcbdraft.core.errors import PCBDraftError
 
-SUPPORTED_KICAD_MAJOR = 10
 TESTED_KICAD_VERSIONS = ("10.0.5",)
 _VERSION_RE = re.compile(r"(?:KiCad\s+)?(\d+)\.(\d+)(?:\.(\d+))?", re.IGNORECASE)
 
@@ -36,7 +35,7 @@ class KiCadSupport:
 def evaluate_kicad_version(value: str) -> KiCadSupport:
     raw = value.strip() if isinstance(value, str) else ""
     match = _VERSION_RE.search(raw)
-    policy = f"KiCad {SUPPORTED_KICAD_MAJOR}.x only; exact acceptance on {', '.join(TESTED_KICAD_VERSIONS)}"
+    policy = f"exact acceptance only: {', '.join(TESTED_KICAD_VERSIONS)}"
     if match is None:
         return KiCadSupport(
             raw,
@@ -50,15 +49,17 @@ def evaluate_kicad_version(value: str) -> KiCadSupport:
     minor = int(match.group(2))
     patch = int(match.group(3) or 0)
     parsed = f"{major}.{minor}.{patch}"
-    supported = major == SUPPORTED_KICAD_MAJOR
     exact = parsed in TESTED_KICAD_VERSIONS
+    supported = exact
     return KiCadSupport(
         raw,
         parsed,
         supported,
         exact,
         policy,
-        None if supported else f"KiCad major {major} is outside the supported major",
+        None
+        if supported
+        else f"KiCad {parsed} has not passed this release's acceptance suite",
     )
 
 

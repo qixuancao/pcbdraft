@@ -213,6 +213,20 @@ def sanitize_user_text(value: str) -> str:
     return _sanitize_secret_text(value)
 
 
+def _public_readiness_record(value: Any) -> Any:
+    """Normalize legacy records without mutating retained audit artifacts."""
+
+    if not isinstance(value, dict):
+        return value
+    result = dict(value)
+    result.setdefault(
+        "production_evidence_complete", value.get("production_ready") is True
+    )
+    result["production_ready"] = False
+    result["production_claimed"] = False
+    return result
+
+
 class ApplicationService:
     """Single write authority for product projects and their engineering runtime."""
 
@@ -280,7 +294,7 @@ class ApplicationService:
                 "config": "Use /connect in the TUI; credentials stay in PCBDraft's private config file.",
                 "persistence": "Credential values are never written to project records or model receipts.",
                 "kicad": (
-                    "Install the KiCad 10 global library tables in ~/.config/kicad/10.0; "
+                    "Install the KiCad 10.0.5 global library tables in ~/.config/kicad/10.0; "
                     "scripts/prepare-kicad-environment.sh does this from a checkout."
                 ),
             },
@@ -902,6 +916,9 @@ class ApplicationService:
                 ).as_posix(),
                 "report_sha256": validation_run.report_sha256,
                 "candidate_ready": validation_run.candidate_ready,
+                "production_evidence_complete": (
+                    validation_run.production_evidence_complete
+                ),
                 "production_ready": validation_run.production_ready,
                 "production_claimed": False,
                 "assurance": str(
@@ -1710,19 +1727,26 @@ class ApplicationService:
                 "request": receipt.get("request"),
                 "status": receipt.get("status"),
                 "diff": diff,
-                "validation": receipt.get("validation"),
+                "validation": _public_readiness_record(receipt.get("validation")),
             }
+        public_state = dict(project.state)
+        public_state["last_validation"] = _public_readiness_record(
+            project.state["last_validation"]
+        )
+        public_state["last_release"] = _public_readiness_record(
+            project.state["last_release"]
+        )
         return {
             "schema": "pcbdraft-application-view",
             "version": 1,
             "project": self._summary(project),
-            "state": project.state,
+            "state": public_state,
             "conversation": project.conversation,
             "design": design,
             "artifacts": {
                 "previews": project.state["last_preview"],
-                "validation": project.state["last_validation"],
-                "release": project.state["last_release"],
+                "validation": public_state["last_validation"],
+                "release": public_state["last_release"],
             },
             "attempts": self._attempt_records(project),
             "active_change": active_change,
@@ -1782,6 +1806,7 @@ class ApplicationService:
             "report": relative_report,
             "report_sha256": result.report_sha256,
             "candidate_ready": result.candidate_ready,
+            "production_evidence_complete": result.production_evidence_complete,
             "production_ready": result.production_ready,
             "production_claimed": False,
             "assurance": str(managed.design.metadata.get("assurance", "verified")),
@@ -1821,6 +1846,9 @@ class ApplicationService:
                 text,
                 data={
                     "candidate_ready": result.candidate_ready,
+                    "production_evidence_complete": (
+                        result.production_evidence_complete
+                    ),
                     "production_ready": result.production_ready,
                 },
             )
@@ -1956,6 +1984,7 @@ class ApplicationService:
                     for key in (
                         "report_sha256",
                         "candidate_ready",
+                        "production_evidence_complete",
                         "production_ready",
                         "production_claimed",
                     )
@@ -2125,6 +2154,7 @@ class ApplicationService:
             "archive": str(release.archive_path),
             "archive_sha256": release.archive_sha256,
             "candidate_ready": release.candidate_ready,
+            "production_evidence_complete": release.production_evidence_complete,
             "production_ready": release.production_ready,
             "production_claimed": False,
             "offline_verification": verified.to_dict(),

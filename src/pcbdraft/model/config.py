@@ -10,12 +10,16 @@ from __future__ import annotations
 import re
 import stat
 import tomllib
-import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import atomic_write_text, make_directory, read_bytes_limited
+from pcbdraft.model.api import (
+    validate_provider_base_url,
+    validate_provider_credential,
+    validate_provider_model_id,
+)
 
 CONFIG_LIMIT = 128 * 1024
 _ID = re.compile(r"[a-z][a-z0-9_-]{0,63}\Z")
@@ -120,23 +124,13 @@ class ProviderConnection:
             )
         if not self.name.strip() or len(self.name) > 120:
             raise ValidationError("provider name is invalid")
-        parsed = urllib.parse.urlsplit(self.base_url)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username
-            or parsed.password
-            or parsed.query
-            or parsed.fragment
-        ):
-            raise ValidationError("provider base URL is invalid")
-        if not self.api_key.strip() or len(self.api_key.encode("utf-8")) > 16 * 1024:
-            raise ValidationError("API key must be between 1 byte and 16 KiB")
+        validate_provider_base_url(self.base_url)
+        validate_provider_credential(self.api_key)
         if not self.models or len(self.models) > _MAX_MODELS:
             raise ValidationError("provider must have between 1 and 128 models")
         clean_models = tuple(model.strip() for model in self.models)
-        if any(not model or len(model) > 256 for model in clean_models):
-            raise ValidationError("provider model id is invalid")
+        for model in clean_models:
+            validate_provider_model_id(model)
         if len(set(clean_models)) != len(clean_models):
             raise ValidationError("provider model ids must be unique")
         return ProviderConnection(

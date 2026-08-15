@@ -152,6 +152,7 @@ class ManagedPipelineTests(unittest.TestCase):
             self.generated.project, output=self.parent / "validation"
         )
         self.assertTrue(result.candidate_ready)
+        self.assertFalse(result.production_evidence_complete)
         self.assertFalse(result.production_ready)
         levels = {level.level: level for level in result.levels}
         for level in ("L0", "L1", "L2", "L3"):
@@ -193,6 +194,7 @@ class ManagedPipelineTests(unittest.TestCase):
             self.parent / "release",
         )
         self.assertTrue(result.candidate_ready)
+        self.assertFalse(result.production_evidence_complete)
         self.assertFalse(result.production_ready)
         manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
         self.assertEqual(manifest["contracts"]["bom"]["line_count"], 10)
@@ -290,7 +292,7 @@ class ManagedPipelineTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "hash mismatch"):
             load_external_evidence(copy)
 
-    def test_complete_external_l4_l6_l7_chain_can_unlock_production_readiness(
+    def test_complete_external_chain_never_creates_a_production_attestation(
         self,
     ) -> None:
         copy = self.parent / "production-gate-project"
@@ -341,8 +343,12 @@ class ManagedPipelineTests(unittest.TestCase):
             copy, output=self.parent / "production-gate-validation"
         )
         self.assertTrue(result.candidate_ready)
-        self.assertTrue(result.production_ready)
+        self.assertTrue(result.production_evidence_complete)
+        self.assertFalse(result.production_ready)
         report = json.loads(result.report_path.read_text(encoding="utf-8"))
+        self.assertTrue(report["readiness"]["production_evidence_complete"])
+        self.assertFalse(report["readiness"]["production"])
+        self.assertEqual(report["readiness"]["production_attestation"], "unsupported")
         self.assertFalse(report["readiness"]["production_claimed"])
 
     def test_existing_output_is_never_overwritten(self) -> None:

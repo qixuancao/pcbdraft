@@ -23,10 +23,12 @@ class KiCadSupportTests(unittest.TestCase):
             with self.subTest(version=version), self.assertRaises(PCBDraftError):
                 assert_supported_kicad_version(version)
 
-    def test_untested_patch_in_supported_major_is_declared_not_exact(self) -> None:
-        result = assert_supported_kicad_version("KiCad 10.1.0")
-        self.assertTrue(result.supported)
+    def test_untested_patch_in_supported_major_fails_closed(self) -> None:
+        result = evaluate_kicad_version("KiCad 10.1.0")
+        self.assertFalse(result.supported)
         self.assertFalse(result.exact_tested)
+        with self.assertRaisesRegex(PCBDraftError, "acceptance suite"):
+            assert_supported_kicad_version("KiCad 10.1.0")
 
 
 if __name__ == "__main__":

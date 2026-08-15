@@ -9,10 +9,12 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import xml.etree.ElementTree as ET
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from xml.etree.ElementTree import ParseError
+
+from defusedxml.ElementTree import fromstring
 
 from pcbdraft.agent.design import AgentDesignRequest, review_agent_plan
 from pcbdraft.core.errors import PCBDraftError, ValidationError
@@ -107,8 +109,8 @@ def _export(
 
 def _parse_netlist(data: bytes) -> dict[str, Any]:
     try:
-        root = ET.fromstring(data)
-    except ET.ParseError as exc:
+        root = fromstring(data)
+    except ParseError as exc:
         raise PCBDraftError("KiCad schematic netlist export is invalid XML") from exc
 
     title_block = root.find("./design/sheet/title_block")

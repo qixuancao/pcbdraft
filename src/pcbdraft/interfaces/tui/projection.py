@@ -43,7 +43,7 @@ class TuiProjection:
     net_count: int | None
     attention_required: int
     candidate_ready: bool | None
-    production_ready: bool | None
+    production_evidence_complete: bool | None
     assurance: str
     messages: tuple[TranscriptMessage, ...]
     stages: tuple[PipelineStage, ...]
@@ -60,8 +60,8 @@ class TuiProjection:
 
     @property
     def readiness_label(self) -> str:
-        if self.production_ready is True:
-            return "Production evidence ready"
+        if self.production_evidence_complete is True:
+            return "External gate records complete"
         if self.candidate_ready is True:
             return "Engineering candidate"
         if self.candidate_ready is False:
@@ -133,7 +133,7 @@ def project_projection(
     if not validation:
         validation = _mapping(_mapping(root.get("active_change")).get("validation"))
     candidate = _optional_bool(validation.get("candidate_ready"))
-    production = _optional_bool(validation.get("production_ready"))
+    production_evidence = _optional_bool(validation.get("production_evidence_complete"))
     assurance = _text(validation.get("assurance")) or _text(proposal.get("assurance"))
     assurance = assurance or "provisional"
 
@@ -166,7 +166,7 @@ def project_projection(
         net_count=net_count,
         attention_required=attention,
         candidate_ready=candidate,
-        production_ready=production,
+        production_evidence_complete=production_evidence,
         assurance=assurance,
         messages=tuple(messages),
         stages=_pipeline_stages(
@@ -190,7 +190,10 @@ def _pipeline_stages(
     names = ("Understand", "Plan", "Generate", "Route", "Check")
     states: list[StageState] = ["pending"] * len(names)
     if project_id is None:
-        return tuple(PipelineStage(name, state) for name, state in zip(names, states))
+        return tuple(
+            PipelineStage(name, state)
+            for name, state in zip(names, states, strict=True)
+        )
 
     if status in {"draft", "interpreting"}:
         states[0] = "active"
@@ -248,7 +251,9 @@ def _pipeline_stages(
                     states[index] = "complete"
             states[active_index] = "active"
 
-    return tuple(PipelineStage(name, state) for name, state in zip(names, states))
+    return tuple(
+        PipelineStage(name, state) for name, state in zip(names, states, strict=True)
+    )
 
 
 def _component_count(brief: Mapping[str, Any]) -> int | None:

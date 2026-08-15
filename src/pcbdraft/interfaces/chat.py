@@ -143,7 +143,8 @@ def run_chat_command(
             value = service.open_project(project_id)
             if message:
                 value = service.send_message(project_id, message, timeout=timeout)
-        assert project_id is not None
+        if project_id is None:
+            raise ValidationError("chat project id is required")
         if undo:
             value = service.undo_last_modification(project_id)
         if validate:
