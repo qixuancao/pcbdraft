@@ -93,7 +93,11 @@ class OfflineEndToEndTests(unittest.TestCase):
             self.assertEqual(receipt["status"], "complete")
             self.assertTrue(receipt["model"]["completed"])
             self.assertTrue(receipt["model"]["schema_valid"])
-            self.assertEqual(receipt["model"]["provider"], "openai-compatible")
+            self.assertEqual(receipt["model"]["provider"], "e2e")
+            self.assertEqual(
+                receipt["model"]["provider_protocol"], "openai-chat-completions"
+            )
+            self.assertEqual(receipt["model"]["attempts"], 1)
             self.assertEqual(
                 receipt["tool_versions"]["kicad-cli"]["version"], "10.0.5-fake"
             )

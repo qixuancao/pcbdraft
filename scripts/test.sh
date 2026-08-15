@@ -11,6 +11,9 @@ cd "$REPO_DIR"
 uv sync --frozen --extra dev
 uv run ruff check src tests
 uv run ruff format --check src tests
-uv run python -m unittest discover -s tests -v
+uv run mypy
+uv run coverage erase
+uv run coverage run -m unittest discover -s tests -v
+uv run coverage report
 uv run python -m compileall -q src tests
 git diff --check

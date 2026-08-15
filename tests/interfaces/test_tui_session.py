@@ -57,6 +57,7 @@ class TuiSessionTests(unittest.TestCase):
             },
             "validation": {
                 "candidate_ready": True,
+                "production_evidence_complete": False,
                 "production_ready": False,
             },
         }

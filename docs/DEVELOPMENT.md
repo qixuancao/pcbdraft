@@ -2,7 +2,7 @@
 
 ## Environment
 
-Install Python 3.11+, Git, and KiCad 10 with symbols, footprints, CLI, and system
+Install Python 3.11+, Git, and KiCad 10.0.5 with symbols, footprints, CLI, and system
 Python bindings. <code>uv</code> is the recommended environment manager.
 
     uv sync --frozen --extra dev
@@ -27,6 +27,11 @@ not overwrite a valid user configuration.
 `scripts/clean.sh` removes only repository-local `build/`, `dist/`, and
 `src/pcbdraft.egg-info/` products. Release checks call it before and after
 packaging so a stale package from an earlier source layout cannot enter a wheel.
+The normal test command also enforces security/bugbear lint rules, the current
+complexity ceiling, a typed trust-boundary module set, and at least 70% branch
+coverage. CI verifies that `constraints/runtime.txt` is an exact `uv.lock` export
+and audits every locked runtime dependency. Expand the mypy file set as older
+modules are annotated; do not weaken it to make a change pass.
 
 Focused examples:
 
@@ -97,8 +102,9 @@ local extraction must include:
 - tests against the relevant local library and deterministic checks.
 
 Do not call a model guess, a scraped field, or a generic KiCad symbol
-<code>rule_validated</code>. Do not claim human or production verification without
-attributed external evidence.
+<code>rule_validated</code>. Attributed external evidence is still not authenticated
+or independently verified by the runtime; it may complete an evidence checklist,
+but it must never create a PCBDraft production attestation.
 
 ## Domain handling and truthful checks
 

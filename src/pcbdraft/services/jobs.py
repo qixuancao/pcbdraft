@@ -63,35 +63,51 @@ class JobRunner:
             raise ValidationError(f"unsupported application job action: {action}")
         normalized = self._normalize_args(action, args or {})
         jobs_dir = self.service.project_root(project_id) / "jobs"
-        existing = self.list(project_id)
-        if len(existing) >= MAX_PROJECT_JOBS:
-            raise ValidationError("project reached its 2000 job record limit")
-        if any(job["status"] in _ACTIVE for job in existing):
-            raise ValidationError("project already has an active application job")
-        job_id = f"{utc_timestamp().replace(':', '').replace('-', '')}-{secrets.token_hex(4)}"
-        now = utc_timestamp()
-        attempt = 1
-        if retry_of is not None:
-            attempt = int(self.get(project_id, retry_of)["attempt"]) + 1
-        job = {
-            "schema": JOB_SCHEMA,
-            "version": JOB_VERSION,
-            "id": job_id,
-            "project_id": project_id,
-            "action": action,
-            "args": normalized,
-            "status": "queued",
-            "attempt": attempt,
-            "retry_of": retry_of,
-            "created_at": now,
-            "started_at": None,
-            "completed_at": None,
-            "cancel_requested_at": None,
-            "result": None,
-            "error": None,
-        }
-        path = jobs_dir / f"{job_id}.json"
-        atomic_write_json(path, job)
+        # The active-job check and queued record must be one cross-process
+        # transaction. Otherwise concurrent HTTP requests can both observe an
+        # empty queue and start conflicting mutations of the same project.
+        with ResourceLock(jobs_dir, self.service.locks_root):
+            existing = self.list(project_id)
+            if len(existing) >= MAX_PROJECT_JOBS:
+                raise ValidationError("project reached its 2000 job record limit")
+            if any(job["status"] in _ACTIVE for job in existing):
+                raise ValidationError("project already has an active application job")
+            attempt = 1
+            if retry_of is not None:
+                previous = self.get(project_id, retry_of)
+                if previous["status"] not in _RETRYABLE:
+                    raise ValidationError(
+                        "only failed, interrupted, or cancelled jobs can be retried"
+                    )
+                if previous["action"] != action or previous["args"] != normalized:
+                    raise ValidationError(
+                        "retry job must preserve its action and arguments"
+                    )
+                attempt = int(previous["attempt"]) + 1
+            job_id = (
+                f"{utc_timestamp().replace(':', '').replace('-', '')}-"
+                f"{secrets.token_hex(4)}"
+            )
+            now = utc_timestamp()
+            job = {
+                "schema": JOB_SCHEMA,
+                "version": JOB_VERSION,
+                "id": job_id,
+                "project_id": project_id,
+                "action": action,
+                "args": normalized,
+                "status": "queued",
+                "attempt": attempt,
+                "retry_of": retry_of,
+                "created_at": now,
+                "started_at": None,
+                "completed_at": None,
+                "cancel_requested_at": None,
+                "result": None,
+                "error": None,
+            }
+            path = jobs_dir / f"{job_id}.json"
+            atomic_write_json(path, job)
         event = threading.Event()
         with self._guard:
             self._cancel[job_id] = event

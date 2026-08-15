@@ -765,7 +765,8 @@ class GridRouter:
         def flush() -> None:
             nonlocal run_start, run_end, run_direction, run_width
             if run_start is not None and run_end is not None and run_start != run_end:
-                assert run_width is not None
+                if run_width is None:
+                    raise ValidationError("router segment width invariant failed")
                 segments.append(self._segment(net, run_start, run_end, run_width))
             run_start = None
             run_end = None
@@ -862,7 +863,9 @@ def _segment_rectangle_distance(
     corners = ((x1, y1), (x2, y1), (x2, y2), (x1, y2))
     return min(
         _segment_segment_distance(first, second, edge_first, edge_second)
-        for edge_first, edge_second in zip(corners, (*corners[1:], corners[0]))
+        for edge_first, edge_second in zip(
+            corners, (*corners[1:], corners[0]), strict=True
+        )
     )
 
 

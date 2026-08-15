@@ -2,7 +2,7 @@
 
 ![PCBDraft 标志](docs/assets/brand/pcbdraft-mark-256.png)
 
-PCBDraft 是一个独立的开源 PCB 设计智能体。你用自然语言描述想做的
+PCBDraft 是一个采用 Apache-2.0 许可证的独立 PCB 设计智能体。你用自然语言描述想做的
 电路板，它负责整理需求、规划电路、生成原生 KiCad 工程，并把连接检查、
 ERC、DRC 和每一步的证据留在本地。
 
@@ -21,23 +21,35 @@ ERC、DRC 和每一步的证据留在本地。
 
 ## 快速开始（推荐安装）
 
-这个仓库目前是私有仓库。已通过 `gh auth login` 登录 GitHub 的 Ubuntu 或其他
-Linux 用户，以普通用户运行下面这一条命令即可：
+这个仓库已完全公开，并按 Apache License 2.0 开源。先安装并核验 Git、`curl`、
+`uv` 和 **KiCad 10.0.5**；无需 GitHub 账号或访问令牌。下面的命令先解析一次
+公开 `main` 分支的提交 SHA，再从同一不可变提交下载并执行安装器：
 
 ```bash
-gh api 'repos/qixuancao/pcbdraft/contents/scripts/install.sh?ref=main' --jq .content | base64 --decode | bash
+set -o pipefail
+repo=https://github.com/qixuancao/pcbdraft.git
+ref=$(git ls-remote --exit-code "$repo" refs/heads/main | awk 'NR == 1 { print $1 }')
+[[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { printf 'Invalid commit SHA\n' >&2; exit 1; }
+printf 'Installing PCBDraft commit %s\n' "$ref"
+installer=$(mktemp /tmp/pcbdraft-install.XXXXXX)
+curl --fail --location --proto '=https' --tlsv1.2 \
+  --output "$installer" \
+  "https://raw.githubusercontent.com/qixuancao/pcbdraft/$ref/scripts/install.sh"
+PCBDRAFT_INSTALL_REF="$ref" bash "$installer"
+rm -f -- "$installer"
 ```
 
-如尚未登录，先执行 `gh auth login`。安装器通过已授权的 Git 访问仓库；它不会
-把 GitHub Token 写入配置文件或工程目录。
+请记录命令输出中的 `ref`，以便复现同一安装。安装器拒绝分支名、短 SHA 和标签，
+通过公开 HTTPS Git 仓库读取同一提交的依赖约束；安装过程不需要 GitHub 凭据，
+也不会把任何模型服务令牌写入工程目录。
 
 安装器遵循用户级安装：不使用 `sudo`，不修改系统 Python，也不覆盖已有的
 KiCad 配置。它会：
 
-- 检查已安装的 KiCad 10 和 `kicad-cli`；
+- 检查已安装且经过验收的 KiCad 10.0.5 和 `kicad-cli`；
 - 检查 Git；
-- 必要时把 `uv` 安装到当前用户目录；
-- 用 `uv tool install` 把 `pcbdraft` 安装为独立命令；
+- 要求用户预先安装并核验 `uv`，不下载后直接执行第三方安装脚本；
+- 用提交内锁定的运行时约束和 `uv tool install` 安装独立命令；
 - 只在缺失时初始化 `~/.config/kicad/10.0/` 中的符号和封装库表。
 
 安装后的命令位于 `~/.local/bin/pcbdraft`。若首次运行提示找不到命令，执行：
@@ -60,12 +72,12 @@ pcbdraft doctor --json
 `projects/` 下。要更新或修复安装，重新运行上面的安装命令即可。
 
 KiCad 是生成原理图和 PCB 所需的系统运行时，安装器不会替你以管理员权限安装
-它；请先安装 KiCad 10，再运行此命令。
+它；当前自动化验收版本是 10.0.5，其他版本会被明确拒绝，而不是被默认为兼容。
 
 ## 从源码运行（开发）
 
 需要 Linux、Python 3.11 或更高版本、[uv](https://docs.astral.sh/uv/)，以及
-KiCad 10 和 `kicad-cli`。
+KiCad 10.0.5 和 `kicad-cli`。
 
 ```bash
 git clone https://github.com/qixuancao/pcbdraft.git
@@ -80,6 +92,16 @@ uv run pcbdraft doctor --json
 启动 TUI 后输入 `/connect`，选择 DeepSeek、MiniMax、Kimi、OpenAI、
 OpenRouter、本地 Ollama 或自定义 OpenAI 兼容服务，然后输入 API Key。
 输入 `/models` 可以搜索并切换模型。
+
+远程模型地址必须使用 HTTPS。只有字面量回环地址（`localhost`、`127.0.0.0/8`
+或 `::1`）可以使用 HTTP，以支持本机 Ollama；模型调用不会跟随重定向，返回值还
+会在本地再次执行 JSON Schema 校验。
+
+模型接入层会按服务声明生成兼容请求：DeepSeek 使用 JSON Object，MiniMax M2
+使用提示词约束并由本地 Schema 做最终裁决，Kimi、OpenAI、OpenRouter 和 Ollama
+使用各自支持的结构化输出与令牌字段。网络瞬断、408、429 和 5xx 只会在同一个
+总超时内进行至多三次带抖动的重试，并遵守有界 `Retry-After`；PCBDraft 不会在
+失败后静默切换模型或提供商。
 
 密钥由 PCBDraft 写入 `~/.config/pcbdraft/config.toml`，文件权限为 `600`，
 不会进入 PCB 工程、对话记录或运行收据。也可以手动创建同样的配置：
@@ -172,6 +194,10 @@ uv run pcbdraft --provider builtin
 
 生成的工程可以直接用 KiCad 打开和继续编辑。PCBDraft 不锁定文件格式，
 也不把模型服务绑定到某一家供应商。
+
+L4/L6/L7 外部记录会被复制、哈希并校验结构，但不会被当作已认证的签字。
+`production_evidence_complete` 只表示声明的证据槽位齐全；PCBDraft 始终保持
+`production_ready=false`，生产放行必须在本工具之外由有权限的工程流程完成。
 
 ## 源码结构
 

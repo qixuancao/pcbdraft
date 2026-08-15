@@ -64,7 +64,7 @@ def run_command(
 
     started = time.monotonic()
     try:
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # noqa: S603 - validated argv; shell is disabled
             list(normalized),
             cwd=str(cwd) if cwd is not None else None,
             stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
@@ -78,8 +78,9 @@ def run_command(
             f"failed to start executable: {Path(normalized[0]).name}"
         ) from exc
 
-    assert process.stdout is not None
-    assert process.stderr is not None
+    if process.stdout is None or process.stderr is None:
+        _kill_process_group(process)
+        raise PCBDraftError("failed to capture subprocess output")
     selector = selectors.DefaultSelector()
     for name, stream in (("stdout", process.stdout), ("stderr", process.stderr)):
         os.set_blocking(stream.fileno(), False)

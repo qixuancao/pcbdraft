@@ -1,6 +1,6 @@
 # PCBDraft roadmap
 
-This roadmap separates a usable open-source MVP from the much larger claim of
+This roadmap separates the current Apache-licensed MVP from the much larger claim of
 autonomous production PCB engineering. It contains no fixed board catalog and no
 arbitrary layer ceiling: the agent selects a practical stackup when the user does
 not, while the installed KiCad backend reports concrete technical limits.
@@ -27,7 +27,9 @@ Release acceptance currently includes three materially different small boards:
 All three complete real KiCad routing, ERC, DRC, schematic parity, and the
 candidate gate in the supported test environment. They remain non-production
 because component qualification, engineering review, fabrication, and physical
-test evidence are external. An intentionally incomplete STM32F405/SHT31 plan
+test evidence are external. Imported records can complete declared evidence slots,
+but PCBDraft cannot authenticate them and always reports production readiness as
+false. An intentionally incomplete STM32F405/SHT31 plan
 also completes its declared fine-pitch routes, then fails the correct electrical
 gates for missing power pins, rail source, decoupling, and pull-ups.
 

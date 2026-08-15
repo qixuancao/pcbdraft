@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pcbdraft import build_identity
 from pcbdraft.agent.design import AgentDesignRequest, review_agent_plan
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import (
@@ -36,7 +37,7 @@ from pcbdraft.verification.evidence import load_external_evidence
 from pcbdraft.verification.gates import GATE_JSON_LIMIT, count_severities
 
 VALIDATION_SCHEMA = "pcbdraft-validation"
-VALIDATION_VERSION = 1
+VALIDATION_VERSION = 2
 EVIDENCE_STATES = {
     "completed",
     "not_applicable",
@@ -109,6 +110,7 @@ class ValidationRun:
     report_sha256: str
     levels: tuple[LevelResult, ...]
     candidate_ready: bool
+    production_evidence_complete: bool
     production_ready: bool
 
 
@@ -156,10 +158,18 @@ def validate_managed_project(
             checks = _build_checks(project, resolved_graph, erc, drc)
             levels = _levels(checks)
             candidate_ready = _ready(checks, "blocks_candidate")
-            production_ready = candidate_ready and _ready(checks, "blocks_production")
+            production_evidence_complete = candidate_ready and _ready(
+                checks, "blocks_production"
+            )
+            # Imported L4/L6/L7 records are integrity-checked but are neither
+            # authenticated nor independently evaluated by this runtime. They
+            # can complete the evidence checklist, never create an engineering
+            # or production attestation.
+            production_ready = False
             report = {
                 "schema": VALIDATION_SCHEMA,
                 "version": VALIDATION_VERSION,
+                "runtime": build_identity(),
                 "design": {
                     "id": project.design.design_id,
                     "content_hash": project.design.content_hash(),
@@ -169,8 +179,10 @@ def validate_managed_project(
                 },
                 "readiness": {
                     "engineering_candidate": candidate_ready,
+                    "production_evidence_complete": production_evidence_complete,
                     "production": production_ready,
                     "production_claimed": False,
+                    "production_attestation": "unsupported",
                 },
                 "levels": [level.to_dict() for level in levels],
                 "tool_runs": {
@@ -186,6 +198,7 @@ def validate_managed_project(
                     "status": "complete",
                     "completed_at": utc_timestamp(),
                     "candidate_ready": candidate_ready,
+                    "production_evidence_complete": production_evidence_complete,
                     "production_ready": production_ready,
                     "report": report_path.name,
                     "report_sha256": report_hash,
@@ -202,6 +215,7 @@ def validate_managed_project(
                 report_sha256=report_hash,
                 levels=levels,
                 candidate_ready=candidate_ready,
+                production_evidence_complete=production_evidence_complete,
                 production_ready=production_ready,
             )
     except BaseException as exc:

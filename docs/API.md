@@ -52,12 +52,16 @@ native candidates and their validation reports remain under
 reported to the user but are not fed back as automatic repair triggers.
 
 The browser listens only on loopback by design. Its HTTP/SSE routes are an
-internal UI transport, not a public remote API.
+internal UI transport, not a public remote API. Every API, SSE, preview, and
+artifact request requires the per-process capability from the launch URL fragment;
+writes also require same-origin and CSRF validation.
 
 The builtin provider can collect requirements without a network credential, but
 it does not invent an electrical topology. A configured model API or an
 OpenAI-compatible provider is needed to produce a generic circuit plan. Every provider passes through the
-same strict intent/plan validators and repair compiler.
+same strict intent/plan validators and repair compiler. The transport records the
+selected structured-output mode and attempt count, but never a prompt, credential,
+or raw provider error body. Transient retries never change the selected model.
 
 ## JSON-RPC
 
@@ -128,6 +132,12 @@ current semantic IR, and native KiCad evidence.
 | <code>sync.preview</code> / <code>sync.apply</code> | <code>project</code> | inspect/import recognized native KiCad edits |
 | <code>evidence.record</code> | project and attributed evidence fields | record L4, L6, or L7 external evidence |
 | <code>benchmark.run</code> | <code>output</code> | run the independent error-injection corpus |
+
+Validation and release results distinguish `candidate_ready` from
+`production_evidence_complete`. The latter means only that all declared external
+record slots contain passing, integrity-checked submissions. `production_ready`
+and `production_claimed` remain false because the runtime cannot issue or verify a
+production attestation.
 
 ## Legacy fixture methods
 

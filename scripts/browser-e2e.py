@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from pathlib import Path
@@ -325,16 +326,27 @@ class WebDriver:
                 self.process.wait(timeout=5)
 
 
-def read_json(url: str) -> dict[str, Any]:
-    with urllib.request.urlopen(url, timeout=30) as response:
+def session_request(launch_url: str, path: str) -> urllib.request.Request:
+    parsed = urllib.parse.urlsplit(launch_url)
+    values = urllib.parse.parse_qs(parsed.fragment).get("session", [])
+    if len(values) != 1:
+        raise RuntimeError("PCBDraft launch URL omitted its session capability")
+    target = urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+    return urllib.request.Request(
+        target, headers={"X-PCBDraft-Session": values[0]}
+    )
+
+
+def read_json(launch_url: str, path: str) -> dict[str, Any]:
+    with urllib.request.urlopen(session_request(launch_url, path), timeout=30) as response:
         value = json.loads(response.read())
     if not isinstance(value, dict):
-        raise TypeError(f"expected JSON object from {url}")
+        raise TypeError(f"expected JSON object from {path}")
     return value
 
 
-def read_bytes(url: str) -> bytes:
-    with urllib.request.urlopen(url, timeout=60) as response:
+def read_bytes(launch_url: str, path: str) -> bytes:
+    with urllib.request.urlopen(session_request(launch_url, path), timeout=60) as response:
         return response.read()
 
 
@@ -356,7 +368,7 @@ def wait_value(
 
 
 def project_view(base_url: str, project_id: str) -> dict[str, Any]:
-    return read_json(f"{base_url}/api/projects/{project_id}")
+    return read_json(base_url, f"/api/projects/{project_id}")
 
 
 def no_active_jobs(view: dict[str, Any]) -> bool:
@@ -511,10 +523,12 @@ def primary_browser_flow(
         if not release["offline_verification"]["verified"]:
             raise RuntimeError("offline manufacturing-candidate verification failed")
         report = read_json(
-            f"{base_url}/api/projects/{project_id}/artifact/validation_report"
+            base_url,
+            f"/api/projects/{project_id}/artifact/validation_report",
         )
         archive = read_bytes(
-            f"{base_url}/api/projects/{project_id}/artifact/release_archive"
+            base_url,
+            f"/api/projects/{project_id}/artifact/release_archive",
         )
         if len(report.get("levels", [])) != 8 or len(archive) < 1000:
             raise RuntimeError("browser validation/release artifacts are incomplete")

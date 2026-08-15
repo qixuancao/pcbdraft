@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pcbdraft import build_identity
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import (
     atomic_write_bytes,
@@ -55,6 +56,7 @@ class ManufacturingRelease:
     archive_path: Path
     archive_sha256: str
     candidate_ready: bool
+    production_evidence_complete: bool
     production_ready: bool
 
 
@@ -151,12 +153,17 @@ def build_manufacturing_release(
             )
             manifest = {
                 "schema": "pcbdraft-manufacturing-release",
-                "version": 1,
+                "version": 2,
                 "classification": "engineering_candidate",
+                "runtime": build_identity(),
                 "readiness": {
                     "engineering_candidate": True,
-                    "production": validation.production_ready,
+                    "production_evidence_complete": (
+                        validation.production_evidence_complete
+                    ),
+                    "production": False,
                     "production_claimed": False,
+                    "production_attestation": "unsupported",
                     "human_engineering_review": "external_gate",
                     "physical_build_and_test": "external_gate",
                 },
@@ -198,8 +205,9 @@ def build_manufacturing_release(
                 },
                 "limitations": [
                     "This bundle is not a human engineering sign-off.",
+                    "Imported external evidence is integrity-checked but is not authenticated or independently verified by PCBDraft.",
                     "Live distributor stock and price were not verified.",
-                    "No fabricated-board, bring-up, environmental, EMC, or measured L7 evidence is included.",
+                    "PCBDraft did not authenticate or independently verify any fabricated-board, bring-up, environmental, EMC, or measured L7 record.",
                 ],
             }
             manifest_path = root / "release-manifest.json"
@@ -213,7 +221,10 @@ def build_manufacturing_release(
                     "status": "complete",
                     "completed_at": utc_timestamp(),
                     "candidate_ready": True,
-                    "production_ready": validation.production_ready,
+                    "production_evidence_complete": (
+                        validation.production_evidence_complete
+                    ),
+                    "production_ready": False,
                     "manifest_sha256": manifest_hash,
                     "archive_sha256": archive_hash,
                     "tool_runs": tool_runs,
@@ -229,7 +240,8 @@ def build_manufacturing_release(
                 archive_path,
                 archive_hash,
                 True,
-                validation.production_ready,
+                validation.production_evidence_complete,
+                False,
             )
     except BaseException as exc:
         receipt["status"] = "failed"
@@ -251,7 +263,7 @@ def verify_manufacturing_release(value: str | Path) -> ReleaseVerification:
     if (
         not isinstance(manifest, dict)
         or manifest.get("schema") != "pcbdraft-manufacturing-release"
-        or manifest.get("version") != 1
+        or manifest.get("version") not in {1, 2}
         or not isinstance(manifest.get("artifacts"), list)
     ):
         raise ValidationError("release manifest is malformed")

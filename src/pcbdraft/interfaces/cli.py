@@ -607,6 +607,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "report": str(result.report_path),
                 "report_sha256": result.report_sha256,
                 "candidate_ready": result.candidate_ready,
+                "production_evidence_complete": (result.production_evidence_complete),
                 "production_ready": result.production_ready,
                 "levels": [level.to_dict() for level in result.levels],
             }
@@ -623,6 +624,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "archive": str(result.archive_path),
                 "archive_sha256": result.archive_sha256,
                 "candidate_ready": result.candidate_ready,
+                "production_evidence_complete": (result.production_evidence_complete),
                 "production_ready": result.production_ready,
             }
             _emit(value, args.as_json, f"manufacturing candidate built: {result.root}")

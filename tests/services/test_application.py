@@ -488,6 +488,7 @@ class ApplicationConversationTests(unittest.TestCase):
                     report_path=report,
                     report_sha256=sha256_file(report),
                     candidate_ready=True,
+                    production_evidence_complete=False,
                     production_ready=False,
                 )
 
@@ -819,6 +820,64 @@ class ApplicationConversationTests(unittest.TestCase):
                 release.set()
                 runner.shutdown()
 
+    def test_concurrent_submissions_create_only_one_active_project_job(self) -> None:
+        class DeferredPool:
+            def submit(self, *_args: object, **_kwargs: object) -> object:
+                return object()
+
+            def shutdown(self, **_kwargs: object) -> None:
+                return
+
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Concurrent queue")["project"]["id"]
+            runners = [JobRunner(service, workers=1), JobRunner(service, workers=1)]
+            for runner in runners:
+                runner._pool.shutdown(wait=True)
+                runner._pool = DeferredPool()  # type: ignore[assignment]
+            barrier = threading.Barrier(3)
+            accepted: list[dict[str, object]] = []
+            rejected: list[Exception] = []
+
+            def submit(runner: JobRunner) -> None:
+                barrier.wait(timeout=5)
+                try:
+                    accepted.append(
+                        runner.submit(
+                            project_id,
+                            "message",
+                            {"text": "Create a two-layer sensor board"},
+                        )
+                    )
+                except Exception as exc:  # noqa: BLE001 - concurrent assertion capture
+                    rejected.append(exc)
+
+            threads = [
+                threading.Thread(target=submit, args=(runner,)) for runner in runners
+            ]
+            for thread in threads:
+                thread.start()
+            barrier.wait(timeout=5)
+            for thread in threads:
+                thread.join(timeout=5)
+
+            self.assertFalse(any(thread.is_alive() for thread in threads))
+            self.assertEqual(len(accepted), 1)
+            self.assertEqual(len(rejected), 1)
+            self.assertIsInstance(rejected[0], ValidationError)
+            self.assertEqual(
+                len(
+                    [
+                        job
+                        for job in runners[0].list(project_id)
+                        if job["status"] in {"queued", "running", "cancel_requested"}
+                    ]
+                ),
+                1,
+            )
+            for runner in runners:
+                runner.shutdown()
+
 
 class BrowserSecurityTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -832,6 +891,7 @@ class BrowserSecurityTests(unittest.TestCase):
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
         self.base = self.server.base_url
+        self.session = self.server.session_token
 
     def tearDown(self) -> None:
         self.server.shutdown()
@@ -846,6 +906,8 @@ class BrowserSecurityTests(unittest.TestCase):
         body: dict[str, object] | None = None,
         origin: str | None = None,
         csrf: str | None = None,
+        authenticated: bool = True,
+        session: str | None = None,
     ) -> tuple[int, dict[str, object], dict[str, str]]:
         data = None if body is None else json.dumps(body).encode()
         headers: dict[str, str] = {}
@@ -855,6 +917,8 @@ class BrowserSecurityTests(unittest.TestCase):
             headers["Origin"] = origin
         if csrf is not None:
             headers["X-PCBDraft-CSRF"] = csrf
+        if authenticated:
+            headers["X-PCBDraft-Session"] = session or self.session
         request = urllib.request.Request(self.base + path, data=data, headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=5) as response:
@@ -870,9 +934,15 @@ class BrowserSecurityTests(unittest.TestCase):
                 exc.close()
 
     def test_loopback_bootstrap_security_headers_and_csrf(self) -> None:
+        status, error, headers = self.request("/api/bootstrap", authenticated=False)
+        self.assertEqual(status, 401)
+        self.assertIn("session token", error["error"]["message"])
+        self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
+
         status, bootstrap, headers = self.request("/api/bootstrap")
         self.assertEqual(status, 200)
         self.assertEqual(bootstrap["schema"], "pcbdraft-browser-bootstrap")
+        self.assertNotIn("session_token", bootstrap)
         self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
         self.assertEqual(headers["X-Frame-Options"], "DENY")
         csrf = str(bootstrap["csrf_token"])
@@ -907,6 +977,26 @@ class BrowserSecurityTests(unittest.TestCase):
             time.sleep(0.02)
         self.assertEqual(job["status"], "completed")
         self.assertEqual(view["project"]["status"], "planning_required")
+
+    def test_launch_fragment_is_required_for_api_access(self) -> None:
+        parsed = urllib.parse.urlsplit(self.server.launch_url)
+        self.assertEqual(f"{parsed.scheme}://{parsed.netloc}", self.base)
+        self.assertEqual(parsed.query, "")
+        self.assertEqual(
+            urllib.parse.parse_qs(parsed.fragment), {"session": [self.session]}
+        )
+
+        status, _error, _ = self.request(
+            "/api/bootstrap", authenticated=True, session="wrong-session"
+        )
+        self.assertEqual(status, 401)
+
+        status, bootstrap, _ = self.request(
+            f"/api/bootstrap?session={urllib.parse.quote(self.session)}",
+            authenticated=False,
+        )
+        self.assertEqual(status, 200)
+        self.assertEqual(bootstrap["schema"], "pcbdraft-browser-bootstrap")
 
     def test_nonloopback_bind_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValidationError, "loopback"):

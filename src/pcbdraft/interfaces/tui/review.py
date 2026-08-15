@@ -32,7 +32,8 @@ def review_sections(view: Mapping[str, Any]) -> tuple[ReviewSection, ...]:
                 "Current validation",
                 (
                     f"Candidate ready: {_yes_no(validation.get('candidate_ready'))}",
-                    f"Production ready: {_yes_no(validation.get('production_ready'))}",
+                    f"External production-gate records complete: {_yes_no(validation.get('production_evidence_complete'))}",
+                    "Production attestation: unsupported",
                     f"Assurance: {validation.get('assurance', 'unknown')}",
                 ),
             )
@@ -164,7 +165,7 @@ def _change_sections(active_change: Mapping[str, Any]) -> list[ReviewSection]:
         lines.extend(
             (
                 f"Candidate ready: {_yes_no(validation.get('candidate_ready'))}",
-                f"Production ready: {_yes_no(validation.get('production_ready'))}",
+                f"External production-gate records complete: {_yes_no(validation.get('production_evidence_complete'))}",
             )
         )
     return [ReviewSection("Staged semantic change", tuple(lines))]

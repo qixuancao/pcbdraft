@@ -14,6 +14,7 @@ from pathlib import Path
 from kicad_sch_api import Schematic
 from kicad_sch_api.core.pin_utils import get_component_pin_info
 
+from pcbdraft import __version__
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.parts import PartGraph, PartRecord
@@ -127,7 +128,7 @@ def generate_schematic(
     schematic = Schematic.create(
         name=target.stem,
         generator="pcbdraft",
-        generator_version="1.0.0",
+        generator_version=__version__,
         uuid=root_uuid,
     )
     # The pinned backend exposes no public title-block setter.

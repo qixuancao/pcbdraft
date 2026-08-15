@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools==84.0.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "pcbdraft"
-version = "1.0.0"
+version = "1.1.0.dev0"
 description = "PCBDraft: local agent-safe PCB planning and KiCad runtime"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -26,6 +26,8 @@ classifiers = [
 ]
 dependencies = [
     # Pinned because generated KiCad syntax is part of the output contract.
+    "defusedxml==0.7.1",
+    "jsonschema==4.26.0",
     "kicad-sch-api==0.5.6",
     "textual>=8.2.8,<9",
 ]
@@ -37,7 +39,13 @@ Issues = "https://github.com/qixuancao/pcbdraft/issues"
 Changelog = "https://github.com/qixuancao/pcbdraft/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["build>=1.2", "ruff>=0.12"]
+dev = [
+    "build==1.5.0",
+    "coverage[toml]==7.15.4",
+    "mypy==2.3.0",
+    "pip-audit==2.10.1",
+    "ruff==0.16.2",
+]
 
 [project.scripts]
 pcbdraft = "pcbdraft.interfaces.cli:main"
@@ -52,3 +60,37 @@ exclude = ["copperwright*"]
 
 [tool.setuptools.package-data]
 pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml", "interfaces/tui/*.tcss", "web/*.html", "web/*.css", "web/*.js", "web/*.png"]
+
+[tool.ruff.lint]
+extend-select = ["B", "C90", "S"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 46
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "S104", "S108", "S310", "S603"]
+
+[tool.coverage.run]
+branch = true
+source = ["pcbdraft"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_covered = true
+
+[tool.mypy]
+python_version = "3.11"
+check_untyped_defs = true
+follow_imports = "skip"
+ignore_missing_imports = true
+files = [
+    "src/pcbdraft/core/errors.py",
+    "src/pcbdraft/core/io.py",
+    "src/pcbdraft/core/locking.py",
+    "src/pcbdraft/core/project.py",
+    "src/pcbdraft/model/api.py",
+    "src/pcbdraft/model/config.py",
+    "src/pcbdraft/services/jobs.py",
+    "src/pcbdraft/verification/evidence.py",
+]

@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
+from pcbdraft import build_identity
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.process import printable_first_line, run_command
 from pcbdraft.kicad.support import evaluate_kicad_version
@@ -86,6 +87,7 @@ def doctor_report() -> dict[str, Any]:
     return {
         "ok": core_ok,
         "core_ok": core_ok,
+        "runtime": build_identity(),
         "model_available": bool(model.get("configured")),
         "tools": tools,
         "model": model,
