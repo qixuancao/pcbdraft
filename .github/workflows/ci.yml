@@ -64,7 +64,7 @@ jobs:
       - run: uv sync --frozen --extra dev
       - name: Verify locked dependency export
         run: |
-          uv export --frozen --no-dev --no-emit-project --format requirements-txt --output-file "$RUNNER_TEMP/runtime.txt"
+          uv export --frozen --no-dev --no-emit-project --no-header --format requirements-txt --output-file "$RUNNER_TEMP/runtime.txt"
           diff --unified constraints/runtime.txt "$RUNNER_TEMP/runtime.txt"
       - name: Audit locked runtime dependencies
         run: uv run pip-audit --strict --require-hashes --disable-pip --progress-spinner=off -r constraints/runtime.txt
