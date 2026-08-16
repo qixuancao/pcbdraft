@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
+from pcbdraft.agent.ports import PCBToolServicePort
 from pcbdraft.agent.repair import (
     MAX_AUTOMATIC_REPAIRS,
     MAX_REPAIR_FINDINGS,
@@ -31,7 +32,7 @@ from pcbdraft.agent.repair import (
     normalize_repair_feedback,
 )
 from pcbdraft.core.errors import ValidationError
-from pcbdraft.services.application import ApplicationService, sanitize_user_text
+from pcbdraft.core.redaction import sanitize_user_text
 
 ToolSource = Literal["runtime_policy", "model", "mcp", "user"]
 ToolEffect = Literal[
@@ -692,40 +693,39 @@ PCB_TOOL_SPECS = (
 
 
 ToolHandler = Callable[
-    [ApplicationService, str, dict[str, Any], float, int], dict[str, Any]
+    [PCBToolServicePort, str, dict[str, Any], float, int], dict[str, Any]
 ]
 
 
 def _invoke_service_method(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     method_name: str,
     *args: Any,
     **kwargs: Any,
 ) -> dict[str, Any]:
     """Invoke the authoritative service contract with narrow-adapter fallback.
 
-    Real ``ApplicationService`` instances must accept every supplied concurrency
-    parameter.  A few in-process tests and third-party read-through adapters
-    predate ``expected_revision``; filtering only those non-service callables
-    preserves compatibility without weakening the production mutation path.
+    Production services accept every supplied concurrency parameter. A few
+    in-process tests and third-party read-through adapters predate
+    ``expected_revision``; filtering only explicitly unsupported keyword
+    arguments preserves compatibility without widening the tool contract.
     """
 
     method = getattr(service, method_name)
-    if not isinstance(service, ApplicationService):
-        try:
-            parameters = tuple(inspect.signature(method).parameters.values())
-        except (TypeError, ValueError):
-            parameters = ()
-        if parameters and not any(
-            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
-        ):
-            accepted = {parameter.name for parameter in parameters}
-            kwargs = {key: value for key, value in kwargs.items() if key in accepted}
+    try:
+        parameters = tuple(inspect.signature(method).parameters.values())
+    except (TypeError, ValueError):
+        parameters = ()
+    if parameters and not any(
+        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
+    ):
+        accepted = {parameter.name for parameter in parameters}
+        kwargs = {key: value for key, value in kwargs.items() if key in accepted}
     return cast(dict[str, Any], method(*args, **kwargs))
 
 
 def _plan_request(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -742,7 +742,7 @@ def _plan_request(
 
 
 def _generate_candidate(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -760,7 +760,7 @@ def _generate_candidate(
 
 
 def _validate(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -777,7 +777,7 @@ def _validate(
 
 
 def _repair_candidate(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -794,7 +794,7 @@ def _repair_candidate(
 
 
 def _apply_candidate(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -811,7 +811,7 @@ def _apply_candidate(
 
 
 def _discard_candidate(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -827,7 +827,7 @@ def _discard_candidate(
 
 
 def _undo_last_change(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -843,7 +843,7 @@ def _undo_last_change(
 
 
 def _render_previews(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -860,7 +860,7 @@ def _render_previews(
 
 
 def _build_release(
-    service: ApplicationService,
+    service: PCBToolServicePort,
     project_id: str,
     arguments: dict[str, Any],
     timeout: float,
@@ -1053,7 +1053,7 @@ class PCBToolExecutor:
 
     def __init__(
         self,
-        service: ApplicationService,
+        service: PCBToolServicePort,
         *,
         registry: PCBToolRegistry = DEFAULT_PCB_TOOL_REGISTRY,
     ) -> None:

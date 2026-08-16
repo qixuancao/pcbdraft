@@ -15,7 +15,8 @@ from pathlib import Path
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import atomic_write_text, make_directory, read_bytes_limited
-from pcbdraft.model.api import (
+from pcbdraft.model.contracts import (
+    provider_config_path,
     validate_provider_base_url,
     validate_provider_credential,
     validate_provider_model_id,
@@ -97,14 +98,6 @@ PROVIDER_PRESETS: tuple[ProviderPreset, ...] = (
 )
 
 _PRESETS = {preset.id: preset for preset in PROVIDER_PRESETS}
-
-
-def provider_config_path() -> Path:
-    """Return the PCBDraft-owned TOML configuration path."""
-
-    from pcbdraft.model.api import provider_config_path as _legacy_path
-
-    return _legacy_path()
 
 
 @dataclass(frozen=True)

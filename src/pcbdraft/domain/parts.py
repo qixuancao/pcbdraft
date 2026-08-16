@@ -560,24 +560,24 @@ class PartGraph:
         for net_index, net in enumerate(design.nets):
             domain = domains.get(net.power_domain) if net.power_domain else None
             for endpoint_index, endpoint in enumerate(net.endpoints):
-                component = components.get(endpoint.component)
-                if component is None:
+                endpoint_component = components.get(endpoint.component)
+                if endpoint_component is None:
                     continue
-                part = self._parts.get(component.part_id)
-                if part is None:
+                endpoint_part = self._parts.get(endpoint_component.part_id)
+                if endpoint_part is None:
                     continue
-                pin = part.pin(endpoint.pin)
-                if pin is None:
+                endpoint_pin = endpoint_part.pin(endpoint.pin)
+                if endpoint_pin is None:
                     issues.append(
                         IRIssue(
                             "error",
                             "part.pin_missing",
                             f"$.nets[{net_index}].endpoints[{endpoint_index}]",
-                            f"part {part.id} has no symbol pin {endpoint.pin}",
+                            f"part {endpoint_part.id} has no symbol pin {endpoint.pin}",
                         )
                     )
                     continue
-                if not pin.footprint_pad:
+                if not endpoint_pin.footprint_pad:
                     issues.append(
                         IRIssue(
                             "error",
@@ -586,8 +586,8 @@ class PartGraph:
                             f"pin {endpoint.pin} lacks a footprint pad mapping",
                         )
                     )
-                if domain is not None and pin.electrical_type == "power_in":
-                    supply = part.ratings.get("supply_voltage_v")
+                if domain is not None and endpoint_pin.electrical_type == "power_in":
+                    supply = endpoint_part.ratings.get("supply_voltage_v")
                     if isinstance(supply, Mapping):
                         minimum = supply.get("min")
                         maximum = supply.get("max")
@@ -597,7 +597,7 @@ class PartGraph:
                                     "error",
                                     "part.undervoltage",
                                     f"$.nets[{net_index}]",
-                                    f"{part.id} minimum supply is {minimum} V",
+                                    f"{endpoint_part.id} minimum supply is {minimum} V",
                                 )
                             )
                         if isinstance(maximum, (int, float)) and domain.max_v > maximum:
@@ -606,7 +606,7 @@ class PartGraph:
                                     "error",
                                     "part.overvoltage",
                                     f"$.nets[{net_index}]",
-                                    f"{part.id} maximum supply is {maximum} V",
+                                    f"{endpoint_part.id} maximum supply is {maximum} V",
                                 )
                             )
         return sorted(set(issues))

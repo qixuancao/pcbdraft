@@ -158,25 +158,25 @@ def optimize_placement(
             "placement constraints reference unknown items: "
             + ", ".join(sorted(unknown))
         )
-    for constraint in near_constraints:
-        if constraint.max_distance_mm <= 0 or constraint.weight <= 0:
+    for near_constraint in near_constraints:
+        if near_constraint.max_distance_mm <= 0 or near_constraint.weight <= 0:
             raise ValidationError(
                 "near constraints require positive distance and weight"
             )
-    for constraint in group_constraints:
+    for group_constraint in group_constraints:
         if (
-            len(set(constraint.members)) < 2
-            or constraint.max_diameter_mm <= 0
-            or constraint.weight <= 0
+            len(set(group_constraint.members)) < 2
+            or group_constraint.max_diameter_mm <= 0
+            or group_constraint.weight <= 0
         ):
             raise ValidationError(
                 "group constraints require two members and positive bounds"
             )
-    for constraint in region_constraints:
+    for region_constraint in region_constraints:
         if (
-            not constraint.members
-            or constraint.region not in BOARD_REGIONS
-            or constraint.weight <= 0
+            not region_constraint.members
+            or region_constraint.region not in BOARD_REGIONS
+            or region_constraint.weight <= 0
         ):
             raise ValidationError(
                 "region constraints require members, a supported region, and positive weight"
@@ -407,26 +407,32 @@ def _objective(
         xs = [items[item].x_mm for item in net]
         ys = [items[item].y_mm for item in net]
         result += (max(xs) - min(xs)) + (max(ys) - min(ys))
-    for constraint in near:
-        distance = _distance(items[constraint.first], items[constraint.second])
-        result += (
-            constraint.weight * max(0.0, distance - constraint.max_distance_mm) ** 2
+    for near_constraint in near:
+        distance = _distance(
+            items[near_constraint.first], items[near_constraint.second]
         )
-    for constraint in groups:
+        result += (
+            near_constraint.weight
+            * max(0.0, distance - near_constraint.max_distance_mm) ** 2
+        )
+    for group_constraint in groups:
         diameter = max(
             _distance(items[first], items[second])
-            for offset, first in enumerate(constraint.members)
-            for second in constraint.members[offset + 1 :]
+            for offset, first in enumerate(group_constraint.members)
+            for second in group_constraint.members[offset + 1 :]
         )
         result += (
-            constraint.weight * max(0.0, diameter - constraint.max_diameter_mm) ** 2
+            group_constraint.weight
+            * max(0.0, diameter - group_constraint.max_diameter_mm) ** 2
         )
-    for constraint in regions:
-        bounds = board_region_bounds(constraint.region, board_width, board_height)
-        for member in constraint.members:
+    for region_constraint in regions:
+        bounds = board_region_bounds(
+            region_constraint.region, board_width, board_height
+        )
+        for member in region_constraint.members:
             item = items[member]
             violation = _rectangle_containment_violation(_item_bounds(item), bounds)
-            result += constraint.weight * violation
+            result += region_constraint.weight * violation
     return result
 
 
@@ -480,35 +486,37 @@ def _constraint_issues(
     board_height: float,
 ) -> tuple[str, ...]:
     issues: list[str] = []
-    for constraint in near:
-        distance = _distance(items[constraint.first], items[constraint.second])
-        if distance > constraint.max_distance_mm + 1e-9:
+    for near_constraint in near:
+        distance = _distance(
+            items[near_constraint.first], items[near_constraint.second]
+        )
+        if distance > near_constraint.max_distance_mm + 1e-9:
             issues.append(
-                f"{constraint.first}/{constraint.second} distance {distance:.3f} mm exceeds {constraint.max_distance_mm:.3f} mm"
+                f"{near_constraint.first}/{near_constraint.second} distance {distance:.3f} mm exceeds {near_constraint.max_distance_mm:.3f} mm"
             )
-    for constraint in groups:
+    for group_constraint in groups:
         diameter = max(
             _distance(items[first], items[second])
-            for offset, first in enumerate(constraint.members)
-            for second in constraint.members[offset + 1 :]
+            for offset, first in enumerate(group_constraint.members)
+            for second in group_constraint.members[offset + 1 :]
         )
-        if diameter > constraint.max_diameter_mm + 1e-9:
+        if diameter > group_constraint.max_diameter_mm + 1e-9:
             issues.append(
-                f"group {'/'.join(constraint.members)} diameter {diameter:.3f} mm exceeds {constraint.max_diameter_mm:.3f} mm"
+                f"group {'/'.join(group_constraint.members)} diameter {diameter:.3f} mm exceeds {group_constraint.max_diameter_mm:.3f} mm"
             )
-    for constraint in regions:
+    for region_constraint in regions:
         region = board_region_bounds(
-            constraint.region,
+            region_constraint.region,
             board_width,
             board_height,
         )
-        for member in constraint.members:
+        for member in region_constraint.members:
             if (
                 _rectangle_containment_violation(_item_bounds(items[member]), region)
                 > 1e-9
             ):
                 issues.append(
-                    f"{member} lies outside placement region {constraint.region}"
+                    f"{member} lies outside placement region {region_constraint.region}"
                 )
     return tuple(issues)
 

@@ -296,7 +296,7 @@ def _spi_power_input(definition: BlockDefinition) -> BlockInstance:
             attributes={"exclude_from_board": True},
         ),
     )
-    ports = {
+    ports: dict[str, tuple[Endpoint, ...]] = {
         "gnd": (
             Endpoint("spi_j1", "2", "source"),
             Endpoint("flag_gnd", "1", "source"),
@@ -340,7 +340,7 @@ def _regulated_5v_input(definition: BlockDefinition) -> BlockInstance:
             attributes={"exclude_from_board": True},
         ),
     )
-    ports = {
+    ports: dict[str, tuple[Endpoint, ...]] = {
         "vin": (
             Endpoint("power_j1", "1", "source"),
             Endpoint("flag_5v", "1", "source"),
@@ -584,7 +584,7 @@ def _uart_service_connector(definition: BlockDefinition) -> BlockInstance:
             fixed=True,
         ),
     )
-    ports = {
+    ports: dict[str, tuple[Endpoint, ...]] = {
         "gnd": (Endpoint("uart_j3", "1", "external"),),
         "vcc": (Endpoint("uart_j3", "2", "voltage_sense"),),
         "tx": (Endpoint("uart_j3", "3", "external"),),

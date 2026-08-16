@@ -271,14 +271,16 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
                 f"cannot remove absent {collection_name[:-1]}: {entry_id}"
             )
         if op == "remove_component":
-            attached = [
-                net.get("id")
-                for net in _collection(document, "nets")
-                if any(
+            attached: list[str] = []
+            for net in _collection(document, "nets"):
+                if not any(
                     endpoint.get("component") == entry_id
                     for endpoint in net.get("endpoints", [])
-                )
-            ]
+                ):
+                    continue
+                net_id = net.get("id")
+                if isinstance(net_id, str):
+                    attached.append(net_id)
             if attached:
                 raise ValidationError(
                     f"component {entry_id} is still connected to nets: {', '.join(sorted(attached))}"
@@ -323,9 +325,9 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
 
     if op in {"connect", "disconnect"}:
         net_id = _required_id(args, "net_id")
-        net = _find(_collection(document, "nets"), net_id, kind="net")
-        _expect(net, expected, label=f"nets.{net_id}")
-        if net is None:
+        target_net = _find(_collection(document, "nets"), net_id, kind="net")
+        _expect(target_net, expected, label=f"nets.{net_id}")
+        if target_net is None:
             raise ValidationError(f"net is absent: {net_id}")
         endpoint = args.get("endpoint")
         if not isinstance(endpoint, Mapping):
@@ -337,7 +339,7 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
             "pin": _string(endpoint.get("pin"), "args.endpoint.pin", limit=64),
             "role": _identifier(endpoint.get("role", "signal"), "args.endpoint.role"),
         }
-        endpoints = net.get("endpoints")
+        endpoints = target_net.get("endpoints")
         if not isinstance(endpoints, list):
             raise ValidationError(f"net endpoints are malformed: {net_id}")
         matching = [
@@ -354,7 +356,7 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
                     "pin is already connected with a different endpoint role"
                 )
             for other in _collection(document, "nets"):
-                if other is net:
+                if other is target_net:
                     continue
                 if any(
                     current.get("component") == normalized["component"]
@@ -375,11 +377,11 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
 
     if op == "rename_net":
         net_id = _required_id(args, "net_id")
-        net = _find(_collection(document, "nets"), net_id, kind="net")
-        _expect(net, expected, label=f"nets.{net_id}")
-        if net is None:
+        target_net = _find(_collection(document, "nets"), net_id, kind="net")
+        _expect(target_net, expected, label=f"nets.{net_id}")
+        if target_net is None:
             raise ValidationError(f"net is absent: {net_id}")
-        net["name"] = _string(args.get("name"), "args.name", limit=128)
+        target_net["name"] = _string(args.get("name"), "args.name", limit=128)
         return
 
     if op == "upsert_constraint":

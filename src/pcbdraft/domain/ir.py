@@ -973,14 +973,14 @@ class Design:
                         )
                     )
         for index, block in enumerate(self.blocks):
-            for component in block.components:
-                if component not in component_ids:
+            for block_component_id in block.components:
+                if block_component_id not in component_ids:
                     issues.append(
                         IRIssue(
                             "error",
                             "ir.missing_component",
                             f"$.blocks[{index}].components",
-                            f"unknown component id: {component}",
+                            f"unknown component id: {block_component_id}",
                         )
                     )
             for source in block.provenance:

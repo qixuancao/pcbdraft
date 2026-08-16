@@ -11,11 +11,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pcbdraft.agent.design import (
+from pcbdraft.agent.compiler import compile_agent_plan, planner_symbol_context
+from pcbdraft.agent.plan import (
     AgentDesignRequest,
     CircuitPlan,
-    compile_agent_plan,
-    planner_symbol_context,
 )
 from pcbdraft.agent.repair import (
     normalize_repair_feedback,
@@ -29,6 +28,7 @@ from pcbdraft.core.io import (
     make_directory,
 )
 from pcbdraft.core.locking import ResourceLock
+from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.repository import (
     ProjectRepository,
     configure_repository,
@@ -184,35 +184,10 @@ def _initial_stackup_layers(request: str) -> int:
     return 2
 
 
-def _sanitize_secret_text(value: str) -> str:
-    """Redact obvious credentials before provider use and durable storage."""
-
-    result = value
-    patterns = (
-        r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}",
-        r"\bsk-[A-Za-z0-9_-]{8,}",
-        r"\bgh[opusr]_[A-Za-z0-9]{20,}",
-        r"(?i)\b(api[_ -]?key|token|secret|password)\s*[:=]\s*[^\s,;]+",
-    )
-    for pattern in patterns:
-        result = re.sub(pattern, "[REDACTED]", result)
-    for name, secret in os.environ.items():
-        upper = name.upper()
-        if (
-            len(secret) >= 8
-            and any(
-                marker in upper for marker in ("KEY", "TOKEN", "SECRET", "PASSWORD")
-            )
-            and secret in result
-        ):
-            result = result.replace(secret, "[REDACTED]")
-    return result
-
-
-def sanitize_user_text(value: str) -> str:
-    """Public product-layer redaction used before any durable UI/job record."""
-
-    return _sanitize_secret_text(value)
+# Historical internal name retained locally while public callers use the core
+# utility.  Keeping redaction below the application layer prevents protocol
+# adapters and durable agent records from importing this concrete service.
+_sanitize_secret_text = sanitize_user_text
 
 
 def _public_readiness_record(value: Any) -> Any:
@@ -1189,8 +1164,14 @@ class ApplicationService:
             and prior_layers >= 1
         ):
             merged["layers"] = prior_layers
-        old_board = prior.get("board") if isinstance(prior.get("board"), dict) else {}
-        raw_board = merged.get("board") if isinstance(merged.get("board"), dict) else {}
+        prior_board_value = prior.get("board")
+        old_board: dict[str, Any] = (
+            prior_board_value if isinstance(prior_board_value, dict) else {}
+        )
+        raw_board_value = merged.get("board")
+        raw_board: dict[str, Any] = (
+            raw_board_value if isinstance(raw_board_value, dict) else {}
+        )
         merged["board"] = {
             key: raw_board.get(key)
             if raw_board.get(key) is not None
@@ -1244,7 +1225,10 @@ class ApplicationService:
                 "Board envelope is assumed as 80 mm × 50 mm until changed in the reviewed plan."
             )
         merged["board"] = {"width_mm": float(width), "height_mm": float(height)}
-        power_raw = merged.get("power") if isinstance(merged.get("power"), dict) else {}
+        power_raw_value = merged.get("power")
+        power_raw: dict[str, Any] = (
+            power_raw_value if isinstance(power_raw_value, dict) else {}
+        )
         nominal = power_raw.get("nominal_v")
         if (
             not isinstance(nominal, (int, float))

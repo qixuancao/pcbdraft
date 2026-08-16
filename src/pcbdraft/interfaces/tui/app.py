@@ -41,6 +41,7 @@ from pcbdraft.interfaces.tui.widgets import (
 )
 from pcbdraft.model.config import (
     ModelChoice,
+    ModelConfig,
     ProviderConnection,
     load_model_config,
     preset,
@@ -545,6 +546,7 @@ class ProviderPickerScreen(ModalScreen[str | None]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.config: ModelConfig | None
         try:
             self.config = load_model_config()
         except Exception:  # noqa: BLE001 - dialog must render configuration errors
@@ -739,6 +741,7 @@ class ModelPickerScreen(ModalScreen[ModelSelection | None]):
 
     def __init__(self) -> None:
         super().__init__()
+        self.config: ModelConfig | None
         try:
             self.config = load_model_config()
         except Exception:  # noqa: BLE001 - the controller reports the detail

@@ -511,11 +511,13 @@ def _place(
     item_by_id = {item.id: item for item in items}
     for constraint in design.constraints:
         if constraint.kind == "decoupling":
-            targets = [target for target in constraint.targets if target in board_ids]
+            decoupling_targets = [
+                target for target in constraint.targets if target in board_ids
+            ]
             maximum = constraint.params.get("max_distance_mm")
-            if len(targets) >= 2 and isinstance(maximum, (int, float)):
-                first = item_by_id[targets[0]]
-                second = item_by_id[targets[1]]
+            if len(decoupling_targets) >= 2 and isinstance(maximum, (int, float)):
+                first = item_by_id[decoupling_targets[0]]
+                second = item_by_id[decoupling_targets[1]]
                 if first.fixed and second.fixed:
                     # Exact native pad geometry is checked after placement.  A
                     # component-center proxy can falsely reject two deliberately
@@ -530,22 +532,27 @@ def _place(
                 )
                 placement_bound = max(float(maximum), math.ceil(feasible / 0.25) * 0.25)
                 near.append(
-                    NearConstraint(targets[0], targets[1], placement_bound, 100.0)
+                    NearConstraint(
+                        decoupling_targets[0],
+                        decoupling_targets[1],
+                        placement_bound,
+                        100.0,
+                    )
                 )
         elif constraint.kind == "functional_group":
-            targets = tuple(
+            group_targets = tuple(
                 target for target in constraint.targets if target in board_ids
             )
             maximum = constraint.params.get("max_diameter_mm")
-            if len(targets) >= 2 and isinstance(maximum, (int, float)):
-                groups.append(GroupConstraint(targets, float(maximum), 20.0))
+            if len(group_targets) >= 2 and isinstance(maximum, (int, float)):
+                groups.append(GroupConstraint(group_targets, float(maximum), 20.0))
         elif constraint.kind == "placement_region":
-            targets = tuple(
+            region_targets = tuple(
                 target for target in constraint.targets if target in board_ids
             )
             region = constraint.params.get("region")
-            if targets and isinstance(region, str):
-                regions.append(RegionConstraint(targets, region))
+            if region_targets and isinstance(region, str):
+                regions.append(RegionConstraint(region_targets, region))
     board_keepouts = _board_routing_keepouts(design)
     result = optimize_placement(
         items,
@@ -659,6 +666,7 @@ def _route(
         for target in constraint.targets:
             if target in net_name_by_id:
                 widths[net_name_by_id[target]] = float(width)
+    provisional = design.metadata.get("assurance") == "provisional"
     router = GridRouter(
         board_width_mm=design.board.width_mm,
         board_height_mm=design.board.height_mm,
@@ -671,9 +679,11 @@ def _route(
         # A conversational provisional plan must return useful feedback rather
         # than monopolize the local runtime.  Fully curated designs retain the
         # larger deterministic routing budget.
-        max_expansions=(
-            20_000 if design.metadata.get("assurance") == "provisional" else 750_000
-        ),
+        max_expansions=20_000 if provisional else 750_000,
+        # Per-branch caps alone still multiply by every net/pad fan-out. A
+        # conversational attempt gets a total cap so it can return a useful
+        # incomplete-route receipt instead of monopolizing the local UI.
+        max_total_expansions=40_000 if provisional else None,
     )
     routed = router.route(
         pads,
@@ -742,23 +752,24 @@ def _add_reference_stitching_vias(
     if len(reference_ids) != 1 or not reference_ids <= set(net_by_id):
         raise ValidationError("routing constraints require one valid reference net")
     reference_net = net_by_id[next(iter(reference_ids))].name
-    raw_minimums = [
-        constraint.params.get("min_reference_stitching_vias")
-        for constraint in reference_contracts
-    ]
+    minimums: list[int] = []
     ensure_connected = all(
         constraint.params.get("reference_connection_policy") == "ensure_connected"
         for constraint in reference_contracts
     )
     minimum_allowed = 0 if ensure_connected else 1
-    if any(
-        not isinstance(value, int) or isinstance(value, bool) or value < minimum_allowed
-        for value in raw_minimums
-    ):
-        raise ValidationError(
-            "reference-plane stitching-via minimum is invalid for its connection policy"
-        )
-    minimum = max(raw_minimums)
+    for constraint in reference_contracts:
+        value = constraint.params.get("min_reference_stitching_vias")
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value < minimum_allowed
+        ):
+            raise ValidationError(
+                "reference-plane stitching-via minimum is invalid for its connection policy"
+            )
+        minimums.append(value)
+    minimum = max(minimums)
 
     diameter = max(design.board.min_drill_mm + 0.3, 0.6)
     drill = max(design.board.min_drill_mm, 0.3)
@@ -1034,9 +1045,9 @@ def _reference_stitching_targets(
                 pin = graph.get(capacitor.part_id).pin(endpoint.pin)
                 if pin is None:
                     continue
-                pad = pad_by_key.get((capacitor.id, pin.footprint_pad))
-                if pad is not None:
-                    targets.append((pad.x_mm, pad.y_mm))
+                target_pad = pad_by_key.get((capacitor.id, pin.footprint_pad))
+                if target_pad is not None:
+                    targets.append((target_pad.x_mm, target_pad.y_mm))
     if not targets:
         targets.extend((pad.x_mm, pad.y_mm) for pad in pads if pad.net == reference_net)
     return tuple(sorted(set(targets)))
@@ -1477,13 +1488,13 @@ def _build_job(
     vias: tuple[RouteVia, ...],
 ) -> dict[str, Any]:
     board_ids = {component.id for component in components}
-    nets = []
+    nets: list[dict[str, Any]] = []
     connected: set[tuple[str, str]] = set()
     board_net_names: dict[str, str] = {}
     for net in sorted(design.nets, key=lambda entry: entry.name):
         board_net_name = f"/{net.name}"
         board_net_names[net.name] = board_net_name
-        endpoints = []
+        endpoints: list[dict[str, str]] = []
         for endpoint in net.endpoints:
             if endpoint.component not in board_ids:
                 continue
@@ -1517,7 +1528,7 @@ def _build_job(
                     ],
                 }
             )
-    nets.sort(key=lambda entry: entry["name"])
+    nets.sort(key=lambda entry: str(entry["name"]))
     return {
         "schema": "pcbdraft-pcbnew-job",
         "version": 1,

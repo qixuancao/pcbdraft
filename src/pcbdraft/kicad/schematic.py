@@ -16,7 +16,7 @@ from kicad_sch_api.core.pin_utils import get_component_pin_info
 
 from pcbdraft import __version__
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.domain.ir import Design
+from pcbdraft.domain.ir import Component, Design
 from pcbdraft.domain.parts import PartGraph, PartRecord
 from pcbdraft.domain.scope import assert_supported
 
@@ -297,7 +297,7 @@ def _repair_malformed_private_library_properties(path: Path) -> None:
         path.write_text("".join(result), encoding="utf-8", newline="")
 
 
-def _schematic_position(component: object) -> tuple[float, float]:
+def _schematic_position(component: Component) -> tuple[float, float]:
     placement = component.placement
     if placement is None:
         raise ValidationError(f"component {component.id} has no placement seed")

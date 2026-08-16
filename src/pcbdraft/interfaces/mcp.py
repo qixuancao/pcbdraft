@@ -21,7 +21,8 @@ from pcbdraft.agent.permissions import PermissionBroker, PermissionMode
 from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY, PCBToolRegistry
 from pcbdraft.agent.turns import ToolRunStatus, TurnRecord, TurnStatus
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.services.application import ApplicationService, sanitize_user_text
+from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.jobs import JobRunner
 
 MCP_PROTOCOL_VERSION = "2025-11-25"

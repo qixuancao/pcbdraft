@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft import __version__
-from pcbdraft.agent.design import AgentDesignRequest, CircuitPlan
+from pcbdraft.agent.plan import AgentDesignRequest, CircuitPlan
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import (
     atomic_write_bytes,
@@ -289,7 +289,11 @@ def materialize_managed_design(
                 for name, relative in files.items()
                 if name != "manifest"
             }
-            manifest = {
+            generation: dict[str, Any] = {
+                "schematic": schematic.to_dict(),
+                "pcb": pcb.to_dict(),
+            }
+            manifest: dict[str, Any] = {
                 "schema": MANAGED_SCHEMA,
                 "version": MANAGED_VERSION,
                 "runtime_version": __version__,
@@ -301,10 +305,7 @@ def materialize_managed_design(
                 },
                 "files": files,
                 "hashes": hashes,
-                "generation": {
-                    "schematic": schematic.to_dict(),
-                    "pcb": pcb.to_dict(),
-                },
+                "generation": generation,
                 "native_snapshots": {
                     "schematic": inspect_native_schematic(schematic.path),
                     "board": inspect_native_board(
@@ -318,7 +319,7 @@ def materialize_managed_design(
                     "kicad_support": pcb.kicad_version,
                 },
             }
-            _relativize_generation_paths(manifest["generation"])
+            _relativize_generation_paths(generation)
             atomic_write_json(temporary / MANAGED_MANIFEST, manifest, mode=0o644)
             for member in temporary.iterdir():
                 if member.is_file():
@@ -562,7 +563,7 @@ def _fsync_parent(parent: Path) -> None:
 def load_generation_request(path: str | Path) -> GenerationRequest:
     """Parse either the legacy fixture requirements or a generic agent request."""
 
-    value = load_json_limited(path, MANAGED_MANIFEST_LIMIT)
+    value = load_json_limited(Path(path), MANAGED_MANIFEST_LIMIT)
     if not isinstance(value, dict):
         raise ValidationError("managed project requirements must be an object")
     schema = value.get("schema")

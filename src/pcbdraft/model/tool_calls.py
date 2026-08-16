@@ -15,10 +15,11 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from pcbdraft.agent.orchestrator import (
+from pcbdraft.agent.policy import (
     DeterministicPCBCallProducer,
     ProposedToolCall,
 )
+from pcbdraft.agent.ports import ModelRoutingPort
 from pcbdraft.agent.tooling import (
     DEFAULT_PCB_TOOL_REGISTRY,
     PCBToolRegistry,
@@ -35,7 +36,6 @@ from pcbdraft.model.api import (
     OpenAIResponsesClient,
 )
 from pcbdraft.model.profiles import provider_wire_profile
-from pcbdraft.services.application import ApplicationService
 
 MODEL_DECISION_SCHEMA = "pcbdraft-model-tool-decision"
 MODEL_DECISION_VERSION = 1
@@ -69,7 +69,7 @@ class ConfiguredPCBCallProducer:
 
     def __init__(
         self,
-        service: ApplicationService,
+        service: ModelRoutingPort,
         *,
         registry: PCBToolRegistry = DEFAULT_PCB_TOOL_REGISTRY,
     ) -> None:

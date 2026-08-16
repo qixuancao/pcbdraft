@@ -13,7 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft import build_identity
-from pcbdraft.agent.design import AgentDesignRequest, review_agent_plan
+from pcbdraft.agent.plan import AgentDesignRequest
+from pcbdraft.agent.review import review_agent_plan
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import (
     atomic_write_json,

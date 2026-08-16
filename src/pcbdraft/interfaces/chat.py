@@ -140,6 +140,8 @@ def run_chat_command(
             value = service.create_project(new_name, message)
             project_id = value["project"]["id"]
         else:
+            if project_id is None:
+                raise ValidationError("chat project id is required")
             value = service.open_project(project_id)
             if message:
                 value = service.send_message(project_id, message, timeout=timeout)

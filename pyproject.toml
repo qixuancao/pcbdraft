@@ -86,13 +86,4 @@ python_version = "3.11"
 check_untyped_defs = true
 follow_imports = "skip"
 ignore_missing_imports = true
-files = [
-    "src/pcbdraft/core/errors.py",
-    "src/pcbdraft/core/io.py",
-    "src/pcbdraft/core/locking.py",
-    "src/pcbdraft/core/project.py",
-    "src/pcbdraft/model/api.py",
-    "src/pcbdraft/model/config.py",
-    "src/pcbdraft/services/jobs.py",
-    "src/pcbdraft/verification/evidence.py",
-]
+files = ["src/pcbdraft"]

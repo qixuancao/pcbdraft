@@ -11,23 +11,22 @@ turn instead of replaying the user's message.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from pcbdraft.agent.permissions import PermissionBroker
-from pcbdraft.agent.repair import (
-    MAX_AUTOMATIC_REPAIRS,
-    generation_feedback,
-    normalize_repair_feedback,
-    validation_feedback,
+from pcbdraft.agent.policy import (
+    DeterministicPCBCallProducer,
+    PCBCallProducer,
+    ProposedToolCall,
 )
+from pcbdraft.agent.ports import AgentServicePort
+from pcbdraft.agent.repair import MAX_AUTOMATIC_REPAIRS
 from pcbdraft.agent.tooling import (
     DEFAULT_PCB_TOOL_REGISTRY,
     PCBToolExecutor,
     PCBToolRegistry,
     ToolCall,
     ToolResult,
-    ToolSource,
     call_from_view,
     project_status_and_revision,
 )
@@ -40,161 +39,20 @@ from pcbdraft.agent.turns import (
     TurnStatus,
 )
 from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import new_run_id
-from pcbdraft.services.application import ApplicationService, sanitize_user_text
+
+__all__ = (
+    "DEFAULT_THREAD_ID",
+    "MAX_TOOL_CALLS_PER_TURN",
+    "AgentOrchestrator",
+    "DeterministicPCBCallProducer",
+    "PCBCallProducer",
+    "ProposedToolCall",
+)
 
 DEFAULT_THREAD_ID = "main"
 MAX_TOOL_CALLS_PER_TURN = 32
-
-
-@dataclass(frozen=True)
-class ProposedToolCall:
-    """One producer decision before local authority is evaluated."""
-
-    name: str
-    arguments: Mapping[str, Any]
-    source: ToolSource = "runtime_policy"
-    tool_call_id: str | None = None
-
-
-class PCBCallProducer(Protocol):
-    """Transport-neutral source of the next strict, revision-bound tool intent."""
-
-    def next_call(
-        self,
-        record: TurnRecord,
-        view: Mapping[str, Any],
-        *,
-        timeout: float,
-    ) -> ProposedToolCall | None: ...
-
-
-class DeterministicPCBCallProducer:
-    """Choose the next bounded PCB tool from durable state and current evidence."""
-
-    def next_call(
-        self,
-        record: TurnRecord,
-        view: Mapping[str, Any],
-        *,
-        timeout: float,
-    ) -> ProposedToolCall | None:
-        del timeout
-        completed = [
-            tool for tool in record.tool_runs if tool.status is ToolRunStatus.COMPLETED
-        ]
-        # An MCP tools/call is an exact single-operation request. Its durable
-        # initial proposal is written before this producer is consulted, and no
-        # workflow continuation may be inferred after that call completes.
-        if any(tool.source == "mcp" for tool in record.tool_runs):
-            return None
-        if record.user_message.startswith("/pcb_"):
-            status, _revision = project_status_and_revision(view)
-            requested_tool = record.user_message.removeprefix("/")
-            if not any(tool.tool_name == requested_tool for tool in completed):
-                return ProposedToolCall(requested_tool, {}, source="user")
-            if (
-                completed
-                and completed[-1].source == "user"
-                and completed[-1].tool_name == "pcb_generate_candidate"
-                and status == "generated"
-            ):
-                return ProposedToolCall("validate", {})
-            return None
-        # A model-selected first call is already the interpreted user intent.
-        # Do not feed the same natural-language message back through plan_request
-        # after a direct validate/preview/release/change operation.  Calls that
-        # start with pcb_plan_request still enter the normal generate -> validate
-        # workflow below, while state-driven safety follow-ups (validation and
-        # bounded repair) remain local for every model-selected write.
-        model_direct = next(
-            (
-                tool
-                for tool in record.tool_runs
-                if tool.source == "model" and tool.tool_name != "pcb_plan_request"
-            ),
-            None,
-        )
-        if (
-            model_direct is not None
-            and model_direct.status is not ToolRunStatus.COMPLETED
-        ):
-            # A failed/denied direct intent must never be replaced by a different
-            # state-derived action (for example discard -> apply on change_ready).
-            return None
-        if model_direct is None and not any(
-            tool.tool_name == "pcb_plan_request" for tool in completed
-        ):
-            return ProposedToolCall("plan_request", {"message": record.user_message})
-
-        status, _revision = project_status_and_revision(view)
-        repairs_used = sum(
-            tool.tool_name == "pcb_repair_candidate" for tool in record.tool_runs
-        )
-        if status == "awaiting_confirmation":
-            return ProposedToolCall("generate_candidate", {})
-        if status == "change_ready":
-            return ProposedToolCall("apply_candidate", {})
-        if status == "generation_failed":
-            if repairs_used >= MAX_AUTOMATIC_REPAIRS:
-                return None
-            error = self._latest_error(record) or "native PCB generation failed"
-            return ProposedToolCall(
-                "repair_candidate",
-                {
-                    "feedback": generation_feedback(
-                        view,
-                        PCBDraftError(error),
-                        attempt=repairs_used + 1,
-                    )
-                },
-            )
-        if status == "repair_failed":
-            return self._retry_repair(record, repairs_used)
-        if status == "generated":
-            last_completed = completed[-1].tool_name if completed else None
-            if last_completed != "pcb_validate":
-                return ProposedToolCall("validate", {})
-        if (
-            status in {"generated", "validated", "validation_failed"}
-            and repairs_used < MAX_AUTOMATIC_REPAIRS
-        ):
-            feedback = validation_feedback(view, attempt=repairs_used + 1)
-            if feedback is not None:
-                return ProposedToolCall("repair_candidate", {"feedback": feedback})
-        return None
-
-    @staticmethod
-    def _latest_error(record: TurnRecord) -> str | None:
-        return next(
-            (
-                tool.error
-                for tool in reversed(record.tool_runs)
-                if tool.error is not None
-            ),
-            None,
-        )
-
-    @staticmethod
-    def _retry_repair(record: TurnRecord, repairs_used: int) -> ProposedToolCall | None:
-        if repairs_used >= MAX_AUTOMATIC_REPAIRS:
-            return None
-        previous = next(
-            (
-                tool
-                for tool in reversed(record.tool_runs)
-                if tool.tool_name == "pcb_repair_candidate"
-                and isinstance(tool.arguments.get("feedback"), Mapping)
-            ),
-            None,
-        )
-        if previous is None:
-            return None
-        feedback = dict(previous.arguments["feedback"])
-        feedback["attempt"] = repairs_used + 1
-        return ProposedToolCall(
-            "repair_candidate", {"feedback": normalize_repair_feedback(feedback)}
-        )
 
 
 class AgentOrchestrator:
@@ -202,7 +60,7 @@ class AgentOrchestrator:
 
     def __init__(
         self,
-        service: ApplicationService,
+        service: AgentServicePort,
         *,
         registry: PCBToolRegistry = DEFAULT_PCB_TOOL_REGISTRY,
         permissions: PermissionBroker | None = None,

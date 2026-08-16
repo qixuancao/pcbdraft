@@ -11,6 +11,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import BinaryIO, cast
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 
@@ -113,7 +114,7 @@ def run_command(
             # open forever after the bounded child process has been killed.
             if killed_at is not None and now - killed_at >= 1.0:
                 for key in list(selector.get_map().values()):
-                    stream = key.fileobj
+                    stream = cast(BinaryIO, key.fileobj)
                     selector.unregister(stream)
                     stream.close()
                 break
@@ -122,7 +123,7 @@ def run_command(
             if not selector.get_map() and process.poll() is None:
                 time.sleep(0.01)
             for key, _ in events:
-                stream = key.fileobj
+                stream = cast(BinaryIO, key.fileobj)
                 if key.data == "stdin":
                     try:
                         if stdin_offset < len(stdin_view):
@@ -163,7 +164,7 @@ def run_command(
 
             if process.poll() is not None:
                 stdin_streams = [
-                    key.fileobj
+                    cast(BinaryIO, key.fileobj)
                     for key in selector.get_map().values()
                     if key.data == "stdin"
                 ]

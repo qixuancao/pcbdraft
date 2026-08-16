@@ -18,6 +18,7 @@ from pcbdraft.agent.permissions import (
     PermissionBroker,
     ToolPermissionError,
 )
+from pcbdraft.agent.ports import LegacyRuntimeServicePort
 from pcbdraft.agent.repair import (
     MAX_AUTOMATIC_REPAIRS,
     generation_feedback,
@@ -30,7 +31,6 @@ from pcbdraft.agent.tooling import (
     call_from_view,
 )
 from pcbdraft.core.errors import PCBDraftError
-from pcbdraft.services.application import ApplicationService
 
 
 @dataclass(frozen=True)
@@ -68,7 +68,9 @@ def _execute_policy_call(
 
 
 def _initial_view(
-    service: ApplicationService, executor: PCBToolExecutor, project_id: str
+    service: LegacyRuntimeServicePort,
+    executor: PCBToolExecutor,
+    project_id: str,
 ) -> dict[str, Any]:
     """Load the initial baseline, retaining compatibility with narrow adapters."""
 
@@ -84,7 +86,10 @@ def _initial_view(
 
 
 def _stopped(
-    service: ApplicationService, project_id: str, view: dict[str, Any], message: str
+    service: LegacyRuntimeServicePort,
+    project_id: str,
+    view: dict[str, Any],
+    message: str,
 ) -> dict[str, Any]:
     service.record_progress(
         project_id,
@@ -118,7 +123,7 @@ def _rejected_candidate_feedback(
 
 
 def run_design_turn(
-    service: ApplicationService,
+    service: LegacyRuntimeServicePort,
     project_id: str,
     message: str,
     *,

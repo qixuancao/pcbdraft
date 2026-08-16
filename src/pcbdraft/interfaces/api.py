@@ -17,21 +17,20 @@ from pcbdraft import (
     __version__,
     build_identity,
 )
-from pcbdraft.agent.design import (
+from pcbdraft.agent.compiler import compile_agent_plan, planner_symbol_context
+from pcbdraft.agent.part_resolver import LocalKiCadPartResolver
+from pcbdraft.agent.plan import (
     AgentDesignRequest,
     CircuitPlan,
-    LocalKiCadPartResolver,
     circuit_plan_schema,
-    compile_agent_plan,
-    planner_symbol_context,
 )
 from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.domain.blocks import BlockRegistry
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.requirements import RequirementsSpec, compile_requirements
 from pcbdraft.kicad.sync import apply_kicad_import, preview_kicad_import
-from pcbdraft.services.application import sanitize_user_text
 from pcbdraft.services.managed import (
     generate_managed_project,
     materialize_managed_design,
@@ -237,35 +236,35 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
         )
     if method == "project.validate":
         _exact(params, {"project", "output"}, {"timeout"})
-        result = validate_managed_project(
+        validation = validate_managed_project(
             _path(params["project"], "project"),
             output=_path(params["output"], "output"),
             timeout=_timeout(params.get("timeout", 90.0)),
         )
         return {
-            "report": str(result.report_path),
-            "report_sha256": result.report_sha256,
-            "candidate_ready": result.candidate_ready,
-            "production_evidence_complete": result.production_evidence_complete,
-            "production_ready": result.production_ready,
-            "levels": [level.to_dict() for level in result.levels],
+            "report": str(validation.report_path),
+            "report_sha256": validation.report_sha256,
+            "candidate_ready": validation.candidate_ready,
+            "production_evidence_complete": validation.production_evidence_complete,
+            "production_ready": validation.production_ready,
+            "levels": [level.to_dict() for level in validation.levels],
         }
     if method == "project.release":
         _exact(params, {"project", "output"}, {"timeout"})
-        result = build_manufacturing_release(
+        release = build_manufacturing_release(
             _path(params["project"], "project"),
             _path(params["output"], "output"),
             timeout=_timeout(params.get("timeout", 180.0)),
         )
         return {
-            "root": str(result.root),
-            "manifest": str(result.manifest_path),
-            "manifest_sha256": result.manifest_sha256,
-            "archive": str(result.archive_path),
-            "archive_sha256": result.archive_sha256,
-            "candidate_ready": result.candidate_ready,
-            "production_evidence_complete": result.production_evidence_complete,
-            "production_ready": result.production_ready,
+            "root": str(release.root),
+            "manifest": str(release.manifest_path),
+            "manifest_sha256": release.manifest_sha256,
+            "archive": str(release.archive_path),
+            "archive_sha256": release.archive_sha256,
+            "candidate_ready": release.candidate_ready,
+            "production_evidence_complete": release.production_evidence_complete,
+            "production_ready": release.production_ready,
         }
     if method == "release.verify":
         _exact(params, {"release"})
@@ -319,7 +318,7 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             {"repetitions", "corpus", "model_runs", "model_timeout"},
         )
         corpus = params.get("corpus")
-        result = run_benchmark(
+        benchmark = run_benchmark(
             _path(params["output"], "output"),
             repetitions=_integer(params.get("repetitions", 5), "repetitions"),
             corpus_path=_path(corpus, "corpus") if corpus is not None else None,
@@ -327,9 +326,9 @@ def _dispatch(method: str, params: dict[str, Any]) -> Any:
             model_timeout=_timeout(params.get("model_timeout", 420.0)),
         )
         return {
-            "report": str(result.report_path),
-            "metrics": result.result["metrics"],
-            "model_consistency": result.result["model_consistency"],
+            "report": str(benchmark.report_path),
+            "metrics": benchmark.result["metrics"],
+            "model_consistency": benchmark.result["model_consistency"],
         }
     raise RpcError(-32601, f"method not found: {method}")
 

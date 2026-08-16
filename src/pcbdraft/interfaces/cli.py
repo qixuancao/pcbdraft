@@ -11,11 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft import PRIMARY_CLI, PRODUCT_NAME, __version__
-from pcbdraft.agent.design import (
+from pcbdraft.agent.compiler import compile_agent_plan
+from pcbdraft.agent.part_resolver import LocalKiCadPartResolver
+from pcbdraft.agent.plan import (
     AgentDesignRequest,
     CircuitPlan,
-    LocalKiCadPartResolver,
-    compile_agent_plan,
 )
 from pcbdraft.core.errors import PCBDraftError, TransactionRejected, ValidationError
 from pcbdraft.core.io import (
@@ -44,6 +44,7 @@ from pcbdraft.kicad.sync import (
 )
 from pcbdraft.services.doctor import doctor_report
 from pcbdraft.services.managed import (
+    ManagedProject,
     generate_managed_project,
     materialize_managed_design,
     open_managed_project,
@@ -485,6 +486,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     tokens = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(tokens)
+    result: Any
     try:
         if args.command is None:
             return run_tui_command(
@@ -591,7 +593,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             make_directory(attempt_root.parent)
             make_directory(attempt_root, parents=False)
-            attempt = {
+            attempt: dict[str, Any] = {
                 "schema": "pcbdraft-generic-cli-attempt",
                 "version": 1,
                 "status": "running",
@@ -897,7 +899,7 @@ def _load_agent_compilation(request_path: str, plan_path: str):
     return compile_agent_plan(request, plan)
 
 
-def _managed_value(project: object) -> dict[str, object]:
+def _managed_value(project: ManagedProject) -> dict[str, object]:
     return {
         "root": str(project.root),
         "design_id": project.design.design_id,

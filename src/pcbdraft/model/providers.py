@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, ClassVar, Protocol
 
-from pcbdraft.agent.design import (
+from pcbdraft.agent.plan import (
     AgentDesignRequest,
     CircuitPlan,
     circuit_plan_schema,
@@ -568,8 +568,9 @@ class BuiltinIntentProvider:
             lowered,
         )
         prior = context.prior_decisions
-        prior_board = (
-            prior.get("board") if isinstance(prior.get("board"), Mapping) else {}
+        prior_board_value = prior.get("board")
+        prior_board: Mapping[str, Any] = (
+            prior_board_value if isinstance(prior_board_value, Mapping) else {}
         )
         layers = (
             int(layer_match.group(1) or layer_match.group(2))

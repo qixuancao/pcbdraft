@@ -37,6 +37,9 @@ jobs:
         run: scripts/prepare-kicad-environment.sh
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
+          # The runtime constraints are compared byte-for-byte below. Pin the
+          # exporter too: uv's harmless dependency annotations can vary by release.
+          version: "0.12.1"
           python-version: ${{ matrix.python }}
           enable-cache: true
       - run: uv sync --frozen --extra dev
@@ -55,6 +58,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
+          # Keep the export syntax and its annotations stable for the exact
+          # constraints/runtime.txt comparison in this job.
+          version: "0.12.1"
           python-version: "3.11"
           enable-cache: true
       - name: Install official KiCad 10 packages

@@ -129,6 +129,25 @@ class RoutingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "bounded limit"):
             _router(board_width_mm=1000, board_height_mm=1000, grid_mm=0.01)
 
+    def test_total_expansion_budget_bounds_every_route_in_one_request(self) -> None:
+        result = _router(max_total_expansions=1).route(
+            (
+                RoutingPad("a-left", "A", 2, 2, 0.5, 0.5, (0,)),
+                RoutingPad("a-right", "A", 8, 2, 0.5, 0.5, (0,)),
+                RoutingPad("b-left", "B", 2, 8, 0.5, 0.5, (0,)),
+                RoutingPad("b-right", "B", 8, 8, 0.5, 0.5, (0,)),
+            )
+        )
+        self.assertEqual(result.state, "heuristic")
+        self.assertLessEqual(result.expanded_nodes, 1)
+        self.assertEqual(result.unrouted, ("A", "B"))
+        self.assertTrue(
+            any(
+                "total routing expansion budget was exhausted" in item
+                for item in result.diagnostics
+            )
+        )
+
     def test_fine_pitch_seed_becomes_the_pad_terminal(self) -> None:
         seed = RouteSegment("N", 0, 1.03, 2.07, 2.0, 2.0, 0.2)
         result = _router(grid_mm=0.1).route(

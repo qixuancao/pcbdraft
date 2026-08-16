@@ -7,6 +7,7 @@ import importlib.abc
 import importlib.util
 import sys
 from types import ModuleType
+from typing import cast
 
 MOVED_MODULES: dict[str, str] = {
     "pcbdraft.agent_capabilities": "pcbdraft.agent.capabilities",
@@ -101,12 +102,11 @@ class _MovedModuleLoader(importlib.abc.Loader):
         # module. Restore canonical metadata so reloads and diagnostics remain
         # truthful while both sys.modules keys reference the exact same object.
         if self._metadata is not None:
-            (
-                module.__name__,
-                module.__loader__,
-                module.__package__,
-                module.__spec__,
-            ) = self._metadata
+            name, loader, package, spec = self._metadata
+            module.__name__ = name
+            module.__loader__ = cast(importlib.abc.Loader | None, loader)
+            module.__package__ = package
+            module.__spec__ = spec
 
 
 class _MovedModuleFinder(importlib.abc.MetaPathFinder):

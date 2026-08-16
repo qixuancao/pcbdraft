@@ -10,8 +10,8 @@ scripts.
 ```text
 pcbdraft/
 ├── src/pcbdraft/
-│   ├── agent/          constrained planning and autonomous turn orchestration
-│   ├── core/           errors, safe I/O, locks, processes, runs, and project paths
+│   ├── agent/          planning contracts, tool policy, ports, and durable turn orchestration
+│   ├── core/           errors, safe I/O, redaction, locks, processes, runs, and project paths
 │   ├── domain/         immutable PCB data and deterministic domain rules
 │   ├── interfaces/     CLI, JSON-RPC, chat, Web, and Textual presentation
 │   │   └── tui/        TUI app, controller, widgets, views, session, and styles
@@ -34,8 +34,9 @@ not belong there.
 
 ### Core
 
-`core` contains generic safety and runtime primitives. It must not depend on PCB
-domain, UI, model, KiCad, service, or verification code.
+`core` contains generic safety and runtime primitives, including text redaction
+at every durable or presentation boundary. It must not depend on PCB domain, UI,
+model, KiCad, service, or verification code.
 
 ### Domain
 
@@ -48,6 +49,22 @@ domain, UI, model, KiCad, service, or verification code.
 owns configuration and structured external model calls. `kicad` owns native EDA
 translation, inspection, layout, routing, preview, and synchronization. Raw
 model output never crosses directly into the KiCad adapter.
+
+The deterministic next-tool state machine lives in `agent.policy`; durable
+records, permission checks, and fixed tool dispatch live in their own agent
+modules. `agent.ports` defines the narrow structural contracts those modules and
+the optional model router need from the application layer. They must not import
+the concrete `ApplicationService`. This keeps workflow policy testable and
+prevents the agent/model/service import cycle from returning when a new tool or
+provider is added.
+
+The circuit-plan boundary is split by role: `agent.plan` parses and versions
+untrusted planner output, `agent.part_resolver` reads installed KiCad libraries,
+`agent.review` evaluates engineering evidence, and `agent.compiler` lowers an
+accepted plan to semantic IR. `agent.design` is a compatibility facade only;
+new production code must import the narrow owner module. Provider validation and
+configuration-path rules similarly live in `model.contracts`, below both the
+model catalog and HTTP transport.
 
 ### Services and verification
 

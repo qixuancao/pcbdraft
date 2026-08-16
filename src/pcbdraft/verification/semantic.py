@@ -16,7 +16,8 @@ from xml.etree.ElementTree import ParseError
 
 from defusedxml.ElementTree import fromstring
 
-from pcbdraft.agent.design import AgentDesignRequest, review_agent_plan
+from pcbdraft.agent.plan import AgentDesignRequest
+from pcbdraft.agent.review import review_agent_plan
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import make_directory, read_bytes_limited
 from pcbdraft.core.process import redact_argv, remaining_timeout, run_command
@@ -197,19 +198,19 @@ def _bounded_json(value: Any, *, depth: int = 0) -> Any:
         return "<depth-limit>"
     if isinstance(value, dict):
         items = list(value.items())[:200]
-        rendered = {
+        rendered_mapping = {
             _bounded(str(key), 128): _bounded_json(child, depth=depth + 1)
             for key, child in items
         }
         if len(value) > len(items):
-            rendered["<truncated-keys>"] = len(value) - len(items)
-        return rendered
+            rendered_mapping["<truncated-keys>"] = len(value) - len(items)
+        return rendered_mapping
     if isinstance(value, list):
         items = value[:500]
-        rendered = [_bounded_json(child, depth=depth + 1) for child in items]
+        rendered_items = [_bounded_json(child, depth=depth + 1) for child in items]
         if len(value) > len(items):
-            rendered.append({"<truncated-items>": len(value) - len(items)})
-        return rendered
+            rendered_items.append({"<truncated-items>": len(value) - len(items)})
+        return rendered_items
     if isinstance(value, str):
         return _bounded(value)
     if value is None or isinstance(value, (bool, int, float)):

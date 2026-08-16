@@ -118,6 +118,13 @@ versioned `TurnRecord` and `ToolRunRecord` under `agent-turns/`. The compound
 state. A waiting approval additionally binds the canonical argument hash and
 observed engineering revision, so UI status alone can never authorize a write.
 
+The deterministic producer is a separate pure policy module: it receives only a
+durable turn and public project view, then emits at most one bounded tool intent.
+The orchestrator, fixed tool executor, and model router consume narrow agent
+ports instead of importing the concrete application service. This preserves the
+single write authority while keeping state policy, transport adapters, and
+transactional storage independently changeable.
+
 The current next-tool producer is hybrid. At the start of a natural-language
 turn, it permits at most one native OpenAI Responses function-tool decision, and
 only when the selected provider uses the built-in OpenAI preset, provider ID

@@ -648,7 +648,7 @@ def build_job(job, output_path):
         raise ValueError("build job has invalid route count")
 
     board = pcbnew.BOARD()
-    uuid_replacements = {}
+    uuid_replacements: dict[str, str] = {}
     _set_uuid(board, _stable(design_id, "board", "root"), uuid_replacements)
     _configure_board(board, rules, layers)
     title = job.get("title", {})

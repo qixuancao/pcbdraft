@@ -71,4 +71,4 @@ def provider_wire_profile(provider_id: str, base_url: str) -> ProviderWireProfil
         return profile
     hostname = (urllib.parse.urlsplit(base_url).hostname or "").casefold()
     detected = _HOST_PROFILE_IDS.get(hostname)
-    return _PROFILES.get(detected, _DEFAULT)
+    return _PROFILES.get(detected, _DEFAULT) if detected is not None else _DEFAULT

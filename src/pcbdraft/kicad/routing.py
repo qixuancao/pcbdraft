@@ -21,6 +21,7 @@ MAX_CELLS = 2_000_000
 MAX_PADS = 2_000
 MAX_NETS = 1_000
 MAX_EXPANSIONS_PER_BRANCH = 750_000
+MAX_TOTAL_EXPANSIONS = 2_000_000
 
 
 @dataclass(frozen=True, order=True)
@@ -113,6 +114,7 @@ class GridRouter:
         via_diameter_mm: float | None = None,
         via_drill_mm: float | None = None,
         max_expansions: int = MAX_EXPANSIONS_PER_BRANCH,
+        max_total_expansions: int | None = None,
     ) -> None:
         values = {
             "board_width_mm": board_width_mm,
@@ -132,6 +134,14 @@ class GridRouter:
         if not 1 <= max_expansions <= MAX_EXPANSIONS_PER_BRANCH:
             raise ValidationError(
                 f"max_expansions must be 1..{MAX_EXPANSIONS_PER_BRANCH}"
+            )
+        if max_total_expansions is not None and (
+            isinstance(max_total_expansions, bool)
+            or not isinstance(max_total_expansions, int)
+            or not 1 <= max_total_expansions <= MAX_TOTAL_EXPANSIONS
+        ):
+            raise ValidationError(
+                f"max_total_expansions must be 1..{MAX_TOTAL_EXPANSIONS}"
             )
         self.board_width_mm = board_width_mm
         self.board_height_mm = board_height_mm
@@ -154,6 +164,7 @@ class GridRouter:
         if self.via_diameter_mm <= self.via_drill_mm:
             raise ValidationError("via diameter must exceed drill diameter")
         self.max_expansions = max_expansions
+        self.max_total_expansions = max_total_expansions
         self._pad_specs: list[list[tuple[int, int, float, float, str]]] = []
         self._pad_cell_cache: dict[float, list[dict[tuple[int, int], set[str]]]] = {}
         self._raw_pad_cells: list[dict[tuple[int, int], set[str]]] = []
@@ -163,6 +174,7 @@ class GridRouter:
         self._max_track_width = min_track_mm
         self._max_occupied_radius = max(min_track_mm / 2, self.via_diameter_mm / 2)
         self.expanded_nodes = 0
+        self._remaining_expansions: int | None = None
 
     def route(
         self,
@@ -210,6 +222,7 @@ class GridRouter:
         self._initialize_obstacles(pads_tuple, tuple(sorted(keepouts)))
         self._seed_terminals = {}
         self.expanded_nodes = 0
+        self._remaining_expansions = self.max_total_expansions
         diagnostics: list[str] = []
 
         seeds = tuple(sorted(seed_segments))
@@ -323,11 +336,11 @@ class GridRouter:
                 unrouted.append(net)
                 diagnostics.extend(errors)
 
-        segments = tuple(sorted(set(all_segments)))
-        vias = tuple(sorted(set(all_vias)))
+        final_segments = tuple(sorted(set(all_segments)))
+        final_vias = tuple(sorted(set(all_vias)))
         return RoutingResult(
-            segments=segments,
-            vias=vias,
+            segments=final_segments,
+            vias=final_vias,
             unrouted=tuple(sorted(unrouted)),
             state="heuristic" if unrouted else "completed",
             expanded_nodes=self.expanded_nodes,
@@ -489,9 +502,12 @@ class GridRouter:
             starts = self._pad_terminal_states(pad)
             path = self._a_star(net, starts, tree, width)
             if path is None:
-                diagnostics.append(
-                    f"{net}: could not connect pad {pad.id} within bounded A* search"
+                budget = (
+                    " after the total routing expansion budget was exhausted"
+                    if self._remaining_expansions == 0
+                    else " within bounded A* search"
                 )
+                diagnostics.append(f"{net}: could not connect pad {pad.id}{budget}")
                 continue
             new_segments, new_vias = self._materialize(net, path, width)
             segments.extend(new_segments)
@@ -555,14 +571,17 @@ class GridRouter:
                 heap, (heuristic(state), 0, layer, y_cell, x_cell, next(serial))
             )
         expanded = 0
-        while heap and expanded < self.max_expansions:
+        branch_budget = self.max_expansions
+        if self._remaining_expansions is not None:
+            branch_budget = min(branch_budget, self._remaining_expansions)
+        while heap and expanded < branch_budget:
             _priority, cost, layer, y_cell, x_cell, _serial = heapq.heappop(heap)
             state = (x_cell, y_cell, layer)
             if cost != costs.get(state):
                 continue
             expanded += 1
             if state in goals:
-                self.expanded_nodes += expanded
+                self._record_expansions(expanded)
                 return self._reconstruct(came_from, state)
             neighbors: list[tuple[GridState, int, bool]] = [
                 ((x_cell - 1, y_cell, layer), 1, False),
@@ -605,8 +624,13 @@ class GridRouter:
                         next(serial),
                     ),
                 )
-        self.expanded_nodes += expanded
+        self._record_expansions(expanded)
         return None
+
+    def _record_expansions(self, count: int) -> None:
+        self.expanded_nodes += count
+        if self._remaining_expansions is not None:
+            self._remaining_expansions -= count
 
     def _blocked(self, state: GridState, net: str, width: float, *, via: bool) -> bool:
         x_cell, y_cell, layer = state

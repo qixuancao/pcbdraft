@@ -21,7 +21,8 @@ from typing import Any, ClassVar
 from pcbdraft import __version__, build_identity
 from pcbdraft.agent.turns import AgentTurnStore, ToolRunRecord, TurnRecord
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.services.application import ApplicationService, sanitize_user_text
+from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.jobs import JobRunner
 
 MAX_REQUEST_BYTES = 64 * 1024

@@ -18,11 +18,11 @@ from pcbdraft.agent.turns import TurnStatus
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, load_json_limited
 from pcbdraft.core.locking import ResourceLock
+from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.services.application import (
     APP_FILE_LIMIT,
     ApplicationService,
-    sanitize_user_text,
 )
 
 JOB_SCHEMA = "pcbdraft-application-job"
