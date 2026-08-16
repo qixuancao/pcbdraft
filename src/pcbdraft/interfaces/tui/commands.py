@@ -18,7 +18,13 @@ class SlashCommand:
 
 SLASH_COMMANDS = (
     SlashCommand("/help", "/help", "show command help"),
-    SlashCommand("/new", "/new [name]", "start a project", True),
+    SlashCommand("/new", "/new [name]", "create a named project folder", True),
+    SlashCommand(
+        "/project",
+        "/project [directory]",
+        "show or change the PCB project repository",
+        True,
+    ),
     SlashCommand("/projects", "/projects", "list local projects"),
     SlashCommand("/open", "/open ID", "open a project", True, True),
     SlashCommand("/status", "/status", "refresh this project"),

@@ -16,6 +16,7 @@ class ProviderWireProfile:
     temperature: float | None = 0.0
     require_supported_parameters: bool = False
     separate_reasoning: bool = False
+    agent_protocol: str = "deterministic"
 
 
 _DEFAULT = ProviderWireProfile()
@@ -38,7 +39,9 @@ _PROFILES: dict[str, ProviderWireProfile] = {
         max_tokens_field="max_completion_tokens", temperature=None
     ),
     "openai": ProviderWireProfile(
-        max_tokens_field="max_completion_tokens", temperature=None
+        max_tokens_field="max_completion_tokens",
+        temperature=None,
+        agent_protocol="openai-responses",
     ),
     # OpenRouter can route only through backends that support every requested
     # parameter, avoiding a silent downgrade of structured output.

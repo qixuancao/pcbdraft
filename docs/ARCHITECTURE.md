@@ -31,15 +31,41 @@ compatibility policy for historical module paths.
 
 ## Product path
 
-    full-screen terminal / parameterized chat / local browser / JSON-RPC
-                       |
-                       v
-             AgentRuntime / durable JobRunner / project event stream
-             (the terminal uses this asynchronous path)
-                       |
-                       v
-             ApplicationService: projects, events, locks,
-             confirmation, recovery, retained attempts
+        full-screen terminal       local browser         MCP stdio host
+                 |                       |                      |
+                 v                       v                      v
+           AgentRuntime          HTTP/SSE handler       ProjectMCPServer
+                 |                       |                      |
+                 +-------------- durable JobRunner ------------+
+                                      |
+                                      v
+                 AgentOrchestrator <--> AgentTurnStore
+                 - durable Thread + Turn + ToolRun + Approval identities
+                 - persist intent before side effects
+                 - resume the same checkpoint after failure or restart
+                 - MCP starts one exact project-bound tool turn
+                                      |
+                                      v
+                 Tool intent source
+                 - exact OpenAI Responses: at most one initial selection
+                 - deterministic mandatory continuation and fallback
+                 - MCP: one exact operation supplied by the host
+                                      |
+                                      v
+                 PermissionBroker: allow / ask / deny
+                 - exact call + argument hash + baseline revision binding
+                                      |
+                                      v
+                 PCBToolRegistry / PCBToolExecutor
+                 - closed semantic tool catalog
+                 - strict JSON Schema and allowed states
+                 - source, effect, risk, and baseline-revision checks
+                 - OpenAI Responses and MCP descriptor exports
+                                      |
+                                      v
+                 ApplicationService: projects, events, locks,
+                 confirmation, recovery, retained attempts
+                 - emits the project event stream used by both clients
                        |
                        v
              requirement interpretation
@@ -86,15 +112,112 @@ compatibility policy for historical module paths.
 The application service is the only business write authority. `AgentRuntime`
 and `JobRunner` turn its synchronous, transactional operations into durable
 background turns and UI-neutral activity events; the Textual client owns
-rendering and input only. The default full-screen terminal and browser render the same
-persisted project, conversation, attempt, event, and decision records. The
-terminal derives a local project name from the first normal-language request,
+rendering and input only. Before any side effect, `AgentOrchestrator` persists a
+versioned `TurnRecord` and `ToolRunRecord` under `agent-turns/`. The compound
+`(thread_id, turn_id, tool_call_id)` identity owns progress, result, and approval
+state. A waiting approval additionally binds the canonical argument hash and
+observed engineering revision, so UI status alone can never authorize a write.
+
+The current next-tool producer is hybrid. At the start of a natural-language
+turn, it permits at most one native OpenAI Responses function-tool decision, and
+only when the selected provider uses the built-in OpenAI preset, provider ID
+`openai`, and the exact `api.openai.com` hostname. The model chooses an initial
+tool from the registry entries allowed in the current project state; the
+`pcb_plan_request.message` argument is additionally constrained to the exact
+durable user message. Slash-command turns, every later operation in that turn,
+and mandatory generation, validation, evidence-driven repair, approval, and
+revision transitions use the deterministic producer. All other providers,
+including custom OpenAI-compatible endpoints, use that local-policy fallback for
+intent routing even though they may still supply schema-constrained requirement
+interpretation and circuit planning.
+
+Before the native request is sent, the router writes
+`agent-turns/model-decisions/{turn_id}-router.json`. The journal binds the
+request hash to the project, turn, durable message, project status and revision,
+provider, model, endpoint, and offered tools. A completed decision can be reused
+as the same call. A dispatched decision without an exact result, and a recorded
+failure, are not automatically POSTed again; the producer falls back to the
+deterministic local decision. This journal is control-plane evidence only. A
+model selection or model-generated prose cannot assert that an engineering
+operation succeeded; only executor receipts, local state, and validation
+evidence can do that.
+
+Every proposed operation still crosses `PermissionBroker`, the closed
+`PCBToolRegistry`, and `PCBToolExecutor`, which reject unknown tools,
+extra/nested arguments, stale revisions, and invalid states. The registry emits
+strict OpenAI Responses function declarations and MCP Tool descriptors from the
+same specs, but neither adapter receives handlers or direct
+`ApplicationService`, filesystem, shell, or raw KiCad authority.
+
+The durable Job envelope is also an authority boundary. Version 2 snapshots the
+exact permission mode, registry authority fingerprint, and tool-call limit when
+the job is submitted. Both recovered execution and final dispatch revalidate
+that binding. A legacy/unbound job, old direct action, missing turn, symlinked
+record, or policy mismatch becomes a terminal audit record without dispatch;
+restarting under a different policy can never promote it into executable work.
+After a durable dispatch marker, an exception without an exact effect receipt is
+stored as an interrupted, non-replayable outcome rather than a normal failed call.
+A model-selected direct intent that fails or is denied is also fail-closed: local
+state policy cannot reinterpret it as a different operation during retry.
+
+`pcbdraft mcp --project ID` is the shipped project-bound MCP stdio adapter. It
+resolves one existing project before stdout becomes protocol-only, does not put a
+project identity or path in tool arguments, and maps each `tools/call` to one
+durable `source=mcp` turn. It does not automatically continue a multi-tool PCB
+workflow inside that call. For a high-risk or authoritative-write tool, the
+default `review` permission mode returns an `approval_required` receipt and exact
+checkpoint instead of executing it; that checkpoint must be resolved in the
+review-mode TUI, without retrying the MCP call. MCP is therefore another
+transport/source of calls, not a second PCB execution architecture. The
+parameterized chat and JSON-RPC compatibility surfaces still call bounded
+`ApplicationService` use cases directly and must not be mistaken for
+participants in the durable interactive turn loop.
+
+An MCP timeout, client cancellation, post-submit record failure, or dispatched
+tool error cannot by itself prove that a non-idempotent local effect stopped. If
+the exact result cannot be reconciled, the adapter therefore reports
+`outcome_unknown`, `retry_safe=false`, and the durable Job/Turn identities instead
+of returning a retryable generic error. MCP accepts only the external `pcb_*`
+names published by `tools/list`, and a receipt must bind exactly one `source=mcp`
+tool matching the request.
+
+The MCP server targets protocol revision `2025-11-25` through the official
+Python SDK 1.x (`mcp>=1.29,<2`; the KiCad dependency chain currently prevents an
+SDK v2 upgrade). Its current surface is stdio `tools/list` and `tools/call` only:
+there is no Streamable HTTP transport, resources/prompts surface, or bundled MCP
+client. Being maintained in 2026 does not imply support for a 2026 protocol
+revision. A client that requires a post-`2025-11-25` revision or SDK v2 behavior
+is outside the current compatibility claim.
+
+The default full-screen terminal and browser submit messages and explicit
+actions through durable Agent jobs over the same orchestrator and project store.
+The terminal renders its incremental runtime activity. The browser project view
+projects the 20 most recent durable turns and tool-run receipts plus any pending
+approval into inline conversation activity; that checkpoint is read-only in Web.
+Both surfaces continue to render the same persisted project, conversation,
+attempt, event, and decision evidence. The terminal derives a local project name
+from the first normal-language request,
 while its slash palette handles project selection and explicit engineering
-actions. It automatically advances a completed pending plan across the existing
-confirmation transaction boundary. Manual clients can retain the staged plan
-and confirm it explicitly. The parameterized <code>chat</code> command is for
+actions. The TUI presents planning, generation, validation, and bounded repair as
+tool activity inside one conversation turn instead of a mandatory multi-page
+workflow. Its default runtime policy advances an allowed plan automatically;
+the default TUI and browser `workspace` permission policy continues requested
+project-local work without artificial pauses. A TUI `review` policy can retain an
+exact call checkpoint and ask once immediately before a high-risk or
+authoritative-write tool; the current browser has no approval mutation endpoint.
+Follow-up messages on a generated project are compiled into an isolated replacement,
+validated under `transactions/`, and only then atomically applied by policy.
+The terminal retains bounded tool history across recent turns; collapsed mode
+shows concise call activity, while expanded logs include effect, risk, argument
+hash, baseline/result revisions, bounded arguments, and the local result receipt.
+The parameterized <code>chat</code> command is for
 automation and does not start a line-oriented session. A restart marks an
-incomplete job interrupted rather than replaying its side effects.
+incomplete job and active tool interrupted rather than replaying its side
+effects. `/retry` creates another Job attempt over the same `turn_id`; completed
+tool receipts are reused. A call that was durably marked as dispatched but lacks
+an exact matching result receipt is ambiguous even when the project revision did
+not advance; it is failed closed and is never dispatched again. The user must
+inspect the retained project and submit a new turn.
 
 ## Generic request and plan
 

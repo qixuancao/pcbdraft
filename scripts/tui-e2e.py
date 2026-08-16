@@ -203,7 +203,7 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             master, slave = pty.openpty()
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 36, 140, 0, 0))
             os.set_blocking(master, False)
-            process = subprocess.Popen(
+            process = subprocess.Popen(  # noqa: S603 - caller supplies the test executable
                 [
                     executable,
                     "--workspace",
@@ -270,7 +270,7 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             master, slave = pty.openpty()
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 36, 140, 0, 0))
             os.set_blocking(master, False)
-            process = subprocess.Popen(
+            process = subprocess.Popen(  # noqa: S603 - caller supplies the test executable
                 [
                     executable,
                     "--workspace",
@@ -300,6 +300,10 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
                 )
 
             conversation = _read_json(project / "conversation.json")
+            # The store also keeps a monotonic sequence index in this directory;
+            # only aggregate records use the stable turn-* filename namespace.
+            turn_paths = sorted((project / "agent-turns").glob("turn-*.json"))
+            turns = [_read_json(path) for path in turn_paths]
             managed_plan = project / "design" / "circuit-plan.json"
             managed_qualification = project / "design" / "component-qualification.json"
             release = released["last_release"]
@@ -308,11 +312,10 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             plain = _plain_terminal(bytes(transcript))
             resumed_plain = _plain_terminal(bytes(resume_transcript))
             required_activity = {
-                "pcb_requirements",
-                "pcb_circuit_plan",
-                "kicad_generate",
-                "kicad_validate",
-                "pcb_export",
+                "pcb_plan_request",
+                "pcb_generate_candidate",
+                "pcb_validate",
+                "pcb_build_release",
             }
             missing_activity = sorted(
                 tool for tool in required_activity if tool not in plain
@@ -334,6 +337,24 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
                 raise RuntimeError("TUI did not resume its last project on restart")
             if "Release built" not in resumed_plain:
                 raise RuntimeError("resumed TUI did not render the released project")
+            if len(turns) != 2 or any(
+                turn.get("status") != "completed" for turn in turns
+            ):
+                raise RuntimeError(
+                    "TUI did not retain its completed durable agent turns"
+                )
+            durable_tools = {
+                tool.get("tool_name")
+                for turn in turns
+                for tool in turn.get("tool_runs", [])
+                if isinstance(tool, dict)
+            }
+            missing_durable_tools = required_activity - durable_tools
+            if missing_durable_tools:
+                raise RuntimeError(
+                    "durable turns omitted expected PCB tools: "
+                    f"{sorted(missing_durable_tools)}"
+                )
             if not managed_plan.is_file():
                 raise RuntimeError(
                     "TUI-generated managed project omitted its circuit plan"
@@ -361,12 +382,13 @@ def run_tui(executable: str, output: Path) -> dict[str, Any]:
             )
             summary = {
                 "schema": "pcbdraft-tui-e2e",
-                "version": 1,
+                "version": 2,
                 "project_id": released["id"],
                 "status": released["status"],
                 "provider": "local-openai-compatible",
                 "provider_requests": provider.server.request_count,
                 "agent_activity_tools": sorted(required_activity),
+                "durable_turns": len(turns),
                 "messages": len(conversation["messages"]),
                 "candidate_ready": True,
                 "production_ready": False,

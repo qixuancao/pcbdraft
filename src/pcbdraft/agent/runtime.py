@@ -7,12 +7,16 @@ which lets terminal, web, and future desktop surfaces share one PCB-agent core.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 from pcbdraft.agent.capabilities import agent_capability
 from pcbdraft.agent.events import AgentActivity, AgentUpdate
-from pcbdraft.core.errors import ValidationError
+from pcbdraft.agent.orchestrator import AgentOrchestrator
+from pcbdraft.agent.permissions import PermissionBroker, PermissionMode
+from pcbdraft.agent.turns import TurnRecord
+from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.jobs import JobRunner
 
@@ -26,6 +30,8 @@ class _ActiveTurn:
     job_id: str
     action: str
     event_cursor: int
+    turn_id: str | None = None
+    tool_states: dict[str, str] = field(default_factory=dict)
 
 
 class AgentRuntime:
@@ -37,9 +43,19 @@ class AgentRuntime:
         *,
         runner: JobRunner | None = None,
         workers: int = 1,
+        permission_mode: PermissionMode = "workspace",
     ) -> None:
         self.service = service
-        self.runner = runner or JobRunner(service, workers=workers)
+        owned_agent = AgentOrchestrator(
+            service, permissions=PermissionBroker(permission_mode)
+        )
+        self.runner = runner or JobRunner(
+            service, workers=workers, orchestrator=owned_agent
+        )
+        runner_agent = getattr(self.runner, "agent", None)
+        self.agent = (
+            runner_agent if isinstance(runner_agent, AgentOrchestrator) else owned_agent
+        )
         self._owns_runner = runner is None
         self._active: _ActiveTurn | None = None
 
@@ -97,7 +113,11 @@ class AgentRuntime:
         capability = agent_capability(action)
         if capability is None:
             raise ValidationError(f"unsupported agent action: {action}")
-        return self._submit(project_id, capability.job_action, {"timeout": timeout})
+        return self._submit(
+            project_id,
+            "agent_tool",
+            {"tool": capability.tool_name, "timeout": timeout},
+        )
 
     def poll(self) -> AgentUpdate | None:
         """Return newly persisted activity and settle a finished turn."""
@@ -107,31 +127,72 @@ class AgentRuntime:
             return None
         job = self.runner.get(active.project_id, active.job_id)
         raw_events = self.service.events(active.project_id, after=active.event_cursor)
-        activities = tuple(
+        project_activities = tuple(
             AgentActivity.from_project_event(event)
             for event in raw_events
             if isinstance(event, dict)
         )
-        if activities:
+        if project_activities:
             active.event_cursor = max(
-                active.event_cursor, *(activity.sequence for activity in activities)
+                active.event_cursor,
+                *(activity.sequence for activity in project_activities),
             )
+        turn = self._load_turn(active.project_id, active.turn_id)
+        tool_activities: tuple[AgentActivity, ...] = ()
+        if turn is not None:
+            changed: list[AgentActivity] = []
+            for tool in turn.tool_runs:
+                status = tool.status.value
+                if active.tool_states.get(tool.tool_call_id) == status:
+                    continue
+                active.tool_states[tool.tool_call_id] = status
+                changed.append(AgentActivity.from_tool_run(tool))
+            tool_activities = tuple(changed)
+        activities = (*project_activities, *tool_activities)
         status = str(job.get("status", "failed"))
         terminal = status not in _ACTIVE_JOB_STATES
-        view = self.service.open_project(active.project_id) if terminal else None
+        # Surface each completed PCB tool boundary as part of one live turn.
+        # Clients can therefore update the same conversation/status view while
+        # the autonomous job continues, instead of appearing to jump from the
+        # initial draft straight to the final result.
+        view = (
+            self._snapshot(active.project_id, terminal=terminal)
+            if terminal or activities
+            else None
+        )
         error = job.get("error")
+        snapshot_pending = terminal and view is None
         update = AgentUpdate(
             project_id=active.project_id,
             job_id=active.job_id,
             action=active.action,
-            status=status,
+            status="running" if snapshot_pending else status,
             activities=activities,
             view=view,
             error=error if isinstance(error, str) and error else None,
+            turn_id=turn.turn_id if turn is not None else active.turn_id,
+            turn_status=(
+                turn.status.value if turn is not None else self._job_turn_status(job)
+            ),
+            pending_approval=(
+                self.agent.approval_payload(turn)
+                if turn is not None
+                else self._job_pending_approval(job)
+            ),
         )
-        if terminal:
+        if terminal and not snapshot_pending:
             self._active = None
         return update
+
+    def _snapshot(self, project_id: str, *, terminal: bool) -> dict[str, Any] | None:
+        """Read only committed project state while a worker may still be writing."""
+
+        snapshot = getattr(self.service, "try_open_project_snapshot", None)
+        if callable(snapshot):
+            return snapshot(project_id, timeout=1.0 if terminal else 0.0)
+        # Small test doubles and older service adapters do not yet expose the
+        # lock-aware reader.  Their in-memory views have no partial-write window.
+        return self.service.open_project(project_id)
 
     def cancel(self) -> AgentUpdate:
         """Request cooperative cancellation at the next safe tool boundary."""
@@ -167,6 +228,25 @@ class AgentRuntime:
         jobs = self.runner.list(project_id)
         latest = jobs[0] if jobs else None
         error = latest.get("error") if isinstance(latest, dict) else None
+        try:
+            turns = self.agent.store(project_id).list(thread_id="main", limit=20)
+        except AttributeError:
+            turns = []
+        except PCBDraftError as exc:
+            if "resource is locked by another runtime process" not in str(exc):
+                raise
+            turns = []
+        turn = turns[0] if turns else None
+        if turns:
+            retained_tools = [
+                tool
+                for historical_turn in reversed(turns)
+                for tool in historical_turn.tool_runs
+            ][-60:]
+            activities = (
+                *activities,
+                *tuple(AgentActivity.from_tool_run(tool) for tool in retained_tools),
+            )
         return AgentUpdate(
             project_id=project_id,
             job_id=str(latest.get("id", "session-history"))
@@ -181,7 +261,87 @@ class AgentRuntime:
             activities=activities,
             view=view,
             error=error if isinstance(error, str) and error else None,
+            turn_id=turn.turn_id if turn is not None else None,
+            turn_status=turn.status.value if turn is not None else None,
+            pending_approval=(
+                self.agent.approval_payload(turn) if turn is not None else None
+            ),
         )
+
+    def pending_approval(self, project_id: str) -> dict[str, Any] | None:
+        """Return the exact crash-durable approval currently blocking a turn."""
+
+        record = self.agent.store(project_id).waiting_approval(thread_id="main")
+        if record is None or record.pending_approval is None:
+            return None
+        return self.agent.approval_payload(record)
+
+    def resolve_pending(
+        self,
+        project_id: str,
+        *,
+        checkpoint: Mapping[str, Any],
+        approve: bool,
+        timeout: float,
+    ) -> AgentUpdate:
+        """Approve once and resume the same turn, or reject it without dispatch."""
+
+        self._assert_idle()
+        fields = self._approval_binding(checkpoint)
+        view = self.service.open_project(project_id)
+        state = view.get("state")
+        cursor = state.get("event_sequence", 0) if isinstance(state, dict) else 0
+        if not isinstance(cursor, int) or cursor < 0:
+            cursor = 0
+        job, record = self.runner.resolve_approval(
+            project_id,
+            **fields,
+            approve=approve,
+            timeout=timeout,
+            decision_source="tui",
+        )
+        if approve:
+            if job is None:
+                raise ValidationError("approval continuation job was not persisted")
+            return self._activate_job(job, view=view, event_cursor=cursor)
+        return AgentUpdate(
+            project_id=project_id,
+            job_id=f"approval:{record.turn_id}",
+            action="agent_approval",
+            status="cancelled",
+            view=self.service.open_project(project_id),
+            turn_id=record.turn_id,
+            turn_status=record.status.value,
+        )
+
+    @staticmethod
+    def _approval_binding(checkpoint: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(checkpoint, Mapping):
+            raise ValidationError("approval checkpoint must be an object")
+        required = {
+            "turn_id",
+            "checkpoint_id",
+            "tool_call_id",
+            "tool_name",
+            "effect",
+            "risk",
+            "args_hash",
+            "baseline_revision",
+        }
+        missing = required - set(checkpoint)
+        if missing:
+            raise ValidationError(
+                "approval checkpoint is missing its exact call binding"
+            )
+        result = {name: checkpoint[name] for name in required}
+        if not all(
+            isinstance(result[name], str) for name in required - {"baseline_revision"}
+        ):
+            raise ValidationError("approval checkpoint call binding is malformed")
+        revision = result["baseline_revision"]
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+            raise ValidationError("approval checkpoint revision is malformed")
+        return result
 
     def retry_last(self, project_id: str) -> AgentUpdate:
         """Explicitly retry the newest failed/interrupted/cancelled durable job."""
@@ -245,6 +405,7 @@ class AgentRuntime:
             job_id=job_id,
             action=action,
             event_cursor=event_cursor,
+            turn_id=self._job_turn_id(job),
         )
         return AgentUpdate(
             project_id=project_id,
@@ -252,7 +413,45 @@ class AgentRuntime:
             action=action,
             status=str(job.get("status", "queued")),
             view=view,
+            turn_id=self._active.turn_id,
         )
+
+    def _load_turn(self, project_id: str, turn_id: str | None) -> TurnRecord | None:
+        if turn_id is None:
+            return None
+        try:
+            try:
+                store = self.agent.store(project_id, lock_timeout=0)
+            except TypeError:
+                # Compatibility for small in-memory orchestrator test doubles.
+                store = self.agent.store(project_id)
+            return store.load(turn_id)
+        except PCBDraftError as exc:
+            if "resource is locked by another runtime process" in str(exc):
+                return None
+            raise
+
+    @staticmethod
+    def _job_turn_id(job: dict[str, Any]) -> str | None:
+        args = job.get("args")
+        turn_id = args.get("turn_id") if isinstance(args, dict) else None
+        if isinstance(turn_id, str):
+            return turn_id
+        result = job.get("result")
+        turn_id = result.get("turn_id") if isinstance(result, dict) else None
+        return turn_id if isinstance(turn_id, str) else None
+
+    @staticmethod
+    def _job_turn_status(job: dict[str, Any]) -> str | None:
+        result = job.get("result")
+        status = result.get("turn_status") if isinstance(result, dict) else None
+        return status if isinstance(status, str) else None
+
+    @staticmethod
+    def _job_pending_approval(job: dict[str, Any]) -> dict[str, Any] | None:
+        result = job.get("result")
+        approval = result.get("pending_approval") if isinstance(result, dict) else None
+        return approval if isinstance(approval, dict) else None
 
     def _assert_idle(self) -> None:
         if self._active is not None:

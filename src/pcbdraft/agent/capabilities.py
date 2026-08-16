@@ -15,18 +15,18 @@ class AgentCapability:
     """One explicit action exposed by the interactive agent runtime."""
 
     name: str
-    job_action: str
+    tool_name: str
     label: str
 
 
 AGENT_CAPABILITIES = (
-    AgentCapability("confirm", "confirm", "Generate reviewed PCB"),
+    AgentCapability("confirm", "generate_candidate", "Generate reviewed PCB"),
     AgentCapability("validate", "validate", "Run PCB validation"),
-    AgentCapability("apply_change", "apply_change", "Apply reviewed change"),
-    AgentCapability("discard_change", "discard_change", "Discard staged change"),
-    AgentCapability("undo", "undo", "Undo last semantic change"),
-    AgentCapability("release", "release", "Build release evidence"),
-    AgentCapability("previews", "previews", "Render board previews"),
+    AgentCapability("apply_change", "apply_candidate", "Apply reviewed change"),
+    AgentCapability("discard_change", "discard_candidate", "Discard staged change"),
+    AgentCapability("undo", "undo_last_change", "Undo last semantic change"),
+    AgentCapability("release", "build_release", "Build release evidence"),
+    AgentCapability("previews", "render_previews", "Render board previews"),
 )
 
 _CAPABILITIES_BY_NAME = {

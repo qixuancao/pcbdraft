@@ -33,6 +33,7 @@ MAX_MODEL_SCHEMA_BYTES = 512 * 1024
 MAX_MODEL_REQUEST_BYTES = 3 * 1024 * 1024
 MAX_MODEL_ATTEMPTS = 3
 MAX_RETRY_AFTER_SECONDS = 300.0
+_RESPONSES_TOOL_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 
 
 def validate_provider_base_url(value: str) -> urllib.parse.SplitResult:
@@ -297,6 +298,7 @@ class OpenAICompatibleSettings:
             ),
             "config": self.source,
             "provider_protocol": "openai-chat-completions",
+            "agent_protocol": profile.agent_protocol,
             "structured_output": profile.output_mode,
             "planning": "structured circuit plan over installed KiCad symbols",
         }
@@ -391,10 +393,19 @@ class StructuredModelClient:
         return jittered_backoff(attempt)
 
     def _read_with_retries(
-        self, request: urllib.request.Request, *, timeout: float
+        self,
+        request: urllib.request.Request,
+        *,
+        timeout: float,
+        max_attempts: int = MAX_MODEL_ATTEMPTS,
     ) -> tuple[bytes, int]:
+        if (
+            isinstance(max_attempts, bool)
+            or not 1 <= max_attempts <= MAX_MODEL_ATTEMPTS
+        ):
+            raise ValidationError("model transport attempts are out of bounds")
         deadline = time.monotonic() + timeout
-        for attempt in range(1, MAX_MODEL_ATTEMPTS + 1):
+        for attempt in range(1, max_attempts + 1):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ModelTransportError(
@@ -425,7 +436,7 @@ class StructuredModelClient:
                 error = _http_transport_error(exc.code, attempt)
                 retry_after = parse_retry_after_seconds(exc.headers)
                 exc.close()
-                if not error.retryable or attempt >= MAX_MODEL_ATTEMPTS:
+                if not error.retryable or attempt >= max_attempts:
                     raise error from exc
                 delay = self._retry_delay(attempt, retry_after)
                 if delay >= deadline - time.monotonic():
@@ -433,15 +444,13 @@ class StructuredModelClient:
                 self._sleep(delay)
             except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
                 error = _network_transport_error(exc, attempt)
-                if not error.retryable or attempt >= MAX_MODEL_ATTEMPTS:
+                if not error.retryable or attempt >= max_attempts:
                     raise error from exc
                 delay = self._retry_delay(attempt, None)
                 if delay >= deadline - time.monotonic():
                     raise error from exc
                 self._sleep(delay)
-        raise ModelTransportError(
-            "network", attempts=MAX_MODEL_ATTEMPTS, retryable=True
-        )
+        raise ModelTransportError("network", attempts=max_attempts, retryable=True)
 
     def request(
         self,
@@ -536,6 +545,160 @@ class StructuredModelClient:
             "output_schema": schema_name,
         }
         return value, receipt
+
+
+@dataclass(frozen=True)
+class ResponsesFunctionCall:
+    """One locally validated function call returned by the Responses API."""
+
+    call_id: str
+    name: str
+    arguments: dict[str, Any]
+
+
+class OpenAIResponsesClient(StructuredModelClient):
+    """Bounded client for one native OpenAI Responses function-call decision.
+
+    This deliberately implements only the small protocol surface the PCB agent
+    needs.  It does not execute a function and never receives filesystem or
+    application-service authority.
+    """
+
+    def __init__(self, settings: OpenAICompatibleSettings) -> None:
+        super().__init__(settings)
+        self.endpoint = self.settings.base_url.rstrip("/") + "/responses"
+
+    def request_tool_call(
+        self,
+        *,
+        instructions: str,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        tool_choice: str | dict[str, Any],
+        timeout: float,
+    ) -> tuple[ResponsesFunctionCall | None, dict[str, Any]]:
+        """Request zero or one strict function call and reject loose envelopes."""
+
+        if isinstance(timeout, bool) or timeout <= 0 or timeout > 1800:
+            raise ValidationError("model timeout must be in (0, 1800] seconds")
+        if not isinstance(instructions, str) or not instructions.strip():
+            raise ValidationError("Responses instructions must be non-empty text")
+        document = {
+            "model": self.settings.model,
+            "instructions": instructions,
+            "input": input_items,
+            "tools": tools,
+            "tool_choice": tool_choice,
+            "parallel_tool_calls": False,
+            "max_output_tokens": 2048,
+            "store": False,
+        }
+        try:
+            body = json.dumps(
+                document,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+            raise ValidationError("Responses request is not strict JSON") from exc
+        if len(body) > MAX_MODEL_REQUEST_BYTES:
+            raise ValidationError("Responses request exceeds 3 MiB")
+        request = urllib.request.Request(  # noqa: S310 - URL was strictly validated
+            self.endpoint,
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.settings.credential()}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Accept-Encoding": "identity",
+                "User-Agent": f"PCBDraft/{__version__}",
+            },
+        )
+        started = time.monotonic()
+        # A router decision has its own durable dispatch journal. Retrying this
+        # POST inside the transport would bypass that exactly-once boundary.
+        payload, attempts = self._read_with_retries(
+            request, timeout=timeout, max_attempts=1
+        )
+        duration = time.monotonic() - started
+        try:
+            envelope = _strict_json_loads(payload)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValidationError("Responses API returned invalid JSON") from exc
+        if not isinstance(envelope, dict):
+            raise ValidationError("Responses API returned an invalid response envelope")
+        status = envelope.get("status")
+        if not isinstance(status, str):
+            raise ValidationError("Responses API response status is malformed")
+        if status != "completed":
+            raise PCBDraftError("model did not complete the tool-selection response")
+        response_id = envelope.get("id")
+        if (
+            not isinstance(response_id, str)
+            or not response_id
+            or len(response_id) > 256
+            or any(ord(character) < 32 for character in response_id)
+        ):
+            raise ValidationError("Responses API response id is invalid")
+        output = envelope.get("output")
+        if not isinstance(output, list):
+            raise ValidationError("Responses API output is malformed")
+        raw_calls = [
+            item
+            for item in output
+            if isinstance(item, dict) and item.get("type") == "function_call"
+        ]
+        if len(raw_calls) > 1:
+            raise ValidationError("model returned more than one PCB tool call")
+        call = self._decode_function_call(raw_calls[0]) if raw_calls else None
+        if tool_choice == "required" and call is None:
+            raise ValidationError("model omitted a required PCB tool call")
+        receipt = {
+            "completed": True,
+            "provider": self.settings.provider_id,
+            "provider_name": self.settings.provider_name,
+            "model": self.settings.model,
+            "config": self.settings.source,
+            "duration_seconds": round(duration, 6),
+            "attempts": attempts,
+            "provider_protocol": "openai-responses",
+            "response_id": response_id,
+            "prompt_persisted": False,
+            "credential_persisted": False,
+            "parallel_tool_calls": False,
+        }
+        return call, receipt
+
+    @staticmethod
+    def _decode_function_call(value: dict[str, Any]) -> ResponsesFunctionCall:
+        call_id = value.get("call_id")
+        name = value.get("name")
+        encoded_arguments = value.get("arguments")
+        if (
+            not isinstance(call_id, str)
+            or not call_id
+            or len(call_id) > 256
+            or any(ord(character) < 32 for character in call_id)
+        ):
+            raise ValidationError("Responses function call id is invalid")
+        if not isinstance(name, str) or _RESPONSES_TOOL_NAME.fullmatch(name) is None:
+            raise ValidationError("Responses function name is invalid")
+        if (
+            not isinstance(encoded_arguments, str)
+            or len(encoded_arguments.encode("utf-8")) > 256 * 1024
+        ):
+            raise ValidationError("Responses function arguments are invalid")
+        try:
+            arguments = _strict_json_loads(encoded_arguments)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValidationError(
+                "Responses function arguments are invalid JSON"
+            ) from exc
+        if not isinstance(arguments, dict):
+            raise ValidationError("Responses function arguments must be an object")
+        return ResponsesFunctionCall(call_id=call_id, name=name, arguments=arguments)
 
 
 def configured_model_client() -> StructuredModelClient:

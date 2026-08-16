@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.agent.events import AgentActivity, AgentUpdate
+from pcbdraft.agent.permissions import PermissionMode
 from pcbdraft.agent.runtime import AgentRuntime
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.interfaces.tui.commands import command_suggestions
@@ -35,7 +36,7 @@ _PROVIDER_NAMES = (
 
 
 def _project_name_from_request(request: str) -> str:
-    """Make a short local draft name without asking a provider a second time."""
+    """Derive a short local project label without another model round trip."""
 
     text = " ".join(request.split())
     text = re.sub(
@@ -54,6 +55,7 @@ class TuiController:
     service: ApplicationService
     runtime: AgentRuntime | None = None
     session_store: TuiSessionStore | None = None
+    startup_project_picker: bool = False
     timeout: float = 420.0
     project_id: str | None = None
     view: dict[str, Any] | None = None
@@ -67,12 +69,14 @@ class TuiController:
     active_job_status: str = ""
     logs_expanded: bool = False
     pending_user_text: str = ""
+    pending_approval: dict[str, Any] | None = None
     pending_provider_id: str = ""
     _provider_details: dict[str, Any] = field(default_factory=dict, init=False)
 
     def __post_init__(self) -> None:
         self._refresh_provider_diagnostic()
         resumed = False
+        recovered: str | None = None
         self.projects = self.service.list_projects()
         if self.project_id is None and self.session_store is not None:
             recovered = self.session_store.load_project_id(
@@ -82,20 +86,33 @@ class TuiController:
                     if isinstance(item, dict) and isinstance(item.get("id"), str)
                 }
             )
-            if recovered is not None:
+            if recovered is not None and not self.startup_project_picker:
                 self.project_id = recovered
                 resumed = True
         if self.project_id:
             self._restore_project(resumed=resumed)
+        elif self.startup_project_picker and self.projects:
+            self.mode = "project_picker"
+            self.picker_index = next(
+                (
+                    index
+                    for index, item in enumerate(self.projects)
+                    if item.get("id") == recovered
+                ),
+                0,
+            )
+            self.notice = "Choose a project to continue, or create a new project."
         else:
-            if getattr(self.service, "repository_configured_now", False):
-                root = getattr(self.service, "root", None)
-                self.notice = (
-                    f"PCB project repository initialized at {root}. "
-                    "Describe a board to begin, or type / for commands."
-                )
-            else:
-                self.notice = "Describe a board to begin, or type / for commands."
+            root = getattr(self.service, "root", None)
+            repository_notice = (
+                f"PCB project repository: {root}. "
+                if isinstance(root, Path)
+                and getattr(self.service, "repository_configured_now", False)
+                else ""
+            )
+            self.notice = (
+                repository_notice + "Describe a board to begin, or type / for commands."
+            )
 
     @property
     def provider_name(self) -> str:
@@ -110,13 +127,20 @@ class TuiController:
             if isinstance(display_name, str) and display_name
             else provider_id
         )
+        from pcbdraft.model.tool_calls import provider_agent_protocol
+
+        router = (
+            "Responses router"
+            if provider_agent_protocol(provider) == "native-responses"
+            else "local router"
+        )
         if isinstance(model, str) and model:
-            return f"{provider_label} / {model}"
+            return f"{provider_label} / {model} · {router}"
         if model is False:
-            return f"{provider_id} / no planning model"
+            return f"{provider_id} / no planning model · {router}"
         if provider_id == "builtin":
-            return "builtin / offline"
-        return f"{provider_id} / model not reported"
+            return f"builtin / offline · {router}"
+        return f"{provider_id} / model not reported · {router}"
 
     @property
     def provider_status(self) -> str:
@@ -131,8 +155,6 @@ class TuiController:
     def input_label(self) -> str:
         if self.mode == "new_name":
             return "Project name"
-        if self.mode == "new_request":
-            return "Board request"
         return "Message"
 
     @property
@@ -160,7 +182,7 @@ class TuiController:
         self.error = ""
         if self.project_id is None:
             self.projects = self.service.list_projects()
-            self.notice = "No project selected. Describe a board or use /new."
+            self.notice = "No project selected. Describe a board or use /projects."
             return
         try:
             self._set_view(self.service.open_project(self.project_id))
@@ -169,10 +191,18 @@ class TuiController:
             self.error = str(exc)
 
     def begin_new(self, name: str | None = None) -> None:
+        """Open the lightweight project-folder creation flow.
+
+        Project creation is intentionally separate from the first board request:
+        it only creates a named local folder and conversation record.  The user
+        can then describe the board in the normal composer after the project is
+        open.
+        """
+
         self.error = ""
         self.new_name = (name or "").strip()
-        self.mode = "new_request"
-        self.notice = "Describe the board to build."
+        self.mode = "new_name"
+        self.notice = "Choose a name for the new project folder."
 
     def show_projects(self) -> None:
         self.error = ""
@@ -187,9 +217,12 @@ class TuiController:
                 0,
             )
             self.picker_index = max(0, min(current, len(self.projects) - 1))
-            self.mode = "project_picker"
         else:
-            self.notice = "No local projects yet. Describe a board or use /new."
+            self.picker_index = 0
+            self.notice = (
+                "No projects yet. Close this list and describe a board to begin."
+            )
+        self.mode = "project_picker"
 
     def move_picker(self, delta: int) -> None:
         if self.mode != "project_picker" or not self.projects:
@@ -232,7 +265,7 @@ class TuiController:
             self.mode = "message"
             self.pending_provider_id = ""
             self.notice = "Model setup closed."
-        elif self.mode in {"new_name", "new_request"}:
+        elif self.mode == "new_name":
             self.mode = "message"
             self.new_name = ""
             self.notice = "New project cancelled."
@@ -258,28 +291,23 @@ class TuiController:
                     "before sending another request."
                 )
             return "continue"
+        if clean.casefold() in {"quit", "exit"}:
+            return "quit"
+        # A pending new-project prompt must not turn control commands into the
+        # first board request. This previously made `/quit` create a project
+        # literally named "/quit" after `/new`.
+        if clean.startswith("/") and self.mode == "new_name":
+            return self._command(clean)
         if self.mode == "new_name":
             if not clean:
                 self.error = "Project name cannot be empty."
                 return "continue"
-            self.new_name = clean
-            self.mode = "new_request"
-            self.error = ""
-            self.notice = "Now describe the board, parts, interfaces, and constraints."
-            return "continue"
-        if self.mode == "new_request":
-            if not clean:
-                self.error = "A board request cannot be empty."
-                return "continue"
-            return self._create_project(clean)
+            return self.create_named_project(clean)
         if not clean:
             return "continue"
-        if clean.casefold() in {"quit", "exit"}:
-            return "quit"
         if clean.startswith("/"):
             return self._command(clean)
         if self.project_id is None:
-            self.begin_new(_project_name_from_request(clean))
             return self._create_project(clean)
         if self.runtime is not None:
             try:
@@ -314,6 +342,8 @@ class TuiController:
         if name == "new":
             self.begin_new()
             return "continue"
+        if name == "project":
+            return self._project_repository("")
         if name == "projects":
             self.show_projects()
             return "continue"
@@ -365,6 +395,23 @@ class TuiController:
                 self.error = str(exc)
             return "continue"
         if name == "confirm":
+            if self.pending_approval is not None and self.runtime is not None:
+                try:
+                    self._start_update(
+                        self.runtime.resolve_pending(
+                            self.project_id or "",
+                            checkpoint=self.pending_approval,
+                            approve=True,
+                            timeout=min(self.timeout, 1_800.0),
+                        )
+                    )
+                    self.pending_approval = None
+                    self.notice = (
+                        "Approved this exact PCB tool call; resuming the turn."
+                    )
+                except PCBDraftError as exc:
+                    self.error = str(exc)
+                return "continue"
             status = self._project_status()
             if status == "awaiting_confirmation":
                 self._run_project_action(
@@ -400,6 +447,25 @@ class TuiController:
             )
             return "continue"
         if name == "discard":
+            if self.pending_approval is not None and self.runtime is not None:
+                try:
+                    update = self.runtime.resolve_pending(
+                        self.project_id or "",
+                        checkpoint=self.pending_approval,
+                        approve=False,
+                        timeout=min(self.timeout, 1_800.0),
+                    )
+                    if update.view is not None:
+                        self._set_view(update.view)
+                    self.pending_approval = None
+                    self.active_job_status = update.status
+                    self.error = ""
+                    self.notice = (
+                        "Rejected the pending PCB tool; no effect was applied."
+                    )
+                except PCBDraftError as exc:
+                    self.error = str(exc)
+                return "continue"
             self._run_project_action(
                 "discard_change",
                 "Discarding the staged semantic change",
@@ -418,7 +484,38 @@ class TuiController:
         self.error = f"Unknown terminal action: {name}"
         return "continue"
 
+    def create_named_project(self, name: str | None = None) -> str:
+        """Create a draft project folder without sending an agent request."""
+
+        clean_name = (name or self.new_name).strip()
+        if not clean_name:
+            self.error = "Project name cannot be empty."
+            return "continue"
+        self.error = ""
+        try:
+            draft = self.service.create_draft(clean_name)
+            if not isinstance(draft, dict):
+                raise ValidationError("application returned an invalid project draft")
+            if isinstance(draft.get("conversation"), dict):
+                self._set_view(draft)
+            else:
+                project = draft.get("project", {})
+                project_id = project.get("id") if isinstance(project, dict) else None
+                if not isinstance(project_id, str):
+                    raise ValidationError("application did not return a project id")
+                self._set_view(self.service.open_project(project_id))
+            self.mode = "message"
+            self.new_name = ""
+            self.notice = (
+                "Project folder created. Describe the board when you are ready."
+            )
+        except PCBDraftError as exc:
+            self.error = str(exc)
+        return "continue"
+
     def _create_project(self, request: str) -> str:
+        """Start a project and its first agent turn from one natural-language message."""
+
         name = self.new_name or _project_name_from_request(request)
         self.error = ""
         if self.runtime is not None:
@@ -428,6 +525,7 @@ class TuiController:
                 self.pending_user_text = request
                 self.mode = "message"
                 self.new_name = ""
+                self.notice = "Agent turn started."
             except PCBDraftError as exc:
                 self.error = str(exc)
             return "continue"
@@ -445,9 +543,7 @@ class TuiController:
                 self._set_view(
                     self.service.confirm_project(project_id, timeout=self.timeout)
                 )
-                self.notice = "Project created; generation and checks completed."
-            else:
-                self.notice = "Project created."
+            self.notice = "Agent turn completed."
             self.mode = "message"
             self.new_name = ""
         except PCBDraftError as exc:
@@ -463,6 +559,8 @@ class TuiController:
         if command == "new":
             self.begin_new(argument or None)
             return "continue"
+        if command == "project":
+            return self._project_repository(argument)
         if command == "projects":
             return self.action("projects")
         if command == "open":
@@ -499,6 +597,55 @@ class TuiController:
         if command == "quit":
             return self.action("quit")
         self.error = "Unknown command. Type / for the command list."
+        return "continue"
+
+    def _project_repository(self, directory: str) -> str:
+        """Show or switch the persistent repository used for future projects."""
+
+        if self.is_busy:
+            self.error = "Stop the active turn before changing the project repository."
+            return "continue"
+        if not directory:
+            root = getattr(self.service, "root", None)
+            projects_root = getattr(self.service, "projects_root", None)
+            if not isinstance(root, Path) or not isinstance(projects_root, Path):
+                self.error = (
+                    "This terminal client cannot report its project repository."
+                )
+                return "continue"
+            self.error = ""
+            self.notice = (
+                f"PCB project repository: {root} (projects: {projects_root}). "
+                "Use /project /path/to/repository to change it."
+            )
+            return "continue"
+        set_repository = getattr(self.service, "set_repository", None)
+        if not callable(set_repository):
+            self.error = "This terminal client cannot change its project repository."
+            return "continue"
+        try:
+            repository = set_repository(directory)
+            root = getattr(repository, "root", None)
+            if not isinstance(root, Path):
+                raise ValidationError("application did not return a project repository")
+            self.project_id = None
+            self.view = None
+            self.projects = self.service.list_projects()
+            self.picker_index = 0
+            self.activities = []
+            self.active_job_status = ""
+            self.pending_user_text = ""
+            self.pending_approval = None
+            self.mode = "message"
+            self.new_name = ""
+            self.session_store = TuiSessionStore(root)
+            self.error = ""
+            self.notice = (
+                f"PCB project repository changed to {root}. "
+                "Existing projects were left in their original repository."
+            )
+        except PCBDraftError as exc:
+            self.error = str(exc)
         return "continue"
 
     def show_provider_picker(self) -> None:
@@ -628,18 +775,25 @@ class TuiController:
         if update is None:
             return False
         self.active_job_status = update.status
+        self.pending_approval = update.pending_approval
         if update.activities:
             self.activities.extend(update.activities)
             self.activities = self.activities[-80:]
         if update.view is not None:
             try:
-                self._set_view(update.view)
+                self._set_view(update.view, refresh_projects=update.terminal)
             except PCBDraftError as exc:
                 self.error = str(exc)
         if not update.terminal:
             return bool(update.activities)
         self.pending_user_text = ""
-        if update.status == "failed":
+        if update.turn_status == "waiting_approval":
+            self.error = ""
+            self.notice = (
+                "This turn needs approval for one exact PCB write. "
+                "Inspect /review, then use /confirm or /discard."
+            )
+        elif update.status == "failed":
             self.error = update.error or "The agent turn failed."
             self.notice = ""
         elif update.status == "cancelled":
@@ -683,12 +837,15 @@ class TuiController:
         return "continue"
 
     def _start_update(self, update: AgentUpdate) -> None:
+        previous_project_id = self.project_id
         if update.view is not None:
             self._set_view(update.view)
         else:
             self.project_id = update.project_id
-        self.activities = []
+        if previous_project_id != update.project_id:
+            self.activities = []
         self.active_job_status = update.status
+        self.pending_approval = update.pending_approval
         self.error = ""
         self.notice = (
             "Agent turn started. Unspecified implementation details are automatic."
@@ -728,13 +885,16 @@ class TuiController:
         except Exception as exc:  # noqa: BLE001 - keep the terminal usable
             self.error = f"Unexpected terminal action failure: {type(exc).__name__}"
 
-    def _set_view(self, value: dict[str, Any]) -> None:
+    def _set_view(
+        self, value: dict[str, Any], *, refresh_projects: bool = True
+    ) -> None:
         project = value.get("project")
         if not isinstance(project, dict) or not isinstance(project.get("id"), str):
             raise ValidationError("application view has no valid project identity")
         self.view = value
         self.project_id = project["id"]
-        self.projects = self.service.list_projects()
+        if refresh_projects:
+            self.projects = self.service.list_projects()
         if self.session_store is not None:
             try:
                 self.session_store.save_project_id(self.project_id)
@@ -749,6 +909,7 @@ class TuiController:
                     self._set_view(update.view)
                 self.activities = list(update.activities[-80:])
                 self.active_job_status = update.status
+                self.pending_approval = update.pending_approval
                 if update.status in {"failed", "interrupted", "cancelled"}:
                     self.notice = (
                         "Recovered the previous session; its last job did not finish. "
@@ -800,6 +961,7 @@ def run_tui_command(
     provider: str,
     project_id: str | None,
     timeout: float,
+    approval_mode: PermissionMode = "workspace",
 ) -> int:
     """Launch the default full-screen Textual terminal interface."""
 
@@ -818,12 +980,13 @@ def run_tui_command(
     from pcbdraft.interfaces.tui.app import PCBDraftApp
 
     service = ApplicationService(workspace, provider_name=provider)
-    runtime = AgentRuntime(service)
+    runtime = AgentRuntime(service, permission_mode=approval_mode)
     session_store = TuiSessionStore(service.root)
     controller = TuiController(
         service=service,
         runtime=runtime,
         session_store=session_store,
+        startup_project_picker=project_id is None,
         timeout=timeout,
         project_id=project_id,
     )

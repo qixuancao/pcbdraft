@@ -1,18 +1,24 @@
+/*
+   PCBDraft's semantic theme mirrors the copper-and-solder palette used by the
+   brand mark and web UI. Copper identifies actions, green carries navigation,
+   and success / warning / error retain distinct state colors.
+*/
+
 Screen {
-    background: #0a0d11;
-    color: #d9dde3;
+    background: $pcb-background;
+    color: $pcb-text;
 }
 
 #agent-header {
     height: 2;
     padding: 0 2;
-    background: #0d1116;
-    border-bottom: solid #252c34;
+    background: $pcb-surface;
+    border-bottom: solid $pcb-border;
 }
 
 #main-area {
     height: 1fr;
-    background: #0a0d11;
+    background: $pcb-background;
 }
 
 #transcript {
@@ -20,12 +26,13 @@ Screen {
     height: 1fr;
     padding: 1 3;
     scrollbar-size-vertical: 1;
-    scrollbar-color: #353e49;
-    scrollbar-color-hover: #5a6674;
-    scrollbar-background: #0a0d11;
+    scrollbar-color: $scrollbar;
+    scrollbar-color-hover: $scrollbar-hover;
+    scrollbar-background: $pcb-background;
 }
 
-#transcript-content {
+#transcript-content,
+#rail-content {
     width: 1fr;
     height: auto;
 }
@@ -35,30 +42,25 @@ Screen {
     min-width: 32;
     height: 1fr;
     padding: 1 2;
-    background: #0d1116;
-    border-left: solid #252c34;
+    background: $pcb-surface;
+    border-left: solid $pcb-border;
     scrollbar-size-vertical: 1;
-    scrollbar-color: #353e49;
-    scrollbar-background: #0d1116;
-}
-
-#rail-content {
-    width: 1fr;
-    height: auto;
+    scrollbar-color: $scrollbar;
+    scrollbar-background: $pcb-surface;
 }
 
 #composer {
     height: 4;
     padding: 0 2;
-    background: #0a0d11;
+    background: $pcb-background;
 }
 
 #composer-surface {
     height: 4;
     padding: 0 1;
-    background: #141920;
-    border-left: thick #e2a06b;
-    border-bottom: solid #0d1116;
+    background: $pcb-panel;
+    border-left: thick $pcb-brand;
+    border-bottom: solid $pcb-border;
 }
 
 #composer-row {
@@ -69,7 +71,7 @@ Screen {
     width: 2;
     height: 1;
     margin-top: 1;
-    color: #e2a06b;
+    color: $pcb-brand;
     text-style: bold;
 }
 
@@ -79,28 +81,28 @@ Screen {
     margin-top: 1;
     padding: 0;
     border: none;
-    background: #141920;
-    color: #eef0f3;
+    background: $pcb-panel;
+    color: $pcb-text-strong;
 }
 
 #composer-input:focus {
     border: none;
-    background: #141920;
+    background: $pcb-panel;
 }
 
 #composer-input > .input--cursor {
-    background: #f0b47e;
-    color: #11151a;
+    background: $input-cursor-background;
+    color: $input-cursor-foreground;
     text-style: bold;
 }
 
 #composer-input > .input--placeholder {
-    color: #636d7a;
+    color: $pcb-text-muted;
 }
 
 #composer-input > .input--selection {
-    background: #74543c;
-    color: #ffffff;
+    background: $pcb-input-selection;
+    color: $pcb-text-strong;
 }
 
 #composer-meta {
@@ -110,63 +112,69 @@ Screen {
 #composer-label {
     width: auto;
     height: 1;
-    color: #b27d57;
+    color: $pcb-brand;
     text-style: bold;
 }
 
 #composer-hint {
     width: 1fr;
     height: 1;
-    color: #626b78;
+    color: $pcb-text-muted;
     text-align: right;
 }
 
 #composer.palette-open #composer-surface {
-    border-left: thick #f0b47e;
+    border-left: thick $pcb-brand-soft;
 }
 
 #composer.palette-open #composer-hint {
-    color: #9ba3ae;
+    color: $pcb-text;
 }
 
 #composer.leader-active #composer-surface {
-    border-left: thick #7db6d8;
+    border-left: thick $pcb-blue;
 }
 
 #composer.leader-active #composer-hint {
-    color: #a9cbe0;
+    color: $pcb-blue-soft;
 }
 
 #composer.composer-busy #composer-surface {
-    border-left: thick #d9b968;
+    border-left: thick $pcb-warning;
 }
 
 #composer.composer-busy #composer-prompt,
 #composer.composer-busy #composer-label {
-    color: #d9b968;
+    color: $pcb-warning;
+}
+
+#composer.compact #composer-hint {
+    display: none;
 }
 
 #notice-bar {
-    height: 1;
+    height: auto;
+    min-height: 1;
+    max-height: 3;
     padding: 0 3;
-    background: #0a0d11;
-    color: #747d89;
+    background: $pcb-background;
+    color: $pcb-text-soft;
 }
 
 #notice-bar.notice-error {
-    background: #241417;
-    color: #ef9294;
+    background: $pcb-error-surface;
+    color: $pcb-error;
 }
 
 #notice-bar.notice-busy {
-    color: #d9b968;
+    color: $pcb-warning;
 }
 
 #app-footer {
     height: 1;
     padding: 0 2;
-    background: #080a0d;
-    color: #646d79;
+    background: $pcb-surface;
+    color: $pcb-text-muted;
 }
 
 #command-palette {
@@ -177,38 +185,40 @@ Screen {
     max-height: 12;
     margin: 0 3 6 3;
     padding: 0;
-    background: #171c23;
-    border: round #3a444f;
+    background: $pcb-panel;
+    border: round $pcb-border-strong;
     scrollbar-size-vertical: 1;
-    scrollbar-color: #56616e;
-    scrollbar-background: #171c23;
+    scrollbar-color: $scrollbar;
+    scrollbar-background: $pcb-panel;
 }
 
 #command-palette > .option-list--option {
     padding: 0 1;
-    color: #858e9a;
+    color: $pcb-text-soft;
 }
 
 #command-palette > .option-list--option-highlighted {
     padding: 0 1;
-    background: #493727;
-    color: #f4f1ed;
+    background: $pcb-selection;
+    color: $pcb-text-strong;
     text-style: bold;
 }
 
 #command-palette > .option-list--option-hover {
-    background: #242b34;
+    background: $pcb-selection-hover;
 }
 
 ProjectPickerScreen,
+NewProjectScreen,
 CommandPickerScreen,
 ProviderPickerScreen,
 ProviderConnectScreen,
 ModelPickerScreen,
 ReviewScreen,
+ProjectDetailsScreen,
 HelpScreen {
     align: center middle;
-    background: #06080b 84%;
+    background: $pcb-background-deep 88%;
 }
 
 .modal-card {
@@ -217,37 +227,92 @@ HelpScreen {
     height: 75%;
     max-height: 34;
     padding: 1 2;
-    background: #131820;
-    border: round #3d4854;
+    background: $pcb-panel-raised;
+    border: round $pcb-border-strong;
 }
 
 #project-picker-card {
+    width: 78;
+    max-width: 94%;
+    height: 22;
+    min-height: 16;
+    max-height: 90%;
+}
+
+#project-picker-heading {
+    height: 1;
+}
+
+ProjectPickerScreen.compact-picker .modal-subtitle {
+    display: none;
+}
+
+#project-details-card {
+    width: 70;
+    max-width: 94%;
+    height: 88%;
+    max-height: 42;
+}
+
+#project-details-rail {
+    width: 1fr;
+    height: 1fr;
+    padding: 1 2;
+    background: $pcb-background;
+    border: solid $pcb-border;
+    scrollbar-size-vertical: 1;
+    scrollbar-color: $scrollbar;
+    scrollbar-background: $pcb-background;
+}
+
+.new-project-card {
+    width: 88;
     height: auto;
-    min-height: 12;
-    max-height: 30;
+    max-height: 92%;
+}
+
+NewProjectScreen.compact-modal .modal-subtitle,
+NewProjectScreen.compact-modal .form-note,
+NewProjectScreen.compact-modal .modal-hint {
+    display: none;
+}
+
+NewProjectScreen.compact-modal .field-label {
+    margin-top: 0;
+}
+
+NewProjectScreen.compact-modal .form-error {
+    height: 1;
+}
+
+NewProjectScreen.compact-modal .modal-actions {
+    height: 3;
+    padding-top: 0;
 }
 
 .modal-title {
-    height: 2;
-    color: #eef0f3;
+    height: 1;
+    color: $pcb-text-strong;
     text-style: bold;
 }
 
 .modal-subtitle {
     height: 2;
-    color: #858e9a;
+    color: $pcb-text-soft;
 }
 
 .modal-hint {
-    height: 1;
-    color: #646d79;
+    height: auto;
+    min-height: 1;
+    max-height: 2;
+    color: $pcb-text-muted;
     text-align: right;
 }
 
 .modal-card OptionList {
     scrollbar-size-vertical: 1;
-    scrollbar-color: #505c69;
-    scrollbar-color-hover: #6b7887;
+    scrollbar-color: $scrollbar;
+    scrollbar-color-hover: $scrollbar-hover;
 }
 
 .modal-card OptionList > .option-list--option {
@@ -256,9 +321,13 @@ HelpScreen {
 
 .modal-card OptionList:focus > .option-list--option-highlighted,
 .modal-card OptionList > .option-list--option-highlighted {
-    color: #f5f1ed;
-    background: #493727;
+    color: $pcb-text-strong;
+    background: $pcb-selection;
     text-style: bold;
+}
+
+.modal-card OptionList > .option-list--option-hover {
+    background: $pcb-selection-hover;
 }
 
 #projects-list,
@@ -268,10 +337,27 @@ HelpScreen {
 #review-scroll,
 #help-scroll {
     height: 1fr;
-    background: #0d1218;
-    border: solid #29313a;
-    scrollbar-color: #444f5b;
-    scrollbar-background: #0d1218;
+    background: $pcb-background;
+    border: solid $pcb-border;
+    scrollbar-color: $scrollbar;
+    scrollbar-background: $pcb-background;
+}
+
+#projects-list {
+    min-height: 4;
+    margin-top: 1;
+}
+
+#projects-list:focus {
+    border: solid $pcb-border-strong;
+}
+
+#provider-form-scroll {
+    height: 1fr;
+    padding-right: 1;
+    scrollbar-size-vertical: 1;
+    scrollbar-color: $scrollbar;
+    scrollbar-background: $pcb-panel-raised;
 }
 
 .provider-picker-card,
@@ -287,8 +373,8 @@ HelpScreen {
 }
 
 .provider-form-card {
-    height: auto;
-    max-height: 34;
+    height: 90%;
+    max-height: 36;
 }
 
 .model-picker-card {
@@ -304,7 +390,7 @@ HelpScreen {
 .field-label {
     height: 1;
     margin-top: 1;
-    color: #a3aab4;
+    color: $pcb-text;
     text-style: bold;
 }
 
@@ -313,13 +399,15 @@ HelpScreen {
 #provider-api-key,
 #provider-id,
 #provider-name,
+#new-project-name,
+#project-filter,
 #model-filter,
 #command-filter {
     height: 3;
     margin-bottom: 0;
-    border: solid #333d48;
-    background: #0d1218;
-    color: #eef0f3;
+    border: solid $pcb-border;
+    background: $pcb-background;
+    color: $pcb-text-strong;
 }
 
 #provider-base-url:focus,
@@ -327,20 +415,26 @@ HelpScreen {
 #provider-api-key:focus,
 #provider-id:focus,
 #provider-name:focus,
+#new-project-name:focus,
+#project-filter:focus,
 #model-filter:focus,
 #command-filter:focus {
-    border: solid #b27d57;
+    border: solid $pcb-brand;
+}
+
+#empty-project-list {
+    color: $pcb-warning;
 }
 
 .form-note {
     height: auto;
     margin-top: 1;
-    color: #737c88;
+    color: $pcb-text-soft;
 }
 
 .form-error {
     height: 2;
-    color: #ef9294;
+    color: $pcb-error;
 }
 
 .modal-actions {
@@ -352,20 +446,39 @@ HelpScreen {
 .modal-actions Button {
     min-width: 16;
     margin-left: 1;
+    background: $pcb-panel;
+    color: $pcb-text;
+    border: none;
 }
 
 .modal-actions Button:focus {
+    background: $pcb-selection;
+    color: $pcb-text-strong;
     text-style: bold;
+}
+
+#create-project,
+#review-confirm {
+    background: $pcb-brand;
+    color: $pcb-background;
+    text-style: bold;
+}
+
+#create-project:focus,
+#review-confirm:focus {
+    background: $pcb-brand-soft;
+    color: $pcb-background;
+}
+
+#review-discard {
+    color: $pcb-warning;
 }
 
 #model-connect {
     min-width: 20;
 }
 
-#models-list {
-    height: 1fr;
-}
-
+#models-list,
 #commands-list {
     height: 1fr;
 }

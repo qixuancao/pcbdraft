@@ -3,6 +3,7 @@ from __future__ import annotations
 import unittest
 from typing import Any
 
+from pcbdraft.agent.permissions import PermissionBroker
 from pcbdraft.agent.runtime import AgentRuntime
 from pcbdraft.agent.tools import run_design_turn
 from pcbdraft.core.errors import ValidationError
@@ -198,13 +199,16 @@ class AgentRuntimeTests(unittest.TestCase):
             ["pcb_requirements", "pcb_circuit_plan"],
         )
         self.assertEqual(update.activities[-1].state, "completed")
-        self.assertIsNone(update.view)
+        self.assertIsNotNone(update.view)
+        assert update.view is not None
+        self.assertEqual(update.view["project"]["status"], "draft")
 
         runner.job["status"] = "completed"
         service.views["board"] = _view("board", sequence=2, status="validated")
         completed = runtime.poll()
         assert completed is not None
         self.assertTrue(completed.terminal)
+        assert completed.view is not None
         self.assertEqual(completed.view["project"]["status"], "validated")
         self.assertFalse(runtime.active)
 
@@ -273,6 +277,36 @@ class AgentRuntimeTests(unittest.TestCase):
 
         self.assertEqual(service.calls, ["message", "confirm", "validate"])
         self.assertEqual(result["project"]["status"], "validated")
+
+    def test_legacy_agent_path_uses_read_only_permission_broker(self) -> None:
+        service = DispatchService()
+
+        with self.assertRaisesRegex(ValidationError, "read-only mode"):
+            run_design_turn(
+                service,  # type: ignore[arg-type]
+                "board",
+                "Build a small sensor board",
+                timeout=12.0,
+                cancellation_requested=lambda: False,
+                permissions=PermissionBroker("read_only"),
+            )
+
+        self.assertEqual(service.calls, [])
+
+    def test_legacy_review_mode_stops_before_authoritative_generation(self) -> None:
+        service = DispatchService()
+
+        with self.assertRaisesRegex(ValidationError, "review mode"):
+            run_design_turn(
+                service,  # type: ignore[arg-type]
+                "board",
+                "Build a small sensor board",
+                timeout=12.0,
+                cancellation_requested=lambda: False,
+                permissions=PermissionBroker("review"),
+            )
+
+        self.assertEqual(service.calls, ["message"])
 
     def test_agent_message_stops_before_generation_at_safe_boundary(self) -> None:
         service = DispatchService()

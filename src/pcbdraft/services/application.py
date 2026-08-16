@@ -19,6 +19,7 @@ from pcbdraft.agent.design import (
 )
 from pcbdraft.agent.repair import (
     normalize_repair_feedback,
+    user_revision_feedback,
     validation_feedback_from_levels,
 )
 from pcbdraft.core.errors import PCBDraftError, ValidationError
@@ -30,6 +31,7 @@ from pcbdraft.core.io import (
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.repository import (
     ProjectRepository,
+    configure_repository,
     current_repository,
     explicit_repository,
 )
@@ -247,16 +249,67 @@ class ApplicationService:
             repository = explicit_repository(default_application_home())
         else:
             repository = current_repository()
+        self._use_repository(repository)
+        self.provider = provider or resolve_provider(provider_name)
+        self._recover_interrupted_projects()
+
+    def set_repository(self, directory: str | Path) -> ProjectRepository:
+        """Persist and start using a new normal project repository.
+
+        This is intentionally unavailable for callers that supplied an explicit
+        workspace.  Those callers use an isolated automation location and must
+        restart without ``--workspace`` before changing the user's persistent
+        product repository.
+        """
+
+        if self.repository.source == "explicit":
+            raise ValidationError(
+                "this session uses an explicit workspace; restart PCBDraft without "
+                "--workspace before changing the persistent project repository"
+            )
+        repository = configure_repository(directory)
+        self._use_repository(repository)
+        self._recover_interrupted_projects()
+        return repository
+
+    def _use_repository(self, repository: ProjectRepository) -> None:
+        """Adopt an already validated repository without changing its pointer."""
+
         self.repository = repository
         self.root = repository.root
         self.repository_source = repository.source
         self.repository_configured_now = repository.configured_now
         self.projects_root = make_directory(self.root / "projects")
         self.locks_root = make_directory(self.root / "locks")
-        self.provider = provider or resolve_provider(provider_name)
-        self._recover_interrupted_projects()
+
+    @staticmethod
+    def _bind_expected_revision(
+        project: ApplicationProject,
+        expected_revision: int | None,
+        *,
+        operation: str,
+    ) -> int:
+        """Bind a mutation to the caller's snapshot before any expensive work."""
+
+        if expected_revision is None:
+            return int(project.state["revision"])
+        if (
+            isinstance(expected_revision, bool)
+            or not isinstance(expected_revision, int)
+            or expected_revision < 0
+        ):
+            raise ValidationError("expected project revision must be non-negative")
+        current_revision = int(project.state["revision"])
+        if current_revision != expected_revision:
+            raise ValidationError(
+                f"project changed before {operation}: expected revision "
+                f"{expected_revision}, current {current_revision}"
+            )
+        return expected_revision
 
     def diagnostics(self) -> dict[str, Any]:
+        from pcbdraft.model.tool_calls import provider_agent_protocol
+
         tools = doctor_report()
         kicad_config = Path.home() / ".config" / "kicad" / "10.0"
         library_tables = {
@@ -281,6 +334,13 @@ class ApplicationService:
             },
             "loopback_default": True,
             "provider": self.provider.diagnostic(),
+            "agent_orchestration": {
+                "router": provider_agent_protocol(self.provider),
+                "workflow": "local-evidence-policy",
+                "model_decisions_per_turn": 1,
+                "parallel_tool_calls": False,
+                "engineering_authority": "local registry, permissions, revision CAS, and validation gates",
+            },
             "tools": tools["tools"],
             "kicad_library_tables": library_tables,
             "ready_for_generation": tools["ok"] and libraries_ready,
@@ -379,6 +439,31 @@ class ApplicationService:
     def open_project(self, project_id: str) -> dict[str, Any]:
         return self._public_project(self._open(project_id))
 
+    def try_open_project_snapshot(
+        self, project_id: str, *, timeout: float = 0.0
+    ) -> dict[str, Any] | None:
+        """Read a self-consistent public view without blocking live UI polling.
+
+        Project records and managed design directories are updated under the
+        project lock.  A live client must use the same lock or it can otherwise
+        observe a conversation from one revision and state/design files from
+        another.  Returning ``None`` when the writer is busy lets callers keep
+        streaming events and retry on their next poll.
+        """
+
+        root = self._project_path(project_id)
+        lock = ResourceLock(root, self.locks_root, timeout=timeout)
+        try:
+            lock.acquire()
+        except PCBDraftError as exc:
+            if "resource is locked by another runtime process" in str(exc):
+                return None
+            raise
+        try:
+            return self._public_project(self._open_path(root))
+        finally:
+            lock.release()
+
     def project_root(self, project_id: str) -> Path:
         """Return a validated application-owned root for internal adapters."""
 
@@ -401,7 +486,10 @@ class ApplicationService:
             raise ValidationError("structured event level is invalid")
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
-            current.state["revision"] += 1
+            # Progress events are presentation/audit state, not an engineering
+            # mutation. Advancing the project revision here would immediately
+            # stale a revision-bound tool call merely because the UI recorded
+            # ``job.started`` or ``job.complete``.
             current.state["updated_at"] = utc_timestamp()
             self._event(
                 current.state,
@@ -418,16 +506,24 @@ class ApplicationService:
         text: str,
         *,
         timeout: float = 420.0,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         clean = _sanitize_secret_text(
             _safe_text(text, "message", limit=MAX_USER_MESSAGE_BYTES)
         )
         project = self._open(project_id)
-        if project.state["status"] in {"generated", "validated", "released"}:
-            return self.preview_modification(project_id, clean)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="message preparation"
+        )
         if project.state["status"] in _TRANSIENT_STATES:
             raise ValidationError("project already has a running operation")
-        expected_revision = int(project.state["revision"])
+        if project.design_root.is_dir() and not project.design_root.is_symlink():
+            return self.preview_modification(
+                project_id,
+                clean,
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
         prior = project.conversation.get("proposal")
         prior_decisions = prior if isinstance(prior, dict) else {}
         with ResourceLock(project.root, self.locks_root):
@@ -570,8 +666,12 @@ class ApplicationService:
         *,
         validate: bool = True,
         timeout: float = 180.0,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="generation confirmation"
+        )
         if project.state["status"] not in {
             "awaiting_confirmation",
             "generation_failed",
@@ -581,8 +681,18 @@ class ApplicationService:
             raise ValidationError("project is not awaiting generation confirmation")
         if project.design_root.is_dir() and not project.design_root.is_symlink():
             open_managed_project(project.design_root).assert_synchronized()
-            self.generate_project_previews(project_id)
-            return self.validate_project(project_id, timeout=timeout)
+            preview = self.generate_project_previews(
+                project_id,
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
+            if validate:
+                return self.validate_project(
+                    project_id,
+                    timeout=timeout,
+                    expected_revision=int(preview["state"]["revision"]),
+                )
+            return preview
         request = AgentDesignRequest.from_dict(
             load_json_limited(project.root / PENDING_REQUEST_NAME, APP_FILE_LIMIT)
         )
@@ -602,7 +712,6 @@ class ApplicationService:
             check_libraries=True,
             allow_provisional=design.metadata.get("assurance") == "provisional",
         )
-        expected_revision = project.state["revision"]
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:
@@ -719,10 +828,19 @@ class ApplicationService:
                 "Native KiCad schematic and routed PCB generated",
             )
             self._write_records(current.root, state, conversation)
-        self.generate_project_previews(project_id)
+            expected_revision = int(state["revision"])
+        preview = self.generate_project_previews(
+            project_id,
+            timeout=timeout,
+            expected_revision=expected_revision,
+        )
         if validate:
-            return self.validate_project(project_id, timeout=timeout)
-        return self.open_project(project_id)
+            return self.validate_project(
+                project_id,
+                timeout=timeout,
+                expected_revision=int(preview["state"]["revision"]),
+            )
+        return preview
 
     def prepare_agent_repair(
         self,
@@ -730,6 +848,7 @@ class ApplicationService:
         feedback: dict[str, Any],
         *,
         timeout: float = 180.0,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Revise a plan from bounded tool evidence and stage it transactionally.
 
@@ -740,12 +859,18 @@ class ApplicationService:
 
         normalized = normalize_repair_feedback(feedback)
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="plan repair"
+        )
         if project.state["status"] not in {
             "generation_failed",
             "generated",
             "validated",
             "validation_failed",
             "repair_failed",
+            "released",
+            "release_failed",
+            "interrupted",
         }:
             raise ValidationError("project is not eligible for automatic plan repair")
         if project.state["active_transaction"] is not None:
@@ -770,7 +895,6 @@ class ApplicationService:
         prior_validation = project.state["last_validation"]
         prior_preview = project.state["last_preview"]
         prior_release = project.state["last_release"]
-        expected_revision = int(project.state["revision"])
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:
@@ -1367,6 +1491,7 @@ class ApplicationService:
                 }
                 for key in sorted(counts)
             ],
+            "net_count": len(design.nets),
             "constraints": [
                 {
                     "id": item.id,
@@ -1405,12 +1530,12 @@ class ApplicationService:
             return (
                 "The circuit plan and stock KiCad parts are ready for review. "
                 f"{attention} deterministic preflight finding(s) need engineering attention; "
-                "generation remains available. "
-                "Confirm explicitly before PCBDraft creates KiCad files."
+                "generation remains available according to the active client policy."
             )
         return (
             "The circuit plan, stock KiCad parts, and assumptions are ready. "
-            "Confirm before PCBDraft creates KiCad files."
+            "The active client policy controls whether generation continues automatically "
+            "or waits for review."
         )
 
     def _record_failure(
@@ -1756,11 +1881,18 @@ class ApplicationService:
         }
 
     def validate_project(
-        self, project_id: str, *, timeout: float = 90.0
+        self,
+        project_id: str,
+        *,
+        timeout: float = 90.0,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Run the real layered runtime validation and attach its evidence."""
 
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="validation"
+        )
         if project.state["status"] not in {
             "generated",
             "validated",
@@ -1772,7 +1904,6 @@ class ApplicationService:
             raise ValidationError("project must be generated before validation")
         managed = open_managed_project(project.design_root)
         managed.assert_synchronized()
-        expected_revision = project.state["revision"]
         run_id = new_run_id()
         output = project.root / "validation" / run_id
         with ResourceLock(project.root, self.locks_root):
@@ -1863,11 +1994,18 @@ class ApplicationService:
         return self.open_project(project_id)
 
     def generate_project_previews(
-        self, project_id: str, *, timeout: float = 90.0
+        self,
+        project_id: str,
+        *,
+        timeout: float = 90.0,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         """Generate browser-safe links to real KiCad exports and a 3D render."""
 
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="preview generation"
+        )
         if not project.design_root.is_dir():
             raise ValidationError("project must be generated before preview export")
         managed = open_managed_project(project.design_root)
@@ -1885,6 +2023,8 @@ class ApplicationService:
         }
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed while previews were generated")
             if (
                 open_managed_project(current.design_root).design.content_hash()
                 != bundle.design_content_hash
@@ -1902,29 +2042,81 @@ class ApplicationService:
             self._write_records(current.root, current.state, current.conversation)
         return self.open_project(project_id)
 
-    def preview_modification(self, project_id: str, request: str) -> dict[str, Any]:
-        """Keep generated generic designs immutable until a replacement plan exists.
+    def preview_modification(
+        self,
+        project_id: str,
+        request: str,
+        *,
+        timeout: float = 180.0,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
+        """Turn a follow-up message into a validated, staged replacement design.
 
-        The semantic patch/transaction API remains available for reviewed IR change
-        sets.  Conversational topology revision is intentionally routed back
-        through a fresh plan instead of attempting to reinterpret raw KiCad text.
+        The planning provider receives the retained semantic plan plus a bounded
+        user revision request.  It never edits native KiCad files: the replacement
+        is generated and checked inside a transaction before the runtime policy or
+        user can atomically apply it.
         """
 
-        del request
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="revision staging"
+        )
         managed = open_managed_project(project.design_root)
-        if managed.design.metadata.get("generator") == "agent_plan_v1":
+        managed.assert_synchronized()
+        if managed.design.metadata.get("generator") != "agent_plan_v1":
             raise ValidationError(
-                "generic topology revisions require a new reviewed circuit plan; create a revision project or use the semantic patch workflow"
+                "this project was not generated from a retained agent circuit plan; use the semantic patch workflow"
             )
-        raise ValidationError(
-            "the legacy conversational modification path is unavailable; use the semantic patch workflow"
+        if project.state["active_transaction"] is not None:
+            raise ValidationError(
+                "review, apply, or discard the staged PCB change before requesting another revision"
+            )
+        if project.state["status"] not in {
+            "generated",
+            "validated",
+            "validation_failed",
+            "repair_failed",
+            "released",
+            "release_failed",
+            "interrupted",
+        }:
+            raise ValidationError("the current project state cannot accept a revision")
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed before the revision was staged")
+            self._append_message(current.conversation, "user", "revision", request)
+            current.state["revision"] += 1
+            current.state["updated_at"] = utc_timestamp()
+            self._event(
+                current.state,
+                current.root,
+                "repair.requested",
+                "Preparing a transactional PCB revision from the follow-up request",
+            )
+            self._write_records(current.root, current.state, current.conversation)
+            expected_revision = int(current.state["revision"])
+        return self.prepare_agent_repair(
+            project_id,
+            user_revision_feedback(request),
+            timeout=timeout,
+            expected_revision=expected_revision,
         )
 
-    def apply_modification(self, project_id: str) -> dict[str, Any]:
+    def apply_modification(
+        self,
+        project_id: str,
+        *,
+        timeout: float = 90.0,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
         """Atomically publish the currently staged, confirmed semantic change."""
 
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="candidate application"
+        )
         transaction_id = project.state["active_transaction"]
         if project.state["status"] != "change_ready" or not isinstance(
             transaction_id, str
@@ -1949,6 +2141,8 @@ class ApplicationService:
             )
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed before candidate application")
             if current.state["active_transaction"] != transaction_id:
                 raise ValidationError("active semantic transaction changed")
             state = current.state
@@ -2013,11 +2207,20 @@ class ApplicationService:
             )
             self._event(state, current.root, "change.applied", text)
             self._write_records(current.root, state, conversation)
-        self.generate_project_previews(project_id)
-        return self.open_project(project_id)
+            expected_revision = int(state["revision"])
+        return self.generate_project_previews(
+            project_id,
+            timeout=timeout,
+            expected_revision=expected_revision,
+        )
 
-    def discard_modification(self, project_id: str) -> dict[str, Any]:
+    def discard_modification(
+        self, project_id: str, *, expected_revision: int | None = None
+    ) -> dict[str, Any]:
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="candidate discard"
+        )
         transaction_id = project.state["active_transaction"]
         if project.state["status"] != "change_ready" or not isinstance(
             transaction_id, str
@@ -2030,6 +2233,8 @@ class ApplicationService:
         receipt = load_json_limited(receipt_path, APP_FILE_LIMIT)
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed before candidate discard")
             if current.state["active_transaction"] != transaction_id:
                 raise ValidationError("active semantic transaction changed")
             receipt["status"] = "discarded"
@@ -2048,8 +2253,13 @@ class ApplicationService:
             self._write_records(current.root, current.state, current.conversation)
         return self.open_project(project_id)
 
-    def undo_last_modification(self, project_id: str) -> dict[str, Any]:
+    def undo_last_modification(
+        self, project_id: str, *, expected_revision: int | None = None
+    ) -> dict[str, Any]:
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="last-change undo"
+        )
         transaction_id = project.state["last_transaction"]
         if not isinstance(transaction_id, str):
             raise ValidationError("project has no applied semantic change to undo")
@@ -2068,6 +2278,10 @@ class ApplicationService:
         open_managed_project(before).assert_synchronized()
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed before last-change undo")
+            if current.state["last_transaction"] != transaction_id:
+                raise ValidationError("last semantic transaction changed")
             moved_after = False
             try:
                 os.replace(current.design_root, after)
@@ -2101,9 +2315,16 @@ class ApplicationService:
         return self.open_project(project_id)
 
     def build_release(
-        self, project_id: str, *, timeout: float = 180.0
+        self,
+        project_id: str,
+        *,
+        timeout: float = 180.0,
+        expected_revision: int | None = None,
     ) -> dict[str, Any]:
         project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="release build"
+        )
         validation = project.state["last_validation"]
         if (
             project.state["status"]
@@ -2116,7 +2337,6 @@ class ApplicationService:
             )
         release_id = new_run_id()
         output = project.root / "releases" / release_id
-        expected_revision = project.state["revision"]
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:

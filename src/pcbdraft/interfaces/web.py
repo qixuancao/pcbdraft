@@ -19,12 +19,18 @@ from pathlib import Path
 from typing import Any, ClassVar
 
 from pcbdraft import __version__, build_identity
+from pcbdraft.agent.turns import AgentTurnStore, ToolRunRecord, TurnRecord
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.services.application import ApplicationService, sanitize_user_text
 from pcbdraft.services.jobs import JobRunner
 
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_URL_LENGTH = 2048
+_AGENT_THREAD_ID = "main"
+_RECENT_AGENT_TURNS = 20
+_PROJECT_VIEW_SNAPSHOT_ATTEMPTS = 6
+_PROJECT_VIEW_LOCK_TIMEOUT_SECONDS = 0.05
+_PROJECT_VIEW_RETRY_DELAY_SECONDS = 0.005
 _PROJECT_ROUTE = re.compile(r"/api/projects/([a-z][a-z0-9-]{2,79})(?:/(.*))?")
 _ARTIFACT_KEYS = {
     "schematic_svg",
@@ -163,7 +169,7 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
                 project_id = draft["project"]["id"]
                 job = self.server.jobs.submit(
                     project_id,
-                    "message",
+                    "agent_message",
                     {"text": body["request"], "timeout": 420.0},
                 )
                 self._json_response(
@@ -179,25 +185,27 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
                         raise ValidationError("message fields are invalid")
                     job = self.server.jobs.submit(
                         project_id,
-                        "message",
+                        "agent_message",
                         {"text": body["text"], "timeout": 420.0},
                     )
                     self._json_response({"job": job}, status=HTTPStatus.ACCEPTED)
                     return
                 actions = {
-                    "confirm": "confirm",
+                    "confirm": "generate_candidate",
                     "validate": "validate",
-                    "apply-change": "apply_change",
-                    "discard-change": "discard_change",
-                    "undo": "undo",
-                    "release": "release",
-                    "previews": "previews",
+                    "apply-change": "apply_candidate",
+                    "discard-change": "discard_candidate",
+                    "undo": "undo_last_change",
+                    "release": "build_release",
+                    "previews": "render_previews",
                 }
                 if suffix in actions:
                     if body:
                         raise ValidationError("action body must be an empty object")
                     job = self.server.jobs.submit(
-                        project_id, actions[suffix], {"timeout": 420.0}
+                        project_id,
+                        "agent_tool",
+                        {"tool": actions[suffix], "timeout": 420.0},
                     )
                     self._json_response({"job": job}, status=HTTPStatus.ACCEPTED)
                     return
@@ -235,9 +243,61 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
         self._error(HTTPStatus.METHOD_NOT_ALLOWED, "cross-origin access is disabled")
 
     def _project_view(self, project_id: str) -> dict[str, Any]:
-        view = self.server.service.open_project(project_id)
-        view["jobs"] = self.server.jobs.list(project_id)[:50]
-        return view
+        permission_mode = getattr(
+            getattr(self.server.jobs.agent, "permissions", None),
+            "mode",
+            "workspace",
+        )
+        normalized_permission_mode = (
+            permission_mode if isinstance(permission_mode, str) else "workspace"
+        )
+        # Do not hold the project lock while entering the independently locked
+        # job or turn stores.  Instead, use project snapshots as bookends and
+        # retry if an engineering revision crossed the projection window.  This
+        # avoids both lock-order deadlocks and cross-revision browser views.
+        for attempt in range(_PROJECT_VIEW_SNAPSHOT_ATTEMPTS):
+            before = _try_project_snapshot(self.server.service, project_id)
+            if before is None:
+                if attempt + 1 < _PROJECT_VIEW_SNAPSHOT_ATTEMPTS:
+                    time.sleep(_PROJECT_VIEW_RETRY_DELAY_SECONDS)
+                continue
+            try:
+                jobs = self.server.jobs.list(project_id)[:50]
+                agent = _durable_agent_view(
+                    self.server.service,
+                    project_id,
+                    permission_mode=normalized_permission_mode,
+                )
+            except PCBDraftError:
+                # These adapters resolve the project root before entering their
+                # own stores. If a writer acquired the project lock immediately
+                # after ``before``, that path validation can briefly observe a
+                # multi-file commit in flight. Retry only when the bookend proves
+                # the project moved; stable failures remain real errors.
+                after_error = _try_project_snapshot(self.server.service, project_id)
+                if after_error is not None and _project_revision_token(
+                    before
+                ) == _project_revision_token(after_error):
+                    raise
+                if attempt + 1 < _PROJECT_VIEW_SNAPSHOT_ATTEMPTS:
+                    time.sleep(_PROJECT_VIEW_RETRY_DELAY_SECONDS)
+                continue
+            after = _try_project_snapshot(self.server.service, project_id)
+            if (
+                after is not None
+                and _project_revision_token(before) == _project_revision_token(after)
+                and _agent_projection_fits_revision(
+                    agent, state_revision=_state_revision(after)
+                )
+            ):
+                after["jobs"] = jobs
+                after["agent"] = agent
+                return after
+            if attempt + 1 < _PROJECT_VIEW_SNAPSHOT_ATTEMPTS:
+                time.sleep(_PROJECT_VIEW_RETRY_DELAY_SECONDS)
+        raise PCBDraftError(
+            "project changed while the browser view was assembled; retry the request"
+        )
 
     def _parsed_path(self) -> urllib.parse.SplitResult | None:
         if len(self.path) > MAX_URL_LENGTH:
@@ -477,6 +537,148 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
         self.send_header(
             "Permissions-Policy", "camera=(), microphone=(), geolocation=()"
         )
+
+
+def _try_project_snapshot(
+    service: ApplicationService, project_id: str
+) -> dict[str, Any] | None:
+    """Take one self-consistent project snapshot without retaining its lock."""
+
+    snapshot_reader = getattr(service, "try_open_project_snapshot", None)
+    if callable(snapshot_reader):
+        return snapshot_reader(project_id, timeout=_PROJECT_VIEW_LOCK_TIMEOUT_SECONDS)
+    # Compatibility for in-memory service adapters. Production services expose
+    # the lock-aware reader above.
+    return service.open_project(project_id)
+
+
+def _state_revision(view: dict[str, Any]) -> int:
+    state = view.get("state")
+    revision = state.get("revision") if isinstance(state, dict) else None
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        raise ValidationError("project snapshot has an invalid state revision")
+    return revision
+
+
+def _project_revision_token(view: dict[str, Any]) -> tuple[int, int]:
+    project = view.get("project")
+    design_revision = (
+        project.get("design_revision") if isinstance(project, dict) else None
+    )
+    if (
+        isinstance(design_revision, bool)
+        or not isinstance(design_revision, int)
+        or design_revision < 0
+    ):
+        raise ValidationError("project snapshot has an invalid design revision")
+    return _state_revision(view), design_revision
+
+
+def _agent_projection_fits_revision(
+    agent: dict[str, Any], *, state_revision: int
+) -> bool:
+    """Reject a receipt projection that could only come from a newer state."""
+
+    for turn in agent["turns"]:
+        if turn["baseline_revision"] > state_revision:
+            return False
+        for tool in turn["tool_runs"]:
+            if (
+                tool["baseline_revision"] > state_revision
+                or tool["before_revision"] > state_revision
+            ):
+                return False
+            after_revision = tool["after_revision"]
+            if after_revision is not None and after_revision > state_revision:
+                return False
+    pending = agent["pending_approval"]
+    return pending is None or pending["baseline_revision"] <= state_revision
+
+
+def _durable_agent_view(
+    service: ApplicationService,
+    project_id: str,
+    *,
+    permission_mode: str,
+) -> dict[str, Any]:
+    """Project recent durable turns into a bounded browser-safe activity view.
+
+    The browser receives stable turn and tool-call identities, not synthesized
+    workflow stages.  Mutation authority remains in the orchestrator; this is a
+    read-only projection over the same project-scoped turn store used by the TUI.
+    """
+
+    store = AgentTurnStore(service.project_root(project_id), service.locks_root)
+    newest = store.list(thread_id=_AGENT_THREAD_ID, limit=_RECENT_AGENT_TURNS)
+    # ``list`` reads every selected turn under one turn-store lock. Deriving the
+    # pending checkpoint from that result avoids combining it with a second,
+    # newer read of the same durable records.
+    waiting = next((turn for turn in newest if turn.pending_approval is not None), None)
+    pending: dict[str, Any] | None = None
+    if waiting is not None and waiting.pending_approval is not None:
+        checkpoint = waiting.pending_approval
+        tool = waiting.tool_run(checkpoint.tool_call_id)
+        pending = {
+            **checkpoint.to_dict(),
+            "tool_name": tool.tool_name,
+            "source": tool.source,
+            "effect": tool.effect,
+            "risk": tool.risk,
+            "arguments": dict(tool.arguments),
+        }
+    from pcbdraft.model.tool_calls import provider_agent_protocol
+
+    return {
+        "schema": "pcbdraft-browser-agent-view",
+        "version": 1,
+        "thread_id": _AGENT_THREAD_ID,
+        "permission_mode": permission_mode,
+        "call_producer": provider_agent_protocol(getattr(service, "provider", None)),
+        "turn_order": "oldest_first",
+        "turns": [_browser_turn(turn) for turn in reversed(newest)],
+        "pending_approval": pending,
+    }
+
+
+def _browser_turn(turn: TurnRecord) -> dict[str, Any]:
+    return {
+        "turn_id": turn.turn_id,
+        "sequence": turn.sequence,
+        "status": turn.status.value,
+        "request": turn.user_message,
+        "baseline_revision": turn.baseline_revision,
+        "created_at": turn.created_at,
+        "updated_at": turn.updated_at,
+        "started_at": turn.started_at,
+        "completed_at": turn.completed_at,
+        "stop_reason": turn.stop_reason,
+        "error": turn.error,
+        "tool_runs": [_browser_tool_run(tool) for tool in turn.tool_runs],
+    }
+
+
+def _browser_tool_run(tool: ToolRunRecord) -> dict[str, Any]:
+    return {
+        "tool_call_id": tool.tool_call_id,
+        "tool_name": tool.tool_name,
+        "source": tool.source,
+        "effect": tool.effect,
+        "risk": tool.risk,
+        "arguments": dict(tool.arguments),
+        "args_hash": tool.args_hash,
+        "baseline_revision": tool.baseline_revision,
+        "before_status": tool.before_status,
+        "before_revision": tool.before_revision,
+        "status": tool.status.value,
+        "created_at": tool.created_at,
+        "started_at": tool.started_at,
+        "dispatch_started_at": tool.dispatch_started_at,
+        "completed_at": tool.completed_at,
+        "after_status": tool.after_status,
+        "after_revision": tool.after_revision,
+        "result": dict(tool.result) if tool.result is not None else None,
+        "error": tool.error,
+    }
 
 
 def create_app_server(

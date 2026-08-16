@@ -29,6 +29,8 @@ dependencies = [
     "defusedxml==0.7.1",
     "jsonschema==4.26.0",
     "kicad-sch-api==0.5.6",
+    # Official SDK v1; the KiCad dependency chain currently requires mcp<2.
+    "mcp>=1.29,<2",
     "textual>=8.2.8,<9",
 ]
 

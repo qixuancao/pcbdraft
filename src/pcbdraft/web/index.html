@@ -15,7 +15,7 @@
     <aside class="sidebar" aria-label="Project navigation">
       <div class="brand">
         <img src="/assets/pcbdraft-mark.png" width="48" height="48" alt="">
-        <div><strong>PCBDraft</strong><span>Local PCB workshop</span></div>
+        <div><strong>PCBDraft</strong><span>Local PCB agent</span></div>
       </div>
       <button id="new-project" class="primary wide" type="button">+ New project</button>
       <div class="section-label">Projects</div>
@@ -54,10 +54,10 @@
 
       <section id="empty-state" class="empty-state">
         <div class="trace-art" aria-hidden="true"><span></span><span></span><span></span></div>
-        <p class="eyebrow">Open-source PCB generation with native KiCad files</p>
+        <p class="eyebrow">A local agent for native KiCad projects</p>
         <h2>Describe the board you want.</h2>
-        <p>PCBDraft plans with installed stock KiCad parts, shows the circuit, then waits for confirmation before generating files.</p>
-        <button id="empty-new-project" class="primary" type="button">Create your first project</button>
+        <p>PCBDraft keeps planning, generation, checks, and bounded repair inside one conversation, with every PCB tool call retained for inspection.</p>
+        <button id="empty-new-project" class="primary" type="button">Start a conversation</button>
         <div class="scope-chips" aria-label="Example capabilities">
           <span>Stock symbols</span><span>Native schematic</span><span>Routed PCB</span><span>Safe undo</span>
         </div>
@@ -66,29 +66,27 @@
       <div id="project-workspace" class="project-workspace hidden">
         <section id="conversation" class="conversation" aria-label="Project conversation">
           <div id="messages" class="messages" aria-live="polite"></div>
-          <div id="confirmation" class="confirmation hidden" role="region" aria-label="Confirmation required">
-            <div>
-              <strong id="confirmation-title">Review before generation</strong>
-              <span id="confirmation-copy">No design files change until you confirm.</span>
+          <section id="agent-activity" class="agent-activity hidden" aria-labelledby="agent-activity-title" aria-live="polite">
+            <div class="activity-heading">
+              <strong id="agent-activity-title">Agent activity</strong>
+              <span id="agent-mode"></span>
             </div>
-            <div>
-              <button id="discard" class="secondary hidden" type="button">Discard</button>
-              <button id="confirm" class="primary" type="button">Confirm</button>
-            </div>
-          </div>
+            <div id="turn-activity" class="turn-activity"></div>
+            <div id="approval-readonly" class="approval-readonly hidden"></div>
+          </section>
           <form id="composer" class="composer">
             <label class="sr-only" for="message-input">Message PCBDraft</label>
             <textarea id="message-input" rows="2" maxlength="16000" placeholder="Ask for a board or request a safe change…" required></textarea>
             <button id="send-message" class="send" type="submit" aria-label="Send message">Send</button>
-            <p>PCBDraft uses installed KiCad libraries and reports generation or check failures as they occur.</p>
+            <p>PCB tools run inside this conversation; their stable call names, status, revision, and retained result remain inspectable above.</p>
           </form>
         </section>
 
         <aside class="inspector" aria-label="Engineering inspector">
           <div class="inspector-tabs" role="tablist" aria-label="Project details">
-            <button class="tab active" data-tab="brief" role="tab" aria-selected="true">Brief</button>
-            <button class="tab" data-tab="artifacts" role="tab" aria-selected="false">Visuals</button>
-            <button class="tab" data-tab="validation" role="tab" aria-selected="false">Validation</button>
+            <button class="tab active" data-tab="brief" role="tab" aria-selected="true">Context</button>
+            <button class="tab" data-tab="artifacts" role="tab" aria-selected="false">Artifacts</button>
+            <button class="tab" data-tab="validation" role="tab" aria-selected="false">Evidence</button>
           </div>
           <section id="tab-brief" class="tab-panel"></section>
           <section id="tab-artifacts" class="tab-panel hidden"></section>

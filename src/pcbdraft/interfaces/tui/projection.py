@@ -7,13 +7,9 @@ over the same durable project view and activity stream.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
-
-from pcbdraft.agent.events import AgentActivity
-
-StageState = Literal["pending", "active", "complete", "blocked", "failed"]
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -21,12 +17,6 @@ class TranscriptMessage:
     role: str
     kind: str
     text: str
-
-
-@dataclass(frozen=True)
-class PipelineStage:
-    name: str
-    state: StageState
 
 
 @dataclass(frozen=True)
@@ -46,7 +36,6 @@ class TuiProjection:
     production_evidence_complete: bool | None
     assurance: str
     messages: tuple[TranscriptMessage, ...]
-    stages: tuple[PipelineStage, ...]
 
     @property
     def board_size(self) -> str:
@@ -72,36 +61,30 @@ class TuiProjection:
 _STATUS_LABELS = {
     "draft": "Draft",
     "interpreting": "Understanding request",
+    "provider_error": "Model request failed",
+    "needs_clarification": "Needs your input",
+    "generation_unavailable": "Cannot generate yet",
     "planning_required": "Planner required",
     "awaiting_confirmation": "Plan ready",
     "generating": "Generating KiCad",
+    "generation_failed": "Generation failed",
     "generated": "Generated",
     "repairing": "Repairing",
     "repair_failed": "Repair failed",
     "change_ready": "Change ready",
+    "applying_change": "Applying change",
     "validating": "Running checks",
     "validation_failed": "Checks failed",
     "validated": "Candidate validated",
     "releasing": "Building release",
+    "release_failed": "Release failed",
     "released": "Release built",
     "interrupted": "Interrupted",
-}
-
-_TOOL_STAGE = {
-    "pcb_requirements": 0,
-    "pcb_circuit_plan": 1,
-    "pcb_repair": 1,
-    "kicad_generate": 2,
-    "pcb_render": 3,
-    "kicad_validate": 4,
 }
 
 
 def project_projection(
     view: Mapping[str, Any] | None,
-    activities: Sequence[AgentActivity] = (),
-    *,
-    busy: bool = False,
 ) -> TuiProjection:
     """Build a stable, bounded terminal projection from one public project view."""
 
@@ -124,7 +107,16 @@ def project_projection(
 
     component_count = _component_count(brief)
     nets = brief.get("nets")
-    net_count = len(nets) if isinstance(nets, list) else None
+    retained_net_count = brief.get("net_count")
+    net_count = (
+        len(nets)
+        if isinstance(nets, list)
+        else retained_net_count
+        if isinstance(retained_net_count, int)
+        and not isinstance(retained_net_count, bool)
+        and retained_net_count >= 0
+        else None
+    )
     review_summary = _mapping(_mapping(brief.get("plan_review")).get("summary"))
     attention = review_summary.get("attention_required", 0)
     attention = attention if isinstance(attention, int) and attention >= 0 else 0
@@ -169,90 +161,6 @@ def project_projection(
         production_evidence_complete=production_evidence,
         assurance=assurance,
         messages=tuple(messages),
-        stages=_pipeline_stages(
-            project_id=project_id,
-            status=status,
-            has_design=bool(_mapping(root.get("design"))),
-            activities=activities,
-            busy=busy,
-        ),
-    )
-
-
-def _pipeline_stages(
-    *,
-    project_id: str | None,
-    status: str,
-    has_design: bool,
-    activities: Sequence[AgentActivity],
-    busy: bool,
-) -> tuple[PipelineStage, ...]:
-    names = ("Understand", "Plan", "Generate", "Route", "Check")
-    states: list[StageState] = ["pending"] * len(names)
-    if project_id is None:
-        return tuple(
-            PipelineStage(name, state)
-            for name, state in zip(names, states, strict=True)
-        )
-
-    if status in {"draft", "interpreting"}:
-        states[0] = "active"
-    else:
-        states[0] = "complete"
-
-    if status == "planning_required":
-        states[1] = "blocked"
-    elif status in {
-        "awaiting_confirmation",
-        "generating",
-        "generated",
-        "repairing",
-        "repair_failed",
-        "change_ready",
-        "validating",
-        "validation_failed",
-        "validated",
-        "releasing",
-        "released",
-    }:
-        states[1] = "complete"
-    elif status not in {"draft", "interpreting"}:
-        states[1] = "active"
-
-    if has_design or status in {
-        "generated",
-        "change_ready",
-        "validating",
-        "validation_failed",
-        "validated",
-        "releasing",
-        "released",
-    }:
-        states[2] = states[3] = "complete"
-    elif status in {"generating", "repairing"}:
-        states[2] = "active"
-
-    if status == "validating":
-        states[4] = "active"
-    elif status in {"validated", "releasing", "released"}:
-        states[4] = "complete"
-    elif status in {"validation_failed", "repair_failed"}:
-        states[4 if status == "validation_failed" else 1] = "failed"
-
-    active_activity = next(
-        (item for item in reversed(activities) if item.state in {"running", "queued"}),
-        None,
-    )
-    if busy and active_activity is not None:
-        active_index = _TOOL_STAGE.get(active_activity.tool)
-        if active_index is not None:
-            for index in range(active_index):
-                if states[index] not in {"failed", "blocked"}:
-                    states[index] = "complete"
-            states[active_index] = "active"
-
-    return tuple(
-        PipelineStage(name, state) for name, state in zip(names, states, strict=True)
     )
 
 

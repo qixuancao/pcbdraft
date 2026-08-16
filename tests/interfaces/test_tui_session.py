@@ -72,6 +72,44 @@ class TuiSessionTests(unittest.TestCase):
         self.assertIn("series-resistor", text)
         self.assertIn("Candidate ready: yes", text)
 
+    def test_review_summary_bounds_large_evidence_and_keeps_failed_checks(self) -> None:
+        view = _view("existing-project", status="validation_failed")
+        proposal = view["conversation"]["proposal"]
+        proposal["brief"]["plan_review"]["findings"] = [
+            {
+                "id": f"finding-{index}",
+                "outcome": "fail",
+                "summary": "needs attention",
+                "evidence": [f"evidence-{item}" for item in range(20)],
+            }
+            for index in range(100)
+        ]
+        view["artifacts"]["validation"] = {
+            "candidate_ready": False,
+            "production_evidence_complete": False,
+            "assurance": "provisional",
+            "levels": [
+                {
+                    "level": "L2",
+                    "checks": [
+                        {
+                            "id": "kicad.erc",
+                            "state": "completed",
+                            "outcome": "fail",
+                            "summary": "one required pin is unconnected",
+                        }
+                    ],
+                }
+            ],
+        }
+
+        sections = review_sections(view)
+        self.assertLessEqual(sum(len(section.lines) for section in sections), 320)
+        self.assertTrue(all(len(section.lines) <= 80 for section in sections))
+        rendered = "\n".join(line for section in sections for line in section.lines)
+        self.assertIn("more line(s) omitted", rendered)
+        self.assertIn("kicad.erc", rendered)
+
 
 if __name__ == "__main__":
     unittest.main()

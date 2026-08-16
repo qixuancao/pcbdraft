@@ -1,18 +1,86 @@
-"""PCB-agent tool orchestration over the deterministic application service."""
+"""Deterministic policy for one PCB-agent turn.
+
+This module currently chooses the next tool with ordinary Python control flow;
+it is not model tool-calling.  Every chosen operation still crosses the typed
+registry/executor boundary in :mod:`pcbdraft.agent.tooling`.  A future provider
+or MCP call producer may replace this policy, but it must not bypass that local
+executor or its revision, status, argument, effect, and risk contracts.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import Any
 
+from pcbdraft.agent.permissions import (
+    PCBToolGateway,
+    PermissionBroker,
+    ToolPermissionError,
+)
 from pcbdraft.agent.repair import (
     MAX_AUTOMATIC_REPAIRS,
     generation_feedback,
     normalize_repair_feedback,
     validation_feedback,
 )
+from pcbdraft.agent.tooling import (
+    PCBToolExecutor,
+    ToolCall,
+    call_from_view,
+)
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.services.application import ApplicationService
+
+
+@dataclass(frozen=True)
+class DeterministicRuntimePolicy:
+    """Produce bounded calls from status transitions, without model autonomy."""
+
+    project_id: str
+
+    def call(
+        self,
+        name: str,
+        view: Mapping[str, Any],
+        arguments: Mapping[str, Any] | None = None,
+    ) -> ToolCall:
+        return call_from_view(
+            name,
+            self.project_id,
+            source="runtime_policy",
+            arguments=arguments or {},
+            view=view,
+        )
+
+
+def _execute_policy_call(
+    gateway: PCBToolGateway,
+    policy: DeterministicRuntimePolicy,
+    name: str,
+    view: dict[str, Any],
+    *,
+    timeout: float,
+    arguments: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    call = policy.call(name, view, arguments)
+    return gateway.execute(call, timeout=timeout, observed_view=view).view
+
+
+def _initial_view(
+    service: ApplicationService, executor: PCBToolExecutor, project_id: str
+) -> dict[str, Any]:
+    """Load the initial baseline, retaining compatibility with narrow adapters."""
+
+    opener = getattr(service, "open_project", None)
+    if callable(opener):
+        return executor.snapshot(project_id)
+    # Some in-process service adapters expose only the operations they dispatch.
+    # The real ApplicationService always takes the authoritative branch above.
+    return {
+        "project": {"id": project_id, "status": "draft"},
+        "state": {"revision": 0},
+    }
 
 
 def _stopped(
@@ -56,16 +124,30 @@ def run_design_turn(
     *,
     timeout: float,
     cancellation_requested: Callable[[], bool],
+    permissions: PermissionBroker | None = None,
 ) -> dict[str, Any]:
     """Run one autonomous design turn and stop at consistent boundaries.
 
     Requirement interpretation and circuit planning form the first tool boundary.
     Native generation or change application starts only if that boundary completed
-    and cancellation has not been requested. Application operations remain
-    transactional; this function owns orchestration, not PCB state.
+    and cancellation has not been requested.  This deterministic policy chooses
+    calls; :class:`PCBToolGateway` owns authorization before the executor's fixed
+    dispatch, while the application service remains the transactional PCB-state
+    authority.
     """
 
-    view = service.send_message(project_id, message, timeout=timeout)
+    executor = PCBToolExecutor(service)
+    gateway = PCBToolGateway(executor, permissions or PermissionBroker("workspace"))
+    policy = DeterministicRuntimePolicy(project_id)
+    view = _initial_view(service, executor, project_id)
+    view = _execute_policy_call(
+        gateway,
+        policy,
+        "plan_request",
+        view,
+        timeout=timeout,
+        arguments={"message": message},
+    )
     if cancellation_requested():
         return _stopped(
             service,
@@ -85,9 +167,16 @@ def run_design_turn(
                     "Stopped before automatic PCB repair was started",
                 )
             try:
-                view = service.prepare_agent_repair(
-                    project_id, pending_feedback, timeout=timeout
+                view = _execute_policy_call(
+                    gateway,
+                    policy,
+                    "repair_candidate",
+                    view,
+                    timeout=timeout,
+                    arguments={"feedback": pending_feedback},
                 )
+            except ToolPermissionError:
+                raise
             except PCBDraftError as exc:
                 view = service.open_project(project_id)
                 if repairs_used >= MAX_AUTOMATIC_REPAIRS:
@@ -101,9 +190,15 @@ def run_design_turn(
         status = view["project"]["status"]
         if status == "awaiting_confirmation":
             try:
-                view = service.confirm_project(
-                    project_id, validate=False, timeout=timeout
+                view = _execute_policy_call(
+                    gateway,
+                    policy,
+                    "generate_candidate",
+                    view,
+                    timeout=timeout,
                 )
+            except ToolPermissionError:
+                raise
             except PCBDraftError as exc:
                 view = service.open_project(project_id)
                 if repairs_used >= MAX_AUTOMATIC_REPAIRS:
@@ -118,7 +213,13 @@ def run_design_turn(
                     view,
                     "Stopped before PCB validation was started",
                 )
-            view = service.validate_project(project_id, timeout=timeout)
+            view = _execute_policy_call(
+                gateway,
+                policy,
+                "validate",
+                view,
+                timeout=timeout,
+            )
             continue
         if status == "change_ready":
             if cancellation_requested():
@@ -128,7 +229,13 @@ def run_design_turn(
                     view,
                     "Stopped before the staged PCB repair was applied",
                 )
-            return service.apply_modification(project_id)
+            return _execute_policy_call(
+                gateway,
+                policy,
+                "apply_candidate",
+                view,
+                timeout=timeout,
+            )
         if status == "repair_failed":
             if repairs_used >= MAX_AUTOMATIC_REPAIRS:
                 raise PCBDraftError(

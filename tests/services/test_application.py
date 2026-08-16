@@ -15,11 +15,15 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from pcbdraft.agent.design import CircuitPlan
+from pcbdraft.agent.orchestrator import AgentOrchestrator
+from pcbdraft.agent.permissions import PermissionBroker
 from pcbdraft.agent.repair import (
     generation_feedback,
     validation_feedback_from_levels,
 )
+from pcbdraft.agent.turns import TurnStatus
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.project import sha256_file
 from pcbdraft.interfaces.web import create_app_server
 from pcbdraft.model.providers import (
@@ -31,7 +35,12 @@ from pcbdraft.model.providers import (
     validate_interpretation,
 )
 from pcbdraft.services.application import ApplicationService
-from pcbdraft.services.jobs import JOB_SCHEMA, JOB_VERSION, JobRunner
+from pcbdraft.services.jobs import (
+    JOB_SCHEMA,
+    JOB_VERSION,
+    LEGACY_JOB_VERSION,
+    JobRunner,
+)
 from tests.agent.test_design import circuit_plan_dict, indicator_plan_dict
 
 
@@ -134,6 +143,54 @@ class GenericPlanningProvider:
 
 
 class ApplicationConversationTests(unittest.TestCase):
+    def test_message_mutation_rejects_a_stale_expected_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            draft = service.create_draft("Revision-bound message")
+            project_id = draft["project"]["id"]
+
+            with self.assertRaisesRegex(ValidationError, "expected revision 1"):
+                service.send_message(
+                    project_id,
+                    "Build a small sensor board",
+                    expected_revision=1,
+                )
+
+            unchanged = service.open_project(project_id)
+            self.assertEqual(unchanged["state"]["revision"], 0)
+            self.assertEqual(unchanged["conversation"]["messages"], [])
+
+    def test_progress_events_do_not_invalidate_engineering_revision(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Progress isolation")["project"]["id"]
+            before = service.open_project(project_id)["state"]
+
+            service.record_progress(
+                project_id, "job.started", "Started durable agent turn"
+            )
+
+            after = service.open_project(project_id)["state"]
+            self.assertEqual(after["revision"], before["revision"])
+            self.assertEqual(after["event_sequence"], before["event_sequence"] + 1)
+
+    def test_live_snapshot_skips_a_project_while_its_writer_lock_is_held(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            view = service.create_draft("Snapshot consistency")
+            project_id = view["project"]["id"]
+            project_root = service.project_root(project_id)
+
+            with ResourceLock(project_root, service.locks_root):
+                self.assertIsNone(
+                    service.try_open_project_snapshot(project_id, timeout=0)
+                )
+
+            snapshot = service.try_open_project_snapshot(project_id, timeout=0)
+            self.assertIsNotNone(snapshot)
+            assert snapshot is not None
+            self.assertEqual(snapshot["project"]["id"], project_id)
+
     def test_completed_l1_topology_failure_is_bounded_repair_feedback(self) -> None:
         feedback = validation_feedback_from_levels(
             [
@@ -408,11 +465,12 @@ class ApplicationConversationTests(unittest.TestCase):
                 **kwargs: object,
             ) -> CircuitPlan:
                 del previous_plan, kwargs
+                self.repair_feedbacks.append(feedback)
                 value = indicator_plan_dict()
                 value["design_id"] = request.design_id  # type: ignore[attr-defined]
                 value["notes"] = [
                     "LED current requires review.",
-                    f"Repair attempt {feedback['attempt']} used retained evidence.",
+                    f"{feedback['phase']} attempt {feedback['attempt']} used retained context.",
                 ]
                 return CircuitPlan.from_dict(value)
 
@@ -502,16 +560,48 @@ class ApplicationConversationTests(unittest.TestCase):
                 service.open_project(project_id)["design"]["content_hash"],
                 before_hash,
             )
+            with self.assertRaisesRegex(ValidationError, "expected revision"):
+                service.apply_modification(
+                    project_id,
+                    expected_revision=int(staged["state"]["revision"]) - 1,
+                )
+            self.assertEqual(
+                service.open_project(project_id)["project"]["status"], "change_ready"
+            )
             with patch.object(
                 service,
                 "generate_project_previews",
                 side_effect=lambda value, **kwargs: service.open_project(value),
             ):
-                applied = service.apply_modification(project_id)
+                applied = service.apply_modification(
+                    project_id,
+                    expected_revision=int(staged["state"]["revision"]),
+                )
             self.assertEqual(applied["project"]["status"], "validated")
             self.assertNotEqual(applied["design"]["content_hash"], before_hash)
             undone = service.undo_last_modification(project_id)
             self.assertEqual(undone["design"]["content_hash"], before_hash)
+
+            with patch(
+                "pcbdraft.services.application.validate_managed_project",
+                side_effect=fake_validation,
+            ):
+                conversational = service.send_message(
+                    project_id,
+                    "Revise the LED section and retain the connector interface",
+                    timeout=90,
+                )
+            self.assertEqual(conversational["project"]["status"], "change_ready")
+            self.assertEqual(
+                conversational["design"]["content_hash"],
+                before_hash,
+            )
+            self.assertEqual(
+                service.provider.repair_feedbacks[-1]["phase"], "user_request"
+            )
+            self.assertEqual(
+                conversational["conversation"]["messages"][-2]["kind"], "revision"
+            )
 
     def test_secrets_are_redacted_before_provider_and_storage(self) -> None:
         sentinel = "test-provider-secret-value-123456789"
@@ -724,7 +814,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 json.dumps(
                     {
                         "schema": JOB_SCHEMA,
-                        "version": JOB_VERSION,
+                        "version": LEGACY_JOB_VERSION,
                         "id": job_id,
                         "project_id": project_id,
                         "action": "message",
@@ -755,10 +845,302 @@ class ApplicationConversationTests(unittest.TestCase):
                 recovered = runner.get(project_id, job_id)
                 self.assertEqual(recovered["status"], "interrupted")
                 self.assertIn("stopped", recovered["error"])
+                with self.assertRaisesRegex(ValidationError, "unsupported"):
+                    runner.submit(
+                        project_id,
+                        "message",
+                        {"text": "legacy public bypass is disabled"},
+                    )
             finally:
                 runner.shutdown()
             events = restarted.events(project_id)
             self.assertEqual(events[-1]["kind"], "operation.interrupted")
+
+    def test_recovery_never_widens_mcp_job_permission_mode(self) -> None:
+        for admitting_mode in ("review", "read_only"):
+            with (
+                self.subTest(admitting_mode=admitting_mode),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                service = ApplicationService(temporary, provider_name="builtin")
+                project_id = service.create_draft(f"Bound MCP {admitting_mode}")[
+                    "project"
+                ]["id"]
+                admitting_agent = AgentOrchestrator(
+                    service,
+                    permissions=PermissionBroker(admitting_mode),  # type: ignore[arg-type]
+                )
+                first = JobRunner(
+                    service,
+                    workers=1,
+                    orchestrator=admitting_agent,
+                )
+                first._schedule = (  # type: ignore[method-assign]
+                    lambda *_args, **_kwargs: None
+                )
+                queued = first.submit_mcp_tool(
+                    project_id,
+                    "pcb_plan_request",
+                    {"message": "Create a small sensor board"},
+                    timeout=12.0,
+                )
+                self.assertEqual(queued["version"], JOB_VERSION)
+                self.assertEqual(
+                    queued["agent_policy"]["permission_mode"], admitting_mode
+                )
+                self.assertEqual(queued["agent_policy"]["max_tool_calls"], 32)
+                self.assertEqual(len(queued["agent_policy"]["registry_sha256"]), 64)
+                first.shutdown()
+
+                with patch.object(service, "send_message") as mutation:
+                    restarted = JobRunner(service, workers=1)
+                try:
+                    recovered = restarted.get(project_id, queued["id"])
+                    self.assertEqual(recovered["status"], "failed")
+                    self.assertIn("permission mode differs", recovered["error"])
+                    mutation.assert_not_called()
+                    turn = restarted.agent.store(project_id).load(
+                        queued["args"]["turn_id"]
+                    )
+                    self.assertEqual(turn.status, TurnStatus.CANCELLED)
+                    self.assertIn("permission mode differs", turn.stop_reason)
+                    self.assertEqual(
+                        service.open_project(project_id)["state"]["revision"], 0
+                    )
+                finally:
+                    restarted.shutdown()
+
+    def test_startup_fails_closed_for_legacy_queued_mutations(self) -> None:
+        cases = (
+            ("message", {"text": "Bypass the agent", "timeout": 12.0}),
+            ("confirm", {"timeout": 12.0}),
+            ("agent_message", {"text": "Legacy agent bypass", "timeout": 12.0}),
+        )
+        for action, args in cases:
+            with (
+                self.subTest(action=action),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                service = ApplicationService(temporary, provider_name="builtin")
+                project_id = service.create_draft(f"Legacy {action}")["project"]["id"]
+                job_id = "20260815T120000Z-acde1234"
+                path = service.project_root(project_id) / "jobs" / f"{job_id}.json"
+                path.write_text(
+                    json.dumps(
+                        {
+                            "schema": JOB_SCHEMA,
+                            "version": LEGACY_JOB_VERSION,
+                            "id": job_id,
+                            "project_id": project_id,
+                            "action": action,
+                            "args": args,
+                            "status": "queued",
+                            "attempt": 1,
+                            "retry_of": None,
+                            "created_at": "2026-08-15T12:00:00Z",
+                            "started_at": None,
+                            "completed_at": None,
+                            "cancel_requested_at": None,
+                            "result": None,
+                            "error": None,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+
+                with (
+                    patch.object(service, "send_message") as message,
+                    patch.object(service, "confirm_project") as confirm,
+                ):
+                    runner = JobRunner(service, workers=1)
+                try:
+                    recovered = runner.get(project_id, job_id)
+                    self.assertEqual(recovered["status"], "failed")
+                    self.assertRegex(
+                        recovered["error"], "legacy (direct mutation|agent job)"
+                    )
+                    message.assert_not_called()
+                    confirm.assert_not_called()
+                    self.assertEqual(
+                        service.open_project(project_id)["state"]["revision"], 0
+                    )
+                finally:
+                    runner.shutdown()
+
+    def test_legacy_agent_job_with_a_turn_is_cancelled_before_dispatch(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Legacy bound turn")["project"]["id"]
+            agent = AgentOrchestrator(service)
+            turn = agent.start_turn(project_id, "Build a small sensor board")
+            job_id = "20260815T120000Z-acde1234"
+            path = service.project_root(project_id) / "jobs" / f"{job_id}.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "schema": JOB_SCHEMA,
+                        "version": LEGACY_JOB_VERSION,
+                        "id": job_id,
+                        "project_id": project_id,
+                        "action": "agent_message",
+                        "args": {"turn_id": turn.turn_id, "timeout": 12.0},
+                        "status": "queued",
+                        "attempt": 1,
+                        "retry_of": None,
+                        "created_at": "2026-08-15T12:00:00Z",
+                        "started_at": None,
+                        "completed_at": None,
+                        "cancel_requested_at": None,
+                        "result": None,
+                        "error": None,
+                    },
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            with patch.object(service, "send_message") as mutation:
+                runner = JobRunner(service, workers=1)
+            try:
+                recovered = runner.get(project_id, job_id)
+                self.assertEqual(recovered["status"], "failed")
+                self.assertIn("no durable permission binding", recovered["error"])
+                mutation.assert_not_called()
+                closed = runner.agent.store(project_id).load(turn.turn_id)
+                self.assertEqual(closed.status, TurnStatus.CANCELLED)
+                self.assertIn("no durable permission binding", closed.stop_reason)
+            finally:
+                runner.shutdown()
+
+    def test_recovery_requires_exact_registry_and_tool_call_bounds(self) -> None:
+        mismatches = (
+            ("registry_sha256", "0" * 64, "tool authority changed"),
+            ("max_tool_calls", 31, "tool-call bound differs"),
+        )
+        for field, replacement, expected_error in mismatches:
+            with (
+                self.subTest(field=field),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                service = ApplicationService(temporary, provider_name="builtin")
+                project_id = service.create_draft(f"Policy mismatch {field}")[
+                    "project"
+                ]["id"]
+                first = JobRunner(service, workers=1)
+                first._schedule = (  # type: ignore[method-assign]
+                    lambda *_args, **_kwargs: None
+                )
+                queued = first.submit(
+                    project_id,
+                    "agent_message",
+                    {"text": "Build a small sensor board", "timeout": 12.0},
+                )
+                first.shutdown()
+                path = (
+                    service.project_root(project_id) / "jobs" / f"{queued['id']}.json"
+                )
+                document = json.loads(path.read_text(encoding="utf-8"))
+                document["agent_policy"][field] = replacement
+                path.write_text(
+                    json.dumps(document, sort_keys=True) + "\n", encoding="utf-8"
+                )
+
+                with patch.object(service, "send_message") as mutation:
+                    restarted = JobRunner(service, workers=1)
+                try:
+                    recovered = restarted.get(project_id, queued["id"])
+                    self.assertEqual(recovered["status"], "failed")
+                    self.assertIn(expected_error, recovered["error"])
+                    mutation.assert_not_called()
+                    turn = restarted.agent.store(project_id).load(
+                        queued["args"]["turn_id"]
+                    )
+                    self.assertEqual(turn.status, TurnStatus.CANCELLED)
+                finally:
+                    restarted.shutdown()
+
+    def test_malformed_active_job_envelope_blocks_startup_dispatch(self) -> None:
+        malformed_values = (
+            ("status", "teleporting", "status"),
+            ("attempt", True, "attempt"),
+            ("created_at", "tomorrow", "created_at"),
+            ("result", [], "result"),
+            ("error", 7, "error"),
+        )
+        for field, replacement, expected_error in malformed_values:
+            with (
+                self.subTest(field=field),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                service = ApplicationService(temporary, provider_name="builtin")
+                project_id = service.create_draft(f"Malformed job {field}")["project"][
+                    "id"
+                ]
+                first = JobRunner(service, workers=1)
+                first._schedule = (  # type: ignore[method-assign]
+                    lambda *_args, **_kwargs: None
+                )
+                queued = first.submit(
+                    project_id,
+                    "agent_message",
+                    {"text": "Build a small sensor board", "timeout": 12.0},
+                )
+                first.shutdown()
+                path = (
+                    service.project_root(project_id) / "jobs" / f"{queued['id']}.json"
+                )
+                document = json.loads(path.read_text(encoding="utf-8"))
+                document[field] = replacement
+                path.write_text(
+                    json.dumps(document, sort_keys=True) + "\n", encoding="utf-8"
+                )
+
+                with (
+                    patch.object(service, "send_message") as mutation,
+                    self.assertRaisesRegex(ValidationError, expected_error),
+                ):
+                    JobRunner(service, workers=1)
+                mutation.assert_not_called()
+                turn = first.agent.store(project_id).load(queued["args"]["turn_id"])
+                self.assertEqual(turn.status, TurnStatus.QUEUED)
+                self.assertEqual(
+                    service.open_project(project_id)["state"]["revision"], 0
+                )
+
+    def test_jobs_directory_and_records_reject_symlink_escape(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Symlinked jobs directory")["project"][
+                "id"
+            ]
+            jobs_dir = service.project_root(project_id) / "jobs"
+            outside = Path(temporary) / "outside-jobs"
+            outside.mkdir()
+            jobs_dir.rmdir()
+            jobs_dir.symlink_to(outside, target_is_directory=True)
+
+            with self.assertRaisesRegex(ValidationError, "jobs directory.*symlink"):
+                JobRunner(service, workers=1)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Symlinked job record")["project"]["id"]
+            runner = JobRunner(service, workers=1)
+            job_id = "20260815T120000Z-acde1234"
+            outside = Path(temporary) / "outside-job.json"
+            outside.write_text("{}\n", encoding="utf-8")
+            link = service.project_root(project_id) / "jobs" / f"{job_id}.json"
+            link.symlink_to(outside)
+            try:
+                with self.assertRaisesRegex(ValidationError, "job path escapes"):
+                    runner.get(project_id, job_id)
+                with self.assertRaisesRegex(ValidationError, "job path escapes"):
+                    runner.list(project_id)
+            finally:
+                runner.shutdown()
 
     def test_queued_job_can_be_cancelled_and_retried_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -779,15 +1161,15 @@ class ApplicationConversationTests(unittest.TestCase):
 
             runner._dispatch = dispatch  # type: ignore[method-assign]
             try:
-                runner.submit(blocker_id, "message", {"text": "2 layers"})
+                runner.submit(blocker_id, "agent_message", {"text": "2 layers"})
                 self.assertTrue(started.wait(timeout=5))
                 queued = runner.submit(
                     target_id,
-                    "message",
+                    "agent_message",
                     {"text": "Create a 2-layer SHT31 sensor"},
                 )
                 cancelled = runner.cancel(target_id, queued["id"])
-                self.assertEqual(cancelled["status"], "cancel_requested")
+                self.assertEqual(cancelled["status"], "cancelled")
                 self.assertEqual(
                     service.open_project(target_id)["conversation"]["messages"], []
                 )
@@ -820,6 +1202,95 @@ class ApplicationConversationTests(unittest.TestCase):
                 release.set()
                 runner.shutdown()
 
+    def test_second_runner_does_not_interrupt_a_live_job_owner(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Live owner")["project"]["id"]
+            first = JobRunner(service, workers=1)
+            started = threading.Event()
+            release = threading.Event()
+            original_dispatch = first._dispatch
+
+            def dispatch(job: dict[str, object]) -> dict[str, object]:
+                started.set()
+                self.assertTrue(release.wait(timeout=5))
+                return original_dispatch(job)
+
+            first._dispatch = dispatch  # type: ignore[method-assign]
+            second: JobRunner | None = None
+            try:
+                submitted = first.submit(
+                    project_id,
+                    "agent_message",
+                    {"text": "Create a small sensor board"},
+                )
+                self.assertTrue(started.wait(timeout=5))
+
+                second = JobRunner(service, workers=1)
+                observed = second.get(project_id, submitted["id"])
+                self.assertEqual(observed["status"], "running")
+                requested = second.cancel(project_id, submitted["id"])
+                self.assertEqual(requested["status"], "cancel_requested")
+
+                release.set()
+                for _ in range(250):
+                    observed = first.get(project_id, submitted["id"])
+                    if observed["status"] not in {
+                        "queued",
+                        "running",
+                        "cancel_requested",
+                    }:
+                        break
+                    time.sleep(0.02)
+                self.assertEqual(observed["status"], "completed_after_cancel")
+            finally:
+                release.set()
+                first.shutdown()
+                if second is not None:
+                    second.shutdown()
+
+    def test_job_list_uses_persisted_monotonic_order_within_one_second(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ApplicationService(temporary, provider_name="builtin")
+            project_id = service.create_draft("Job ordering")["project"]["id"]
+            runner = JobRunner(service, workers=1)
+            jobs_dir = service.project_root(project_id) / "jobs"
+            try:
+                with (
+                    ResourceLock(jobs_dir, service.locks_root),
+                    patch(
+                        "pcbdraft.services.jobs.utc_timestamp",
+                        return_value="2026-08-15T12:00:00Z",
+                    ),
+                    patch(
+                        "pcbdraft.services.jobs.time.time_ns",
+                        side_effect=[200, 100],
+                    ),
+                ):
+                    first, _first_path = runner._create_job_unlocked(
+                        jobs_dir,
+                        project_id,
+                        "agent_message",
+                        {"turn_id": "turn-first", "timeout": 180.0},
+                        attempt=1,
+                        retry_of=None,
+                    )
+                    second, _second_path = runner._create_job_unlocked(
+                        jobs_dir,
+                        project_id,
+                        "agent_message",
+                        {"turn_id": "turn-second", "timeout": 180.0},
+                        attempt=1,
+                        retry_of=None,
+                    )
+
+                self.assertEqual(
+                    [job["id"] for job in runner.list(project_id)],
+                    [second["id"], first["id"]],
+                )
+            finally:
+                runner.shutdown()
+
     def test_concurrent_submissions_create_only_one_active_project_job(self) -> None:
         class DeferredPool:
             def submit(self, *_args: object, **_kwargs: object) -> object:
@@ -845,7 +1316,7 @@ class ApplicationConversationTests(unittest.TestCase):
                     accepted.append(
                         runner.submit(
                             project_id,
-                            "message",
+                            "agent_message",
                             {"text": "Create a two-layer sensor board"},
                         )
                     )

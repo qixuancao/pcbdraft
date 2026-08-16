@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from rich.console import Group, RenderableType
+from rich.markdown import Markdown
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.table import Table
@@ -18,6 +21,7 @@ from pcbdraft.agent.events import AgentActivity
 from pcbdraft.interfaces.tui.commands import SlashCommand
 from pcbdraft.interfaces.tui.projection import TuiProjection
 from pcbdraft.interfaces.tui.review import ReviewSection
+from pcbdraft.interfaces.tui.theme import PALETTE
 
 
 class AgentHeader(Static):
@@ -31,25 +35,40 @@ class AgentHeader(Static):
         provider_status: str,
         activity_label: str,
         busy: bool,
+        spinner: str = "◆",
+        elapsed_seconds: int | None = None,
+        compact: bool = False,
     ) -> None:
         grid = Table.grid(expand=True)
         grid.add_column(ratio=1)
         grid.add_column(justify="right")
-        left = Text("◆", style="bold #e2a06b")
-        left.append("  PCBDraft", style="bold #f0f2f5")
-        left.append("   ")
-        left.append(projection.project_name, style="#c9ced7")
-        left.append("  ·  ", style="#4f5865")
+        left = Text("◆", style=f"bold {PALETTE.brand}")
+        left.append("  PCBDraft", style=f"bold {PALETTE.text_strong}")
+        left.append("  " if compact else "   ")
+        if not compact or projection.project_id is not None:
+            left.append(projection.project_name, style=PALETTE.text_mid)
+            left.append("  ·  ", style=PALETTE.text_faint)
         left.append(projection.status_label, style=_status_style(projection.status))
         if busy:
-            right = Text("◆  ", style="bold #e2a06b")
-            right.append(activity_label or "Agent is working", style="#d5d9e0")
+            right = Text(spinner + "  ", style=f"bold {PALETTE.brand_soft}")
+            if not compact:
+                right.append(
+                    activity_label or "Agent is working", style=PALETTE.text_strong
+                )
+            if elapsed_seconds is not None:
+                if not compact:
+                    right.append("  ", style=PALETTE.text_faint)
+                right.append(_elapsed_label(elapsed_seconds), style=PALETTE.text_soft)
         else:
-            right = Text(provider_name, style="#8d96a3")
-            right.append("  ")
+            right = Text()
+            if not compact:
+                right.append(provider_name, style=PALETTE.text_soft)
+                right.append("  ")
             right.append(
                 "●" if provider_status == "ready" else "○",
-                style="#82c99a" if provider_status == "ready" else "#d9b968",
+                style=(
+                    PALETTE.success if provider_status == "ready" else PALETTE.warning
+                ),
             )
         grid.add_row(left, right)
         self.update(grid)
@@ -72,8 +91,11 @@ class TranscriptView(VerticalScroll):
         activities: Sequence[AgentActivity],
         *,
         pending_user_text: str,
+        pending_approval: Mapping[str, Any] | None,
         logs_expanded: bool,
+        busy: bool,
     ) -> None:
+        follow_tail = self.is_vertical_scroll_end or self.max_scroll_y <= 0
         renderables: list[RenderableType] = []
         if projection.project_id is None:
             renderables.append(_welcome_renderable())
@@ -93,31 +115,66 @@ class TranscriptView(VerticalScroll):
             renderables.append(_message_renderable("user", pending, "pending"))
 
         if activities:
-            renderables.append(_activity_panel(activities, expanded=logs_expanded))
+            renderables.append(
+                _activity_panel(activities, expanded=logs_expanded, busy=busy)
+            )
 
-        if projection.status == "awaiting_confirmation":
+        if pending_approval is not None and not busy:
+            tool_name = str(pending_approval.get("tool_name", "pcb_tool"))
+            risk = str(pending_approval.get("risk", "bounded"))
+            effect = str(pending_approval.get("effect", "project_write"))
+            baseline = pending_approval.get("baseline_revision")
+            call_id = str(pending_approval.get("tool_call_id", ""))
+            details = Text()
+            details.append("Approval required for ", style=PALETTE.text_mid)
+            details.append(tool_name, style=f"bold {PALETTE.warning}")
+            details.append(
+                f"  ·  {effect.replace('_', ' ')}  ·  {risk} risk",
+                style=PALETTE.text_soft,
+            )
+            if isinstance(baseline, int):
+                details.append(f"  ·  revision {baseline}", style=PALETTE.text_soft)
+            details.append(
+                "\nReview the retained plan or diff, then use ",
+                style=PALETTE.text_mid,
+            )
+            details.append("/confirm", style=f"bold {PALETTE.brand_soft}")
+            details.append(" once or ", style=PALETTE.text_mid)
+            details.append("/discard", style=f"bold {PALETTE.brand_soft}")
+            details.append(" to reject.", style=PALETTE.text_mid)
+            if call_id:
+                details.append(f"\ncall {call_id}", style=PALETTE.text_faint)
             renderables.append(
                 Panel(
-                    Text.from_markup(
-                        "[bold #f3c969]Plan ready for review.[/] "
-                        "Use [bold]/review[/] to inspect it and [bold]/confirm[/] "
-                        "to generate the KiCad project."
-                    ),
-                    border_style="#7f603b",
-                    title="Approval boundary",
+                    details,
+                    border_style=PALETTE.warning_border,
+                    title="Tool approval",
                     title_align="left",
                 )
             )
-        elif projection.status == "change_ready":
+        elif projection.status == "awaiting_confirmation" and not busy:
             renderables.append(
                 Panel(
                     Text.from_markup(
-                        "[bold #f3c969]A semantic change is staged.[/] "
+                        f"[bold {PALETTE.warning}]Plan ready for review.[/] "
+                        "Use [bold]/review[/] to inspect it and [bold]/confirm[/] "
+                        "to generate the KiCad project."
+                    ),
+                    border_style=PALETTE.warning_border,
+                    title="Plan checkpoint",
+                    title_align="left",
+                )
+            )
+        elif projection.status == "change_ready" and not busy:
+            renderables.append(
+                Panel(
+                    Text.from_markup(
+                        f"[bold {PALETTE.warning}]A semantic change is staged.[/] "
                         "Use [bold]/review[/], then [bold]/confirm[/] or "
                         "[bold]/discard[/]."
                     ),
-                    border_style="#7f603b",
-                    title="Approval boundary",
+                    border_style=PALETTE.warning_border,
+                    title="Change checkpoint",
                     title_align="left",
                 )
             )
@@ -126,20 +183,16 @@ class TranscriptView(VerticalScroll):
             renderables.append(
                 Panel(
                     Text("Describe a board or a requested change below."),
-                    border_style="#2c343e",
+                    border_style=PALETTE.border,
                     title="Conversation",
                     title_align="left",
                 )
             )
         self.query_one("#transcript-content", Static).update(Group(*renderables))
-        scroll_target = (
-            self.scroll_home
-            if projection.project_id is None
-            and not projection.messages
-            and not activities
-            else self.scroll_end
-        )
-        self.call_after_refresh(scroll_target, animate=False)
+        if projection.project_id is None and not projection.messages and not activities:
+            self.call_after_refresh(self.scroll_home, animate=False)
+        elif follow_tail:
+            self.call_after_refresh(self.scroll_end, animate=False)
 
 
 class ProjectRail(VerticalScroll):
@@ -150,8 +203,8 @@ class ProjectRail(VerticalScroll):
 
     def update_state(self, projection: TuiProjection) -> None:
         facts = Table.grid(padding=(0, 1), expand=True)
-        facts.add_column(style="#77808e", no_wrap=True)
-        facts.add_column(style="#d6dae1", justify="right")
+        facts.add_column(style=PALETTE.text_soft, no_wrap=True)
+        facts.add_column(style=PALETTE.text_strong, justify="right")
         facts.add_row("Size", projection.board_size)
         facts.add_row("Layers", projection.layer_label)
         facts.add_row("Parts", _count_label(projection.component_count))
@@ -161,53 +214,52 @@ class ProjectRail(VerticalScroll):
                 "Review",
                 Text(
                     f"{projection.attention_required} finding(s)",
-                    style="#d9b968",
+                    style=PALETTE.warning,
                 ),
             )
 
-        pipeline = Text()
-        stage_marker = {
-            "complete": ("✓", "#82c99a"),
-            "active": ("◆", "bold #e2a06b"),
-            "blocked": ("!", "bold #d9b968"),
-            "failed": ("×", "bold #e78284"),
-            "pending": ("○", "#515a66"),
-        }
-        for index, stage in enumerate(projection.stages):
-            marker, style = stage_marker[stage.state]
-            pipeline.append(f"{marker} ", style=style)
-            pipeline.append(stage.name, style="#d6dae1")
-            if index < len(projection.stages) - 1:
-                pipeline.append("\n│\n", style="#343c46")
-
         readiness_style = (
-            "#82c99a"
+            PALETTE.success
             if projection.candidate_ready is True
-            else "#e78284"
+            else PALETTE.error
             if projection.candidate_ready is False
-            else "#d9b968"
+            else PALETTE.warning
         )
         readiness = Text(projection.readiness_label, style=f"bold {readiness_style}")
         readiness.append("\n")
         readiness.append(
             "Human review is required before fabrication.",
-            style="#858e9a",
+            style=PALETTE.text_soft,
         )
         readiness.append("\n")
-        readiness.append(f"Assurance: {projection.assurance}", style="#626b78")
+        readiness.append(f"Assurance: {projection.assurance}", style=PALETTE.text_muted)
+
+        next_steps = Text()
+        for index, (command, description) in enumerate(_next_actions(projection)):
+            if index:
+                next_steps.append("\n")
+            next_steps.append(command, style=f"bold {PALETTE.brand_soft}")
+            next_steps.append("  " + description, style=PALETTE.text_soft)
 
         content: list[RenderableType] = [
-            Text("PROJECT", style="bold #a97652"),
-            Text(projection.project_name, style="bold #eceff3"),
-            Text(projection.purpose, style="#929aa6"),
+            Text("PROJECT", style=f"bold {PALETTE.brand}"),
+            Text(projection.project_name, style=f"bold {PALETTE.text_strong}"),
+            Text(projection.purpose, style=PALETTE.text_soft),
             Text(""),
-            Text("PCB", style="bold #a97652"),
+            Text("AGENT", style=f"bold {PALETTE.brand}"),
+            Text(projection.status_label, style=_status_style(projection.status)),
+            Text(
+                "Internal PCB tools run inside one conversation turn.",
+                style=PALETTE.text_muted,
+            ),
+            Text(""),
+            Text("NEXT", style=f"bold {PALETTE.brand}"),
+            next_steps,
+            Text(""),
+            Text("PCB", style=f"bold {PALETTE.brand}"),
             facts,
             Text(""),
-            Text("AGENT PIPELINE", style="bold #a97652"),
-            pipeline,
-            Text(""),
-            Text("READINESS", style="bold #a97652"),
+            Text("READINESS", style=f"bold {PALETTE.brand}"),
             readiness,
         ]
         self.query_one("#rail-content", Static).update(Group(*content))
@@ -220,7 +272,7 @@ class NoticeBar(Static):
         self.remove_class("notice-error", "notice-busy", "notice-muted")
         if error:
             self.add_class("notice-error")
-            self.update(Text("×  " + error, style="bold #ef9294"))
+            self.update(Text("×  " + error, style=f"bold {PALETTE.error}"))
         elif notice:
             self.add_class("notice-busy" if busy else "notice-muted")
             marker = "◆  " if busy else "·  "
@@ -233,21 +285,31 @@ class NoticeBar(Static):
 class AppFooter(Static):
     """Quiet, persistent navigation hints in place of Textual's busy footer."""
 
-    def update_state(self, projection: TuiProjection, *, provider_status: str) -> None:
+    def update_state(
+        self,
+        projection: TuiProjection,
+        *,
+        provider_status: str,
+        compact: bool = False,
+    ) -> None:
         grid = Table.grid(expand=True)
         grid.add_column(ratio=1)
         grid.add_column(justify="right")
         location = Text(
-            projection.project_id or "local workspace",
-            style="#646d79",
+            "" if compact else projection.project_id or "local workspace",
+            style=PALETTE.text_muted,
         )
         state = Text(
-            "ctrl+p commands   ·   ctrl+x shortcuts   ·   f1 help",
-            style="#646d79",
+            (
+                "^P commands  ·  ^X shortcuts  ·  F1 help"
+                if compact
+                else "ctrl+p commands   ·   ctrl+x shortcuts   ·   ctrl+c clear/stop   ·   f1 help"
+            ),
+            style=PALETTE.text_muted,
         )
         state.append(
             "   ●",
-            style="#82c99a" if provider_status == "ready" else "#d9b968",
+            style=(PALETTE.success if provider_status == "ready" else PALETTE.warning),
         )
         grid.add_row(location, state)
         self.update(grid)
@@ -256,7 +318,7 @@ class AppFooter(Static):
 class ComposerInput(Input):
     """Input that releases printable Ctrl+X chords back to the application."""
 
-    _LEADER_KEYS = frozenset({"n", "l", "m", "r", "d", "s", "c", "h", "q"})
+    _LEADER_KEYS = frozenset({"n", "l", "b", "m", "r", "d", "s", "c", "h", "q"})
 
     def check_consume_key(self, key: str, character: str | None) -> bool:
         if getattr(self.app, "leader_active", False) and key in self._LEADER_KEYS:
@@ -268,6 +330,9 @@ class Composer(Vertical):
     """OpenCode-inspired prompt surface with persistent software cursor."""
 
     def compose(self) -> ComposeResult:
+        self._context_hint = (
+            "enter send   ·   / autocomplete   ·   ctrl+p commands   ·   ctrl+c clear"
+        )
         with Vertical(id="composer-surface"):
             with Horizontal(id="composer-row"):
                 yield Static("›", id="composer-prompt")
@@ -280,22 +345,37 @@ class Composer(Vertical):
             with Horizontal(id="composer-meta"):
                 yield Static("MESSAGE", id="composer-label")
                 yield Static(
-                    "enter send   ·   / autocomplete   ·   ctrl+p commands",
+                    self._context_hint,
                     id="composer-hint",
                 )
 
-    def update_state(self, *, label: str, busy: bool) -> None:
+    def update_state(
+        self,
+        *,
+        label: str,
+        busy: bool,
+        status: str,
+        has_project: bool,
+        provider_status: str,
+    ) -> None:
         self.set_class(busy, "composer-busy")
         self.query_one("#composer-label", Static).update(
-            "WORKING" if busy else label.upper()
+            "DRAFT · WORKING" if busy else label.upper()
         )
         self.query_one("#composer-prompt", Static).update("◆" if busy else "›")
         input_widget = self.query_one("#composer-input", Input)
         input_widget.placeholder = (
-            "Agent is working… Esc or /stop interrupts at a safe boundary"
+            "Keep drafting… Enter keeps this text; Esc stops the active turn"
             if busy
             else "Ask PCBDraft to design or change a board…"
         )
+        self._context_hint = _composer_context_hint(
+            busy=busy,
+            status=status,
+            has_project=has_project,
+            provider_status=provider_status,
+        )
+        self._refresh_hint()
 
     def set_palette_open(self, open_: bool) -> None:
         """Swap the prompt hint while slash completion owns the arrow keys."""
@@ -311,13 +391,11 @@ class Composer(Vertical):
 
     def _refresh_hint(self) -> None:
         if self.has_class("leader-active"):
-            hint = (
-                "ctrl+x · n new · l projects · m models · r review · d details · q quit"
-            )
+            hint = "ctrl+x · n new · l projects · b board · m models · r review · d tools · q quit"
         elif self.has_class("palette-open"):
             hint = "↑↓ navigate   ·   enter choose   ·   tab complete   ·   esc close"
         else:
-            hint = "enter send   ·   / autocomplete   ·   ctrl+p commands"
+            hint = self._context_hint
         self.query_one("#composer-hint", Static).update(hint)
 
 
@@ -334,8 +412,8 @@ class CommandPalette(OptionList):
         self._painted_highlight = None
         self.clear_options()
         if not commands:
-            empty = Text("  No matching commands", style="#68717d")
-            empty.append("   keep typing or press Esc", style="#4f5864")
+            empty = Text("  No matching commands", style=PALETTE.text_mid)
+            empty.append("   keep typing or press Esc", style=PALETTE.text_muted)
             self.add_option(Option(empty, id="__empty__", disabled=True))
             self.highlighted = None
             return
@@ -386,47 +464,60 @@ def review_renderable(sections: Sequence[ReviewSection]) -> RenderableType:
         for index, line in enumerate(section.lines):
             if index:
                 body.append("\n")
-            body.append("• ", style="#61708d")
-            body.append(line, style="#d8e1f2")
+            body.append("• ", style=PALETTE.blue)
+            body.append(line, style=PALETTE.text)
         panels.append(
             Panel(
                 body,
                 title=section.title,
                 title_align="left",
-                border_style="#3c4963",
+                border_style=PALETTE.border,
             )
         )
     return Group(*panels) if panels else Text("Nothing to review yet.")
 
 
 def _welcome_renderable() -> RenderableType:
-    brand = Text("◆  PCBDRAFT", style="bold #e2a06b")
-    brand.append("   hardware design agent", style="#626b77")
-    title = Text("Turn an idea into a reviewable KiCad project", style="bold #eceff3")
+    brand = Text("◆  PCBDRAFT", style=f"bold {PALETTE.brand}")
+    brand.append("   hardware design agent", style=PALETTE.text_muted)
+    title = Text(
+        "Turn an idea into a reviewable KiCad project",
+        style=f"bold {PALETTE.text_strong}",
+    )
     body = Text()
-    body.append("Describe what the board should do", style="#cbd0d8")
+    body.append(
+        "Describe what the board should do",
+        style=PALETTE.text,
+    )
     body.append(
         " — for example: “Make a small USB-C powered temperature sensor board.”",
-        style="#858e9a",
+        style=PALETTE.text_soft,
     )
-    body.append("\n\nPCBDraft will", style="bold #e2a06b")
+    body.append("\n\nPCBDraft will", style=f"bold {PALETTE.brand}")
     body.append(
         " understand the request, plan the circuit, choose routine board details, "
         "generate native KiCad files, and run checks.",
-        style="#bdc3cc",
+        style=PALETTE.text_mid,
     )
-    body.append("\n\nYou approve the plan before files are generated.", style="#d9b968")
+    body.append(
+        "\n\nPlans, tool activity, generated files, and check evidence stay inspectable.",
+        style=PALETTE.warning,
+    )
 
     actions = Table.grid(padding=(0, 2))
-    actions.add_column(style="bold #eab17f", no_wrap=True)
-    actions.add_column(style="#919aa6")
+    actions.add_column(style=f"bold {PALETTE.brand_soft}", no_wrap=True)
+    actions.add_column(style=PALETTE.text_soft)
+    actions.add_row("/new", "optionally start a named project")
     actions.add_row("/connect", "connect a model provider")
     actions.add_row("/models", "switch the active model")
     actions.add_row("/help", "show every command and shortcut")
-    start = Text("›  Start typing below", style="bold #d8dde4")
+    start = Text(
+        "›  Type a board request and press Enter",
+        style=f"bold {PALETTE.text_strong}",
+    )
     start.append(
         "   ·   type / to autocomplete   ·   Ctrl+P for commands",
-        style="#69727f",
+        style=PALETTE.text_muted,
     )
     return Padding(
         Group(
@@ -440,68 +531,242 @@ def _message_renderable(role: str, text: str, kind: str) -> RenderableType:
     if role == "user":
         table = Table.grid(expand=True, padding=0)
         table.add_column(width=1, no_wrap=True)
-        table.add_column(ratio=1, style="on #151a21")
-        heading = Text("YOU", style="bold #b7bec8")
+        table.add_column(ratio=1, style=f"on {PALETTE.panel}")
+        heading = Text("YOU", style=f"bold {PALETTE.text_strong}")
         if kind == "pending":
-            heading.append("   QUEUED", style="bold #d9b968")
-        content = Group(heading, Text(text, style="#eef0f3"))
+            heading.append("   QUEUED", style=f"bold {PALETTE.warning}")
+        content = Group(heading, Text(text, style=PALETTE.text_strong))
         table.add_row(
-            Text("▌", style="#e2a06b"),
+            Text("▌", style=PALETTE.brand),
             Padding(content, (1, 2)),
         )
         return Padding(table, (1, 0, 0, 0))
 
     if role == "assistant":
-        heading = Text("◆  PCBDraft", style="bold #82c99a")
-        content = Text(text, style="#d8dde4")
+        heading = Text("◆  PCBDraft", style=f"bold {PALETTE.success}")
+        content = Markdown(
+            text,
+            code_theme="ansi_dark",
+            style=PALETTE.text,
+            hyperlinks=True,
+        )
         return Padding(Group(heading, Padding(content, (0, 0, 0, 3))), (1, 1, 0, 1))
 
-    heading = Text("·  SYSTEM", style="bold #8f829f")
+    heading = Text("·  SYSTEM", style=f"bold {PALETTE.text_soft}")
     return Padding(
-        Group(heading, Padding(Text(text, style="#b9bec7"), (0, 0, 0, 3))),
+        Group(heading, Padding(Text(text, style=PALETTE.text_mid), (0, 0, 0, 3))),
         (1, 1, 0, 1),
     )
 
 
-def _activity_panel(activities: Sequence[AgentActivity], *, expanded: bool) -> Panel:
-    limit = 40 if expanded else 10
+def _activity_panel(
+    activities: Sequence[AgentActivity], *, expanded: bool, busy: bool
+) -> Panel:
+    limit = 40 if expanded else 6
+    visible = list(activities)
+    if not expanded and any(item.tool_call_id is not None for item in visible):
+        # Durable ToolRun records are the canonical conversation-level activity.
+        # Project events remain available under `/logs on`, but showing both in
+        # the compact view produces duplicate "job / phase / tool" rows.
+        durable = [item for item in visible if item.tool_call_id is not None]
+        unmatched_failures = [
+            item
+            for item in visible
+            if item.tool_call_id is None and item.state == "failed"
+        ]
+        visible = [*unmatched_failures, *durable]
     table = Table.grid(expand=True, padding=(0, 1))
     table.add_column(width=2, no_wrap=True)
     table.add_column(ratio=1)
-    table.add_column(style="#687590", justify="right", no_wrap=True)
+    table.add_column(style=PALETTE.text_muted, justify="right", no_wrap=True)
     marker = {
-        "queued": ("○", "#77808e"),
-        "running": ("◆", "bold #e2a06b"),
-        "completed": ("✓", "#82c99a"),
-        "failed": ("×", "bold #e78284"),
-        "info": ("·", "#717a87"),
+        "queued": ("○", PALETTE.text_muted),
+        "running": ("◆", f"bold {PALETTE.brand}"),
+        "completed": ("✓", PALETTE.success),
+        "failed": ("×", f"bold {PALETTE.error}"),
+        "info": ("·", PALETTE.text_muted),
     }
-    for activity in activities[-limit:]:
+    for activity in visible[-limit:]:
         symbol, style = marker[activity.state]
-        label = Text(activity.label, style="#d6dae1")
-        label.append(f"\n{activity.message}", style="#77808e") if (
-            expanded and activity.message
-        ) else None
-        table.add_row(Text(symbol, style=style), label, Text(activity.tool))
+        label = Text(activity.label, style=PALETTE.text)
+        if expanded and activity.message:
+            label.append(f"\n{activity.message}", style=PALETTE.text_soft)
+        if expanded and activity.tool_call_id is not None:
+            label.append("\n" + _tool_binding_line(activity), style=PALETTE.text_muted)
+            if activity.arguments:
+                label.append(
+                    "\nargs  " + _bounded_json(activity.arguments),
+                    style=PALETTE.text_soft,
+                )
+            if activity.result:
+                label.append(
+                    "\nresult  " + _bounded_json(activity.result),
+                    style=PALETTE.text_soft,
+                )
+        identity = Text(activity.tool)
+        if expanded and activity.turn_id:
+            identity.append(
+                f"\nturn {activity.turn_id[-12:]}", style=PALETTE.text_faint
+            )
+        table.add_row(Text(symbol, style=style), label, identity)
+    title = "Agent activity · working" if busy else "Recent activity"
     hint = "expanded · /logs off" if expanded else "/logs to expand"
     return Panel(
         table,
-        title="Agent tools",
+        title=title,
         subtitle=hint,
         title_align="left",
         subtitle_align="right",
-        border_style="#343f4b",
+        border_style=PALETTE.busy_border if busy else PALETTE.border,
     )
+
+
+def _tool_binding_line(activity: AgentActivity) -> str:
+    details: list[str] = []
+    if activity.source:
+        details.append(f"source {activity.source.replace('_', ' ')}")
+    if activity.effect:
+        details.append(activity.effect.replace("_", " "))
+    if activity.risk:
+        details.append(f"{activity.risk} risk")
+    if activity.before_revision is not None:
+        revision = f"rev {activity.before_revision}"
+        if activity.after_revision is not None:
+            revision += f" → {activity.after_revision}"
+        details.append(revision)
+    if activity.tool_call_id:
+        details.append(f"call {activity.tool_call_id[-12:]}")
+    if activity.args_hash:
+        details.append(f"args {activity.args_hash[:10]}")
+    return "  ·  ".join(details)
+
+
+def _bounded_json(value: Mapping[str, Any], *, limit: int = 600) -> str:
+    try:
+        rendered = json.dumps(
+            dict(value), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+    except (TypeError, ValueError):
+        return "<unavailable>"
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[: limit - 1].rstrip() + "…"
 
 
 def _command_prompt(command: SlashCommand, *, selected: bool = False) -> Text:
-    prompt = Text("›" if selected else " ", style="bold #f0b47e" if selected else "")
+    prompt = Text(
+        "›" if selected else " ",
+        style=f"bold {PALETTE.brand}" if selected else "",
+    )
     prompt.append("  ")
     prompt.append(
-        f"{command.usage:<20}", style="bold #f0b47e" if selected else "bold #d9dde3"
+        f"{command.usage:<20}",
+        style=(f"bold {PALETTE.brand_soft}" if selected else f"bold {PALETTE.text}"),
     )
-    prompt.append(command.description, style="#c5cbd3" if selected else "#7f8895")
+    prompt.append(
+        command.description,
+        style=PALETTE.text if selected else PALETTE.text_muted,
+    )
     return prompt
+
+
+def _next_actions(projection: TuiProjection) -> tuple[tuple[str, str], ...]:
+    """Return a short, state-specific action list for the project rail."""
+
+    if projection.project_id is None:
+        return (
+            ("message", "describe a board to begin"),
+            ("/projects", "open an existing one"),
+        )
+    if projection.status == "planning_required":
+        return (("/connect", "connect a planning model"), ("/models", "choose a model"))
+    if projection.status == "needs_clarification":
+        return (
+            ("message", "answer the open questions"),
+            ("/review", "inspect context"),
+        )
+    if projection.status == "generation_unavailable":
+        return (
+            ("message", "adjust the request or constraints"),
+            ("/review", "inspect why"),
+        )
+    if projection.status == "awaiting_confirmation":
+        return (("/review", "inspect the plan"), ("/confirm", "generate KiCad files"))
+    if projection.status == "change_ready":
+        return (("/review", "inspect the diff"), ("/confirm", "apply the change"))
+    if projection.status == "provider_error":
+        return (("/retry", "retry the model turn"), ("/logs", "inspect the error"))
+    if projection.status in {
+        "generation_failed",
+        "repair_failed",
+        "release_failed",
+        "interrupted",
+    }:
+        return (("/review", "inspect findings"), ("/retry", "retry the last turn"))
+    if projection.status == "validation_failed":
+        return (
+            ("/review", "inspect failed checks"),
+            ("message", "ask the agent to revise"),
+        )
+    if projection.status == "generated":
+        return (("/validate", "run PCB checks"), ("/review", "inspect generated work"))
+    if projection.status == "validated":
+        return (("/review", "inspect evidence"), ("/release", "build release evidence"))
+    if projection.status == "released":
+        return (
+            ("/review", "inspect retained evidence"),
+            ("/status", "refresh project state"),
+        )
+    return (
+        ("message", "describe the board or next change"),
+        ("/help", "show all actions"),
+    )
+
+
+def _composer_context_hint(
+    *,
+    busy: bool,
+    status: str,
+    has_project: bool,
+    provider_status: str,
+) -> str:
+    if busy:
+        return "working · draft stays here   ·   esc stop   ·   /logs activity"
+    if not has_project:
+        return "describe a board and press enter   ·   /projects open   ·   ctrl+p commands"
+    if status == "planning_required":
+        return "/connect planning model   ·   /models choose   ·   /help"
+    if status == "needs_clarification":
+        return "answer the agent's questions   ·   /review context   ·   /help"
+    if status == "generation_unavailable":
+        return "adjust the request   ·   /review constraints   ·   /help"
+    if provider_status != "ready" and status in {"draft", "ready"}:
+        return "/connect provider   ·   /models choose   ·   ctrl+p commands"
+    if status == "awaiting_confirmation":
+        return "/review inspect plan   ·   /confirm generate   ·   esc close"
+    if status == "change_ready":
+        return "/review inspect diff   ·   /confirm apply   ·   /discard"
+    if status == "provider_error":
+        return "/retry model turn   ·   /logs error details   ·   /models switch"
+    if status in {
+        "generation_failed",
+        "repair_failed",
+        "release_failed",
+        "interrupted",
+    }:
+        return "/review findings   ·   /retry last turn   ·   /logs details"
+    if status == "validation_failed":
+        return "/review failed checks   ·   describe a revision   ·   /logs details"
+    if status == "generated":
+        return "/validate run checks   ·   /review inspect"
+    if status == "validated":
+        return "/review evidence   ·   /release build bundle"
+    return "enter send   ·   / autocomplete   ·   ctrl+p commands   ·   ctrl+c clear"
+
+
+def _elapsed_label(seconds: int) -> str:
+    minutes, remainder = divmod(max(0, seconds), 60)
+    return f"{minutes}:{remainder:02d}" if minutes else f"{remainder}s"
 
 
 def _count_label(value: int | None) -> str:
@@ -510,9 +775,9 @@ def _count_label(value: int | None) -> str:
 
 def _status_style(status: str) -> str:
     if "failed" in status or status == "interrupted":
-        return "bold #e78284"
+        return f"bold {PALETTE.error}"
     if status in {"validated", "released"}:
-        return "bold #82c99a"
+        return f"bold {PALETTE.success}"
     if status in {"interpreting", "generating", "repairing", "validating", "releasing"}:
-        return "bold #e2a06b"
-    return "#d9b968"
+        return f"bold {PALETTE.brand_soft}"
+    return PALETTE.warning

@@ -8,6 +8,7 @@ import shutil
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 from pcbdraft import PRIMARY_CLI, PRODUCT_NAME, __version__
 from pcbdraft.agent.design import (
@@ -63,6 +64,9 @@ from pcbdraft.verification.release import (
 from pcbdraft.verification.validation import validate_managed_project
 
 DEFAULT_TIMEOUT = 600.0
+_ROOT_OPTIONS_WITH_VALUES = frozenset(
+    {"--workspace", "--provider", "--project", "--timeout", "--approval-mode"}
+)
 
 
 def positive_timeout(value: str) -> float:
@@ -79,6 +83,60 @@ def invoked_program(argv0: str | None = None) -> str:
     """Return the supported launcher name, defaulting module use to the primary CLI."""
     name = Path(argv0 if argv0 is not None else sys.argv[0]).name
     return name if name == PRIMARY_CLI else PRIMARY_CLI
+
+
+def _root_command_index(tokens: Sequence[str]) -> int:
+    """Locate the subcommand while respecting values of root-level options."""
+
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        if token in _ROOT_OPTIONS_WITH_VALUES:
+            index += 2
+            continue
+        if any(token.startswith(f"{option}=") for option in _ROOT_OPTIONS_WITH_VALUES):
+            index += 1
+            continue
+        if token.startswith("-"):
+            index += 1
+            continue
+        return index
+    return len(tokens)
+
+
+def _option_was_supplied(tokens: Sequence[str], option: str) -> bool:
+    return any(token == option or token.startswith(f"{option}=") for token in tokens)
+
+
+def _mcp_scope_arguments(
+    args: argparse.Namespace, tokens: Sequence[str]
+) -> dict[str, Any]:
+    """Merge root and MCP-local scope without silently ignoring either form.
+
+    MCP-local values win when both placements are present. Otherwise an option
+    explicitly supplied before ``mcp`` is inherited; untouched parser defaults
+    retain MCP's safer review policy.
+    """
+
+    command_index = _root_command_index(tokens)
+    before = tokens[:command_index]
+    after = tokens[command_index + 1 :]
+
+    def selected(option: str, root_name: str, mcp_name: str) -> Any:
+        if _option_was_supplied(after, option):
+            return getattr(args, mcp_name)
+        if _option_was_supplied(before, option):
+            return getattr(args, root_name)
+        return getattr(args, mcp_name)
+
+    return {
+        "workspace": selected("--workspace", "workspace", "mcp_workspace"),
+        "provider": selected("--provider", "provider", "mcp_provider"),
+        "approval_mode": selected(
+            "--approval-mode", "approval_mode", "mcp_approval_mode"
+        ),
+        "timeout": selected("--timeout", "timeout", "mcp_timeout"),
+    }
 
 
 def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
@@ -116,6 +174,12 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         default=420.0,
         metavar="SEC",
         help="terminal action timeout",
+    )
+    parser.add_argument(
+        "--approval-mode",
+        choices=("workspace", "review", "read_only"),
+        default="workspace",
+        help="terminal tool permission policy",
     )
     subcommands = parser.add_subparsers(dest="command")
 
@@ -372,6 +436,36 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     subcommands.add_parser(
         "api", help="serve newline-delimited JSON-RPC 2.0 on stdin/stdout"
     )
+    mcp = subcommands.add_parser(
+        "mcp",
+        help="serve project-bound PCB tools over MCP stdio (2025-11-25)",
+    )
+    mcp.add_argument("--project", required=True, dest="mcp_project_id", metavar="ID")
+    mcp.add_argument(
+        "--workspace",
+        dest="mcp_workspace",
+        metavar="ABS_DIR",
+        help="absolute isolated workspace; omit to use the configured repository",
+    )
+    mcp.add_argument(
+        "--provider",
+        dest="mcp_provider",
+        choices=("auto", "openai-compatible", "builtin"),
+        default="auto",
+    )
+    mcp.add_argument(
+        "--approval-mode",
+        dest="mcp_approval_mode",
+        choices=("workspace", "review", "read_only"),
+        default="review",
+    )
+    mcp.add_argument(
+        "--timeout",
+        dest="mcp_timeout",
+        type=positive_timeout,
+        default=420.0,
+        metavar="SEC",
+    )
     return parser
 
 
@@ -389,7 +483,8 @@ def _print_doctor(report: dict, as_json: bool) -> int:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
-    args = parser.parse_args(argv)
+    tokens = list(argv) if argv is not None else sys.argv[1:]
+    args = parser.parse_args(tokens)
     try:
         if args.command is None:
             return run_tui_command(
@@ -397,6 +492,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 provider=args.provider,
                 project_id=args.project_id,
                 timeout=args.timeout,
+                approval_mode=args.approval_mode,
             )
         if args.command == "doctor":
             return _print_doctor(doctor_report(), args.as_json)
@@ -765,6 +861,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "api":
             return serve()
+        if args.command == "mcp":
+            from pcbdraft.interfaces.mcp import run_mcp_stdio
+
+            scope = _mcp_scope_arguments(args, tokens)
+            return run_mcp_stdio(
+                workspace=scope["workspace"],
+                provider=scope["provider"],
+                project_id=args.mcp_project_id,
+                approval_mode=scope["approval_mode"],
+                timeout=scope["timeout"],
+            )
     except TransactionRejected as exc:
         print(f"{parser.prog}: {exc}", file=sys.stderr)
         return exc.exit_code

@@ -16,7 +16,14 @@ The terminal stores only a mode-0600 pointer to the last local project. It
 restores retained history without replaying an interrupted action; retry is an
 explicit command. Plan/change review and expanded logs are terminal
 presentations over persisted application evidence, not a second source of
-project truth.
+project truth. Browser messages and action buttons enter this same Agent job
+path. A project response includes a bounded read-only projection of recent
+durable turns, tool runs, and any pending approval, so the browser can render
+stable <code>pcb_*</code> activity in the conversation instead of reconstructing
+a plan/confirm wizard from project status. The current browser server always
+uses the <code>workspace</code> permission policy and has no approval mutation
+endpoint; a checkpoint created by a review-mode TUI is visible there but must be
+resolved in that TUI.
 
 Normal application launches use one persistent PCB project repository. On
 first run PCBDraft creates <code>~/PCBDraft</code> and records its location in
@@ -28,21 +35,59 @@ location, or <code>pcbdraft repository --json</code> to inspect it. The
 explicit <code>--workspace</code> options remain isolated automation/test
 overrides and do not change the persisted location.
 
-The default terminal flow is:
+The default terminal presents one continuous agent turn:
 
     user request
-      → requirement interpretation
-      → clarification only for material facts
-      → reviewed generic circuit plan
-      → automatic advance across the transactional generation boundary
-      → native KiCad generation attempt
-      → previews and KiCad/PCBDraft checks
-      → at most two schema-constrained plan repairs for generation or completed
-        deterministic L1-L3 failures, with staged validation and atomic application
+      → bounded PCB tool calls and inline activity
+      → assistant result with inspectable plan, artifacts, and evidence
 
-The service and parameterized clients still expose explicit confirmation for
-manually staged and recovered projects. Automatic terminal progression does not
-remove the persisted plan or the transaction boundary.
+Internally, each message first creates a versioned durable turn. The background
+Job stores its <code>turn_id</code>, not a second copy of the message. Every tool
+intent is persisted before execution with
+<code>thread_id + turn_id + tool_call_id</code>, canonical argument hash,
+baseline revision, source, effect, risk, status, and a bounded result receipt.
+An explicit retry reuses that turn and starts at the next unfinished boundary;
+it does not call requirement interpretation again after a completed receipt.
+“Unfinished” here means a call that was not dispatched. If dispatch was recorded
+but no exact result receipt exists, the turn fails closed and retry will not
+replay that potentially effective write, regardless of whether the visible
+project revision changed.
+
+The current call producer uses a hybrid router rather than delegating the whole
+workflow to a model. Only the built-in OpenAI preset with provider ID
+<code>openai</code> and exact host <code>api.openai.com</code> may use OpenAI
+Responses native function calling. It makes at most one model decision at the
+start of each natural-language turn, selecting an eligible initial
+<code>pcb_*</code> tool. Slash-command turns and all mandatory continuation after
+the first call&mdash;generation, validation, evidence-driven repair, approval, and
+revision handling&mdash;use the deterministic local policy. Every other provider,
+including a custom OpenAI-compatible endpoint, uses the same local fallback for
+intent routing; it can still participate in schema-constrained requirement
+interpretation and circuit planning.
+
+The native request is journaled before dispatch under
+<code>agent-turns/model-decisions/{turn_id}-router.json</code>. A completed
+decision is reused as the exact retained call. A decision left dispatched
+without a result, or one recorded as failed, is never automatically sent to the
+model again; the runtime falls back to a deterministic local decision. The
+journal is an intent-routing receipt, not proof that PCB work succeeded.
+
+Plan, generation, validation, repair, apply, discard, undo, preview, and release
+calls all pass through the same <code>PermissionBroker</code>, closed
+<code>PCBToolRegistry</code>, and <code>PCBToolExecutor</code>. The registry
+exports strict OpenAI Responses function tools and MCP Tool descriptors using
+stable <code>pcb_*</code> names. Neither a model call nor an MCP caller receives
+private handlers or direct application-service, filesystem, shell, or raw KiCad
+authority; strict arguments, allowed project states, permission decisions, and
+baseline revisions remain local.
+
+The default TUI and browser <code>workspace</code> policy automatically performs
+requested project-local work, matching a coding-agent interaction instead of
+exposing a fixed four-step wizard. TUI <code>review</code> mode pauses a high-risk
+or autonomous authoritative-write tool. Its durable approval binds one exact
+tool call, argument hash, and project revision; <code>/confirm</code> approves that
+call once and <code>/discard</code> rejects it. Automatic progression never removes
+the persisted plan, candidate validation, or transaction boundary.
 
 Automatic repair is an application-service capability, not raw model authority.
 Feedback has the versioned <code>pcbdraft-agent-repair-feedback</code> shape;
@@ -50,18 +95,88 @@ the provider returns a full replacement plan through the normal compiler. Failed
 native candidates and their validation reports remain under
 <code>transactions/</code>. Non-deterministic and human-required findings are
 reported to the user but are not fed back as automatic repair triggers.
+On an existing generated project, a normal follow-up message uses the same
+bounded revision channel to generate and validate an isolated replacement under
+<code>transactions/</code>. The authoritative design remains unchanged until the
+checked candidate is atomically applied; failed candidates retain their evidence.
 
 The browser listens only on loopback by design. Its HTTP/SSE routes are an
 internal UI transport, not a public remote API. Every API, SSE, preview, and
 artifact request requires the per-process capability from the launch URL fragment;
 writes also require same-origin and CSRF validation.
 
+<code>GET /api/projects/{project_id}</code> adds an <code>agent</code> object to
+the normal public project view. Its schema is
+<code>pcbdraft-browser-agent-view</code> version 1. It contains the main thread's
+20 most recent turns in oldest-first display order, bounded tool-run receipts,
+the server permission mode, and at most one enriched pending approval. This is a
+read-only presentation contract; it does not expose tool handlers or confer
+approval authority.
+
 The builtin provider can collect requirements without a network credential, but
 it does not invent an electrical topology. A configured model API or an
-OpenAI-compatible provider is needed to produce a generic circuit plan. Every provider passes through the
-same strict intent/plan validators and repair compiler. The transport records the
-selected structured-output mode and attempt count, but never a prompt, credential,
-or raw provider error body. Transient retries never change the selected model.
+OpenAI-compatible provider is needed to produce a generic circuit plan. Every
+provider passes through the same strict intent/plan validators and repair
+compiler. The transport records the selected structured-output mode and attempt
+count, but never a prompt, credential, or raw provider error body. Transient
+retries never change the selected model.
+
+Durable Agent Jobs use schema version 2 and carry an execution-policy snapshot:
+the exact permission mode, closed-registry authority fingerprint, and per-turn
+tool-call limit. Startup recovery and explicit retry dispatch only when the
+current runtime exactly matches that snapshot. Legacy jobs without the binding,
+historical direct actions, missing durable turns, and mismatched policies fail
+closed into visible terminal audit states; they are never upgraded into runnable
+authority during recovery.
+
+Once a tool has crossed its durable dispatch marker, an exception is not treated
+as a retryable failure unless an exact local effect receipt reconciles it. An
+unreconciled call is retained as an interrupted, non-replayable effect. Likewise,
+a failed or denied model-selected direct intent cannot be replaced by a different
+state-derived operation on retry; the caller must inspect the project and submit
+a new turn.
+
+## MCP stdio
+
+<code>pcbdraft mcp</code> exposes the closed PCB registry to an external MCP host
+over stdin/stdout. It is separate from the newline-delimited JSON-RPC interface
+documented below and has no network listener.
+
+    pcbdraft mcp --project PROJECT_ID
+    pcbdraft mcp --project PROJECT_ID --workspace /absolute/repository
+
+<code>--project</code> is required and must name an existing project. If
+<code>--workspace</code> is omitted, the configured PCBDraft repository is used;
+an explicit override must be absolute. Each server process binds that single
+project before stdout becomes protocol-only. MCP tool schemas therefore contain
+neither project IDs nor paths, and each <code>tools/call</code> executes exactly
+one requested durable operation rather than auto-running the remaining PCB
+workflow.
+
+The default is <code>--approval-mode review</code>. A high-risk or
+authoritative-write tool that requires review is not executed: the call returns
+an error result with <code>status=approval_required</code>, the durable turn/tool
+identity, and the exact revision-bound checkpoint. Resolve that checkpoint in a
+review-mode TUI and do not retry the same MCP call. <code>workspace</code> and
+<code>read_only</code> are also available; <code>--timeout SEC</code> bounds each
+tool call.
+
+If an MCP timeout or request cancellation races with an active durable Job, or a
+post-submit Job/Turn read or dispatched tool cannot be reconciled, the
+adapter returns <code>status=outcome_unknown</code>,
+<code>retry_safe=false</code>, and the retained <code>job_id</code> /
+<code>turn_id</code> reconciliation identities. It does not call an in-flight,
+non-idempotent PCB effect a normal timeout. The caller must inspect those local
+records and must not retry the MCP call while the outcome is unknown.
+
+The current server targets MCP <code>2025-11-25</code> with the official Python
+SDK 1.x. The dependency is constrained to <code>mcp&gt;=1.29,&lt;2</code> because the
+KiCad dependency chain currently requires an SDK version below 2. The implemented
+surface is stdio <code>tools/list</code> and <code>tools/call</code> only; there is
+no Streamable HTTP transport, resources/prompts surface, or built-in MCP client.
+The calendar year 2026 does not imply a 2026 protocol implementation, and clients
+requiring a post-<code>2025-11-25</code> revision or SDK v2 behavior are outside
+the current compatibility claim.
 
 ## JSON-RPC
 

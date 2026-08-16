@@ -12,6 +12,21 @@ const state = {
   pollTimer: null,
 };
 
+const TOOL_PRESENTATION = {
+  pcb_plan_request: "Understanding the board request",
+  pcb_generate_candidate: "Generating the KiCad project",
+  pcb_validate: "Checking the PCB candidate",
+  pcb_repair_candidate: "Repairing the PCB candidate",
+  pcb_apply_candidate: "Applying the checked PCB change",
+  pcb_discard_candidate: "Discarding the staged PCB change",
+  pcb_undo_last_change: "Restoring the previous PCB design",
+  pcb_render_previews: "Rendering board previews",
+  pcb_build_release: "Building release evidence",
+};
+
+const ACTIVE_TOOL_STATES = new Set(["proposed", "waiting_approval", "running"]);
+const RETRYABLE_JOB_STATES = new Set(["failed", "cancelled", "interrupted"]);
+
 const byId = (id) => document.getElementById(id);
 const node = (tag, className, text) => {
   const value = document.createElement(tag);
@@ -83,9 +98,11 @@ function renderDiagnostics() {
   clear(target);
   target.append(node("h2", "", "First-run checks"));
   const provider = state.diagnostics.provider;
+  const orchestration = state.diagnostics.agent_orchestration;
   const tableReady = Object.values(state.diagnostics.kicad_library_tables).every((item) => item.configured);
   const checks = [
     ["Provider", `${provider.id} · ${provider.available ? "ready" : "setup needed"}`, provider.available],
+    ["Agent router", orchestration.router.replaceAll("-", " "), true],
     ["KiCad CLI", state.diagnostics.tools["kicad-cli"]?.available ? "ready" : "missing", state.diagnostics.tools["kicad-cli"]?.available],
     ["KiCad libraries", tableReady ? "ready" : "setup needed", tableReady],
     ["Workspace", "private local storage", true],
@@ -133,6 +150,107 @@ function renderMessages(view) {
   target.scrollTop = target.scrollHeight;
 }
 
+function toolLabel(toolName) {
+  return TOOL_PRESENTATION[toolName] || toolName.replaceAll("_", " ");
+}
+
+function statusLabel(status) {
+  return String(status || "unknown").replaceAll("_", " ");
+}
+
+function statusToneClass(status) {
+  if (status === "completed") return "activity-good";
+  if (["failed", "interrupted"].includes(status)) return "activity-bad";
+  if (["denied", "cancelled"].includes(status)) return "activity-muted";
+  return "activity-live";
+}
+
+function toolDetail(tool) {
+  if (tool.error) return tool.error;
+  if (tool.after_status) {
+    return `${statusLabel(tool.before_status)} → ${statusLabel(tool.after_status)} · state revision ${tool.before_revision} → ${tool.after_revision}`;
+  }
+  if (tool.status === "waiting_approval") return `Paused before dispatch at state revision ${tool.baseline_revision}`;
+  if (tool.status === "running") return `Running against state revision ${tool.baseline_revision}`;
+  return `Bound to state revision ${tool.baseline_revision}`;
+}
+
+function renderToolRun(tool) {
+  const details = node("details", `tool-run ${statusToneClass(tool.status)}`);
+  details.open = ACTIVE_TOOL_STATES.has(tool.status) || ["failed", "interrupted"].includes(tool.status);
+  const summary = node("summary", "tool-summary");
+  const failed = ["failed", "interrupted"].includes(tool.status);
+  const marker = node("span", "tool-marker", tool.status === "completed" ? "✓" : failed ? "×" : tool.status === "running" ? "◆" : "○");
+  marker.setAttribute("aria-hidden", "true");
+  const identity = node("span", "tool-identity");
+  identity.append(node("strong", "", toolLabel(tool.tool_name)), node("code", "", tool.tool_name));
+  summary.append(marker, identity, node("span", "tool-status", statusLabel(tool.status)));
+
+  const body = node("div", "tool-body");
+  body.append(node("p", "", toolDetail(tool)));
+  const metadata = node("div", "tool-metadata");
+  metadata.append(
+    node("span", "", `source ${tool.source.replaceAll("_", " ")} · ${tool.effect.replaceAll("_", " ")} · ${tool.risk} risk`),
+    node("code", "", tool.tool_call_id),
+  );
+  body.append(metadata);
+  if (tool.arguments && Object.keys(tool.arguments).length) {
+    body.append(node("pre", "tool-receipt", `Arguments\n${JSON.stringify(tool.arguments, null, 2)}`));
+  }
+  if (tool.result) {
+    body.append(node("pre", "tool-receipt", `Result receipt\n${JSON.stringify(tool.result, null, 2)}`));
+  }
+  details.append(summary, body);
+  return details;
+}
+
+function renderAgentActivity(view) {
+  const panel = byId("agent-activity");
+  const target = byId("turn-activity");
+  const approval = byId("approval-readonly");
+  clear(target); clear(approval);
+  const agent = view.agent;
+  const turns = agent?.turns || [];
+  const recentTurns = turns.slice(-4);
+  const pending = agent?.pending_approval || null;
+  byId("agent-mode").textContent = agent
+    ? `${agent.call_producer.replaceAll("-", " ")} · ${agent.permission_mode.replaceAll("_", " ")} policy`
+    : "";
+
+  for (const [index, turn] of recentTurns.entries()) {
+    const wrapper = node("details", "agent-turn");
+    const isLatest = index === recentTurns.length - 1;
+    wrapper.open = isLatest || ["running", "waiting_approval", "failed", "interrupted"].includes(turn.status);
+    const summary = node("summary", "turn-summary");
+    const rawRequest = String(turn.request || "Agent turn");
+    const request = rawRequest.startsWith("/pcb_") ? "Explicit PCB action" : rawRequest;
+    summary.append(
+      node("span", "turn-request", request),
+      node("span", `turn-status ${statusToneClass(turn.status)}`, statusLabel(turn.status)),
+    );
+    const calls = node("div", "tool-calls");
+    if (turn.tool_runs.length) {
+      for (const tool of turn.tool_runs) calls.append(renderToolRun(tool));
+    } else {
+      calls.append(node("p", "activity-empty", "No PCB tool has been proposed for this turn yet."));
+    }
+    wrapper.append(summary, calls);
+    target.append(wrapper);
+  }
+
+  if (pending) {
+    approval.classList.remove("hidden");
+    approval.append(
+      node("strong", "", `Approval retained for ${pending.tool_name}`),
+      node("p", "", `This exact ${pending.risk}-risk call is paused at state revision ${pending.baseline_revision}. The browser exposes it read-only; resolve it from the TUI running in review mode.`),
+      node("code", "", pending.tool_call_id),
+    );
+  } else {
+    approval.classList.add("hidden");
+  }
+  panel.classList.toggle("hidden", !turns.length && !pending);
+}
+
 function card(title) {
   const result = node("section", "panel-card");
   result.append(node("h2", "", title));
@@ -145,7 +263,7 @@ function renderBrief(view) {
   const proposal = view.conversation.proposal;
   if (!proposal) {
     const waiting = card("Design brief");
-    waiting.append(node("p", "", "Your request, assumptions, parts, and constraints will appear here before generation."));
+    waiting.append(node("p", "", "Your request, assumptions, parts, and constraints will appear here as the agent works."));
     target.append(waiting);
     return;
   }
@@ -280,7 +398,7 @@ function renderArtifacts(view) {
   const preview = view.artifacts.previews;
   if (!preview) {
     const empty = card("Visual evidence");
-    empty.append(node("p", "", view.design ? "Preview export has not completed. Retry the preview action." : "Confirm generation to produce real KiCad previews."));
+    empty.append(node("p", "", view.design ? "Preview export has not completed. Retry the preview action." : "The agent has not produced native KiCad previews yet."));
     target.append(empty);
     return;
   }
@@ -311,7 +429,7 @@ function renderValidation(view) {
   const validation = view.artifacts.validation;
   if (!validation) {
     const empty = card("Checks");
-    empty.append(node("p", "", "No check results yet. Generation runs the applicable real KiCad and PCBDraft checks."));
+    empty.append(node("p", "", "No check results yet. The agent runs applicable real KiCad and PCBDraft checks as tool activity."));
     target.append(empty);
     return;
   }
@@ -359,42 +477,22 @@ function renderValidation(view) {
   actions.append(row); target.append(actions);
 }
 
-function renderConfirmation(view) {
-  const panel = byId("confirmation");
-  const confirm = byId("confirm");
-  const discard = byId("discard");
-  const status = view.project.status;
-  if (status === "awaiting_confirmation") {
-    panel.classList.remove("hidden"); discard.classList.add("hidden");
-    byId("confirmation-title").textContent = "Confirm generation";
-    byId("confirmation-copy").textContent = "Create native KiCad files from this reviewed semantic intent?";
-    confirm.textContent = "Generate & check";
-  } else if (status === "change_ready") {
-    panel.classList.remove("hidden"); discard.classList.remove("hidden");
-    byId("confirmation-title").textContent = "Confirm semantic change";
-    byId("confirmation-copy").textContent = "The staged diff passed validation; current files remain unchanged.";
-    confirm.textContent = "Apply safely";
-  } else {
-    panel.classList.add("hidden");
-  }
-}
-
 function renderProject(view) {
   state.current = view;
   if (["draft", "interpreting", "needs_clarification", "planning_required", "awaiting_confirmation", "generation_unavailable", "provider_error"].includes(view.project.status)) selectTab("brief");
   byId("empty-state").classList.add("hidden");
   byId("project-workspace").classList.remove("hidden");
-  byId("project-eyebrow").textContent = `${view.project.status.replaceAll("_", " ")} · revision ${view.project.design_revision}`;
+  byId("project-eyebrow").textContent = `${view.project.status.replaceAll("_", " ")} · state revision ${view.state.revision} · design revision ${view.project.design_revision}`;
   byId("project-title").textContent = view.project.name;
   byId("open-kicad").disabled = !view.design;
   byId("release").disabled = !view.artifacts.validation?.candidate_ready || Boolean(activeJob(view));
   byId("message-input").disabled = Boolean(activeJob(view));
   byId("send-message").disabled = Boolean(activeJob(view));
   renderMessages(view);
+  renderAgentActivity(view);
   renderBrief(view);
   renderArtifacts(view);
   renderValidation(view);
-  renderConfirmation(view);
   renderProjectList();
   renderJob(view);
   window.localStorage.setItem("pcbdraft-project", view.project.id);
@@ -413,23 +511,30 @@ function activeJob(view = state.current) {
   return view?.jobs?.find((job) => ["queued", "running", "cancel_requested"].includes(job.status)) || null;
 }
 
+function toolForJob(view, job) {
+  const turnId = job?.args?.turn_id || job?.result?.turn_id;
+  const turn = view?.agent?.turns?.find((item) => item.turn_id === turnId);
+  if (!turn?.tool_runs?.length) return null;
+  return [...turn.tool_runs].reverse().find((tool) => ACTIVE_TOOL_STATES.has(tool.status)) || turn.tool_runs.at(-1);
+}
+
 function renderJob(view = state.current) {
-  const job = activeJob(view) || state.activeJob;
+  const rememberedJob = state.activeJob?.project_id === view?.project?.id ? state.activeJob : null;
+  const job = activeJob(view) || rememberedJob;
   const panel = byId("job-panel");
-  if (!job || ["completed", "completed_after_cancel", "failed", "cancelled", "interrupted"].includes(job.status) && job !== state.activeJob) {
+  if (!job || ["completed", "completed_after_cancel"].includes(job.status)) {
+    state.activeJob = null;
     panel.classList.add("hidden"); return;
   }
   state.activeJob = job;
   panel.classList.remove("hidden");
-  byId("job-title").textContent = `${job.action.replaceAll("_", " ")} · ${job.status.replaceAll("_", " ")}`;
-  const attempt = view?.attempts?.[0];
-  const attemptProgress = job.action === "confirm" && attempt?.status === "running"
-    ? `Generation phase: ${attempt.phase.replaceAll("_", " ")}. Evidence is already persisted.`
-    : null;
-  byId("job-detail").textContent = job.error || attemptProgress || "Progress is persisted; you can safely reopen this project.";
+  const tool = toolForJob(view, job);
+  const subject = tool ? `${toolLabel(tool.tool_name)} · ${tool.tool_name}` : job.action === "agent_message" ? "Agent turn" : statusLabel(job.action);
+  byId("job-title").textContent = `${subject} · ${statusLabel(job.status)}`;
+  byId("job-detail").textContent = job.error || (tool ? toolDetail(tool) : "Progress is persisted; you can safely reopen this project.");
   const terminal = ["completed", "completed_after_cancel", "failed", "cancelled", "interrupted"].includes(job.status);
   byId("cancel-job").classList.toggle("hidden", terminal || job.status === "cancel_requested");
-  byId("retry-job").classList.toggle("hidden", !["failed", "cancelled", "interrupted"].includes(job.status));
+  byId("retry-job").classList.toggle("hidden", !RETRYABLE_JOB_STATES.has(job.status));
   panel.querySelector(".spinner").classList.toggle("hidden", terminal);
 }
 
@@ -538,8 +643,6 @@ function bindEvents() {
   byId("composer").addEventListener("submit", (event) => {
     event.preventDefault(); const input = byId("message-input"); const text = input.value; input.value = ""; sendMessage(text);
   });
-  byId("confirm").addEventListener("click", () => runAction(state.current?.project.status === "change_ready" ? "apply-change" : "confirm"));
-  byId("discard").addEventListener("click", () => runAction("discard-change"));
   byId("release").addEventListener("click", () => runAction("release"));
   byId("open-kicad").addEventListener("click", async () => {
     try { const result = await api(`/api/projects/${state.current.project.id}/open-kicad`, { method: "POST", body: {} }); toast(`Opened ${result.path}`); }

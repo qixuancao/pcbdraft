@@ -363,13 +363,23 @@ def _repair_prompt(
     """Build a bounded plan-revision prompt from deterministic tool evidence."""
 
     normalized = normalize_repair_feedback(feedback)
+    revision_kind = (
+        "user-requested semantic revision"
+        if normalized["phase"] == "user_request"
+        else "bounded repair attempt"
+    )
+    evidence_label = (
+        "User revision request"
+        if normalized["phase"] == "user_request"
+        else "Deterministic repair feedback"
+    )
     return (
         _planning_prompt(request, symbol_context)
-        + "\n\nThis is a bounded repair attempt. Return a complete replacement circuit "
+        + f"\n\nThis is a {revision_kind}. Return a complete replacement circuit "
         "plan with the same design_id. Preserve every explicitly requested part and "
         "use only the supplied symbol candidates. Change only semantic components, "
         "pins, nets, values, footprints, assumptions, or notes that are justified by "
-        "the evidence. Do not emit patches, KiCad text, geometry, routing commands, "
+        "the supplied request or evidence. Do not emit patches, KiCad text, geometry, routing commands, "
         "or claims that the repair passed. Do not repeat the previous plan unchanged."
         "\nPrevious circuit plan (JSON): "
         + json.dumps(
@@ -378,7 +388,7 @@ def _repair_prompt(
             sort_keys=True,
             separators=(",", ":"),
         )
-        + "\nDeterministic repair feedback (JSON): "
+        + f"\n{evidence_label} (JSON): "
         + json.dumps(
             normalized,
             ensure_ascii=False,
@@ -527,6 +537,7 @@ class BuiltinIntentProvider:
             "available": True,
             "model": False,
             "planning": "not available; configure a model API in PCBDraft",
+            "agent_protocol": "deterministic",
             "secret_storage": "none",
         }
 

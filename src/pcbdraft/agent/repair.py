@@ -12,17 +12,17 @@ REPAIR_FEEDBACK_SCHEMA = "pcbdraft-agent-repair-feedback"
 REPAIR_FEEDBACK_VERSION = 1
 MAX_AUTOMATIC_REPAIRS = 2
 MAX_REPAIR_FINDINGS = 32
-_PHASES = {"generation", "validation"}
+_PHASES = {"generation", "validation", "user_request"}
 
 
 def _bounded_text(value: Any, field: str, *, limit: int) -> str:
     if not isinstance(value, str) or not value.strip():
         raise ValidationError(f"repair feedback {field} must be non-empty text")
+    if len(value) > limit:
+        raise ValidationError(
+            f"repair feedback {field} exceeds the {limit} character limit"
+        )
     normalized = " ".join(value.replace("\x00", "").split())
-    encoded = normalized.encode("utf-8")
-    if len(encoded) > limit:
-        encoded = encoded[:limit]
-        normalized = encoded.decode("utf-8", "ignore").rstrip()
     if not normalized:
         raise ValidationError(f"repair feedback {field} is empty after normalization")
     return normalized
@@ -34,13 +34,16 @@ def normalize_repair_feedback(value: Any) -> dict[str, Any]:
     required = {"schema", "version", "phase", "attempt", "summary", "findings"}
     if not isinstance(value, Mapping) or set(value) != required:
         raise ValidationError("repair feedback has an invalid shape")
+    version = value["version"]
     if (
         value["schema"] != REPAIR_FEEDBACK_SCHEMA
-        or value["version"] != REPAIR_FEEDBACK_VERSION
+        or isinstance(version, bool)
+        or not isinstance(version, int)
+        or version != REPAIR_FEEDBACK_VERSION
     ):
         raise ValidationError("unsupported repair feedback schema/version")
     phase = value["phase"]
-    if phase not in _PHASES:
+    if not isinstance(phase, str) or phase not in _PHASES:
         raise ValidationError("repair feedback phase is invalid")
     attempt = value["attempt"]
     if (
@@ -174,3 +177,23 @@ def validation_feedback(
     validation = artifacts.get("validation") if isinstance(artifacts, Mapping) else None
     levels = validation.get("levels") if isinstance(validation, Mapping) else None
     return validation_feedback_from_levels(levels, attempt=attempt)
+
+
+def user_revision_feedback(request: str) -> dict[str, Any]:
+    """Encode a conversational revision through the bounded repair channel.
+
+    The model still receives only semantic planning context and the constrained
+    local symbol catalog.  Native KiCad files remain behind the transactional
+    candidate generator and cannot be edited directly by the provider.
+    """
+
+    return normalize_repair_feedback(
+        {
+            "schema": REPAIR_FEEDBACK_SCHEMA,
+            "version": REPAIR_FEEDBACK_VERSION,
+            "phase": "user_request",
+            "attempt": 1,
+            "summary": "The user requested a revision to the current PCB design.",
+            "findings": [request],
+        }
+    )
