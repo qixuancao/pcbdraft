@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import shutil
 import time
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
@@ -33,6 +32,7 @@ from pcbdraft.core.project import (
     validate_baseline_document,
 )
 from pcbdraft.core.runs import create_run, ensure_output_outside_project, utc_timestamp
+from pcbdraft.kicad.runtime import find_kicad_cli
 from pcbdraft.model.review import invoke_model, patch_prompt, review_prompt
 from pcbdraft.services.doctor import probe_executable
 from pcbdraft.services.patching import (
@@ -72,7 +72,7 @@ def _tool_versions(
     *,
     kicad_executable: str | None,
 ) -> dict[str, Any]:
-    kicad = kicad_executable or shutil.which("kicad-cli")
+    kicad = kicad_executable or find_kicad_cli()
     return {"kicad-cli": probe_executable(kicad, ["--version"])}
 
 

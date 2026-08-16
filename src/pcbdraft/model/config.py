@@ -7,6 +7,7 @@ same configuration without knowing which screen wrote it.
 
 from __future__ import annotations
 
+import os
 import re
 import stat
 import tomllib
@@ -236,7 +237,7 @@ def _validate_config_mode(path: Path, *, contains_key: bool) -> None:
         return
     if path.is_symlink() or not path.is_file():
         raise ValidationError(f"model config must be a regular file: {path}")
-    if contains_key:
+    if contains_key and os.name != "nt":
         mode = stat.S_IMODE(path.stat().st_mode)
         if mode & 0o077:
             raise ValidationError(

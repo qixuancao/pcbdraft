@@ -433,8 +433,10 @@ def _verify_preview_baseline(project: ManagedProject, preview: SyncPreview) -> N
 
 def _fsync_directory(path: Path) -> None:
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     except OSError as exc:
+        if os.name == "nt":
+            return
         raise PCBDraftError(f"cannot fsync transaction directory: {path}") from exc
     try:
         os.fsync(descriptor)

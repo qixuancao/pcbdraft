@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,7 @@ from pcbdraft.core.io import atomic_write_json, make_directory
 from pcbdraft.core.process import printable_first_line, run_command
 from pcbdraft.core.project import sha256_file
 from pcbdraft.core.runs import utc_timestamp
+from pcbdraft.kicad.runtime import find_kicad_cli
 from pcbdraft.services.managed import ManagedProject, open_managed_project
 
 PREVIEW_MAX_BYTES = 64 * 1024 * 1024
@@ -57,7 +57,7 @@ def generate_previews(
         raise ValidationError("preview output already exists")
     make_directory(root)
     schematic_dir = make_directory(root / "schematic-svg")
-    executable = shutil.which("kicad-cli")
+    executable = find_kicad_cli()
     if executable is None:
         raise PCBDraftError("required executable not found: kicad-cli")
     board_svg = root / "board.svg"

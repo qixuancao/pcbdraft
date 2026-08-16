@@ -32,7 +32,7 @@ def portable_record_path(path: Path) -> str:
 
 def _fsync_directory(path: Path) -> None:
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     except OSError:
         return
     try:
@@ -53,7 +53,8 @@ def atomic_write_bytes(path: Path, data: bytes, *, mode: int = 0o600) -> None:
         descriptor, temporary_name = tempfile.mkstemp(
             prefix=".pcbdraft-", dir=path.parent
         )
-        os.fchmod(descriptor, mode)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, "wb", closefd=True) as stream:
             descriptor = -1
             stream.write(data)

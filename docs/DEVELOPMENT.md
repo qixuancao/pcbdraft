@@ -2,11 +2,14 @@
 
 ## Environment
 
-Install Python 3.11+, Git, and KiCad 10.0.5 with symbols, footprints, CLI, and system
-Python bindings. <code>uv</code> is the recommended environment manager.
+Install Python 3.11+, Git, and a stable KiCad in the range
+<code>&gt;=10.0.0,&lt;10.1.0</code>, including symbols, footprints, CLI, and bundled
+Python bindings. KiCad 10.0.5 is the current exact acceptance baseline;
+other stable 10.0 patch releases are compatible but reported as non-baseline.
+<code>uv</code> is the recommended environment manager.
 
     uv sync --frozen --extra dev
-    scripts/prepare-kicad-environment.sh
+    uv run pcbdraft setup
     uv run pcbdraft doctor --json
 
 model API is optional unless exercising the model-backed planner. The builtin provider

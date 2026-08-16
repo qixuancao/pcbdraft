@@ -14,6 +14,13 @@ except PackageNotFoundError:  # Source tree before the distribution is installed
 PRODUCT_NAME = "PCBDraft"
 DISTRIBUTION_NAME = "pcbdraft"
 PRIMARY_CLI = "pcbdraft"
+_IMMUTABLE_ARCHIVE_COMMIT = re.compile(
+    r"https://(?:github\.com/qixuancao/pcbdraft/archive/|"
+    r"codeload\.github\.com/qixuancao/pcbdraft/tar\.gz/)"
+    r"([0-9a-fA-F]{40})\.tar\.gz\Z|"
+    r"https://codeload\.github\.com/qixuancao/pcbdraft/tar\.gz/"
+    r"([0-9a-fA-F]{40})\Z"
+)
 
 
 def build_identity() -> dict[str, Any]:
@@ -26,6 +33,15 @@ def build_identity() -> dict[str, Any]:
         value = document.get("vcs_info", {}).get("commit_id")
         if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{40,64}", value):
             commit = value.casefold()
+        if commit is None:
+            archive_url = document.get("url")
+            match = (
+                _IMMUTABLE_ARCHIVE_COMMIT.fullmatch(archive_url)
+                if isinstance(archive_url, str)
+                else None
+            )
+            if match is not None:
+                commit = (match.group(1) or match.group(2)).casefold()
     except (PackageNotFoundError, AttributeError, TypeError, json.JSONDecodeError):
         pass
     return {"version": __version__, "commit": commit}

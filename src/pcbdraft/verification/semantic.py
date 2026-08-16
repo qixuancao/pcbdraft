@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -25,6 +24,7 @@ from pcbdraft.core.project import ProjectFiles, sha256_file
 from pcbdraft.domain.blocks import BlockRegistry
 from pcbdraft.domain.requirements import RequirementsSpec
 from pcbdraft.domain.semantic_rules import evaluate_semantic_rules
+from pcbdraft.kicad.runtime import find_kicad_cli
 from pcbdraft.services.managed import (
     MANAGED_MANIFEST,
     load_generation_request,
@@ -481,7 +481,7 @@ def collect_semantic_context(
 ) -> dict[str, Any]:
     """Export and normalize semantic evidence without asking model API to inspect raw KiCad files."""
     make_directory(output_dir)
-    resolved = executable or shutil.which("kicad-cli")
+    resolved = executable or find_kicad_cli()
     if not resolved:
         raise PCBDraftError("required executable not found: kicad-cli")
 

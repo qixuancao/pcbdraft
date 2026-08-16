@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -22,6 +21,7 @@ from pcbdraft.domain.ir import (
     _strict_mapping,
     _string,
 )
+from pcbdraft.kicad.runtime import kicad_data_directory
 
 PART_CATALOG_SCHEMA = "pcbdraft-part-catalog"
 PART_CATALOG_VERSION = 1
@@ -405,14 +405,8 @@ class PartGraph:
         symbol_root: str | Path | None = None,
         footprint_root: str | Path | None = None,
     ) -> dict[str, LibraryResolution]:
-        symbol_base = Path(
-            symbol_root
-            or os.environ.get("KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols")
-        )
-        footprint_base = Path(
-            footprint_root
-            or os.environ.get("KICAD_FOOTPRINT_DIR", "/usr/share/kicad/footprints")
-        )
+        symbol_base = Path(symbol_root or kicad_data_directory("symbols"))
+        footprint_base = Path(footprint_root or kicad_data_directory("footprints"))
         symbol_lib, symbol_name = part.symbol.split(":", 1)
         symbol_path = symbol_base / f"{symbol_lib}.kicad_sym"
         symbol_resolution = _resolve_symbol(symbol_path, symbol_name)

@@ -42,7 +42,8 @@ from pcbdraft.kicad.sync import (
     recover_kicad_import,
     undo_kicad_import,
 )
-from pcbdraft.services.doctor import doctor_report
+from pcbdraft.services.demo import DEMO_SENTENCE, run_first_board_demo
+from pcbdraft.services.doctor import doctor_report, setup_runtime
 from pcbdraft.services.managed import (
     ManagedProject,
     generate_managed_project,
@@ -190,6 +191,27 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     doctor.add_argument(
         "--json", action="store_true", dest="as_json", help="emit machine-readable JSON"
     )
+
+    setup = subcommands.add_parser(
+        "setup", help="detect KiCad and initialize missing stock-library tables"
+    )
+    setup.add_argument(
+        "--json", action="store_true", dest="as_json", help="emit machine-readable JSON"
+    )
+
+    demo = subcommands.add_parser(
+        "demo",
+        help="generate and check the offline first-board reference from one sentence",
+    )
+    demo.add_argument("REQUEST", help=f"for example: {DEMO_SENTENCE}")
+    demo.add_argument("--output", metavar="DIR", help="new demo project directory")
+    demo.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="generate native files without running ERC/DRC",
+    )
+    demo.add_argument("--timeout", type=positive_timeout, default=120.0, metavar="SEC")
+    demo.add_argument("--json", action="store_true", dest="as_json")
 
     repository = subcommands.add_parser(
         "repository",
@@ -429,6 +451,10 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         default="auto",
     )
     app.add_argument("--host", default="127.0.0.1")
+    app.add_argument(
+        "--public-host",
+        help="loopback URL host when --host is a container wildcard",
+    )
     app.add_argument("--port", type=int, default=8765)
     app.add_argument(
         "--no-open", action="store_true", help="do not open the default browser"
@@ -476,9 +502,23 @@ def _print_doctor(report: dict, as_json: bool) -> int:
     else:
         for name, result in report["tools"].items():
             status = "ok" if result["available"] else "missing/failed"
+            if name == "kicad-cli" and result.get("available"):
+                support = result.get("support", {})
+                status = "ok" if support.get("supported") else "unsupported"
             version = result.get("version") or "unknown"
             path = result.get("path") or "not found"
             print(f"{name}: {status} — {version} ({path})")
+        support = report["tools"]["kicad-cli"].get("support", {})
+        if support.get("supported") and not support.get("exact_tested"):
+            print(f"KiCad compatibility note: {support.get('reason')}")
+        tables = report.get("library_tables", {})
+        if tables:
+            ready = sum(bool(item.get("configured")) for item in tables.values())
+            print(f"KiCad library tables: {ready}/{len(tables)} ready")
+        data = report.get("library_data", {})
+        if data:
+            ready = sum(bool(item.get("available")) for item in data.values())
+            print(f"KiCad stock-library directories: {ready}/{len(data)} ready")
     return 0 if report["ok"] else 1
 
 
@@ -498,6 +538,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "doctor":
             return _print_doctor(doctor_report(), args.as_json)
+        if args.command == "setup":
+            report = setup_runtime()
+            if args.as_json:
+                print(json.dumps(report, ensure_ascii=False, sort_keys=True))
+            else:
+                _print_doctor(report, False)
+                print("KiCad runtime and stock-library tables are ready.")
+            return 0
+        if args.command == "demo":
+            value = run_first_board_demo(
+                args.REQUEST,
+                output=args.output,
+                validate=not args.skip_validation,
+                timeout=args.timeout,
+            )
+            _emit(
+                value,
+                args.as_json,
+                "First board generated: "
+                f"{value['kicad_project']}\n"
+                f"Validation: {value['validation']['report'] or 'skipped'}",
+            )
+            ready = value["validation"]["candidate_ready"]
+            return 0 if ready is not False else 3
         if args.command == "repository":
             repository = (
                 configure_repository(args.DIRECTORY)
@@ -856,6 +920,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "app":
             return run_app(
                 host=args.host,
+                public_host=args.public_host,
                 port=args.port,
                 workspace=args.workspace,
                 provider=args.provider,

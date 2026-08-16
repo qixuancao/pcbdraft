@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.core.platform_paths import user_data_home
 
 
 def utc_timestamp() -> str:
@@ -19,7 +20,7 @@ def new_run_id() -> str:
 
 
 def default_runs_parent() -> Path:
-    return Path.home() / ".local" / "share" / "pcbdraft" / "runs"
+    return user_data_home() / "pcbdraft" / "runs"
 
 
 def canonical_output_parent(value: str | None) -> Path:

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, load_json_limited, make_directory
+from pcbdraft.core.platform_paths import user_config_home, user_data_home
 from pcbdraft.core.runs import utc_timestamp
 
 REPOSITORY_CONFIG_SCHEMA = "pcbdraft-project-repository-config"
@@ -43,9 +44,7 @@ def repository_config_path() -> Path:
     explicit = os.environ.get("PCBDRAFT_REPOSITORY_CONFIG", "").strip()
     if explicit:
         return Path(explicit).expanduser()
-    xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
-    root = Path(xdg).expanduser() if xdg else Path.home() / ".config"
-    return root / "pcbdraft" / "repository.json"
+    return user_config_home() / "pcbdraft" / "repository.json"
 
 
 def default_repository_path() -> Path:
@@ -57,7 +56,7 @@ def default_repository_path() -> Path:
 def legacy_repository_path() -> Path:
     """Return the pre-repository application home used by PCBDraft 1.0."""
 
-    return Path.home() / ".local" / "share" / "pcbdraft" / "application"
+    return user_data_home() / "pcbdraft" / "application"
 
 
 def configure_repository(directory: str | Path) -> ProjectRepository:

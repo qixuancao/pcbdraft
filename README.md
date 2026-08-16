@@ -19,71 +19,114 @@ ERC、DRC 和每一步的证据留在本地。
 - 所有模型服务都通过 PCBDraft 自己的配置文件接入，不依赖其他 CLI；
 - 失败会保留计划、工程和错误信息，方便继续修改。
 
-## 快速开始（推荐安装）
+## 快速开始
 
-这个仓库已完全公开，并按 Apache License 2.0 开源。先安装并核验 Git、`curl`、
-`uv` 和 **KiCad 10.0.5**；无需 GitHub 账号或访问令牌。下面的命令先解析一次
-公开 `main` 分支的提交 SHA，再从同一不可变提交下载并执行安装器：
+PCBDraft 支持 Linux、macOS 和 Windows，兼容稳定版 KiCad
+`>=10.0.0,<10.1.0`。当前发布的精确验收基线是 10.0.5；同一 10.0 系列的其他
+稳定 patch 可以运行，但 `pcbdraft doctor` 会如实标注它不是本发布的精确基线。
+
+### Linux / macOS 一键安装
+
+只需系统自带的 shell 和 `curl`。安装器会检测 KiCad 与 uv；uv 缺失或过旧时使用
+官方固定版本安装器，KiCad 缺失时在 Ubuntu、Debian、Fedora、Arch Linux 或装有
+Homebrew 的 macOS 上调用对应包管理器。安装 KiCad 时可能要求输入管理员密码，
+PCBDraft 本身仍安装在当前用户目录：
 
 ```bash
-set -o pipefail
-repo=https://github.com/qixuancao/pcbdraft.git
-ref=$(git ls-remote --exit-code "$repo" refs/heads/main | awk 'NR == 1 { print $1 }')
-[[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { printf 'Invalid commit SHA\n' >&2; exit 1; }
-printf 'Installing PCBDraft commit %s\n' "$ref"
 installer=$(mktemp /tmp/pcbdraft-install.XXXXXX)
 curl --fail --location --proto '=https' --tlsv1.2 \
   --output "$installer" \
-  "https://raw.githubusercontent.com/qixuancao/pcbdraft/$ref/scripts/install.sh"
-PCBDRAFT_INSTALL_REF="$ref" bash "$installer"
+  https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.sh
+bash "$installer"
 rm -f -- "$installer"
 ```
 
-请记录命令输出中的 `ref`，以便复现同一安装。安装器拒绝分支名、短 SHA 和标签，
-通过公开 HTTPS Git 仓库读取同一提交的依赖约束；安装过程不需要 GitHub 凭据，
-也不会把任何模型服务令牌写入工程目录。
+安装器会先把公开 `main` 解析为完整提交 SHA，随后只从这个不可变提交读取源码和
+锁定约束。记录最后输出的 SHA 即可复现；也可传入
+`--ref 40位提交SHA`。不需要 Git、预装 Python 或 GitHub 凭据。
 
-安装器遵循用户级安装：不使用 `sudo`，不修改系统 Python，也不覆盖已有的
-KiCad 配置。它会：
+### Windows 一键安装
 
-- 检查已安装且经过验收的 KiCad 10.0.5 和 `kicad-cli`；
-- 检查 Git；
-- 要求用户预先安装并核验 `uv`，不下载后直接执行第三方安装脚本；
+在普通 PowerShell 中运行；安装器使用 uv 官方安装器，并通过 WinGet（或已有的
+Chocolatey）安装缺失的 KiCad：
+
+```powershell
+$installer = Join-Path $env:TEMP "pcbdraft-install.ps1"
+Invoke-WebRequest `
+  https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.ps1 `
+  -OutFile $installer
+powershell -ExecutionPolicy Bypass -File $installer
+Remove-Item $installer
+```
+
+### 不配置本机环境：容器浏览器版
+
+容器包含 PCBDraft、Python、uv、KiCad CLI 和官方库，工程与模型配置保存在命名卷中：
+
+```bash
+docker compose pull
+docker compose up --no-build
+```
+
+然后点击启动日志中带 `#session=...` 的本机 URL。Compose 只把端口发布到
+`127.0.0.1:8765`。开发者需要从当前源码构建时，改用 `docker compose up --build`。
+
+## 第一次启动：一句话生成首板
+
+这个路径不需要模型账号。它把明确的温度传感器句子映射到仓库内公开、确定性的
+ATtiny/TMP102 参考设计，生成原生 KiCad 工程并运行 ERC/DRC；它不会假装能在离线
+状态下理解任意电路：
+
+```bash
+pcbdraft demo "做一块 3.3V 的温度传感器小板，带状态灯和 I2C 接口"
+```
+
+输出会直接给出 `.kicad_pro` 和验证报告路径。随后运行 `pcbdraft`，即可在 TUI 中
+直接输入任意一句板卡需求；任意规划需要先用 `/connect` 配置模型服务。
+
+环境检测和非破坏性修复统一由下面两个命令完成：
+
+```bash
+pcbdraft setup
+pcbdraft doctor --json
+```
+
+PCBDraft 自身始终按用户级安装，不修改系统 Python，也不覆盖已有的 KiCad 配置；
+只有安装缺失的系统 KiCad 包时才会通过包管理器请求管理员权限。它会：
+
+- 检测稳定版 KiCad 10.0.x、`kicad-cli` 和 KiCad 自带的 `pcbnew` Python；
+- 在已支持的平台包管理器上安装缺失的 KiCad；
+- 检测或安装 uv，并由 uv 管理 PCBDraft 所需的 Python；
 - 用提交内锁定的运行时约束和 `uv tool install` 安装独立命令；
-- 只在缺失时初始化 `~/.config/kicad/10.0/` 中的符号和封装库表。
+- 按操作系统找到 KiCad 数据与配置目录，只初始化缺失的符号和封装库表。
 
-安装后的命令位于 `~/.local/bin/pcbdraft`。若首次运行提示找不到命令，执行：
+安装器最后会打印命令的实际位置。Linux 和 macOS 通常位于
+`~/.local/bin/pcbdraft`；若首次运行提示找不到命令，执行：
 
 ```bash
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-然后启动并检查运行环境：
-
-```bash
-pcbdraft
-pcbdraft doctor --json
-```
-
-模型服务和 API Key 保存在 `~/.config/pcbdraft/config.toml`。首次启动会创建并
+模型服务和 API Key 保存在平台的用户配置目录（Linux 默认为
+`~/.config/pcbdraft/config.toml`，macOS 默认为
+`~/Library/Application Support/pcbdraft/config.toml`，Windows 默认为
+`%APPDATA%\pcbdraft\config.toml`）。首次启动会创建并
 记录统一的 PCB 项目仓库 `~/PCBDraft/`；以后无论从哪个目录执行 `pcbdraft`，
 新项目、KiCad 原理图、`.kicad_pcb`、检查记录和发布文件都会位于这个仓库的
 `projects/` 下。要更新或修复安装，重新运行上面的安装命令即可。
 
-KiCad 是生成原理图和 PCB 所需的系统运行时，安装器不会替你以管理员权限安装
-它；当前自动化验收版本是 10.0.5，其他版本会被明确拒绝，而不是被默认为兼容。
-
 ## 从源码运行（开发）
 
-需要 Linux、Python 3.11 或更高版本、[uv](https://docs.astral.sh/uv/)，以及
-KiCad 10.0.5 和 `kicad-cli`。
+需要 Python 3.11 或更高版本、[uv](https://docs.astral.sh/uv/)，以及稳定版
+KiCad 10.0.x。Linux、macOS 和 Windows 的包导入、安装路径、锁与子进程边界会在
+CI 中检查，并分别运行真实 KiCad 的首板生成验收。
 
 ```bash
 git clone https://github.com/qixuancao/pcbdraft.git
 cd pcbdraft
 uv sync --extra dev
-scripts/prepare-kicad-environment.sh
+uv run pcbdraft setup
 uv run pcbdraft doctor --json
 ```
 
@@ -103,8 +146,8 @@ OpenRouter、本地 Ollama 或自定义 OpenAI 兼容服务，然后输入 API K
 总超时内进行至多三次带抖动的重试，并遵守有界 `Retry-After`；PCBDraft 不会在
 失败后静默切换模型或提供商。
 
-密钥由 PCBDraft 写入 `~/.config/pcbdraft/config.toml`，文件权限为 `600`，
-不会进入 PCB 工程、对话记录或运行收据。也可以手动创建同样的配置：
+密钥由 PCBDraft 写入上述平台配置目录，且在 POSIX 系统使用文件权限 `600`；
+它不会进入 PCB 工程、对话记录或运行收据。也可以手动创建同样的配置：
 
 ```toml
 version = 1
@@ -119,7 +162,7 @@ models = ["deepseek-v4-pro", "deepseek-v4-flash"]
 docs_url = "https://platform.deepseek.com/"
 ```
 
-手动创建后执行：
+在 Linux 手动创建后执行；macOS 请对上面列出的实际配置目录应用相同权限：
 
 ```bash
 chmod 700 ~/.config/pcbdraft
@@ -140,8 +183,8 @@ pcbdraft repository /path/to/my-pcb-repository
 pcbdraft repository --json  # 查看当前位置
 ```
 
-该位置记录在 `~/.config/pcbdraft/repository.json`。切换仓库只影响之后打开和
-创建的 PCBDraft 项目；原仓库中的文件不会被移动或删除。
+该位置记录在与模型配置相同的平台配置目录下的 `repository.json`。切换仓库只影响
+之后打开和创建的 PCBDraft 项目；原仓库中的文件不会被移动或删除。
 
 直接描述电路板即可。用户没有指定层数时，PCBDraft 会根据小型原型的约束
 自动选择保守的初始方案，不要求用户理解叠层设计。

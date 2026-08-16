@@ -100,11 +100,12 @@ function renderDiagnostics() {
   const provider = state.diagnostics.provider;
   const orchestration = state.diagnostics.agent_orchestration;
   const tableReady = Object.values(state.diagnostics.kicad_library_tables).every((item) => item.configured);
+  const dataReady = Object.values(state.diagnostics.kicad_library_data).every((item) => item.available);
   const checks = [
     ["Provider", `${provider.id} · ${provider.available ? "ready" : "setup needed"}`, provider.available],
     ["Agent router", orchestration.router.replaceAll("-", " "), true],
     ["KiCad CLI", state.diagnostics.tools["kicad-cli"]?.available ? "ready" : "missing", state.diagnostics.tools["kicad-cli"]?.available],
-    ["KiCad libraries", tableReady ? "ready" : "setup needed", tableReady],
+    ["KiCad libraries", tableReady && dataReady ? "ready" : "setup needed", tableReady && dataReady],
     ["Workspace", "private local storage", true],
   ];
   for (const [label, value, ok] of checks) {

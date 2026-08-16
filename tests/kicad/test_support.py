@@ -18,17 +18,29 @@ class KiCadSupportTests(unittest.TestCase):
         self.assertEqual(packaged.parsed_version, "10.0.5")
         self.assertTrue(packaged.exact_tested)
 
-    def test_other_majors_and_unparseable_versions_fail_closed(self) -> None:
-        for version in ("9.0.6", "11.0.0-rc1", "unknown"):
+    def test_other_series_prereleases_and_unparseable_versions_fail_closed(
+        self,
+    ) -> None:
+        for version in (
+            "9.0.6",
+            "10.0.6-rc1",
+            "nightly KiCad 10.0.6",
+            "10.1.0",
+            "11.0.0",
+            "unknown",
+        ):
             with self.subTest(version=version), self.assertRaises(PCBDraftError):
                 assert_supported_kicad_version(version)
 
-    def test_untested_patch_in_supported_major_fails_closed(self) -> None:
-        result = evaluate_kicad_version("KiCad 10.1.0")
-        self.assertFalse(result.supported)
+    def test_stable_patch_in_compatible_series_runs_with_disclosed_warning(
+        self,
+    ) -> None:
+        result = evaluate_kicad_version("KiCad 10.0.4")
+        self.assertTrue(result.supported)
         self.assertFalse(result.exact_tested)
-        with self.assertRaisesRegex(PCBDraftError, "acceptance suite"):
-            assert_supported_kicad_version("KiCad 10.1.0")
+        self.assertIn("compatible", result.reason or "")
+        accepted = assert_supported_kicad_version("KiCad 10.0.99")
+        self.assertEqual(accepted.parsed_version, "10.0.99")
 
 
 if __name__ == "__main__":

@@ -5,9 +5,9 @@ from __future__ import annotations
 import hmac
 import json
 import mimetypes
+import os
 import re
 import secrets
-import shutil
 import subprocess
 import time
 import urllib.parse
@@ -22,6 +22,7 @@ from pcbdraft import __version__, build_identity
 from pcbdraft.agent.turns import AgentTurnStore, ToolRunRecord, TurnRecord
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.kicad.runtime import find_kicad_app
 from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.jobs import JobRunner
 
@@ -32,6 +33,10 @@ _RECENT_AGENT_TURNS = 20
 _PROJECT_VIEW_SNAPSHOT_ATTEMPTS = 6
 _PROJECT_VIEW_LOCK_TIMEOUT_SECONDS = 0.05
 _PROJECT_VIEW_RETRY_DELAY_SECONDS = 0.005
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_CONTAINER_BIND_HOSTS = frozenset(
+    {"0.0.0.0", "::"}  # noqa: S104 - container-only, loopback-advertised
+)
 _PROJECT_ROUTE = re.compile(r"/api/projects/([a-z][a-z0-9-]{2,79})(?:/(.*))?")
 _ARTIFACT_KEYS = {
     "schematic_svg",
@@ -57,23 +62,34 @@ class PCBDraftHTTPServer(ThreadingHTTPServer):
         self,
         address: tuple[str, int],
         service: ApplicationService,
+        *,
+        public_host: str | None = None,
     ) -> None:
+        bind_host = address[0]
+        advertised_host = public_host or bind_host
+        if advertised_host not in _LOOPBACK_HOSTS:
+            raise ValidationError("PCBDraft app public host must be explicit loopback")
+        if bind_host not in _LOOPBACK_HOSTS | _CONTAINER_BIND_HOSTS:
+            raise ValidationError("PCBDraft app bind host is not permitted")
+        if bind_host in _CONTAINER_BIND_HOSTS and public_host is None:
+            raise ValidationError(
+                "wildcard container binding requires an explicit loopback public host"
+            )
         super().__init__(address, PCBDraftHandler)
         self.service = service
         self.jobs = JobRunner(service)
         self.csrf_token = secrets.token_urlsafe(32)
         self.session_token = secrets.token_urlsafe(32)
-        host, port = self.server_address[:2]
-        if host not in {"127.0.0.1", "localhost", "::1"}:
-            raise ValidationError("PCBDraft app only binds to loopback")
-        public_host = host
+        _, port = self.server_address[:2]
         public_netloc = (
-            f"[{public_host}]:{port}" if ":" in public_host else f"{public_host}:{port}"
+            f"[{advertised_host}]:{port}"
+            if ":" in advertised_host
+            else f"{advertised_host}:{port}"
         )
         self.base_url = f"http://{public_netloc}"
         self.launch_url = f"{self.base_url}/#session={self.session_token}"
         origins = {self.base_url}
-        if host in {"127.0.0.1", "localhost", "::1"}:
+        if advertised_host in _LOOPBACK_HOSTS:
             origins.add(f"http://localhost:{port}")
             origins.add(f"http://127.0.0.1:{port}")
             origins.add(f"http://[::1]:{port}")
@@ -474,7 +490,7 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
         design = view.get("design")
         if not isinstance(design, dict):
             raise ValidationError("project has not generated KiCad files")
-        executable = shutil.which("kicad")
+        executable = find_kicad_app()
         if not executable:
             raise PCBDraftError("KiCad desktop application is unavailable")
         project_file = Path(design["files"]["kicad_project"]).resolve(strict=True)
@@ -482,13 +498,18 @@ class PCBDraftHandler(BaseHTTPRequestHandler):
         if not project_file.is_relative_to(root) or project_file.is_symlink():
             raise ValidationError("KiCad project path is unsafe")
         try:
+            session_options = (
+                {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+                if os.name == "nt"
+                else {"start_new_session": True}
+            )
             subprocess.Popen(  # noqa: S603 - fixed executable and argv; no shell
                 [executable, str(project_file)],
                 cwd=project_file.parent,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                start_new_session=True,
+                **session_options,
             )
         except OSError as exc:
             raise PCBDraftError("failed to start KiCad desktop application") from exc
@@ -685,16 +706,25 @@ def _browser_tool_run(tool: ToolRunRecord) -> dict[str, Any]:
 def create_app_server(
     *,
     host: str = "127.0.0.1",
+    public_host: str | None = None,
     port: int = 8765,
     workspace: str | Path | None = None,
     provider: str = "auto",
 ) -> PCBDraftHTTPServer:
-    if host not in {"127.0.0.1", "localhost", "::1"}:
-        raise ValidationError("PCBDraft app only binds to an explicit loopback host")
+    if host not in _LOOPBACK_HOSTS | _CONTAINER_BIND_HOSTS:
+        raise ValidationError(
+            "PCBDraft app only binds to loopback or a container wildcard"
+        )
+    if host in _CONTAINER_BIND_HOSTS and public_host is None:
+        raise ValidationError(
+            "container wildcard binding requires --public-host with a loopback value"
+        )
+    if public_host is not None and public_host not in _LOOPBACK_HOSTS:
+        raise ValidationError("PCBDraft app public host must be explicit loopback")
     if isinstance(port, bool) or not isinstance(port, int) or not 0 <= port <= 65535:
         raise ValidationError("application port must be between 0 and 65535")
     service = ApplicationService(workspace, provider_name=provider)
-    return PCBDraftHTTPServer((host, port), service)
+    return PCBDraftHTTPServer((host, port), service, public_host=public_host or host)
 
 
 def _secret_matches(supplied: str, expected: str) -> bool:
@@ -706,13 +736,18 @@ def _secret_matches(supplied: str, expected: str) -> bool:
 def run_app(
     *,
     host: str,
+    public_host: str | None,
     port: int,
     workspace: str | Path | None,
     provider: str,
     open_browser: bool,
 ) -> int:
     server = create_app_server(
-        host=host, port=port, workspace=workspace, provider=provider
+        host=host,
+        public_host=public_host,
+        port=port,
+        workspace=workspace,
+        provider=provider,
     )
     print(f"PCBDraft app: {server.launch_url}", flush=True)
     print("Local-only session; press Ctrl+C to stop.", flush=True)

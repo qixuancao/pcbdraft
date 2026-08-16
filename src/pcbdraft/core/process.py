@@ -7,6 +7,7 @@ import os
 import selectors
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -39,6 +40,12 @@ def _validate_argv(argv: Sequence[str]) -> tuple[str, ...]:
 
 
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
+    if os.name == "nt":
+        try:
+            process.kill()
+        except ProcessLookupError:
+            pass
+        return
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except (ProcessLookupError, PermissionError):
@@ -46,6 +53,128 @@ def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
             process.kill()
         except ProcessLookupError:
             pass
+
+
+def _run_command_windows(
+    normalized: tuple[str, ...],
+    *,
+    cwd: Path | None,
+    timeout: float,
+    max_output_bytes: int,
+    stdin_data: bytes | None,
+) -> CommandResult:
+    """Read Windows pipes concurrently because selectors only support sockets."""
+
+    started = time.monotonic()
+    try:
+        process = subprocess.Popen(  # noqa: S603 - validated argv; shell is disabled
+            list(normalized),
+            cwd=str(cwd) if cwd is not None else None,
+            stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+    except (OSError, ValueError) as exc:
+        raise PCBDraftError(
+            f"failed to start executable: {Path(normalized[0]).name}"
+        ) from exc
+    if process.stdout is None or process.stderr is None:
+        _kill_process_group(process)
+        raise PCBDraftError("failed to capture subprocess output")
+
+    stdout = bytearray()
+    stderr = bytearray()
+    output_limited = threading.Event()
+    buffer_lock = threading.Lock()
+
+    def read_stream(stream: BinaryIO, destination: bytearray) -> None:
+        while True:
+            try:
+                chunk = stream.read(65536)
+            except OSError:
+                return
+            if not chunk:
+                return
+            with buffer_lock:
+                remaining = max_output_bytes - len(stdout) - len(stderr)
+                if remaining > 0:
+                    destination.extend(chunk[:remaining])
+                if len(chunk) > remaining:
+                    output_limited.set()
+
+    readers = [
+        threading.Thread(
+            target=read_stream,
+            args=(process.stdout, stdout),
+            daemon=True,
+        ),
+        threading.Thread(
+            target=read_stream,
+            args=(process.stderr, stderr),
+            daemon=True,
+        ),
+    ]
+    for reader in readers:
+        reader.start()
+
+    def write_stdin() -> None:
+        stdin_stream = process.stdin
+        if stdin_stream is None:
+            return
+        try:
+            stdin_stream.write(stdin_data or b"")
+            stdin_stream.flush()
+        except (BrokenPipeError, OSError):
+            pass
+        finally:
+            stdin_stream.close()
+
+    writer = None
+    if process.stdin is not None:
+        writer = threading.Thread(target=write_stdin, daemon=True)
+        writer.start()
+
+    timed_out = False
+    killed = False
+    deadline = started + timeout
+    while process.poll() is None:
+        if output_limited.is_set():
+            killed = True
+            _kill_process_group(process)
+            break
+        if time.monotonic() >= deadline:
+            timed_out = True
+            killed = True
+            _kill_process_group(process)
+            break
+        time.sleep(0.01)
+    try:
+        returncode = process.wait(timeout=1.0 if killed else None)
+    except subprocess.TimeoutExpired:
+        _kill_process_group(process)
+        returncode = process.wait()
+    for reader in readers:
+        reader.join(timeout=1.0)
+    for stream in (process.stdout, process.stderr):
+        try:
+            stream.close()
+        except OSError:
+            pass
+    for reader in readers:
+        reader.join(timeout=1.0)
+    if writer is not None:
+        writer.join(timeout=1.0)
+    return CommandResult(
+        argv=normalized,
+        returncode=returncode,
+        stdout=bytes(stdout),
+        stderr=bytes(stderr),
+        duration_seconds=round(time.monotonic() - started, 3),
+        timed_out=timed_out,
+        output_limited=output_limited.is_set(),
+    )
 
 
 def run_command(
@@ -62,6 +191,14 @@ def run_command(
         raise ValidationError("subprocess timeout must be positive")
     if max_output_bytes <= 0:
         raise ValidationError("subprocess output limit must be positive")
+    if os.name == "nt":  # pragma: no cover - exercised by the Windows CI job
+        return _run_command_windows(
+            normalized,
+            cwd=cwd,
+            timeout=timeout,
+            max_output_bytes=max_output_bytes,
+            stdin_data=stdin_data,
+        )
 
     started = time.monotonic()
     try:

@@ -1478,6 +1478,20 @@ class BrowserSecurityTests(unittest.TestCase):
                 provider="builtin",
             )
 
+    def test_container_wildcard_has_explicit_loopback_public_url(self) -> None:
+        server = create_app_server(
+            host="0.0.0.0",
+            public_host="127.0.0.1",
+            port=0,
+            workspace=self.temporary.name,
+            provider="builtin",
+        )
+        try:
+            self.assertTrue(server.base_url.startswith("http://127.0.0.1:"))
+            self.assertNotIn("0.0.0.0", server.launch_url)
+        finally:
+            server.server_close()
+
     def test_static_browser_shell_has_safe_setup_and_actionable_validation(
         self,
     ) -> None:

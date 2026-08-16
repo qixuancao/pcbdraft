@@ -22,12 +22,21 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
   `production_ready` remains false because PCBDraft cannot authenticate signers or
   independently verify physical evidence.
 - Advanced the development version to 1.1.0.dev0 and added PEP 610 commit
-  provenance to diagnostics and evidence. Installation now requires a full commit
-  SHA, hash-pinned runtime constraints, a preinstalled verified `uv`, and the exact
-  accepted KiCad version.
-- Pinned CI actions and KiCad acceptance, added dependency auditing, branch
-  coverage, a type-checking ratchet for critical trust-boundary modules, security
-  linting, and a cyclomatic-complexity ceiling.
+  provenance to diagnostics and evidence. One-command Linux, macOS, and Windows
+  installers now resolve public `main` to an immutable commit, provision a
+  compatible uv/Python runtime, detect or install KiCad, and initialize only
+  missing stock-library tables.
+- Replaced the exact-patch runtime gate with a disclosed stable
+  `>=10.0.0,<10.1.0` compatibility range while retaining KiCad 10.0.5 as the exact
+  acceptance baseline. Added cross-platform runtime discovery, Windows-safe
+  locking/process I/O, macOS/Windows native first-board CI, and a published
+  browser-container build.
+- Added a one-sentence, model-free `pcbdraft demo` path that truthfully maps the
+  temperature-sensor request to the bundled deterministic reference and runs
+  native ERC/DRC by default.
+- Pinned CI actions, added dependency auditing, branch coverage, a type-checking
+  ratchet for critical trust-boundary modules, security linting, and a
+  cyclomatic-complexity ceiling.
 
 - Reorganized the flat Python package and test suite into responsibility-focused
   core, domain, agent, model, KiCad, service, verification, and interface areas;

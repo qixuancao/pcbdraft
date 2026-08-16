@@ -286,18 +286,11 @@ class ApplicationService:
         from pcbdraft.model.tool_calls import provider_agent_protocol
 
         tools = doctor_report()
-        kicad_config = Path.home() / ".config" / "kicad" / "10.0"
-        library_tables = {
-            name: {
-                "configured": (kicad_config / name).is_file()
-                and not (kicad_config / name).is_symlink(),
-                "template_available": (
-                    Path("/usr/share/kicad/template") / name
-                ).is_file(),
-            }
-            for name in ("sym-lib-table", "fp-lib-table")
-        }
+        library_tables = tools["library_tables"]
         libraries_ready = all(item["configured"] for item in library_tables.values())
+        library_data_ready = all(
+            item["available"] for item in tools["library_data"].values()
+        )
         return {
             "schema": "pcbdraft-first-run-diagnostics",
             "version": 1,
@@ -318,7 +311,10 @@ class ApplicationService:
             },
             "tools": tools["tools"],
             "kicad_library_tables": library_tables,
-            "ready_for_generation": tools["ok"] and libraries_ready,
+            "kicad_library_data": tools["library_data"],
+            "ready_for_generation": (
+                tools["ok"] and libraries_ready and library_data_ready
+            ),
             "generation_runtime": {
                 "architecture": "requirements -> circuit plan -> local KiCad symbols -> semantic IR -> transactional KiCad",
                 "product_path": "generic_agent_plan",
@@ -329,8 +325,8 @@ class ApplicationService:
                 "config": "Use /connect in the TUI; credentials stay in PCBDraft's private config file.",
                 "persistence": "Credential values are never written to project records or model receipts.",
                 "kicad": (
-                    "Install the KiCad 10.0.5 global library tables in ~/.config/kicad/10.0; "
-                    "scripts/prepare-kicad-environment.sh does this from a checkout."
+                    "Run `pcbdraft setup` to detect a compatible KiCad 10.0.x "
+                    "runtime and initialize missing stock-library tables."
                 ),
             },
         }

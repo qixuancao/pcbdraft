@@ -5,7 +5,6 @@ from __future__ import annotations
 import copy
 import math
 import secrets
-import shutil
 import time
 from contextlib import nullcontext
 from dataclasses import dataclass
@@ -29,6 +28,7 @@ from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.semantic_rules import evaluate_semantic_rules
 from pcbdraft.kicad.pcb import FootprintInspection, inspect_footprints
+from pcbdraft.kicad.runtime import find_kicad_cli
 from pcbdraft.services.managed import (
     ManagedProject,
     load_generation_request,
@@ -248,7 +248,7 @@ def _validation_output(project: ManagedProject, value: str | Path | None) -> Pat
 def _run_kicad_report(
     kind: str, project: ManagedProject, output: Path, deadline: float
 ) -> dict[str, Any]:
-    executable = shutil.which("kicad-cli")
+    executable = find_kicad_cli()
     if executable is None:
         return {
             "status": "unavailable",

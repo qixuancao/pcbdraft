@@ -25,9 +25,55 @@ JOB_LIMIT = 32 * 1024 * 1024
 MAX_COMPONENTS = 500
 MAX_NETS = 2000
 MAX_ROUTES = 200_000
-FOOTPRINT_ROOT = Path("/usr/share/kicad/footprints")
 LIB_ID = re.compile(r"^[A-Za-z0-9_.+~-]+:[A-Za-z0-9_.+~(){}-]+$")
 WORKER_NAMESPACE = uuid.UUID("33c385e7-95eb-5434-a09f-cf8c782dcc01")
+
+
+def _footprint_root():
+    candidates = []
+    for variable in ("KICAD_FOOTPRINT_DIR", "KICAD10_FOOTPRINT_DIR"):
+        value = os.environ.get(variable, "").strip()
+        if value:
+            candidates.append(Path(value).expanduser())
+    executable = Path(sys.executable).resolve()
+    if executable.parent.name.casefold() == "bin":
+        candidates.append(executable.parent.parent / "share" / "kicad" / "footprints")
+    if sys.platform == "darwin":
+        for parent in executable.parents:
+            if parent.name == "Contents":
+                candidates.append(parent / "SharedSupport" / "footprints")
+                break
+        candidates.extend(
+            (
+                Path("/Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints"),
+                Path.home()
+                / "Applications/KiCad/KiCad.app/Contents/SharedSupport/footprints",
+            )
+        )
+    elif sys.platform == "win32":
+        install = os.environ.get("KICAD_INSTALL_PATH", "").strip()
+        if install:
+            candidates.append(Path(install) / "share" / "kicad" / "footprints")
+        for variable in ("ProgramFiles", "ProgramW6432", "ProgramFiles(x86)"):
+            root = os.environ.get(variable, "").strip()
+            if root:
+                candidates.append(
+                    Path(root) / "KiCad" / "10.0" / "share" / "kicad" / "footprints"
+                )
+    else:
+        candidates.extend(
+            (
+                Path("/usr/share/kicad/footprints"),
+                Path("/usr/local/share/kicad/footprints"),
+            )
+        )
+    for candidate in candidates:
+        if candidate.is_dir():
+            return candidate
+    return candidates[0] if candidates else Path("__missing_kicad_footprints__")
+
+
+FOOTPRINT_ROOT = _footprint_root()
 
 
 def _strict(value, required, optional=()):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-import shutil
+import os
 import tempfile
 from dataclasses import dataclass
 from itertools import pairwise
@@ -40,6 +40,7 @@ from pcbdraft.kicad.routing import (
     RoutingPad,
     RoutingResult,
 )
+from pcbdraft.kicad.runtime import find_pcbnew_python
 from pcbdraft.kicad.schematic import stable_kicad_uuid
 from pcbdraft.kicad.support import assert_supported_kicad_version
 
@@ -1678,10 +1679,14 @@ def _run_worker(
 
 
 def _system_python(value: str | Path | None) -> Path:
-    if value is None:
-        candidate = Path("/usr/bin/python3")
-    else:
-        candidate = Path(value)
+    candidate = Path(value) if value is not None else None
+    if candidate is None:
+        discovered = find_pcbnew_python()
+        if discovered is None:
+            raise PCBDraftError(
+                "KiCad's pcbnew Python runtime is unavailable; run `pcbdraft doctor`"
+            )
+        candidate = Path(discovered)
     try:
         resolved = candidate.resolve(strict=True)
     except OSError as exc:
@@ -1689,7 +1694,7 @@ def _system_python(value: str | Path | None) -> Path:
     if (
         not resolved.is_file()
         or not resolved.is_absolute()
-        or not shutil.which(str(resolved))
+        or not os.access(resolved, os.X_OK)
     ):
         raise PCBDraftError("system Python for pcbnew is not executable")
     return resolved

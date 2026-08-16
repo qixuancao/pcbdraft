@@ -7,8 +7,13 @@ from dataclasses import dataclass
 
 from pcbdraft.core.errors import PCBDraftError
 
+SUPPORTED_KICAD_MIN = (10, 0, 0)
+SUPPORTED_KICAD_MAX_EXCLUSIVE = (10, 1, 0)
 TESTED_KICAD_VERSIONS = ("10.0.5",)
 _VERSION_RE = re.compile(r"(?:KiCad\s+)?(\d+)\.(\d+)(?:\.(\d+))?", re.IGNORECASE)
+_PRERELEASE_RE = re.compile(
+    r"(?:^|[-+~.\s])(?:alpha|beta|dev|nightly|rc)\d*", re.IGNORECASE
+)
 
 
 @dataclass(frozen=True)
@@ -35,7 +40,10 @@ class KiCadSupport:
 def evaluate_kicad_version(value: str) -> KiCadSupport:
     raw = value.strip() if isinstance(value, str) else ""
     match = _VERSION_RE.search(raw)
-    policy = f"exact acceptance only: {', '.join(TESTED_KICAD_VERSIONS)}"
+    policy = (
+        "compatible stable range: >=10.0.0,<10.1.0; exact acceptance: "
+        + ", ".join(TESTED_KICAD_VERSIONS)
+    )
     if match is None:
         return KiCadSupport(
             raw,
@@ -50,16 +58,29 @@ def evaluate_kicad_version(value: str) -> KiCadSupport:
     patch = int(match.group(3) or 0)
     parsed = f"{major}.{minor}.{patch}"
     exact = parsed in TESTED_KICAD_VERSIONS
-    supported = exact
+    version = (major, minor, patch)
+    prerelease = _PRERELEASE_RE.search(raw) is not None
+    supported = (
+        SUPPORTED_KICAD_MIN <= version < SUPPORTED_KICAD_MAX_EXCLUSIVE
+        and not prerelease
+    )
     return KiCadSupport(
         raw,
         parsed,
         supported,
         exact,
         policy,
-        None
+        (
+            None
+            if exact
+            else f"KiCad {parsed} is compatible but not this release's exact acceptance baseline"
+        )
         if supported
-        else f"KiCad {parsed} has not passed this release's acceptance suite",
+        else (
+            f"KiCad {parsed} is a prerelease build"
+            if prerelease
+            else f"KiCad {parsed} is outside the supported stable 10.0.x series"
+        ),
     )
 
 

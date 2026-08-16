@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +11,7 @@ from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.io import load_json_limited, make_directory
 from pcbdraft.core.process import redact_argv, remaining_timeout, run_command
 from pcbdraft.core.project import ProjectFiles, sha256_file
+from pcbdraft.kicad.runtime import find_kicad_cli
 
 GATE_JSON_LIMIT = 16 * 1024 * 1024
 GATE_PROCESS_OUTPUT_LIMIT = 1024 * 1024
@@ -351,7 +351,7 @@ def run_gates(
     fail_fast: bool = True,
 ) -> dict[str, GateResult]:
     make_directory(output_dir)
-    resolved_executable = executable or shutil.which("kicad-cli")
+    resolved_executable = executable or find_kicad_cli()
     if not resolved_executable:
         raise PCBDraftError("required executable not found: kicad-cli")
 

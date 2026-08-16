@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+.coverage
+.mypy_cache
+.ruff_cache
+__pycache__
+build
+dist
+tests
+docs
+scripts

@@ -13,6 +13,7 @@ import urllib.parse
 from pathlib import Path
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.core.platform_paths import user_config_home
 
 
 def validate_provider_base_url(value: str) -> urllib.parse.SplitResult:
@@ -84,9 +85,7 @@ def provider_config_path() -> Path:
     explicit = os.environ.get("PCBDRAFT_CONFIG", "").strip()
     if explicit:
         return Path(explicit).expanduser()
-    xdg = os.environ.get("XDG_CONFIG_HOME", "").strip()
-    root = Path(xdg).expanduser() if xdg else Path.home() / ".config"
-    return root / "pcbdraft" / "config.toml"
+    return user_config_home() / "pcbdraft" / "config.toml"
 
 
 def _is_literal_loopback(hostname: str) -> bool:

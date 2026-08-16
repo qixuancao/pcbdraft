@@ -29,6 +29,7 @@ from pcbdraft.core.process import redact_argv, run_command
 from pcbdraft.core.project import canonical_project, sha256_file, validate_agent_tree
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.domain.parts import PartGraph
+from pcbdraft.kicad.runtime import find_kicad_cli
 from pcbdraft.services.managed import ManagedProject, open_managed_project
 from pcbdraft.verification.validation import validate_managed_project
 
@@ -347,7 +348,7 @@ def _new_release_root(value: str | Path) -> Path:
 def _run_exports(
     project: ManagedProject, output: Path, deadline: float
 ) -> list[dict[str, Any]]:
-    executable = shutil.which("kicad-cli")
+    executable = find_kicad_cli()
     if executable is None:
         raise PCBDraftError("required executable not found: kicad-cli")
     board = str(project.board_path)

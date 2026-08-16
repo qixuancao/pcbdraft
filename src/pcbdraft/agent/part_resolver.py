@@ -8,7 +8,6 @@ plan parsing and engineering review.
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -23,6 +22,7 @@ from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import read_bytes_limited
 from pcbdraft.domain.ir import Provenance, _string
 from pcbdraft.domain.parts import PartRecord, PinDefinition
+from pcbdraft.kicad.runtime import kicad_data_directory
 
 SYMBOL_FILE_LIMIT = 128 * 1024 * 1024
 _SYMBOL_ID = re.compile(r"^[A-Za-z0-9_.+-]+:[A-Za-z0-9_.+~{}/-]+$")
@@ -92,9 +92,7 @@ class LocalKiCadPartResolver:
     """Resolve selected components from the installed KiCad symbol libraries."""
 
     def __init__(self, symbol_root: str | Path | None = None) -> None:
-        raw = symbol_root or os.environ.get(
-            "KICAD_SYMBOL_DIR", "/usr/share/kicad/symbols"
-        )
+        raw = symbol_root or kicad_data_directory("symbols")
         self.symbol_root = Path(raw)
 
     def _symbol_path(self, symbol: str) -> Path:

@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Install PCBDraft for the current Linux user.  No sudo is required or used.
+# One-command PCBDraft installer for Linux and macOS.
 set -euo pipefail
 
-readonly PCBDRAFT_REPOSITORY_URL="https://github.com/qixuancao/pcbdraft.git"
+readonly PCBDRAFT_REPOSITORY_URL="https://github.com/qixuancao/pcbdraft"
 readonly PCBDRAFT_EXPECTED_VERSION="1.1.0.dev0"
-readonly KICAD_SUPPORTED_VERSION="10.0.5"
+readonly PCBDRAFT_UV_VERSION="0.12.1"
 PCBDRAFT_INSTALL_TEMP=""
+PCBDRAFT_INSTALL_KICAD=1
+PCBDRAFT_INSTALL_UV=1
+PCBDRAFT_REQUESTED_REF=${PCBDRAFT_INSTALL_REF:-}
 
 info() {
     printf 'PCBDraft: %s\n' "$*" >&2
@@ -16,20 +19,9 @@ fail() {
     exit 1
 }
 
-find_uv() {
-    if command -v uv >/dev/null 2>&1; then
-        command -v uv
-        return 0
-    fi
-    if [[ -x "$HOME/.local/bin/uv" ]]; then
-        printf '%s\n' "$HOME/.local/bin/uv"
-        return 0
-    fi
-    if [[ -x "$HOME/.cargo/bin/uv" ]]; then
-        printf '%s\n' "$HOME/.cargo/bin/uv"
-        return 0
-    fi
-    return 1
+usage() {
+    printf '%s\n' 'Usage: install.sh [--ref COMMIT_SHA] [--no-install-kicad] [--no-install-uv]'
+    printf '%s\n' 'Installs PCBDraft for the current user and prepares KiCad 10.0.x.'
 }
 
 cleanup() {
@@ -41,108 +33,226 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-prepare_kicad_tables() {
-    local version template_dir config_dir table source target header
-    command -v kicad-cli >/dev/null 2>&1 \
-        || fail "需要已安装的 KiCad 10（kicad-cli）。请先安装 KiCad，再重新运行本脚本。"
-    version=$(kicad-cli --version 2>/dev/null || true)
-    [[ "$version" == "$KICAD_SUPPORTED_VERSION" ]] \
-        || fail "需要经过验收的 KiCad $KICAD_SUPPORTED_VERSION，当前检测到：${version:-未知版本}"
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --ref)
+            [[ $# -ge 2 ]] || fail "--ref requires a full commit SHA"
+            PCBDRAFT_REQUESTED_REF=$2
+            shift 2
+            ;;
+        --no-install-kicad)
+            PCBDRAFT_INSTALL_KICAD=0
+            shift
+            ;;
+        --no-install-uv)
+            PCBDRAFT_INSTALL_UV=0
+            shift
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *) fail "unknown option: $1" ;;
+    esac
+done
 
-    template_dir=${KICAD_TEMPLATE_DIR:-/usr/share/kicad/template}
-    config_dir="$HOME/.config/kicad/10.0"
-    [[ ! -e "$config_dir" || -d "$config_dir" ]] \
-        || fail "KiCad 配置路径不是目录：$config_dir"
-    install -d -m 0700 -- "$config_dir"
+uv_is_compatible() {
+    local candidate=$1 help
+    help=$("$candidate" tool install --help 2>/dev/null) || return 1
+    [[ "$help" == *"--build-constraints"* ]] \
+        && "$candidate" tool dir --bin >/dev/null 2>&1
+}
 
-    for table in sym-lib-table fp-lib-table; do
-        source="$template_dir/$table"
-        target="$config_dir/$table"
-        case "$table" in
-            sym-lib-table) header='(sym_lib_table' ;;
-            fp-lib-table) header='(fp_lib_table' ;;
-        esac
-        [[ -s "$source" ]] && grep -Fq "$header" "$source" \
-            || fail "KiCad 库模板无效或缺失：$source"
-        if [[ ! -e "$target" ]]; then
-            install -m 0644 -- "$source" "$target"
-        elif [[ ! -f "$target" ]] || ! grep -Fq "$header" "$target"; then
-            fail "现有 KiCad 库表无效，未覆盖：$target"
+find_compatible_uv() {
+    local candidate path_candidate
+    for candidate in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do
+        if [[ -x "$candidate" ]] && uv_is_compatible "$candidate"; then
+            printf '%s\n' "$candidate"
+            return 0
         fi
     done
+    path_candidate=$(command -v uv 2>/dev/null || true)
+    if [[ -n "$path_candidate" ]] && uv_is_compatible "$path_candidate"; then
+        printf '%s\n' "$path_candidate"
+        return 0
+    fi
+    return 1
+}
+
+find_kicad_cli() {
+    if [[ -n "${KICAD_CLI:-}" && -x "$KICAD_CLI" ]]; then
+        printf '%s\n' "$KICAD_CLI"
+        return 0
+    fi
+    if command -v kicad-cli >/dev/null 2>&1; then
+        command -v kicad-cli
+        return 0
+    fi
+    for candidate in \
+        "/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli" \
+        "$HOME/Applications/KiCad/KiCad.app/Contents/MacOS/kicad-cli" \
+        "/usr/bin/kicad-cli" \
+        "/usr/local/bin/kicad-cli"; do
+        if [[ -x "$candidate" ]]; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+install_uv() {
+    command -v curl >/dev/null 2>&1 \
+        || fail "自动安装 uv 需要 curl；也可先自行安装 uv 后重试。"
+    local installer="$PCBDRAFT_INSTALL_TEMP/uv-install.sh"
+    info "下载 Astral 官方 uv $PCBDRAFT_UV_VERSION 安装器。"
+    curl --fail --location --proto '=https' --tlsv1.2 \
+        --output "$installer" \
+        "https://astral.sh/uv/$PCBDRAFT_UV_VERSION/install.sh"
+    UV_NO_MODIFY_PATH=1 sh "$installer"
+}
+
+install_kicad() {
+    local system
+    system=$(uname -s)
+    if [[ "$system" == "Darwin" ]]; then
+        command -v brew >/dev/null 2>&1 \
+            || fail "未找到 Homebrew。请从 https://www.kicad.org/download/macos/ 安装 KiCad 10.0.x，或先安装 Homebrew。"
+        info "通过 Homebrew 安装 KiCad 稳定版。"
+        brew install --cask kicad
+        return
+    fi
+    [[ "$system" == "Linux" ]] || fail "支持 Linux 和 macOS；Windows 请运行 scripts/install.ps1。"
+    [[ -r /etc/os-release ]] || fail "无法识别 Linux 发行版；请先安装 KiCad 10.0.x。"
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    case "${ID:-}" in
+        ubuntu|linuxmint)
+            command -v sudo >/dev/null 2>&1 || fail "自动安装 KiCad 需要 sudo。"
+            if ! command -v add-apt-repository >/dev/null 2>&1; then
+                sudo apt-get update
+                sudo apt-get install --yes software-properties-common
+            fi
+            sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends kicad kicad-libraries
+            ;;
+        debian)
+            command -v sudo >/dev/null 2>&1 || fail "自动安装 KiCad 需要 sudo。"
+            sudo apt-get update
+            sudo apt-get install --yes --no-install-recommends kicad kicad-libraries
+            ;;
+        fedora)
+            command -v sudo >/dev/null 2>&1 || fail "自动安装 KiCad 需要 sudo。"
+            sudo dnf install --assumeyes dnf-plugins-core
+            sudo dnf copr enable --assumeyes @kicad/kicad-stable
+            sudo dnf install --assumeyes kicad
+            ;;
+        arch)
+            command -v sudo >/dev/null 2>&1 || fail "自动安装 KiCad 需要 sudo。"
+            sudo pacman -Syu --needed --noconfirm kicad kicad-library
+            ;;
+        *)
+            fail "尚不能自动安装 ${PRETTY_NAME:-当前发行版} 的 KiCad；请从 https://www.kicad.org/download/linux/ 安装稳定版 10.0.x。"
+            ;;
+    esac
+}
+
+resolve_install_ref() {
+    if [[ -n "$PCBDRAFT_REQUESTED_REF" ]]; then
+        [[ "$PCBDRAFT_REQUESTED_REF" =~ ^[0-9a-f]{40}$ ]] \
+            || fail "--ref/PCBDRAFT_INSTALL_REF 必须是完整的 40 位提交 SHA。"
+        printf '%s\n' "$PCBDRAFT_REQUESTED_REF"
+        return
+    fi
+    local response resolved
+    response=$(curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
+        "https://api.github.com/repos/qixuancao/pcbdraft/git/ref/heads/main")
+    resolved=$(printf '%s\n' "$response" \
+        | sed -nE 's/^[[:space:]]*"sha":[[:space:]]*"([0-9a-f]{40})".*/\1/p' \
+        | head -n 1)
+    [[ "$resolved" =~ ^[0-9a-f]{40}$ ]] \
+        || fail "无法把公开 main 分支解析为不可变提交；可通过 --ref 指定 SHA。"
+    printf '%s\n' "$resolved"
+}
+
+check_kicad_version() {
+    local executable=$1 version parsed
+    version=$("$executable" --version 2>/dev/null || true)
+    if [[ "$version" =~ (^|[^0-9])10\.0\.([0-9]+)([^0-9]|$) ]]; then
+        parsed="10.0.${BASH_REMATCH[2]}"
+    else
+        fail "需要稳定版 KiCad >=10.0.0,<10.1.0，当前检测到：${version:-未知版本}"
+    fi
+    [[ ! "$version" =~ ([Rr][Cc]|[Aa]lpha|[Bb]eta|[Nn]ightly|[Dd]ev) ]] \
+        || fail "拒绝 KiCad 预发布版：$version"
+    info "检测到兼容的 KiCad $parsed。"
 }
 
 main() {
-    local install_ref source_dir constraints_file build_constraints_file resolved_ref
+    local system install_ref uv_bin kicad_bin constraints_file build_constraints_file
+    system=$(uname -s)
+    [[ "$system" == "Linux" || "$system" == "Darwin" ]] \
+        || fail "支持 Linux 和 macOS；Windows 请运行 scripts/install.ps1。"
     [[ "${EUID:-$(id -u)}" -ne 0 ]] \
-        || fail "请以普通用户运行；本安装器只安装到当前用户的 Home 目录。"
-    [[ "$(uname -s)" == "Linux" ]] || fail "目前只支持 Linux。"
+        || fail "请以普通用户运行；只有安装 KiCad 时会单独请求管理员权限。"
     [[ -n "${HOME:-}" && "$HOME" == /* ]] || fail "HOME 必须是绝对路径。"
-    command -v git >/dev/null 2>&1 \
-        || fail "需要 Git 才能从公开 GitHub 仓库安装 PCBDraft。"
-    install_ref=${PCBDRAFT_INSTALL_REF:-}
-    [[ "$install_ref" =~ ^[0-9a-f]{40}$ ]] \
-        || fail "PCBDRAFT_INSTALL_REF 必须是 GitHub 上完整的 40 位提交 SHA；拒绝安装可变分支或标签。"
-
-    if ! find_uv >/dev/null; then
-        fail "未找到 uv。请先通过发行版包管理器或 https://docs.astral.sh/uv/ 安装并核验 uv；本脚本不会执行远程安装脚本。"
-    fi
-
+    command -v curl >/dev/null 2>&1 || fail "需要 curl 下载经过 HTTPS 固定的安装文件。"
     PCBDRAFT_INSTALL_TEMP=$(mktemp -d "${TMPDIR:-/tmp}/pcbdraft-install.XXXXXX")
-    source_dir="$PCBDRAFT_INSTALL_TEMP/source"
+
+    if ! find_compatible_uv >/dev/null; then
+        [[ "$PCBDRAFT_INSTALL_UV" == 1 ]] \
+            || fail "未找到支持当前安装参数的 uv。"
+        install_uv
+    fi
+    uv_bin=$(find_compatible_uv) \
+        || fail "uv 安装后仍无法找到兼容的可执行文件。"
+
+    if ! find_kicad_cli >/dev/null; then
+        [[ "$PCBDRAFT_INSTALL_KICAD" == 1 ]] || fail "未找到 KiCad 10.0.x。"
+        install_kicad
+    fi
+    kicad_bin=$(find_kicad_cli) || fail "KiCad 安装后仍无法找到 kicad-cli。"
+    check_kicad_version "$kicad_bin"
+
+    install_ref=$(resolve_install_ref)
     constraints_file="$PCBDRAFT_INSTALL_TEMP/runtime-constraints.txt"
     build_constraints_file="$PCBDRAFT_INSTALL_TEMP/build-constraints.txt"
-    git init --quiet "$source_dir"
-    git -C "$source_dir" remote add origin "$PCBDRAFT_REPOSITORY_URL"
-    info "获取并核验不可变提交 $install_ref。"
-    git -C "$source_dir" fetch --quiet --depth=1 origin "$install_ref" \
-        || fail "无法从公开仓库获取指定提交；请确认 SHA 和网络连接。"
-    resolved_ref=$(git -C "$source_dir" rev-parse FETCH_HEAD)
-    [[ "$resolved_ref" == "$install_ref" ]] \
-        || fail "远端返回的提交与请求 SHA 不一致。"
-    git -C "$source_dir" show "$install_ref:constraints/runtime.txt" \
-        > "$constraints_file" \
-        || fail "指定提交缺少运行时约束文件。"
-    git -C "$source_dir" show "$install_ref:constraints/build.txt" \
-        > "$build_constraints_file" \
-        || fail "指定提交缺少构建约束文件。"
-    [[ -s "$constraints_file" ]] \
-        && grep -Fq 'kicad-sch-api==' "$constraints_file" \
-        || fail "运行时约束文件无效。"
-    [[ -s "$build_constraints_file" ]] \
-        && grep -Fq 'setuptools==' "$build_constraints_file" \
-        || fail "构建约束文件无效。"
+    info "获取不可变提交 $install_ref 的依赖约束。"
+    curl --fail --location --proto '=https' --tlsv1.2 \
+        --output "$constraints_file" \
+        "https://raw.githubusercontent.com/qixuancao/pcbdraft/$install_ref/constraints/runtime.txt"
+    curl --fail --location --proto '=https' --tlsv1.2 \
+        --output "$build_constraints_file" \
+        "https://raw.githubusercontent.com/qixuancao/pcbdraft/$install_ref/constraints/build.txt"
+    grep -Fq 'kicad-sch-api==' "$constraints_file" || fail "运行时约束文件无效。"
+    grep -Fq 'setuptools==' "$build_constraints_file" || fail "构建约束文件无效。"
 
-    # Fail before changing user files when the required KiCad runtime is absent.
-    prepare_kicad_tables
-
-    local uv_bin tool_bin_dir
-    uv_bin=$(find_uv)
-    tool_bin_dir=${UV_TOOL_BIN_DIR:-$HOME/.local/bin}
-    export UV_TOOL_BIN_DIR="$tool_bin_dir"
-
-    info "使用锁定依赖安装 PCBDraft $PCBDRAFT_EXPECTED_VERSION 到当前用户目录。"
+    info "安装 PCBDraft $PCBDRAFT_EXPECTED_VERSION（Python 由 uv 自动管理）。"
     "$uv_bin" tool install \
+        --python 3.12 \
         --reinstall \
         --constraints "$constraints_file" \
         --build-constraints "$build_constraints_file" \
-        "git+$PCBDRAFT_REPOSITORY_URL@$install_ref"
+        "$PCBDRAFT_REPOSITORY_URL/archive/$install_ref.tar.gz"
 
-    [[ -x "$tool_bin_dir/pcbdraft" ]] \
-        || fail "PCBDraft 已安装，但未在预期位置找到命令：$tool_bin_dir/pcbdraft"
-    [[ "$("$tool_bin_dir/pcbdraft" --version)" == "pcbdraft $PCBDRAFT_EXPECTED_VERSION" ]] \
-        || fail "安装后的版本与安装器提交不一致。"
-    "$tool_bin_dir/pcbdraft" --help >/dev/null
+    local tool_bin_dir pcbdraft_bin
+    tool_bin_dir=$("$uv_bin" tool dir --bin)
+    pcbdraft_bin="$tool_bin_dir/pcbdraft"
+    [[ -x "$pcbdraft_bin" ]] || fail "安装完成但未找到命令：$pcbdraft_bin"
+    [[ "$("$pcbdraft_bin" --version)" == "pcbdraft $PCBDRAFT_EXPECTED_VERSION" ]] \
+        || fail "安装后的版本与安装器不一致。"
+    "$pcbdraft_bin" setup >/dev/null
 
-    info "安装完成：$tool_bin_dir/pcbdraft"
+    info "安装完成：$pcbdraft_bin"
+    printf '已安装提交：%s\n' "$install_ref"
     if [[ ":$PATH:" != *":$tool_bin_dir:"* ]]; then
-        printf '将以下内容加入 shell 配置后重新打开终端：\n'
-        printf '  export PATH="%s:$PATH"\n' "$tool_bin_dir"
+        printf '把命令目录加入 PATH：export PATH="%s:$PATH"\n' "$tool_bin_dir"
     fi
-    printf '启动：pcbdraft\n'
-    printf '诊断：pcbdraft doctor --json\n'
-    printf '配置：%s/.config/pcbdraft/config.toml\n' "$HOME"
-    printf 'PCB 项目仓库：首次启动将创建并记录 %s/PCBDraft（可用 `pcbdraft repository /路径` 更改）\n' "$HOME"
+    printf '首次演示：pcbdraft demo "%s"\n' '做一块 3.3V 的温度传感器小板，带状态灯和 I2C 接口'
+    printf '正常启动：pcbdraft\n'
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    main
+fi

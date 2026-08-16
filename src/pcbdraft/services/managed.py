@@ -551,7 +551,7 @@ def _remove_private_staging(temporary: Path, parent: Path) -> None:
 
 def _fsync_parent(parent: Path) -> None:
     try:
-        descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY)
+        descriptor = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     except OSError:
         return
     try:
