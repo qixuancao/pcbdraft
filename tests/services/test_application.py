@@ -27,7 +27,6 @@ from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.project import sha256_file
 from pcbdraft.interfaces.web import create_app_server
 from pcbdraft.model.providers import (
-    BuiltinIntentProvider,
     OpenAICompatibleIntentProvider,
     OpenAICompatibleSettings,
     ProviderContext,
@@ -142,10 +141,53 @@ class GenericPlanningProvider:
         return CircuitPlan.from_dict(plan)
 
 
+class InterpretOnlyProvider:
+    """Deterministic test double that interprets but never produces a plan."""
+
+    provider_id = "interpret-only-test"
+    supports_planning = False
+
+    def diagnostic(self) -> dict[str, object]:
+        return {
+            "id": self.provider_id,
+            "available": True,
+            "planning": "test double without a planner",
+            "secret_storage": "none",
+        }
+
+    def interpret(
+        self,
+        context: ProviderContext,
+        *,
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> dict[str, object]:
+        del project_dir, run_dir, timeout
+        return validate_interpretation(
+            {
+                "request_summary": context.request,
+                "design_name": context.project_name,
+                "layers": 2,
+                "board": {"width_mm": 80.0, "height_mm": 50.0},
+                "assumptions": [],
+                "requested_parts": ["TMP102"],
+                "functions": ["I2C bus", "sensor acquisition"],
+                "power": {
+                    "nominal_v": 3.3,
+                    "max_voltage_v": 3.3,
+                    "max_current_a": 0.5,
+                    "max_power_w": 1.65,
+                },
+                "missing_fields": [],
+            }
+        )
+
+
 class ApplicationConversationTests(unittest.TestCase):
     def test_message_mutation_rejects_a_stale_expected_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             draft = service.create_draft("Revision-bound message")
             project_id = draft["project"]["id"]
 
@@ -162,7 +204,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_progress_events_do_not_invalidate_engineering_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             project_id = service.create_draft("Progress isolation")["project"]["id"]
             before = service.open_project(project_id)["state"]
 
@@ -176,7 +218,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_live_snapshot_skips_a_project_while_its_writer_lock_is_held(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             view = service.create_draft("Snapshot consistency")
             project_id = view["project"]["id"]
             project_root = service.project_root(project_id)
@@ -289,20 +331,6 @@ class ApplicationConversationTests(unittest.TestCase):
         self.assertEqual(proposal["decisions"]["layers"], 65)
         self.assertEqual(proposal["scope"]["decision"], "attempted")
 
-    def test_builtin_preserves_unknown_named_parts_and_requests_a_planner(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
-            view = service.create_project(
-                "Generic request",
-                "Create a 2-layer STM32F405 board with an SHT31 sensor",
-            )
-            proposal = view["conversation"]["proposal"]
-            self.assertEqual(view["project"]["status"], "planning_required")
-            self.assertEqual(proposal["scope"]["decision"], "attempted")
-            self.assertEqual(proposal["requested_parts"], ["SHT31", "STM32F405"])
-            self.assertIsNone(proposal["brief"])
-            self.assertNotIn("unsupported", proposal["planning"]["message"].casefold())
-
     def test_complex_domain_request_reaches_normal_planning_and_confirmation(
         self,
     ) -> None:
@@ -323,21 +351,6 @@ class ApplicationConversationTests(unittest.TestCase):
             self.assertEqual(
                 view["conversation"]["proposal"]["planning"]["state"], "ready"
             )
-
-    def test_builtin_chinese_complex_request_is_retained_for_a_planner(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
-            view = service.create_project(
-                "高风险控制器",
-                "做一块 2 层高压市电医疗控制板，带射频天线",
-            )
-            self.assertEqual(view["project"]["status"], "planning_required")
-            proposal = view["conversation"]["proposal"]
-            self.assertEqual(proposal["scope"]["decision"], "attempted")
-            warnings = " ".join(proposal["scope"]["warnings"])
-            for domain in ("high_voltage", "mains", "medical", "rf"):
-                self.assertIn(domain, warnings)
-            self.assertNotIn("outside the automated", proposal["planning"]["message"])
 
     def test_failed_generic_generation_retains_request_plan_and_part_graph(
         self,
@@ -609,7 +622,9 @@ class ApplicationConversationTests(unittest.TestCase):
             previous = os.environ.get("PCBDRAFT_TEST_API_KEY")
             os.environ["PCBDRAFT_TEST_API_KEY"] = sentinel
             try:
-                service = ApplicationService(temporary, provider_name="builtin")
+                service = ApplicationService(
+                    temporary, provider=GenericPlanningProvider()
+                )
                 view = service.create_project(
                     "Secret check",
                     f"Create a 2-layer SHT31 sensor; api_key={sentinel}",
@@ -619,7 +634,7 @@ class ApplicationConversationTests(unittest.TestCase):
                     os.environ.pop("PCBDRAFT_TEST_API_KEY", None)
                 else:
                     os.environ["PCBDRAFT_TEST_API_KEY"] = previous
-            self.assertEqual(view["project"]["status"], "planning_required")
+            self.assertEqual(view["project"]["status"], "awaiting_confirmation")
             combined = b""
             for item in Path(temporary).rglob("*"):
                 if item.is_file():
@@ -628,7 +643,7 @@ class ApplicationConversationTests(unittest.TestCase):
             self.assertIn(b"[REDACTED]", combined)
 
     def test_untrusted_provider_shape_is_rejected(self) -> None:
-        valid = BuiltinIntentProvider().interpret(
+        valid = GenericPlanningProvider().interpret(
             context=ProviderContext("2-layer SHT31 sensor", "Sensor", {}),
             project_dir=Path.cwd(),
             run_dir=Path.cwd(),
@@ -654,59 +669,6 @@ class ApplicationConversationTests(unittest.TestCase):
                 for key in schema["properties"]["missing_fields"]["items"]
             )
         )
-
-    def test_builtin_provider_does_not_claim_a_fixed_board_type(self) -> None:
-        provider = BuiltinIntentProvider()
-        with tempfile.TemporaryDirectory() as temporary:
-            result = provider.interpret(
-                ProviderContext(
-                    "Build a 2-layer UART controller with 5V input and an AP2112 LDO",
-                    "Generic intent",
-                    {},
-                ),
-                project_dir=Path(temporary),
-                run_dir=Path(temporary),
-                timeout=1,
-            )
-        self.assertEqual(result["layers"], 2)
-        self.assertIn("UART serial interface", result["functions"])
-        self.assertNotIn("proposed_profile", result)
-
-    def test_builtin_provider_preserves_any_explicit_layer_count(self) -> None:
-        provider = BuiltinIntentProvider()
-        with tempfile.TemporaryDirectory() as temporary:
-            result = provider.interpret(
-                ProviderContext(
-                    "Build a 6-layer UART controller with 5V input",
-                    "Six layer controller",
-                    {},
-                ),
-                project_dir=Path(temporary),
-                run_dir=Path(temporary),
-                timeout=1,
-            )
-        self.assertEqual(result["layers"], 6)
-        self.assertNotIn("layers", result["missing_fields"])
-
-    def test_builtin_provider_keeps_a_chinese_generic_request_generic(self) -> None:
-        provider = BuiltinIntentProvider()
-        with tempfile.TemporaryDirectory() as temporary:
-            result = provider.interpret(
-                ProviderContext(
-                    "做一块 2 层控制板，使用 STM32F405 和 SHT31 传感器，"
-                    "提供 I2C，3.3伏，最大 200毫安",
-                    "中文通用请求",
-                    {},
-                ),
-                project_dir=Path(temporary),
-                run_dir=Path(temporary),
-                timeout=1,
-            )
-        self.assertEqual(result["layers"], 2)
-        self.assertEqual(result["requested_parts"], ["SHT31", "STM32F405"])
-        self.assertIn("sensor acquisition", result["functions"])
-        self.assertIn("I2C bus", result["functions"])
-        self.assertEqual(result["power"]["max_current_a"], 0.2)
 
     def test_openai_compatible_provider_keeps_secret_runtime_only(self) -> None:
         captured: dict[str, object] = {}
@@ -798,7 +760,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_restart_recovers_transient_project_and_job_records(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             view = service.create_draft("Restart recovery")
             project_id = view["project"]["id"]
             root = service.project_root(project_id)
@@ -835,7 +797,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            restarted = ApplicationService(temporary, provider_name="builtin")
+            restarted = ApplicationService(temporary, provider_name="auto")
             self.assertEqual(
                 restarted.open_project(project_id)["project"]["status"],
                 "interrupted",
@@ -862,7 +824,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 self.subTest(admitting_mode=admitting_mode),
                 tempfile.TemporaryDirectory() as temporary,
             ):
-                service = ApplicationService(temporary, provider_name="builtin")
+                service = ApplicationService(temporary, provider_name="auto")
                 project_id = service.create_draft(f"Bound MCP {admitting_mode}")[
                     "project"
                 ]["id"]
@@ -921,7 +883,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 self.subTest(action=action),
                 tempfile.TemporaryDirectory() as temporary,
             ):
-                service = ApplicationService(temporary, provider_name="builtin")
+                service = ApplicationService(temporary, provider_name="auto")
                 project_id = service.create_draft(f"Legacy {action}")["project"]["id"]
                 job_id = "20260815T120000Z-acde1234"
                 path = service.project_root(project_id) / "jobs" / f"{job_id}.json"
@@ -971,7 +933,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_legacy_agent_job_with_a_turn_is_cancelled_before_dispatch(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             project_id = service.create_draft("Legacy bound turn")["project"]["id"]
             agent = AgentOrchestrator(service)
             turn = agent.start_turn(project_id, "Build a small sensor board")
@@ -1025,7 +987,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 self.subTest(field=field),
                 tempfile.TemporaryDirectory() as temporary,
             ):
-                service = ApplicationService(temporary, provider_name="builtin")
+                service = ApplicationService(temporary, provider_name="auto")
                 project_id = service.create_draft(f"Policy mismatch {field}")[
                     "project"
                 ]["id"]
@@ -1075,7 +1037,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 self.subTest(field=field),
                 tempfile.TemporaryDirectory() as temporary,
             ):
-                service = ApplicationService(temporary, provider_name="builtin")
+                service = ApplicationService(temporary, provider_name="auto")
                 project_id = service.create_draft(f"Malformed job {field}")["project"][
                     "id"
                 ]
@@ -1112,7 +1074,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_jobs_directory_and_records_reject_symlink_escape(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             project_id = service.create_draft("Symlinked jobs directory")["project"][
                 "id"
             ]
@@ -1126,7 +1088,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 JobRunner(service, workers=1)
 
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             project_id = service.create_draft("Symlinked job record")["project"]["id"]
             runner = JobRunner(service, workers=1)
             job_id = "20260815T120000Z-acde1234"
@@ -1144,7 +1106,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_queued_job_can_be_cancelled_and_retried_without_side_effects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider=InterpretOnlyProvider())
             blocker_id = service.create_draft("Worker blocker")["project"]["id"]
             target_id = service.create_draft("Retry target")["project"]["id"]
             runner = JobRunner(service, workers=1)
@@ -1204,7 +1166,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_second_runner_does_not_interrupt_a_live_job_owner(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider=InterpretOnlyProvider())
             project_id = service.create_draft("Live owner")["project"]["id"]
             first = JobRunner(service, workers=1)
             started = threading.Event()
@@ -1251,7 +1213,7 @@ class ApplicationConversationTests(unittest.TestCase):
 
     def test_job_list_uses_persisted_monotonic_order_within_one_second(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             project_id = service.create_draft("Job ordering")["project"]["id"]
             runner = JobRunner(service, workers=1)
             jobs_dir = service.project_root(project_id) / "jobs"
@@ -1300,7 +1262,7 @@ class ApplicationConversationTests(unittest.TestCase):
                 return
 
         with tempfile.TemporaryDirectory() as temporary:
-            service = ApplicationService(temporary, provider_name="builtin")
+            service = ApplicationService(temporary, provider_name="auto")
             project_id = service.create_draft("Concurrent queue")["project"]["id"]
             runners = [JobRunner(service, workers=1), JobRunner(service, workers=1)]
             for runner in runners:
@@ -1353,11 +1315,17 @@ class ApplicationConversationTests(unittest.TestCase):
 class BrowserSecurityTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
+        provider_patch = patch(
+            "pcbdraft.services.application.resolve_provider",
+            return_value=InterpretOnlyProvider(),
+        )
+        provider_patch.start()
+        self.addCleanup(provider_patch.stop)
         self.server = create_app_server(
             host="127.0.0.1",
             port=0,
             workspace=self.temporary.name,
-            provider="builtin",
+            provider="auto",
         )
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -1475,7 +1443,7 @@ class BrowserSecurityTests(unittest.TestCase):
                 host="0.0.0.0",
                 port=0,
                 workspace=self.temporary.name,
-                provider="builtin",
+                provider="auto",
             )
 
     def test_container_wildcard_has_explicit_loopback_public_url(self) -> None:
@@ -1484,7 +1452,7 @@ class BrowserSecurityTests(unittest.TestCase):
             public_host="127.0.0.1",
             port=0,
             workspace=self.temporary.name,
-            provider="builtin",
+            provider="auto",
         )
         try:
             self.assertTrue(server.base_url.startswith("http://127.0.0.1:"))

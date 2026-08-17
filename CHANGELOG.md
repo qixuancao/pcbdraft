@@ -5,6 +5,10 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
 
 ## Unreleased
 
+- Removed the offline `builtin` provider and the model-free `pcbdraft demo`
+  first-board command. Circuit planning now requires a configured model API;
+  without one, the TUI and every planning path report an actionable
+  `/connect` instruction instead of pretending to interpret requirements.
 - Hardened model transport: remote endpoints now require HTTPS, loopback HTTP is
   explicitly identified, redirects cannot forward Authorization credentials,
   and returned objects undergo local Draft 2020-12 JSON Schema validation.

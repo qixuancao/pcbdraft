@@ -31,7 +31,6 @@ _MAX_INPUT_CHARS = 8_192
 _PROVIDER_NAMES = (
     "auto",
     "openai-compatible",
-    "builtin",
 )
 
 
@@ -117,6 +116,8 @@ class TuiController:
     @property
     def provider_name(self) -> str:
         provider = getattr(self.service, "provider", None)
+        if provider is None:
+            return "no provider configured · run /connect"
         provider_id = getattr(provider, "provider_id", None)
         provider_id = provider_id if isinstance(provider_id, str) else "configured"
         details = self._provider_details
@@ -138,15 +139,15 @@ class TuiController:
             return f"{provider_label} / {model} · {router}"
         if model is False:
             return f"{provider_id} / no planning model · {router}"
-        if provider_id == "builtin":
-            return f"builtin / offline · {router}"
         return f"{provider_id} / model not reported · {router}"
 
     @property
     def provider_status(self) -> str:
+        provider = getattr(self.service, "provider", None)
+        if provider is None:
+            return "setup required"
         if self._provider_details.get("available") is False:
             return "setup required"
-        provider = getattr(self.service, "provider", None)
         if not getattr(provider, "supports_planning", True):
             return "requirements only"
         return "ready"
@@ -730,7 +731,7 @@ class TuiController:
             return "continue"
         provider_name = argument.casefold()
         if provider_name not in _PROVIDER_NAMES or " " in provider_name:
-            self.error = "Supported providers: auto, openai-compatible, or builtin."
+            self.error = "Supported providers: auto, or openai-compatible."
             return "continue"
         try:
             provider = resolve_provider(provider_name)

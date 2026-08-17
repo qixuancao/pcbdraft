@@ -155,10 +155,10 @@ class FakeService:
 
 
 class SwitchedProvider:
-    provider_id = "builtin"
+    provider_id = "switched-test"
 
     def diagnostic(self) -> dict[str, Any]:
-        return {"id": "builtin", "model": False, "available": True}
+        return {"id": "switched-test", "model": False, "available": True}
 
 
 class FakeRuntime:
@@ -335,7 +335,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
     def test_named_tui_project_is_persisted_as_an_empty_folder(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             service = ApplicationService(
-                workspace=Path(temporary) / "repository", provider_name="builtin"
+                workspace=Path(temporary) / "repository", provider_name="auto"
             )
             controller = TuiController(service=service)
 
@@ -529,7 +529,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
                 clear=False,
             ):
                 configure_repository(original)
-                service = ApplicationService(provider_name="builtin")
+                service = ApplicationService(provider_name="auto")
                 controller = TuiController(service=service)
 
                 controller.submit("/project")
@@ -558,12 +558,12 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             "pcbdraft.interfaces.tui.controller.resolve_provider",
             return_value=SwitchedProvider(),
         ) as resolve:
-            controller.submit("/model builtin")
-        resolve.assert_called_once_with("builtin")
+            controller.submit("/model auto")
+        resolve.assert_called_once_with("auto")
         self.assertIsInstance(service.provider, SwitchedProvider)
 
         controller.submit("/model arbitrary-model-id")
-        self.assertIn("auto, openai-compatible, or builtin", controller.error)
+        self.assertIn("auto, or openai-compatible", controller.error)
         self.assertIn("supported providers", controller.error.casefold())
 
     def test_projection_exposes_pcb_facts_without_a_fixed_workflow_model(self) -> None:
@@ -593,7 +593,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
                 "--workspace",
                 "/tmp/pcbdraft-workspace",
                 "--provider",
-                "builtin",
+                "auto",
                 "--project",
                 "existing-project",
                 "--timeout",
@@ -627,7 +627,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
                         "--workspace",
                         "/tmp/pcbdraft-workspace",
                         "--provider",
-                        "builtin",
+                        "auto",
                         "--project",
                         "existing-project",
                         "--timeout",
@@ -638,7 +638,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             )
         run_tui.assert_called_once_with(
             workspace="/tmp/pcbdraft-workspace",
-            provider="builtin",
+            provider="auto",
             project_id="existing-project",
             timeout=12.0,
             approval_mode="workspace",
@@ -649,7 +649,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             "--workspace",
             "/tmp/pcbdraft-mcp-root",
             "--provider",
-            "builtin",
+            "auto",
             "--approval-mode",
             "read_only",
             "--timeout",
@@ -662,7 +662,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             self.assertEqual(cli_main(inherited), 0)
         run_mcp.assert_called_once_with(
             workspace="/tmp/pcbdraft-mcp-root",
-            provider="builtin",
+            provider="auto",
             project_id="board",
             approval_mode="read_only",
             timeout=13.0,
@@ -671,7 +671,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
         overridden = [
             "--workspace=/tmp/ignored-root",
             "--provider",
-            "builtin",
+            "auto",
             "--approval-mode",
             "read_only",
             "--timeout",
@@ -707,7 +707,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
         ):
             run_chat_command(
                 workspace=None,
-                provider="builtin",
+                provider="auto",
                 project_id=None,
                 new_name=None,
                 message=None,
@@ -729,7 +729,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
         ):
             run_tui_command(
                 workspace=None,
-                provider="builtin",
+                provider="auto",
                 project_id=None,
                 timeout=10.0,
             )
@@ -760,7 +760,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             self.assertEqual(
                 run_tui_command(
                     workspace="/tmp/pcbdraft-picker",
-                    provider="builtin",
+                    provider="auto",
                     project_id=None,
                     timeout=10.0,
                 ),
@@ -769,7 +769,7 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             self.assertEqual(
                 run_tui_command(
                     workspace="/tmp/pcbdraft-picker",
-                    provider="builtin",
+                    provider="auto",
                     project_id="existing-project",
                     timeout=10.0,
                 ),

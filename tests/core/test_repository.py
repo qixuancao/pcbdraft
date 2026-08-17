@@ -45,7 +45,7 @@ class ProjectRepositoryTests(unittest.TestCase):
                 before = Path.cwd()
                 try:
                     os.chdir(unrelated_cwd)
-                    service = ApplicationService(provider_name="builtin")
+                    service = ApplicationService(provider_name="auto")
                     draft = service.create_draft("Repository board")
                 finally:
                     os.chdir(before)
@@ -70,7 +70,7 @@ class ProjectRepositoryTests(unittest.TestCase):
             environment = {"PCBDRAFT_REPOSITORY_CONFIG": str(config_path)}
             with patch.dict(os.environ, environment, clear=False):
                 configure_repository(persistent)
-                service = ApplicationService(isolated, provider_name="builtin")
+                service = ApplicationService(isolated, provider_name="auto")
                 self.assertEqual(service.root, isolated.resolve())
                 self.assertEqual(current_repository().root, persistent.resolve())
 

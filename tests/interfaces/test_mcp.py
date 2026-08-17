@@ -688,7 +688,7 @@ class MCPInterfaceTests(unittest.TestCase):
     def test_subprocess_stdio_handshake_and_tool_listing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             workspace = Path(temporary).resolve()
-            service = ApplicationService(workspace, provider_name="builtin")
+            service = ApplicationService(workspace, provider_name="auto")
             draft = service.create_draft("MCP handshake board")
             project_id = draft["project"]["id"]
             with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr:
@@ -703,7 +703,7 @@ class MCPInterfaceTests(unittest.TestCase):
                             "--workspace",
                             str(workspace),
                             "--provider",
-                            "builtin",
+                            "auto",
                             "--project",
                             project_id,
                         ],

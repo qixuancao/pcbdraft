@@ -42,7 +42,6 @@ from pcbdraft.kicad.sync import (
     recover_kicad_import,
     undo_kicad_import,
 )
-from pcbdraft.services.demo import DEMO_SENTENCE, run_first_board_demo
 from pcbdraft.services.doctor import doctor_report, setup_runtime
 from pcbdraft.services.managed import (
     ManagedProject,
@@ -162,7 +161,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         choices=(
             "auto",
             "openai-compatible",
-            "builtin",
         ),
         default="auto",
         help="terminal planning provider",
@@ -198,20 +196,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     setup.add_argument(
         "--json", action="store_true", dest="as_json", help="emit machine-readable JSON"
     )
-
-    demo = subcommands.add_parser(
-        "demo",
-        help="generate and check the offline first-board reference from one sentence",
-    )
-    demo.add_argument("REQUEST", help=f"for example: {DEMO_SENTENCE}")
-    demo.add_argument("--output", metavar="DIR", help="new demo project directory")
-    demo.add_argument(
-        "--skip-validation",
-        action="store_true",
-        help="generate native files without running ERC/DRC",
-    )
-    demo.add_argument("--timeout", type=positive_timeout, default=120.0, metavar="SEC")
-    demo.add_argument("--json", action="store_true", dest="as_json")
 
     repository = subcommands.add_parser(
         "repository",
@@ -418,7 +402,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         choices=(
             "auto",
             "openai-compatible",
-            "builtin",
         ),
         default="auto",
     )
@@ -446,7 +429,6 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         choices=(
             "auto",
             "openai-compatible",
-            "builtin",
         ),
         default="auto",
     )
@@ -477,7 +459,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     mcp.add_argument(
         "--provider",
         dest="mcp_provider",
-        choices=("auto", "openai-compatible", "builtin"),
+        choices=("auto", "openai-compatible"),
         default="auto",
     )
     mcp.add_argument(
@@ -546,22 +528,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_doctor(report, False)
                 print("KiCad runtime and stock-library tables are ready.")
             return 0
-        if args.command == "demo":
-            value = run_first_board_demo(
-                args.REQUEST,
-                output=args.output,
-                validate=not args.skip_validation,
-                timeout=args.timeout,
-            )
-            _emit(
-                value,
-                args.as_json,
-                "First board generated: "
-                f"{value['kicad_project']}\n"
-                f"Validation: {value['validation']['report'] or 'skipped'}",
-            )
-            ready = value["validation"]["candidate_ready"]
-            return 0 if ready is not False else 3
         if args.command == "repository":
             repository = (
                 configure_repository(args.DIRECTORY)

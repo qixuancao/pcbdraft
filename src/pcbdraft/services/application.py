@@ -301,7 +301,18 @@ class ApplicationService:
                 "source": self.repository_source,
             },
             "loopback_default": True,
-            "provider": self.provider.diagnostic(),
+            "provider": (
+                self.provider.diagnostic()
+                if self.provider is not None
+                else {
+                    "id": "unconfigured",
+                    "available": False,
+                    "planning": (
+                        "no model provider configured; run /connect in the TUI "
+                        "or create the PCBDraft config file"
+                    ),
+                }
+            ),
             "agent_orchestration": {
                 "router": provider_agent_protocol(self.provider),
                 "workflow": "local-evidence-policy",
@@ -366,7 +377,9 @@ class ApplicationService:
             "created_at": created_at,
             "updated_at": created_at,
             "status": "draft",
-            "provider": self.provider.provider_id,
+            "provider": (
+                self.provider.provider_id if self.provider is not None else "unconfigured"
+            ),
             "revision": 0,
             "design_revision": 0,
             "event_sequence": 0,
@@ -513,6 +526,11 @@ class ApplicationService:
 
         run_dir = project.root / "provider-runs" / new_run_id()
         try:
+            if self.provider is None:
+                raise PCBDraftError(
+                    "no model provider configured; run /connect in the TUI to add "
+                    "a model service before sending a planning request"
+                )
             value = self.provider.interpret(
                 ProviderContext(
                     request=clean,

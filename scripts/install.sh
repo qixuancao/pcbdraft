@@ -249,7 +249,6 @@ main() {
     if [[ ":$PATH:" != *":$tool_bin_dir:"* ]]; then
         printf '把命令目录加入 PATH：export PATH="%s:$PATH"\n' "$tool_bin_dir"
     fi
-    printf '首次演示：pcbdraft demo "%s"\n' '做一块 3.3V 的温度传感器小板，带状态灯和 I2C 接口'
     printf '正常启动：pcbdraft\n'
 }
 

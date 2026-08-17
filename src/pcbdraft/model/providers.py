@@ -8,11 +8,10 @@ coordinates, run shell commands, or silently replace a user-named component.
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ClassVar, Protocol
+from typing import Any, Protocol
 
 from pcbdraft.agent.plan import (
     AgentDesignRequest,
@@ -504,217 +503,22 @@ class OpenAICompatibleIntentProvider:
         )
 
 
-class BuiltinIntentProvider:
-    """Offline interpreter; it deliberately does not invent circuit topology."""
+def resolve_provider(name: str = "auto") -> IntentProvider | None:
+    """Resolve a configured provider without returning, or persisting, a credential.
 
-    provider_id = "builtin"
-    supports_planning = False
-
-    _NON_PARTS: ClassVar[set[str]] = {
-        "i2c",
-        "spi",
-        "uart",
-        "usb",
-        "usb2",
-        "can",
-        "gpio",
-        "gnd",
-        "vcc",
-        "3v3",
-        "5v",
-        "12v",
-        "24v",
-        "110v",
-        "220v",
-        "230v",
-        "2layer",
-        "4layer",
-    }
-
-    def diagnostic(self) -> dict[str, Any]:
-        return {
-            "id": self.provider_id,
-            "available": True,
-            "model": False,
-            "planning": "not available; configure a model API in PCBDraft",
-            "agent_protocol": "deterministic",
-            "secret_storage": "none",
-        }
-
-    def interpret(
-        self,
-        context: ProviderContext,
-        *,
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> dict[str, Any]:
-        del project_dir, run_dir, timeout
-        request = " ".join(context.request.split())
-        if not request or len(request.encode("utf-8")) > MAX_USER_MESSAGE_BYTES:
-            raise ValidationError("request must be between 1 byte and 16 KiB")
-        lowered = request.casefold()
-        layer_match = re.search(r"(?:\b(\d+)\s*[- ]?layers?\b|(\d+)\s*层)", lowered)
-        dimensions = re.search(
-            r"(?<!\d)(\d+(?:\.\d+)?)\s*(?:mm|毫米)?\s*[x×]\s*(\d+(?:\.\d+)?)\s*(?:mm|毫米)",
-            lowered,
-        )
-        voltage = re.search(
-            r"(?<![a-z0-9])(\d+(?:\.\d+)?)\s*(?:v\b|伏)",
-            lowered,
-        )
-        current = re.search(
-            r"(?<![a-z0-9])(\d+(?:\.\d+)?)\s*(ma\b|a\b|毫安|安)",
-            lowered,
-        )
-        prior = context.prior_decisions
-        prior_board_value = prior.get("board")
-        prior_board: Mapping[str, Any] = (
-            prior_board_value if isinstance(prior_board_value, Mapping) else {}
-        )
-        layers = (
-            int(layer_match.group(1) or layer_match.group(2))
-            if layer_match
-            else prior.get("layers")
-        )
-        if isinstance(layers, bool) or not isinstance(layers, int) or layers < 1:
-            layers = None
-        nominal = float(voltage.group(1)) if voltage else None
-        current_a = None
-        if current:
-            current_a = float(current.group(1)) * (
-                0.001 if current.group(2) in {"ma", "毫安"} else 1.0
-            )
-        parts = _extract_part_names(request)
-        functions = _infer_functions(lowered)
-        missing: list[str] = []
-        if not functions:
-            missing.append("purpose")
-        assumptions: list[str] = []
-        if nominal is None:
-            nominal = 3.3
-            assumptions.append(
-                "3.3 V logic supply is assumed until the reviewable plan is corrected."
-            )
-        power = {
-            "nominal_v": nominal,
-            "max_voltage_v": nominal,
-            "max_current_a": current_a if current_a is not None else 0.5,
-            "max_power_w": (nominal * current_a)
-            if current_a is not None
-            else nominal * 0.5,
-        }
-        return validate_interpretation(
-            {
-                "request_summary": request[:1000],
-                "design_name": str(
-                    prior.get("design_name") or context.project_name or "PCBDraft board"
-                )[:160],
-                "layers": layers,
-                "board": {
-                    "width_mm": float(dimensions.group(1))
-                    if dimensions
-                    else prior_board.get("width_mm"),
-                    "height_mm": float(dimensions.group(2))
-                    if dimensions
-                    else prior_board.get("height_mm"),
-                },
-                "assumptions": assumptions,
-                "requested_parts": parts,
-                "functions": functions,
-                "power": power,
-                "missing_fields": missing,
-            }
-        )
-
-    def plan(
-        self,
-        request: AgentDesignRequest,
-        *,
-        symbol_context: dict[str, list[dict[str, Any]]],
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> CircuitPlan:
-        del request, symbol_context, project_dir, run_dir, timeout
-        raise PCBDraftError(
-            "the offline provider can interpret requirements but will not invent a circuit topology; configure the PCBDraft model API"
-        )
-
-    def revise_plan(
-        self,
-        request: AgentDesignRequest,
-        previous_plan: CircuitPlan,
-        feedback: dict[str, Any],
-        *,
-        symbol_context: dict[str, list[dict[str, Any]]],
-        project_dir: Path,
-        run_dir: Path,
-        timeout: float,
-    ) -> CircuitPlan:
-        del (
-            request,
-            previous_plan,
-            feedback,
-            symbol_context,
-            project_dir,
-            run_dir,
-            timeout,
-        )
-        raise PCBDraftError(
-            "the offline provider cannot revise a circuit plan from tool feedback"
-        )
-
-
-def _extract_part_names(request: str) -> list[str]:
-    result: set[str] = set()
-    for match in re.finditer(
-        r"(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9_-]*\d[A-Za-z0-9_-]*)(?![A-Za-z0-9])",
-        request,
-    ):
-        token = match.group(1)
-        if token.casefold() not in BuiltinIntentProvider._NON_PARTS:
-            result.add(token)
-    return sorted(result, key=str.casefold)
-
-
-def _infer_functions(lowered: str) -> list[str]:
-    signals = (
-        ("i2c", "I2C bus"),
-        ("i²c", "I2C bus"),
-        ("spi", "SPI bus"),
-        ("uart", "UART serial interface"),
-        ("串口", "UART serial interface"),
-        ("sensor", "sensor acquisition"),
-        ("传感器", "sensor acquisition"),
-        ("temperature", "temperature measurement"),
-        ("温度", "temperature measurement"),
-        ("humidity", "humidity measurement"),
-        ("湿度", "humidity measurement"),
-        ("motor", "motor control"),
-        ("电机", "motor control"),
-        ("controller", "embedded control"),
-        ("控制器", "embedded control"),
-        ("控制板", "embedded control"),
-    )
-    return sorted({description for token, description in signals if token in lowered})
-
-
-def resolve_provider(name: str = "auto") -> IntentProvider:
-    """Resolve a provider without reading, returning, or persisting a credential."""
+    ``auto`` returns ``None`` when nothing is configured so that the terminal can
+    still start and guide the user through ``/connect``; every planning path
+    rejects a missing provider with an actionable error.
+    """
 
     normalized = name.strip().casefold()
-    if normalized not in {
-        "auto",
-        "openai-compatible",
-        "builtin",
-    }:
+    if normalized not in {"auto", "openai-compatible"}:
         raise ValidationError(f"unknown provider: {name}")
     settings = OpenAICompatibleSettings.from_config()
-    if normalized in {"auto", "openai-compatible"} and settings is not None:
+    if settings is not None:
         provider = OpenAICompatibleIntentProvider(settings)
         if normalized == "openai-compatible" or provider.diagnostic()["available"]:
             return provider
     if normalized == "openai-compatible":
         raise PCBDraftError("OpenAI-compatible provider is not configured")
-    return BuiltinIntentProvider()
+    return None

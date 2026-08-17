@@ -113,11 +113,9 @@ the server permission mode, and at most one enriched pending approval. This is a
 read-only presentation contract; it does not expose tool handlers or confer
 approval authority.
 
-The builtin provider can collect requirements without a network credential, but
-it does not invent an electrical topology. A configured model API or an
-OpenAI-compatible provider is needed to produce a generic circuit plan. Every
-provider passes through the same strict intent/plan validators and repair
-compiler. The transport records the selected structured-output mode and attempt
+A configured model API or OpenAI-compatible provider is required to produce a
+generic circuit plan. Every provider passes through the same strict intent/plan
+validators and repair compiler. The transport records the selected structured-output mode and attempt
 count, but never a prompt, credential, or raw provider error body. Transient
 retries never change the selected model.
 

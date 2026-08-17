@@ -139,7 +139,7 @@ def doctor_report() -> dict[str, Any]:
             "kicad-cli": "required",
             "pcbnew-python": "required for board generation",
             "git": "optional after installation",
-            "model": "optional for deterministic demo; required for arbitrary planning",
+            "model": "required for circuit planning",
         },
         "model": model,
     }

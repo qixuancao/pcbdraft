@@ -161,7 +161,6 @@ try {
 
     Write-Info "Installation complete: $pcbdraft"
     Write-Host "Installed commit: $Ref"
-    Write-Host "First demo: pcbdraft demo `"做一块 3.3V 的温度传感器小板，带状态灯和 I2C 接口`""
     Write-Host "Normal launch: pcbdraft"
     if (($env:PATH -split ';') -notcontains $toolBin) {
         Write-Host "Restart the terminal if pcbdraft is not yet on PATH: $toolBin"
