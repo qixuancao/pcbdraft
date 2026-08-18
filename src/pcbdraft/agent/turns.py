@@ -30,7 +30,7 @@ from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.runs import new_run_id, utc_timestamp
 
 TURN_SCHEMA = "pcbdraft-agent-turn"
-TURN_VERSION = 2
+TURN_VERSION = 3
 TOOL_RUN_SCHEMA = "pcbdraft-agent-tool-run"
 TOOL_RUN_VERSION = 2
 APPROVAL_SCHEMA = "pcbdraft-agent-approval"
@@ -42,6 +42,7 @@ TURN_FILE_LIMIT = 4 * 1024 * 1024
 MAX_TURNS = 2_000
 MAX_TOOL_RUNS = 256
 MAX_APPROVALS = 256
+MAX_ASSISTANT_TEXTS = 64
 MAX_ARGUMENT_BYTES = 256 * 1024
 MAX_RESULT_BYTES = 256 * 1024
 MAX_MESSAGE_BYTES = 16 * 1024
@@ -649,6 +650,7 @@ class TurnRecord:
     completed_at: str | None = None
     tool_runs: tuple[ToolRunRecord, ...] = ()
     approvals: tuple[ApprovalCheckpoint, ...] = ()
+    assistant_texts: tuple[str, ...] = ()
     stop_reason: str | None = None
     error: str | None = None
 
@@ -682,6 +684,18 @@ class TurnRecord:
             raise ValidationError("turn tool-run collection is malformed")
         if not isinstance(self.approvals, tuple) or len(self.approvals) > MAX_APPROVALS:
             raise ValidationError("turn approval collection is malformed")
+        if (
+            not isinstance(self.assistant_texts, tuple)
+            or len(self.assistant_texts) > MAX_ASSISTANT_TEXTS
+        ):
+            raise ValidationError("turn assistant-text collection is malformed")
+        for text in self.assistant_texts:
+            _validate_optional_text(
+                text,
+                "turn assistant text",
+                required=True,
+                limit=MAX_MESSAGE_BYTES,
+            )
         self._validate_lifecycle()
         self._validate_children()
 
@@ -804,6 +818,7 @@ class TurnRecord:
             "completed_at": self.completed_at,
             "tool_runs": [tool.to_dict() for tool in self.tool_runs],
             "approvals": [approval.to_dict() for approval in self.approvals],
+            "assistant_texts": list(self.assistant_texts),
             "stop_reason": self.stop_reason,
             "error": self.error,
         }
@@ -827,6 +842,7 @@ class TurnRecord:
             "completed_at",
             "tool_runs",
             "approvals",
+            "assistant_texts",
             "stop_reason",
             "error",
         }
@@ -838,6 +854,8 @@ class TurnRecord:
             value["approvals"], list
         ):
             raise ValidationError("agent turn child records are malformed")
+        if not isinstance(value["assistant_texts"], list):
+            raise ValidationError("agent turn assistant texts are malformed")
         return cls(
             project_id=value["project_id"],
             thread_id=value["thread_id"],
@@ -857,6 +875,7 @@ class TurnRecord:
             approvals=tuple(
                 ApprovalCheckpoint.from_dict(item) for item in value["approvals"]
             ),
+            assistant_texts=tuple(value["assistant_texts"]),
             stop_reason=value["stop_reason"],
             error=value["error"],
         )
@@ -1163,6 +1182,40 @@ class AgentTurnStore:
             updated = replace(
                 current,
                 tool_runs=(*current.tool_runs, tool_run),
+                record_revision=current.record_revision + 1,
+                updated_at=now,
+            )
+            self._write_unlocked(updated)
+            return updated
+
+    def append_assistant_text(
+        self,
+        turn_id: str,
+        text: str,
+        *,
+        expected_record_revision: int | None = None,
+    ) -> TurnRecord:
+        """Append one durable conversational reply while its turn is running."""
+
+        _validate_optional_text(
+            text,
+            "assistant reply text",
+            required=True,
+            limit=MAX_MESSAGE_BYTES,
+        )
+        with self._lock():
+            current = self._load_unlocked(turn_id)
+            self._check_record_revision(current, expected_record_revision)
+            if current.status is not TurnStatus.RUNNING:
+                raise ValidationError(
+                    "assistant replies can only be recorded in a running turn"
+                )
+            if len(current.assistant_texts) >= MAX_ASSISTANT_TEXTS:
+                raise ValidationError("turn reached its assistant reply limit")
+            now = utc_timestamp()
+            updated = replace(
+                current,
+                assistant_texts=(*current.assistant_texts, text),
                 record_revision=current.record_revision + 1,
                 updated_at=now,
             )
@@ -1699,6 +1752,7 @@ class AgentTurnStore:
                 raise ValidationError("agent turn record is malformed")
             if value.get("schema") != TURN_SCHEMA or value.get("version") not in {
                 1,
+                2,
                 TURN_VERSION,
             }:
                 raise ValidationError("unsupported agent turn schema/version")
@@ -1760,7 +1814,7 @@ class AgentTurnStore:
     def _upgrade_legacy_document(
         value: Mapping[str, Any], *, sequence: int
     ) -> dict[str, Any]:
-        """Return one strict v2 aggregate, failing old pending authority closed."""
+        """Return one strict current-version aggregate, failing old authority closed."""
 
         try:
             upgraded = json.loads(
@@ -1871,6 +1925,8 @@ class AgentTurnStore:
 
         upgraded["version"] = TURN_VERSION
         upgraded["sequence"] = sequence
+        # Replies did not exist before v3; any foreign value is discarded.
+        upgraded["assistant_texts"] = []
         return upgraded
 
     def _load_index_next_sequence_unlocked(self) -> int | None:

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import urllib.parse
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,7 @@ class ProviderWireProfile:
     require_supported_parameters: bool = False
     separate_reasoning: bool = False
     agent_protocol: str = "deterministic"
+    extra_request_fields: Mapping[str, Any] = field(default_factory=dict)
 
 
 _DEFAULT = ProviderWireProfile()
@@ -49,6 +52,10 @@ _PROFILES: dict[str, ProviderWireProfile] = {
         temperature=None, require_supported_parameters=True
     ),
     "ollama": ProviderWireProfile(),
+    # SiliconFlow hosts thinking-capable Qwen/DeepSeek families that by default
+    # burn the whole output budget on reasoning, so disable thinking to keep
+    # structured JSON replies fast and deterministic.
+    "siliconflow": ProviderWireProfile(extra_request_fields={"enable_thinking": False}),
 }
 
 _HOST_PROFILE_IDS = {
@@ -59,6 +66,8 @@ _HOST_PROFILE_IDS = {
     "api.moonshot.cn": "kimi",
     "api.openai.com": "openai",
     "openrouter.ai": "openrouter",
+    "api.siliconflow.cn": "siliconflow",
+    "api.siliconflow.com": "siliconflow",
 }
 
 

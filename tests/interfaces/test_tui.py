@@ -26,7 +26,6 @@ from pcbdraft.interfaces.tui.app import (
     ModelPickerScreen,
     NewProjectScreen,
     PCBDraftApp,
-    ProjectDetailsScreen,
     ProjectPickerScreen,
     ProviderConnectScreen,
     ProviderPickerScreen,
@@ -41,7 +40,6 @@ from pcbdraft.interfaces.tui.projection import project_projection
 from pcbdraft.interfaces.tui.widgets import (
     CommandPalette,
     Composer,
-    ProjectRail,
     _activity_panel,
 )
 from pcbdraft.model.config import connect_provider
@@ -805,15 +803,8 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.theme, "pcbdraft-dark")
             screenshot = html.unescape(app.export_screenshot()).replace("\xa0", " ")
             self.assertIn("PCBDraft", screenshot)
-            self.assertIn("Turn an idea into a reviewable KiCad project", screenshot)
-            self.assertIn("AGENT", screenshot)
-            self.assertIn("NEXT", screenshot)
-            self.assertTrue(app.query_one("#project-rail", ProjectRail).display)
-
-        compact = PCBDraftApp(TuiController(service=FakeService()))
-        async with compact.run_test(size=(84, 28)) as pilot:
-            await pilot.pause()
-            self.assertFalse(compact.query_one("#project-rail", ProjectRail).display)
+            self.assertIn("Describe a board to begin", screenshot)
+            self.assertNotIn("project-rail", screenshot)
 
     async def test_slash_palette_filters_and_completes_commands(self) -> None:
         app = PCBDraftApp(TuiController(service=FakeService()))
@@ -1233,29 +1224,16 @@ class PCBDraftTextualTests(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             self.assertEqual(composer.value, "current draft")
 
-    async def test_board_context_is_toggleable_and_available_on_narrow_screens(
-        self,
-    ) -> None:
+    async def test_no_board_context_rail_is_rendered(self) -> None:
         wide = PCBDraftApp(
             TuiController(service=FakeService(), project_id="existing-project")
         )
         async with wide.run_test(size=(120, 30)) as pilot:
-            self.assertTrue(wide.query_one("#project-rail", ProjectRail).display)
-            await pilot.press("ctrl+x", "b")
             await pilot.pause()
-            self.assertFalse(wide.query_one("#project-rail", ProjectRail).display)
-
-        narrow = PCBDraftApp(
-            TuiController(service=FakeService(), project_id="existing-project")
-        )
-        async with narrow.run_test(size=(80, 24)) as pilot:
-            self.assertFalse(narrow.query_one("#project-rail", ProjectRail).display)
-            await pilot.press("ctrl+x", "b")
-            await pilot.pause()
-            self.assertIsInstance(narrow.screen, ProjectDetailsScreen)
-            frame = html.unescape(narrow.export_screenshot()).replace("\xa0", " ")
-            self.assertIn("Board context", frame)
-            self.assertIn("NEXT", frame)
+            self.assertFalse(wide.query("ProjectRail"))
+            frame = html.unescape(wide.export_screenshot()).replace("\xa0", " ")
+            self.assertIn("Terminal board", frame)
+            self.assertNotIn("Board context", frame)
 
     async def test_custom_provider_form_stays_open_and_shows_validation_errors(
         self,

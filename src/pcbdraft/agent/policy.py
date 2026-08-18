@@ -32,8 +32,24 @@ class ProposedToolCall:
     tool_call_id: str | None = None
 
 
+@dataclass(frozen=True)
+class ConversationStep:
+    """One conversational model step: a durable reply with an optional intent."""
+
+    reply: str | None = None
+    proposal: ProposedToolCall | None = None
+
+
 class PCBCallProducer(Protocol):
     """Transport-neutral source of the next strict, revision-bound tool intent."""
+
+    def conversation_step(
+        self,
+        record: TurnRecord,
+        view: Mapping[str, Any],
+        *,
+        timeout: float,
+    ) -> ConversationStep | None: ...
 
     def next_call(
         self,
@@ -46,6 +62,18 @@ class PCBCallProducer(Protocol):
 
 class DeterministicPCBCallProducer:
     """Choose the next bounded PCB tool from durable state and current evidence."""
+
+    def conversation_step(
+        self,
+        record: TurnRecord,
+        view: Mapping[str, Any],
+        *,
+        timeout: float,
+    ) -> ConversationStep | None:
+        """Deterministic policy never speaks for the model; it only routes calls."""
+
+        del record, view, timeout
+        return None
 
     def next_call(
         self,

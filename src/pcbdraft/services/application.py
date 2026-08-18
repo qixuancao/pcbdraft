@@ -484,6 +484,53 @@ class ApplicationService:
             )
             self._write_records(current.root, current.state, current.conversation)
 
+    def reply_message(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+    ) -> dict[str, Any]:
+        """Append one exactly-once conversational assistant reply.
+
+        The reply is bound to its durable turn and sequence index: appending
+        the same ``(turn_id, index)`` twice is a no-op, so a crash-resumed
+        worker never duplicates a conversational message in the transcript.
+        """
+
+        clean = _sanitize_secret_text(
+            _safe_text(text, "reply text", limit=MAX_USER_MESSAGE_BYTES)
+        )
+        project = self._open(project_id)
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            conversation = current.conversation
+            if turn_id is not None or index is not None:
+                if not isinstance(turn_id, str) or isinstance(index, bool) or not (
+                    isinstance(index, int) and index >= 0
+                ):
+                    raise ValidationError("reply delivery binding is invalid")
+                for message in conversation["messages"]:
+                    data = message.get("data") if isinstance(message, dict) else None
+                    if not isinstance(data, dict):
+                        continue
+                    if data.get("turn_id") == turn_id and data.get("index") == index:
+                        return self._public_project(current)
+            self._append_message(
+                conversation,
+                "assistant",
+                "reply",
+                clean,
+                data=(
+                    {"turn_id": turn_id, "index": index}
+                    if turn_id is not None and index is not None
+                    else None
+                ),
+            )
+            self._write_records(current.root, current.state, conversation)
+            return self._public_project(current)
+
     def send_message(
         self,
         project_id: str,

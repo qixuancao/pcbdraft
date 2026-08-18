@@ -521,6 +521,54 @@ class AgentTurnStoreTests(unittest.TestCase):
             migrated.tool_runs[0].result["status"], "awaiting_confirmation"
         )  # type: ignore[index]
 
+    def test_legacy_v2_turn_migrates_with_empty_assistant_texts(self) -> None:
+        running = self._begin_running()
+        self.store.update(
+            running.turn_id,
+            TurnStatus.COMPLETED,
+            stop_reason="done",
+        )
+        path = self.project_root / "agent-turns" / "turn-test.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        document["version"] = 2
+        document["assistant_texts"] = ["must be dropped by migration"]
+        path.write_text(json.dumps(document), encoding="utf-8")
+
+        migrated = AgentTurnStore(self.project_root, self.locks_root).load("turn-test")
+
+        self.assertEqual(migrated.status, TurnStatus.COMPLETED)
+        self.assertEqual(migrated.assistant_texts, ())
+
+    def test_assistant_texts_are_durable_and_bounded(self) -> None:
+        running = self._begin_running()
+        with_reply = self.store.append_assistant_text(
+            running.turn_id, "I can help with that board."
+        )
+        self.assertEqual(
+            with_reply.assistant_texts, ("I can help with that board.",)
+        )
+        self.assertEqual(with_reply.record_revision, running.record_revision + 1)
+
+        second = self.store.append_assistant_text(running.turn_id, "Next reply.")
+        self.assertEqual(
+            second.assistant_texts, ("I can help with that board.", "Next reply.")
+        )
+
+        path = self.project_root / "agent-turns" / "turn-test.json"
+        document = json.loads(path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            document["assistant_texts"],
+            ["I can help with that board.", "Next reply."],
+        )
+
+        with self.assertRaisesRegex(ValidationError, "running turn"):
+            self.store.update(running.turn_id, TurnStatus.COMPLETED)
+            self.store.append_assistant_text(running.turn_id, "Too late.")
+        with self.assertRaisesRegex(ValidationError, "assistant reply text"):
+            self.store.append_assistant_text(
+                running.turn_id, "x" * (16 * 1024 + 1)
+            )
+
     def test_illegal_transition_and_stale_record_revision_are_rejected(self) -> None:
         queued = self.store.begin(
             project_id="board",

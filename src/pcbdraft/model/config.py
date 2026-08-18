@@ -202,6 +202,34 @@ def _toml_string(value: str) -> str:
     return json.dumps(value, ensure_ascii=False)
 
 
+CONFIG_TEMPLATE = """\
+# PCBDraft model provider configuration.
+# This file was generated automatically because it did not exist.  Edit it to
+# connect an OpenAI-compatible model service, or run /connect in the TUI.
+version = 1
+
+# Example: uncomment and adjust to register a local llama.cpp server.
+# active_provider = "local-llama"
+# active_model = "/mnt/2T/local-ai/models/gemma-4-E4B/gemma-4-E4B-it-Q4_K_M.gguf"
+#
+# [providers.local-llama]
+# name = "Local Gemma 4 E4B"
+# base_url = "http://127.0.0.1:8080/v1"
+# api_key = "local"
+# models = ["/mnt/2T/local-ai/models/gemma-4-E4B/gemma-4-E4B-it-Q4_K_M.gguf"]
+"""
+
+
+def ensure_model_config_template(path: str | Path | None = None) -> Path:
+    """Create a commented template at the provider config path when absent."""
+    target = Path(path).expanduser() if path is not None else provider_config_path()
+    if target.exists():
+        return target
+    make_directory(target.parent)
+    atomic_write_text(target, CONFIG_TEMPLATE, mode=0o600)
+    return target
+
+
 def _render_config(
     *,
     active_provider: str | None,
@@ -248,6 +276,7 @@ def _validate_config_mode(path: Path, *, contains_key: bool) -> None:
 def load_model_config(path: str | Path | None = None) -> ModelConfig:
     target = Path(path).expanduser() if path is not None else provider_config_path()
     if not target.exists():
+        ensure_model_config_template(target)
         return ModelConfig(None, None, (), target)
     try:
         payload = tomllib.loads(

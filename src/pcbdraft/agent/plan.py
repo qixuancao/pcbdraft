@@ -1357,7 +1357,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "exact_name",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 128},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
                         "reference": {"type": "string", "maxLength": 64},
                         "symbol": {"type": "string", "maxLength": 256},
                         "value": {"type": "string", "maxLength": 256},
@@ -1395,7 +1395,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "intent",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 128},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
                         "name": {"type": "string", "maxLength": 128},
                         "endpoints": {
                             "type": "array",
@@ -1426,7 +1426,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "components",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 128},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
                         "kind": {"type": "string", "maxLength": 128},
                         "name": {"type": "string", "maxLength": 256},
                         "intent": {"type": "string", "maxLength": 2048},
@@ -1455,7 +1455,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "intent",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 128},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
                         "nominal_v": {"type": "number", "minimum": 0},
                         "min_v": {"type": "number", "minimum": 0},
                         "max_v": {"type": "number", "minimum": 0},
@@ -1481,7 +1481,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "intent",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 128},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
                         "kind": {"type": "string", "maxLength": 128},
                         "power_domain": {"type": "string", "maxLength": 128},
                         "members": {
@@ -1515,7 +1515,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "rationale",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 128},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
                         "kind": {
                             "type": "string",
                             "enum": sorted(_PLAN_CONSTRAINT_KINDS),
@@ -1555,7 +1555,7 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "rationale",
                     ],
                     "properties": {
-                        "id": {"type": "string", "maxLength": 120},
+                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 120},
                         "kind": {"type": "string", "enum": sorted(ASSERTION_KINDS)},
                         "targets": {
                             "type": "array",

@@ -1,11 +1,12 @@
 """Crash-resumable orchestration for conversational PCB agent turns.
 
 The orchestrator is deliberately transport-neutral. A capability-gated native
-Responses router may select the first intent tool; deterministic local policy
-owns mandatory PCB follow-ups, and MCP clients submit the same strict
-:class:`~pcbdraft.agent.tooling.ToolCall` values. Tool intent is persisted before
-dispatch, permission is decided centrally, and retries continue the existing
-turn instead of replaying the user's message.
+Responses producer may open a turn conversationally (durable prose reply and/or
+one intent tool); deterministic local policy owns mandatory PCB follow-ups, and
+MCP clients submit the same strict :class:`~pcbdraft.agent.tooling.ToolCall`
+values. Tool intent is persisted before dispatch, permission is decided
+centrally, and retries continue the existing turn instead of replaying the
+user's message.
 """
 
 from __future__ import annotations
@@ -223,9 +224,24 @@ class AgentOrchestrator:
                 return view
             active = self._active_tool(record)
             if active is None:
-                proposal = self.producer.next_call(record, view, timeout=timeout)
+                step = self.producer.conversation_step(
+                    record, view, timeout=timeout
+                )
+                proposal = step.proposal if step is not None else None
+                delivered_reply = step is not None and step.reply is not None
+                if delivered_reply:
+                    record = self._deliver_reply(store, record, step.reply)
+                if proposal is None and not delivered_reply:
+                    proposal = self.producer.next_call(record, view, timeout=timeout)
                 if proposal is None:
                     project_status, _revision = project_status_and_revision(view)
+                    if delivered_reply:
+                        store.update(
+                            turn_id,
+                            TurnStatus.COMPLETED,
+                            stop_reason="the PCB agent answered conversationally",
+                        )
+                        return view
                     if project_status in {
                         "generation_failed",
                         "repair_failed",
@@ -412,6 +428,30 @@ class AgentOrchestrator:
     def _assert_turn_identity(record: TurnRecord, project_id: str) -> None:
         if record.project_id != project_id:
             raise ValidationError("agent turn belongs to a different project")
+
+    def _deliver_reply(
+        self,
+        store: AgentTurnStore,
+        record: TurnRecord,
+        reply: str,
+    ) -> TurnRecord:
+        """Persist one model reply exactly once, durably and to the transcript.
+
+        The conversation message is keyed by ``(turn_id, index)`` so a worker
+        that crashed after delivering it appends neither a duplicate transcript
+        message nor a duplicate durable turn entry on resume.
+        """
+
+        index = len(record.assistant_texts)
+        if index and record.assistant_texts[-1] == reply:
+            return record
+        self.service.reply_message(
+            record.project_id,
+            reply,
+            turn_id=record.turn_id,
+            index=index,
+        )
+        return store.append_assistant_text(record.turn_id, reply)
 
     def _persist_proposal(
         self,

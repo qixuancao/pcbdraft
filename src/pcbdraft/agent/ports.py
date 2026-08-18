@@ -99,6 +99,15 @@ class PCBToolServicePort(ProjectStatePort, Protocol):
         expected_revision: int,
     ) -> dict[str, Any]: ...
 
+    def reply_message(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+    ) -> dict[str, Any]: ...
+
 
 class ModelRoutingPort(ProjectStatePort, Protocol):
     """The local state and provider configuration a model router may inspect."""

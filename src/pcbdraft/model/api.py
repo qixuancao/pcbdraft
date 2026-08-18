@@ -38,6 +38,7 @@ MAX_MODEL_SCHEMA_BYTES = 512 * 1024
 MAX_MODEL_REQUEST_BYTES = 3 * 1024 * 1024
 MAX_MODEL_ATTEMPTS = 3
 MAX_RETRY_AFTER_SECONDS = 300.0
+MAX_MODEL_REPLY_BYTES = 16 * 1024
 _RESPONSES_TOOL_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 
 
@@ -299,6 +300,7 @@ class StructuredModelClient:
             document["provider"] = {"require_parameters": True}
         if self.profile.separate_reasoning:
             document["reasoning_split"] = True
+        document.update(self.profile.extra_request_fields)
         try:
             body = json.dumps(
                 document, ensure_ascii=False, separators=(",", ":"), allow_nan=False
@@ -374,6 +376,42 @@ class StructuredModelClient:
                 self._sleep(delay)
         raise ModelTransportError("network", attempts=max_attempts, retryable=True)
 
+    def _decode_structured(
+        self, payload: bytes, validator: Draft202012Validator
+    ) -> tuple[dict[str, Any], str | None]:
+        """Decode and locally validate one structured model response."""
+        try:
+            envelope = _strict_json_loads(payload)
+            choice = envelope["choices"][0]
+            message = choice["message"]
+            if not isinstance(choice, dict) or not isinstance(message, dict):
+                raise TypeError
+        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:
+            raise ValidationError(
+                "model returned an invalid JSON response envelope"
+            ) from exc
+        finish_reason = choice.get("finish_reason")
+        if finish_reason == "length":
+            raise ValidationError("model output was truncated at its token limit")
+        if finish_reason == "content_filter" or message.get("refusal"):
+            raise PCBDraftError("model provider declined the structured request")
+        content = message.get("content")
+        if not isinstance(content, str):
+            raise ValidationError("model response did not contain JSON text")
+        try:
+            value = _strict_json_loads(content)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValidationError("model returned invalid JSON content") from exc
+        if not isinstance(value, dict):
+            raise ValidationError("model output must be one JSON object")
+        try:
+            validator.validate(value)
+        except JSONSchemaValidationError as exc:
+            raise ValidationError(
+                "model output does not satisfy the requested JSON schema"
+            ) from exc
+        return value, finish_reason
+
     def request(
         self,
         *,
@@ -411,38 +449,35 @@ class StructuredModelClient:
             },
         )
         started = time.monotonic()
-        payload, attempts = self._read_with_retries(request, timeout=timeout)
+        deadline = started + timeout
+        attempts = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ModelTransportError("timeout", attempts=attempts, retryable=True)
+            try:
+                payload, transport_attempts = self._read_with_retries(
+                    request, timeout=remaining, max_attempts=1
+                )
+                attempts += transport_attempts
+                value, finish_reason = self._decode_structured(payload, validator)
+                break
+            except ModelTransportError as exc:
+                attempts += exc.attempts
+                if not exc.retryable or attempts >= MAX_MODEL_ATTEMPTS:
+                    raise
+                delay = self._retry_delay(attempts, None)
+                if delay >= deadline - time.monotonic():
+                    raise
+                self._sleep(delay)
+            except ValidationError:
+                if attempts >= MAX_MODEL_ATTEMPTS:
+                    raise
+                delay = self._retry_delay(attempts, None)
+                if delay >= deadline - time.monotonic():
+                    raise
+                self._sleep(delay)
         duration = time.monotonic() - started
-        try:
-            envelope = _strict_json_loads(payload)
-            choice = envelope["choices"][0]
-            message = choice["message"]
-            if not isinstance(choice, dict) or not isinstance(message, dict):
-                raise TypeError
-        except (KeyError, IndexError, TypeError, ValueError, RecursionError) as exc:
-            raise ValidationError(
-                "model returned an invalid JSON response envelope"
-            ) from exc
-        finish_reason = choice.get("finish_reason")
-        if finish_reason == "length":
-            raise ValidationError("model output was truncated at its token limit")
-        if finish_reason == "content_filter" or message.get("refusal"):
-            raise PCBDraftError("model provider declined the structured request")
-        content = message.get("content")
-        if not isinstance(content, str):
-            raise ValidationError("model response did not contain JSON text")
-        try:
-            value = _strict_json_loads(content)
-        except (TypeError, ValueError, RecursionError) as exc:
-            raise ValidationError("model returned invalid JSON content") from exc
-        if not isinstance(value, dict):
-            raise ValidationError("model output must be one JSON object")
-        try:
-            validator.validate(value)
-        except JSONSchemaValidationError as exc:
-            raise ValidationError(
-                "model output does not satisfy the requested JSON schema"
-            ) from exc
         receipt = {
             "completed": True,
             "schema_valid": True,
@@ -538,6 +573,128 @@ class OpenAIResponsesClient(StructuredModelClient):
                 "User-Agent": f"PCBDraft/{__version__}",
             },
         )
+        envelope, attempts, duration = self._post_responses(request, timeout)
+        output = envelope.get("output")
+        if not isinstance(output, list):
+            raise ValidationError("Responses API output is malformed")
+        raw_calls = [
+            item
+            for item in output
+            if isinstance(item, dict) and item.get("type") == "function_call"
+        ]
+        if len(raw_calls) > 1:
+            raise ValidationError("model returned more than one PCB tool call")
+        call = self._decode_function_call(raw_calls[0]) if raw_calls else None
+        if tool_choice == "required" and call is None:
+            raise ValidationError("model omitted a required PCB tool call")
+        receipt = {
+            "completed": True,
+            "provider": self.settings.provider_id,
+            "provider_name": self.settings.provider_name,
+            "model": self.settings.model,
+            "config": self.settings.source,
+            "duration_seconds": round(duration, 6),
+            "attempts": attempts,
+            "provider_protocol": "openai-responses",
+            "response_id": envelope["id"],
+            "prompt_persisted": False,
+            "credential_persisted": False,
+            "parallel_tool_calls": False,
+        }
+        return call, receipt
+
+    def request_conversation(
+        self,
+        *,
+        instructions: str,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        timeout: float,
+    ) -> tuple[str | None, ResponsesFunctionCall | None, dict[str, Any]]:
+        """Request one conversational reply that may include zero or one call.
+
+        Unlike :meth:`request_tool_call` the model is not forced to select a
+        tool: it may answer in prose, select one eligible PCB tool, or do both.
+        The reply text is validated and bounded, and a tool call, when present,
+        must still be a single well-formed function call.
+        """
+
+        if isinstance(timeout, bool) or timeout <= 0 or timeout > 1800:
+            raise ValidationError("model timeout must be in (0, 1800] seconds")
+        if not isinstance(instructions, str) or not instructions.strip():
+            raise ValidationError("Responses instructions must be non-empty text")
+        document = {
+            "model": self.settings.model,
+            "instructions": instructions,
+            "input": input_items,
+            "tools": tools,
+            "tool_choice": "auto",
+            "parallel_tool_calls": False,
+            "max_output_tokens": 4096,
+            "store": False,
+        }
+        try:
+            body = json.dumps(
+                document,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+        except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+            raise ValidationError("Responses request is not strict JSON") from exc
+        if len(body) > MAX_MODEL_REQUEST_BYTES:
+            raise ValidationError("Responses request exceeds 3 MiB")
+        request = urllib.request.Request(  # noqa: S310 - URL was strictly validated
+            self.endpoint,
+            data=body,
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {self.settings.credential()}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "Accept-Encoding": "identity",
+                "User-Agent": f"PCBDraft/{__version__}",
+            },
+        )
+        envelope, attempts, duration = self._post_responses(request, timeout)
+        output = envelope.get("output")
+        if not isinstance(output, list):
+            raise ValidationError("Responses API output is malformed")
+        raw_calls = [
+            item
+            for item in output
+            if isinstance(item, dict) and item.get("type") == "function_call"
+        ]
+        if len(raw_calls) > 1:
+            raise ValidationError("model returned more than one PCB tool call")
+        call = self._decode_function_call(raw_calls[0]) if raw_calls else None
+        text = self._decode_assistant_text(output)
+        if text is None and call is None:
+            raise ValidationError("model returned an empty conversational response")
+        receipt = {
+            "completed": True,
+            "provider": self.settings.provider_id,
+            "provider_name": self.settings.provider_name,
+            "model": self.settings.model,
+            "config": self.settings.source,
+            "duration_seconds": round(duration, 6),
+            "attempts": attempts,
+            "provider_protocol": "openai-responses",
+            "response_id": envelope["id"],
+            "prompt_persisted": False,
+            "credential_persisted": False,
+            "parallel_tool_calls": False,
+            "has_reply_text": text is not None,
+        }
+        return text, call, receipt
+
+    def _post_responses(
+        self,
+        request: urllib.request.Request,
+        timeout: float,
+    ) -> tuple[dict[str, Any], int, float]:
+        """POST one strict Responses envelope and validate its outer shape."""
+
         started = time.monotonic()
         # A router decision has its own durable dispatch journal. Retrying this
         # POST inside the transport would bypass that exactly-once boundary.
@@ -564,34 +721,40 @@ class OpenAIResponsesClient(StructuredModelClient):
             or any(ord(character) < 32 for character in response_id)
         ):
             raise ValidationError("Responses API response id is invalid")
-        output = envelope.get("output")
-        if not isinstance(output, list):
-            raise ValidationError("Responses API output is malformed")
-        raw_calls = [
-            item
-            for item in output
-            if isinstance(item, dict) and item.get("type") == "function_call"
-        ]
-        if len(raw_calls) > 1:
-            raise ValidationError("model returned more than one PCB tool call")
-        call = self._decode_function_call(raw_calls[0]) if raw_calls else None
-        if tool_choice == "required" and call is None:
-            raise ValidationError("model omitted a required PCB tool call")
-        receipt = {
-            "completed": True,
-            "provider": self.settings.provider_id,
-            "provider_name": self.settings.provider_name,
-            "model": self.settings.model,
-            "config": self.settings.source,
-            "duration_seconds": round(duration, 6),
-            "attempts": attempts,
-            "provider_protocol": "openai-responses",
-            "response_id": response_id,
-            "prompt_persisted": False,
-            "credential_persisted": False,
-            "parallel_tool_calls": False,
-        }
-        return call, receipt
+        return envelope, attempts, duration
+
+    @staticmethod
+    def _decode_assistant_text(output: list[Any]) -> str | None:
+        """Extract the single bounded assistant message from Responses output."""
+
+        fragments: list[str] = []
+        refused = False
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") == "refusal":
+                refused = True
+                continue
+            if item.get("type") != "message" or item.get("role") != "assistant":
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "output_text" and isinstance(
+                    block.get("text"), str
+                ):
+                    fragments.append(block["text"])
+        if refused:
+            raise PCBDraftError("model provider declined the conversational request")
+        text = "".join(fragments)
+        if not text.strip():
+            return None
+        if len(text.encode("utf-8")) > MAX_MODEL_REPLY_BYTES:
+            raise ValidationError("model reply text exceeds the 16 KiB bound")
+        return text
 
     @staticmethod
     def _decode_function_call(value: dict[str, Any]) -> ResponsesFunctionCall:

@@ -228,10 +228,10 @@ def validate_interpretation(value: Any) -> dict[str, Any]:
     if (
         not isinstance(missing, list)
         or len(missing) > 4
-        or len(set(missing)) != len(missing)
         or not all(item in _MISSING_FIELDS for item in missing)
     ):
         raise ValidationError("provider missing_fields is invalid")
+    missing = sorted(set(missing))
     power = value["power"]
     if not isinstance(power, Mapping) or set(power) != {
         "nominal_v",
@@ -311,7 +311,10 @@ def _planning_prompt(
         "connector), not a hidden board template. Do not emit KiCad syntax, coordinates, "
         "routing, footprint-pad edits, code, commands, URLs, or a substituted part. "
         "Every user-named component must be represented by a matching plan component "
-        "(exact_name preserves the original text). Choose explicit nets with endpoint "
+        "(exact_name preserves the original text). All component, block, net, power-domain, "
+        "interface, constraint, and assertion IDs must be lowercase stable identifiers "
+        "starting with a letter (for example c1, led1, net_3v3, block_power); never use "
+        "uppercase IDs such as C1 or GND1. Choose explicit nets with endpoint "
         "component IDs and actual symbol pin numbers; include GND when it is used. Use "
         "version-2 design intent: group every component into exactly one functional block, "
         "use parent links for acyclic block hierarchy, declare each real power domain from "

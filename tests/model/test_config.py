@@ -51,6 +51,21 @@ class ModelConfigTests(unittest.TestCase):
             self.assertEqual(len(choices), 1)
             self.assertEqual(choices[0].label, "Lab provider / board-model")
 
+    def test_missing_config_is_auto_generated_with_private_template(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "pcbdraft" / "config.toml"
+            self.assertFalse(path.exists())
+            config = load_model_config(path)
+            self.assertTrue(path.exists())
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+            self.assertIsNone(config.active)
+            self.assertEqual(len(config.providers), 0)
+            self.assertIn("version = 1", path.read_text(encoding="utf-8"))
+            self.assertIn("/connect", path.read_text(encoding="utf-8"))
+            reloaded = load_model_config(path)
+            self.assertEqual(reloaded.path, path)
+            self.assertIsNone(reloaded.active)
+
     def test_config_with_secret_must_not_be_group_or_world_readable(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "config.toml"

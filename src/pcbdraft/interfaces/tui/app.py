@@ -30,12 +30,10 @@ from pcbdraft.interfaces.tui.theme import (
     THEME_VARIABLE_DEFAULTS,
 )
 from pcbdraft.interfaces.tui.widgets import (
-    AgentHeader,
     AppFooter,
     CommandPalette,
     Composer,
     NoticeBar,
-    ProjectRail,
     TranscriptView,
     review_renderable,
 )
@@ -923,37 +921,6 @@ class ReviewScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-class ProjectDetailsScreen(ModalScreen[None]):
-    """Narrow-screen overlay for the PCB context normally shown in the rail."""
-
-    BINDINGS = (
-        Binding("escape", "close", "Close"),
-        Binding("q", "close", "Close", show=False),
-    )
-
-    def __init__(self, projection: Any) -> None:
-        super().__init__()
-        self.projection = projection
-
-    def compose(self) -> ComposeResult:
-        with Container(classes="modal-card", id="project-details-card"):
-            yield Static("Board context", classes="modal-title")
-            yield Static(
-                "Project facts, workflow progress, next actions, and readiness.",
-                classes="modal-subtitle",
-            )
-            yield ProjectRail(id="project-details-rail")
-            yield Static("↑/↓ scroll  ·  Esc close", classes="modal-hint")
-
-    def on_mount(self) -> None:
-        rail = self.query_one("#project-details-rail", ProjectRail)
-        rail.update_state(self.projection)
-        rail.focus()
-
-    def action_close(self) -> None:
-        self.dismiss(None)
-
-
 class HelpScreen(ModalScreen[None]):
     """Short discoverable command reference."""
 
@@ -969,7 +936,6 @@ class HelpScreen(ModalScreen[None]):
         shortcuts.add_row("Ctrl+P", "open the command palette")
         shortcuts.add_row("Ctrl+X, N", "new project")
         shortcuts.add_row("Ctrl+X, L", "list projects")
-        shortcuts.add_row("Ctrl+X, B", "toggle or open board context")
         shortcuts.add_row("Ctrl+X, M", "switch model")
         shortcuts.add_row("Ctrl+X, R", "open engineering review")
         shortcuts.add_row("Ctrl+X, D", "toggle tool details")
@@ -1019,7 +985,6 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
         Binding("ctrl+x", "leader", "Quick actions", priority=True),
         Binding("n", "leader_new", "", show=False, priority=True),
         Binding("l", "leader_projects", "", show=False, priority=True),
-        Binding("b", "leader_sidebar", "", show=False, priority=True),
         Binding("m", "leader_models", "", show=False, priority=True),
         Binding("r", "leader_review", "", show=False, priority=True),
         Binding("d", "leader_details", "", show=False, priority=True),
@@ -1047,7 +1012,6 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
         self._spinner_index = 0
         self._busy_started_at: float | None = None
         self._viewport_width = 120
-        self._rail_user_visible = True
         self._input_history: list[str] = []
         self._history_index: int | None = None
         self._history_draft = ""
@@ -1061,10 +1025,8 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
         }
 
     def compose(self) -> ComposeResult:
-        yield AgentHeader(id="agent-header")
         with Horizontal(id="main-area"):
             yield TranscriptView(id="transcript")
-            yield ProjectRail(id="project-rail")
         yield CommandPalette(id="command-palette")
         yield Composer(id="composer")
         yield NoticeBar(id="notice-bar")
@@ -1235,15 +1197,6 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
 
     def action_leader_projects(self) -> None:
         self._run_leader_action("projects")
-
-    def action_leader_sidebar(self) -> None:
-        self._clear_leader()
-        projection = project_projection(self.controller.view)
-        if self._viewport_width < 110:
-            self.push_screen(ProjectDetailsScreen(projection), self._details_closed)
-            return
-        self._rail_user_visible = not self._rail_user_visible
-        self._set_responsive_layout(self._viewport_width)
 
     def action_leader_models(self) -> None:
         self._run_leader_action("models")
@@ -1431,9 +1384,6 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
             self._sync_ui(force_transcript=True)
         self.query_one("#composer-input", Input).focus()
 
-    def _details_closed(self, _result: None) -> None:
-        self.query_one("#composer-input", Input).focus()
-
     def _provider_picker_closed(self, provider_id: str | None) -> None:
         if provider_id:
             self.controller.begin_provider_form(provider_id)
@@ -1491,10 +1441,10 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
         self._spinner_index = (self._spinner_index + 1) % len(_BUSY_FRAMES)
         projection = project_projection(self.controller.view)
         try:
-            header = self.query_one("#agent-header", AgentHeader)
+            footer = self.query_one("#app-footer", AppFooter)
         except NoMatches:
             return
-        header.update_state(
+        footer.update_state(
             projection,
             provider_name=self.controller.provider_name,
             provider_status=self.controller.provider_status,
@@ -1502,7 +1452,6 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
             busy=True,
             spinner=_BUSY_FRAMES[self._spinner_index],
             elapsed_seconds=int(monotonic() - self._busy_started_at),
-            compact=self._viewport_width < 90,
         )
 
     def _sync_ui(self, *, force_transcript: bool = False) -> None:
@@ -1511,7 +1460,7 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
         elif not self.controller.is_busy:
             self._busy_started_at = None
         projection = project_projection(self.controller.view)
-        self.query_one("#agent-header", AgentHeader).update_state(
+        self.query_one("#app-footer", AppFooter).update_state(
             projection,
             provider_name=self.controller.provider_name,
             provider_status=self.controller.provider_status,
@@ -1525,23 +1474,11 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
                 if self._busy_started_at is not None
                 else None
             ),
-            compact=self._viewport_width < 90,
         )
-        self.query_one("#project-rail", ProjectRail).update_state(projection)
-        if isinstance(self.screen, ProjectDetailsScreen) and self.screen.is_mounted:
-            self.screen.projection = projection
-            self.screen.query_one("#project-details-rail", ProjectRail).update_state(
-                projection
-            )
         self.query_one("#notice-bar", NoticeBar).update_state(
             notice=self.controller.notice,
             error=self.controller.error,
             busy=self.controller.is_busy,
-        )
-        self.query_one("#app-footer", AppFooter).update_state(
-            projection,
-            provider_status=self.controller.provider_status,
-            compact=self._viewport_width < 90,
         )
         self.query_one("#composer", Composer).update_state(
             label=self.controller.input_label,
@@ -1659,8 +1596,4 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
 
     def _set_responsive_layout(self, width: int) -> None:
         self._viewport_width = width
-        rail = self.query_one("#project-rail", ProjectRail)
-        rail.styles.display = (
-            "block" if width >= 110 and self._rail_user_visible else "none"
-        )
         self.query_one("#composer", Composer).set_class(width < 90, "compact")

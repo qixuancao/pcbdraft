@@ -348,15 +348,18 @@ class StructuredModelClientTests(unittest.TestCase):
 
     def test_duplicate_keys_and_non_json_numbers_are_rejected(self) -> None:
         contents = ['{"answer":"first","answer":"second"}', '{"answer":NaN}']
+        requests_seen = 0
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, _format: str, *_args: object) -> None:
                 return
 
             def do_POST(self) -> None:
+                nonlocal requests_seen
+                requests_seen += 1
                 self.rfile.read(int(self.headers["Content-Length"]))
                 response = json.dumps(
-                    {"choices": [{"message": {"content": contents.pop(0)}}]}
+                    {"choices": [{"message": {"content": contents[requests_seen % 2]}}]}
                 ).encode()
                 self.send_response(200)
                 self.send_header("Content-Length", str(len(response)))
@@ -382,6 +385,7 @@ class StructuredModelClientTests(unittest.TestCase):
                         schema=_SCHEMA,
                         timeout=5,
                     )
+            self.assertGreater(requests_seen, 2)
 
     def test_receipt_reports_loopback_plaintext_transport_honestly(self) -> None:
         class Handler(BaseHTTPRequestHandler):

@@ -9,13 +9,6 @@ Screen {
     color: $pcb-text;
 }
 
-#agent-header {
-    height: 2;
-    padding: 0 2;
-    background: $pcb-surface;
-    border-bottom: solid $pcb-border;
-}
-
 #main-area {
     height: 1fr;
     background: $pcb-background;
@@ -31,22 +24,9 @@ Screen {
     scrollbar-background: $pcb-background;
 }
 
-#transcript-content,
-#rail-content {
+#transcript-content {
     width: 1fr;
     height: auto;
-}
-
-#project-rail {
-    width: 34;
-    min-width: 32;
-    height: 1fr;
-    padding: 1 2;
-    background: $pcb-surface;
-    border-left: solid $pcb-border;
-    scrollbar-size-vertical: 1;
-    scrollbar-color: $scrollbar;
-    scrollbar-background: $pcb-surface;
 }
 
 #composer {
@@ -109,13 +89,6 @@ Screen {
     height: 1;
 }
 
-#composer-label {
-    width: auto;
-    height: 1;
-    color: $pcb-brand;
-    text-style: bold;
-}
-
 #composer-hint {
     width: 1fr;
     height: 1;
@@ -143,8 +116,7 @@ Screen {
     border-left: thick $pcb-warning;
 }
 
-#composer.composer-busy #composer-prompt,
-#composer.composer-busy #composer-label {
+#composer.composer-busy #composer-prompt {
     color: $pcb-warning;
 }
 
@@ -215,7 +187,6 @@ ProviderPickerScreen,
 ProviderConnectScreen,
 ModelPickerScreen,
 ReviewScreen,
-ProjectDetailsScreen,
 HelpScreen {
     align: center middle;
     background: $pcb-background-deep 88%;
@@ -245,24 +216,6 @@ HelpScreen {
 
 ProjectPickerScreen.compact-picker .modal-subtitle {
     display: none;
-}
-
-#project-details-card {
-    width: 70;
-    max-width: 94%;
-    height: 88%;
-    max-height: 42;
-}
-
-#project-details-rail {
-    width: 1fr;
-    height: 1fr;
-    padding: 1 2;
-    background: $pcb-background;
-    border: solid $pcb-border;
-    scrollbar-size-vertical: 1;
-    scrollbar-color: $scrollbar;
-    scrollbar-background: $pcb-background;
 }
 
 .new-project-card {

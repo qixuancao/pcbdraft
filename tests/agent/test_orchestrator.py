@@ -12,6 +12,7 @@ from pcbdraft.agent.orchestrator import (
     DeterministicPCBCallProducer,
 )
 from pcbdraft.agent.permissions import PermissionBroker
+from pcbdraft.agent.policy import ConversationStep, ProposedToolCall
 from pcbdraft.agent.runtime import AgentRuntime
 from pcbdraft.agent.turns import (
     ApprovalStatus,
@@ -61,6 +62,7 @@ class OrchestratorService:
         self.locks_root = root / "locks"
         self.locks_root.mkdir()
         self.view = _view()
+        self.conversation = self.view["conversation"]
         self.calls: list[str] = []
         self.fail_validation_once = False
 
@@ -103,6 +105,7 @@ class OrchestratorService:
         del project_id, message, timeout
         self.calls.append("plan")
         self.view = _view(status="awaiting_confirmation", revision=1)
+        self.view["conversation"] = self.conversation
         return self.view
 
     def confirm_project(
@@ -113,6 +116,7 @@ class OrchestratorService:
             raise AssertionError("orchestrator owns validation")
         self.calls.append("generate")
         self.view = _view(status="generated", revision=2)
+        self.view["conversation"] = self.conversation
         return self.view
 
     def validate_project(self, project_id: str, *, timeout: float) -> dict[str, Any]:
@@ -122,7 +126,77 @@ class OrchestratorService:
             self.fail_validation_once = False
             raise ValidationError("validator process stopped")
         self.view = _view(status="validated", revision=3)
+        self.view["conversation"] = self.conversation
         return self.view
+
+    def reply_message(
+        self,
+        project_id: str,
+        text: str,
+        *,
+        turn_id: str | None = None,
+        index: int | None = None,
+    ) -> dict[str, Any]:
+        del project_id
+        if turn_id is not None or index is not None:
+            for message in self.view["conversation"]["messages"]:
+                data = message.get("data") if isinstance(message, dict) else None
+                if not isinstance(data, dict):
+                    continue
+                if data.get("turn_id") == turn_id and data.get("index") == index:
+                    return self.view
+        self.view["conversation"]["messages"].append(
+            {
+                "id": f"reply-{len(self.view['conversation']['messages'])}",
+                "role": "assistant",
+                "kind": "reply",
+                "text": text,
+                "created_at": "2026-01-01T00:00:00Z",
+                "data": (
+                    {"turn_id": turn_id, "index": index}
+                    if turn_id is not None and index is not None
+                    else {}
+                ),
+            }
+        )
+        return self.view
+
+
+class ConversationalProducer:
+    """Producer double: one journaled reply with an optional model intent."""
+
+    def __init__(
+        self,
+        service: Any,
+        *,
+        reply: str | None,
+        proposal: ProposedToolCall | None,
+    ) -> None:
+        self.service = service
+        self.reply = reply
+        self.proposal = proposal
+        self.fallback = DeterministicPCBCallProducer()
+
+    def conversation_step(
+        self,
+        record: Any,
+        view: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> ConversationStep | None:
+        del view, timeout
+        if record.tool_runs:
+            return None
+        return ConversationStep(reply=self.reply, proposal=self.proposal)
+
+    def next_call(
+        self,
+        record: Any,
+        view: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> ProposedToolCall | None:
+        return self.fallback.next_call(record, view, timeout=timeout)
 
 
 class AgentOrchestratorTests(unittest.TestCase):
@@ -135,6 +209,112 @@ class AgentOrchestratorTests(unittest.TestCase):
                 return job
             time.sleep(0.01)
         raise AssertionError("job did not settle")
+
+    def test_conversational_reply_only_completes_turn_durably(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = OrchestratorService(Path(temporary))
+            agent = AgentOrchestrator(
+                service,  # type: ignore[arg-type]
+                producer=ConversationalProducer(
+                    service,
+                    reply="I can help. Describe the board you want to build.",
+                    proposal=None,
+                ),
+            )
+            turn = agent.start_turn("board", "hello")
+            result = agent.run_turn(
+                "board",
+                turn.turn_id,
+                timeout=5,
+                cancellation_requested=lambda: False,
+            )
+            stored = agent.store("board").load(turn.turn_id)
+
+        self.assertEqual(result["project"]["status"], "draft")
+        self.assertIs(stored.status, TurnStatus.COMPLETED)
+        self.assertEqual(
+            stored.stop_reason, "the PCB agent answered conversationally"
+        )
+        self.assertEqual(
+            stored.assistant_texts,
+            ("I can help. Describe the board you want to build.",),
+        )
+        messages = service.view["conversation"]["messages"]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["role"], "assistant")
+        self.assertEqual(messages[0]["kind"], "reply")
+        self.assertEqual(messages[0]["data"]["turn_id"], turn.turn_id)
+        self.assertEqual(messages[0]["data"]["index"], 0)
+
+    def test_conversational_reply_with_intent_runs_deterministic_followup(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = OrchestratorService(Path(temporary))
+            agent = AgentOrchestrator(
+                service,  # type: ignore[arg-type]
+                producer=ConversationalProducer(
+                    service,
+                    reply="Planning that board now.",
+                    proposal=ProposedToolCall(
+                        "plan_request",
+                        {"message": "Build a sensor board"},
+                        source="model",
+                    ),
+                ),
+            )
+            turn = agent.start_turn("board", "Build a sensor board")
+            result = agent.run_turn(
+                "board",
+                turn.turn_id,
+                timeout=5,
+                cancellation_requested=lambda: False,
+            )
+            stored = agent.store("board").load(turn.turn_id)
+
+        self.assertEqual(result["project"]["status"], "validated")
+        self.assertEqual(service.calls, ["plan", "generate", "validate"])
+        self.assertIs(stored.status, TurnStatus.COMPLETED)
+        self.assertEqual(stored.assistant_texts, ("Planning that board now.",))
+        self.assertEqual(stored.tool_runs[0].source, "model")
+        messages = service.view["conversation"]["messages"]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["kind"], "reply")
+
+    def test_resumed_turn_never_duplicates_a_conversational_reply(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = OrchestratorService(Path(temporary))
+            producer = ConversationalProducer(
+                service,
+                reply="Exactly-once conversational reply.",
+                proposal=None,
+            )
+            agent = AgentOrchestrator(
+                service,  # type: ignore[arg-type]
+                producer=producer,
+            )
+            turn = agent.start_turn("board", "hello")
+            # Simulate a worker that delivered the transcript message and died
+            # before the durable turn entry was written.
+            service.reply_message(
+                "board", producer.reply, turn_id=turn.turn_id, index=0
+            )
+            result = agent.run_turn(
+                "board",
+                turn.turn_id,
+                timeout=5,
+                cancellation_requested=lambda: False,
+            )
+            stored = agent.store("board").load(turn.turn_id)
+
+        self.assertIs(stored.status, TurnStatus.COMPLETED)
+        self.assertEqual(
+            stored.assistant_texts, ("Exactly-once conversational reply.",)
+        )
+        self.assertEqual(result["project"]["status"], "draft")
+        messages = service.view["conversation"]["messages"]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["kind"], "reply")
 
     def test_turn_persists_each_call_before_completing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -640,8 +820,11 @@ class AgentOrchestratorTests(unittest.TestCase):
                 )
                 original_turn_id = started.turn_id
                 waiting_update = None
+                seen_activities: list[Any] = []
                 for _ in range(250):
                     update = runtime.poll()
+                    if update is not None:
+                        seen_activities.extend(update.activities)
                     if update is not None and update.terminal:
                         waiting_update = update
                         break
@@ -661,6 +844,8 @@ class AgentOrchestratorTests(unittest.TestCase):
                 completed_update = None
                 for _ in range(250):
                     update = runtime.poll()
+                    if update is not None:
+                        seen_activities.extend(update.activities)
                     if update is not None and update.terminal:
                         completed_update = update
                         break
@@ -672,7 +857,7 @@ class AgentOrchestratorTests(unittest.TestCase):
                 self.assertTrue(
                     any(
                         activity.tool == "pcb_generate_candidate"
-                        for activity in completed_update.activities
+                        for activity in seen_activities
                     )
                 )
             finally:
