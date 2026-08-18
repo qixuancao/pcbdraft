@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local release acceptance: tests, packages, clean install, benchmark, E2E.
+# Full local release acceptance: tests, packages, clean install, and TUI E2E.
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -40,32 +40,8 @@ uv pip install \
 "$CHECK_ROOT/venv/bin/python" -c \
     'from importlib.resources import files; assert files("pcbdraft").joinpath("interfaces", "tui", "styles.tcss").is_file()'
 
-PCBDRAFT_EXE="$CHECK_ROOT/venv/bin/pcbdraft" \
-PCBDRAFT_PYTHON="$CHECK_ROOT/venv/bin/python" \
-    scripts/chat-e2e.sh "$CHECK_ROOT/chat-e2e"
 uv run python scripts/tui-e2e.py \
     --executable "$CHECK_ROOT/venv/bin/pcbdraft" \
     --output "$CHECK_ROOT/tui-e2e"
-uv run python scripts/browser-e2e.py \
-    --executable "$CHECK_ROOT/venv/bin/pcbdraft" \
-    --output "$CHECK_ROOT/browser-e2e"
 
-"$CHECK_ROOT/venv/bin/pcbdraft" benchmark \
-    "$CHECK_ROOT/benchmark.json" --repetitions 2 --json
-"$CHECK_ROOT/venv/bin/pcbdraft" generate \
-    "$REPO_DIR/tests/fixtures/attiny_sensor_controller.json" \
-    "$CHECK_ROOT/project" --json
-"$CHECK_ROOT/venv/bin/pcbdraft" validate \
-    "$CHECK_ROOT/project" --output "$CHECK_ROOT/validation" --json
-"$CHECK_ROOT/venv/bin/pcbdraft" release \
-    "$CHECK_ROOT/project" "$CHECK_ROOT/release-a" --json
-"$CHECK_ROOT/venv/bin/pcbdraft" release \
-    "$CHECK_ROOT/project" "$CHECK_ROOT/release-b" --json
-"$CHECK_ROOT/venv/bin/pcbdraft" release-verify \
-    "$CHECK_ROOT/release-a" --json
-
-"$CHECK_ROOT/venv/bin/python" -c \
-    'import json, pathlib, sys; a=json.loads((pathlib.Path(sys.argv[1])/"receipt.json").read_text()); b=json.loads((pathlib.Path(sys.argv[2])/"receipt.json").read_text()); assert a["manifest_sha256"] == b["manifest_sha256"]; assert a["archive_sha256"] == b["archive_sha256"]' \
-    "$CHECK_ROOT/release-a" "$CHECK_ROOT/release-b"
-
-printf 'release check passed: wheel, sdist, clean install, chat/TUI/browser E2E, benchmark, and release\n'
+printf 'release check passed: wheel, sdist, clean install, and TUI E2E\n'

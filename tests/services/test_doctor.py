@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.model.config import ModelConfig
 from pcbdraft.services.doctor import doctor_report, setup_runtime
 
 
@@ -23,6 +24,15 @@ class DoctorTests(unittest.TestCase):
             patch(
                 "pcbdraft.services.doctor.library_table_status",
                 return_value=tables,
+            ),
+            patch(
+                "pcbdraft.services.doctor.load_model_config",
+                return_value=ModelConfig(
+                    active_provider=None,
+                    active_model=None,
+                    providers=(),
+                    path=Path("/tmp/pcbdraft-doctor-test/config.toml"),
+                ),
             ),
         ):
             return doctor_report()

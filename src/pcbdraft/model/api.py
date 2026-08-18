@@ -19,7 +19,6 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 
-from pcbdraft import __version__
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json
 from pcbdraft.model.contracts import (
@@ -38,6 +37,11 @@ MAX_MODEL_SCHEMA_BYTES = 512 * 1024
 MAX_MODEL_REQUEST_BYTES = 3 * 1024 * 1024
 MAX_MODEL_ATTEMPTS = 3
 MAX_RETRY_AFTER_SECONDS = 300.0
+MODEL_USER_AGENT = (
+    "PCBDraft/0.1.0 "
+    "(Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+)
 MAX_MODEL_REPLY_BYTES = 16 * 1024
 _RESPONSES_TOOL_NAME = re.compile(r"[A-Za-z0-9_-]{1,64}\Z")
 
@@ -144,6 +148,61 @@ def _strict_json_loads(value: str | bytes) -> Any:
         parse_constant=_reject_non_json_constant,
         object_pairs_hook=_unique_json_object,
     )
+
+
+def _extract_json_object(value: str | bytes) -> Any:
+    """Decode one strict JSON object, tolerating markdown fences and prose.
+
+    Some models wrap the reply in ```json fences or add a short lead-in/outro
+    around the payload.  When strict decoding fails, this extracts the first
+    balanced JSON object (or array) span and re-parses it strictly.
+    """
+
+    text = value.decode("utf-8") if isinstance(value, bytes) else value
+    try:
+        return _strict_json_loads(text)
+    except (TypeError, ValueError, RecursionError):
+        pass
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        end = stripped.find("```", 3)
+        if end != -1:
+            candidate = stripped[end + 3 :]
+            try:
+                return _strict_json_loads(candidate)
+            except (TypeError, ValueError, RecursionError):
+                text = candidate
+    opener = text.find("{")
+    closer = text.find("}")
+    if opener == -1 or closer <= opener:
+        opener = text.find("[")
+        closer = text.rfind("]")
+        if opener == -1 or closer <= opener:
+            raise ValueError("model content contains no JSON object")
+        return _strict_json_loads(text[opener : closer + 1])
+    depth = 0
+    in_string = False
+    escape = False
+    for index in range(opener, len(text)):
+        char = text[index]
+        if escape:
+            escape = False
+            continue
+        if char == "\\":
+            escape = True
+            continue
+        if char == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return _strict_json_loads(text[opener : index + 1])
+    raise ValueError("model content contains an unterminated JSON object")
 
 
 @dataclass(frozen=True)
@@ -399,7 +458,7 @@ class StructuredModelClient:
         if not isinstance(content, str):
             raise ValidationError("model response did not contain JSON text")
         try:
-            value = _strict_json_loads(content)
+            value = _extract_json_object(content)
         except (TypeError, ValueError, RecursionError) as exc:
             raise ValidationError("model returned invalid JSON content") from exc
         if not isinstance(value, dict):
@@ -445,7 +504,7 @@ class StructuredModelClient:
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Accept-Encoding": "identity",
-                "User-Agent": f"PCBDraft/{__version__}",
+                "User-Agent": MODEL_USER_AGENT,
             },
         )
         started = time.monotonic()
@@ -570,7 +629,7 @@ class OpenAIResponsesClient(StructuredModelClient):
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Accept-Encoding": "identity",
-                "User-Agent": f"PCBDraft/{__version__}",
+                "User-Agent": MODEL_USER_AGENT,
             },
         )
         envelope, attempts, duration = self._post_responses(request, timeout)
@@ -653,7 +712,7 @@ class OpenAIResponsesClient(StructuredModelClient):
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "Accept-Encoding": "identity",
-                "User-Agent": f"PCBDraft/{__version__}",
+                "User-Agent": MODEL_USER_AGENT,
             },
         )
         envelope, attempts, duration = self._post_responses(request, timeout)

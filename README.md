@@ -59,18 +59,6 @@ powershell -ExecutionPolicy Bypass -File $installer
 Remove-Item $installer
 ```
 
-### 不配置本机环境：容器浏览器版
-
-容器包含 PCBDraft、Python、uv、KiCad CLI 和官方库，工程与模型配置保存在命名卷中：
-
-```bash
-docker compose pull
-docker compose up --no-build
-```
-
-然后点击启动日志中带 `#session=...` 的本机 URL。Compose 只把端口发布到
-`127.0.0.1:8765`。开发者需要从当前源码构建时，改用 `docker compose up --build`。
-
 ## 第一次启动
 
 电路规划需要配置一个模型服务。运行 `pcbdraft` 进入 TUI 后输入 `/connect`，
@@ -220,40 +208,6 @@ TUI 默认的 `--approval-mode workspace` 会继续执行用户要求的本地�
 `uv run pcbdraft --approval-mode review`。`read_only` 会拒绝所有会留下持久状态的
 PCB 工具。
 
-`pcbdraft app` 的本地浏览器界面也通过 durable Agent jobs 提交消息，并在对话中
-展示最近的 turn 和稳定的 `pcb_*` 工具调用。当前 Web 固定使用 `workspace` 策略，
-没有审批写接口；如果工程里已有由 TUI `review` 模式留下的待审批 checkpoint，
-浏览器只读展示它，批准或拒绝仍需回到以 `--approval-mode review` 启动的 TUI。
-
-## MCP stdio
-
-可以把同一套受约束的 PCB 工具暴露给支持 MCP 的外部 Agent 主机：
-
-```bash
-uv run pcbdraft mcp --project PROJECT_ID
-uv run pcbdraft mcp --project PROJECT_ID --workspace /absolute/repository
-```
-
-不指定 `--workspace` 时使用已配置的 PCBDraft 工程仓库；显式值必须是绝对路径。
-每个进程在 stdout 变成协议专用通道之前绑定一个已存在的工程；工具参数不接受
-工程 ID 或路径，每次 `tools/call` 也只执行请求的单个操作，不会在 MCP 调用里
-自动串起整条生成流程。
-
-MCP 默认使用 `--approval-mode review`。高风险或 authoritative write 调用会返回
-`approval_required` 和一个精确绑定的 checkpoint，而不是执行写入；请在
-PCBDraft TUI 中审阅并批准该 checkpoint，不要重试同一 MCP 调用。也可显式选择
-`workspace`、`review` 或 `read_only`，并用 `--timeout SEC` 设置有界超时。
-如果超时、客户端取消、提交后的 Job/Turn 对账失败，或工具在 dispatch 后结果不明，
-服务器会返回
-`outcome_unknown`、`retry_safe=false` 以及 `job_id` / `turn_id` 对账标识；这表示
-本地副作用仍可能完成，不能把它当成普通失败重试。
-
-兼容性边界：当前服务器面向 MCP `2025-11-25`，使用官方 Python SDK 1.x，只提供
-stdio 上的 `tools/list` 和 `tools/call`。当前日期处于 2026 并不代表实现了某个
-2026 版协议；由于 KiCad 依赖链，本项目暂时约束 `mcp>=1.29,<2`。它不提供
-Streamable HTTP、resources、prompts 或内置 MCP client，需要更新协议或 SDK v2
-的客户端目前不在兼容范围内。
-
 TUI 中常用命令：
 
 | 命令 | 作用 |
@@ -274,7 +228,7 @@ TUI 中常用命令：
 | `/quit` | 退出 TUI |
 
 `Ctrl+P` 打开命令面板。`Ctrl+X` 是快捷操作前缀：再按 `N` 新建项目、
-`L` 打开项目列表、`B` 打开或隐藏板子上下文、`M` 切换模型、`R` 工程审查、`D` 展开工具详情、
+`L` 打开项目列表、`M` 切换模型、`R` 工程审查、`D` 展开工具详情、
 `S` 刷新项目状态、`C` 连接模型服务、`H` 打开帮助、`Q` 退出。
 `Esc` 关闭菜单或中断当前任务，`Ctrl+C` 依次用于复制选区、停止任务、
 清空草稿或退出，`F1` 也可查看完整帮助。
@@ -313,7 +267,7 @@ L4/L6/L7 外部记录会被复制、哈希并校验结构，但不会被当作�
 | `pcbdraft/kicad/` | KiCad 原理图、PCB、布局、布线、预览与同步 |
 | `pcbdraft/services/` | 应用服务、任务、托管工程、事务和工作流 |
 | `pcbdraft/verification/` | 证据、验证、评审、基准和发布门禁 |
-| `pcbdraft/interfaces/` | CLI、JSON-RPC、聊天、TUI 和本地 Web 界面 |
+| `pcbdraft/interfaces/` | TUI 界面 |
 
 `tests/` 使用相同的职责目录，能够直接找到每层对应的测试。详细边界和
 新增代码的放置规则见 [项目结构说明](docs/PROJECT_STRUCTURE.md)。1.0 版本
@@ -328,8 +282,7 @@ scripts/test.sh
 如需清理可能污染 wheel 的本地构建缓存，运行 `scripts/clean.sh` 或
 `make clean`。发布检查会在构建前后自动执行这一步。
 
-欢迎提交 Issue 和 Pull Request。需要脚本化生成时，也可以使用
-`agent-generate` 命令调用同一套受约束的电路计划和 KiCad 生成流程。
+欢迎提交 Issue 和 Pull Request。
 
 ## 许可证
 

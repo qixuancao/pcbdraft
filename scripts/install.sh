@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly PCBDRAFT_REPOSITORY_URL="https://github.com/qixuancao/pcbdraft"
-readonly PCBDRAFT_EXPECTED_VERSION="1.1.0.dev0"
+readonly PCBDRAFT_EXPECTED_VERSION="0.1.0"
 readonly PCBDRAFT_UV_VERSION="0.12.1"
 PCBDRAFT_INSTALL_TEMP=""
 PCBDRAFT_INSTALL_KICAD=1

@@ -20,7 +20,7 @@ package root:
       kicad/         native KiCad generation, layout, routing, preview, and sync
       services/      application use cases, jobs, managed projects, transactions
       verification/  evidence, validation, review, benchmark, and release gates
-      interfaces/    CLI, JSON-RPC, chat, browser, and Textual TUI
+      interfaces/    Textual TUI
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,
@@ -31,25 +31,23 @@ compatibility policy for historical module paths.
 
 ## Product path
 
-        full-screen terminal       local browser         MCP stdio host
-                 |                       |                      |
-                 v                       v                      v
-           AgentRuntime          HTTP/SSE handler       ProjectMCPServer
-                 |                       |                      |
-                 +-------------- durable JobRunner ------------+
+        full-screen terminal
+                 |
+                 v
+           AgentRuntime
+                 |
+                 +-------------- durable JobRunner
                                       |
                                       v
                  AgentOrchestrator <--> AgentTurnStore
                  - durable Thread + Turn + ToolRun + Approval identities
                  - persist intent before side effects
                  - resume the same checkpoint after failure or restart
-                 - MCP starts one exact project-bound tool turn
                                       |
                                       v
                  Tool intent source
                  - exact OpenAI Responses: at most one initial selection
                  - deterministic mandatory continuation and fallback
-                 - MCP: one exact operation supplied by the host
                                       |
                                       v
                  PermissionBroker: allow / ask / deny
@@ -60,7 +58,7 @@ compatibility policy for historical module paths.
                  - closed semantic tool catalog
                  - strict JSON Schema and allowed states
                  - source, effect, risk, and baseline-revision checks
-                 - OpenAI Responses and MCP descriptor exports
+                 - OpenAI Responses descriptor exports
                                       |
                                       v
                  ApplicationService: projects, events, locks,
@@ -152,8 +150,8 @@ evidence can do that.
 Every proposed operation still crosses `PermissionBroker`, the closed
 `PCBToolRegistry`, and `PCBToolExecutor`, which reject unknown tools,
 extra/nested arguments, stale revisions, and invalid states. The registry emits
-strict OpenAI Responses function declarations and MCP Tool descriptors from the
-same specs, but neither adapter receives handlers or direct
+strict OpenAI Responses function declarations from the
+same specs, but the adapter receives no handlers or direct
 `ApplicationService`, filesystem, shell, or raw KiCad authority.
 
 The durable Job envelope is also an authority boundary. Version 2 snapshots the
@@ -167,58 +165,26 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-`pcbdraft mcp --project ID` is the shipped project-bound MCP stdio adapter. It
-resolves one existing project before stdout becomes protocol-only, does not put a
-project identity or path in tool arguments, and maps each `tools/call` to one
-durable `source=mcp` turn. It does not automatically continue a multi-tool PCB
-workflow inside that call. For a high-risk or authoritative-write tool, the
-default `review` permission mode returns an `approval_required` receipt and exact
-checkpoint instead of executing it; that checkpoint must be resolved in the
-review-mode TUI, without retrying the MCP call. MCP is therefore another
-transport/source of calls, not a second PCB execution architecture. The
-parameterized chat and JSON-RPC compatibility surfaces still call bounded
-`ApplicationService` use cases directly and must not be mistaken for
-participants in the durable interactive turn loop.
-
-An MCP timeout, client cancellation, post-submit record failure, or dispatched
-tool error cannot by itself prove that a non-idempotent local effect stopped. If
-the exact result cannot be reconciled, the adapter therefore reports
-`outcome_unknown`, `retry_safe=false`, and the durable Job/Turn identities instead
-of returning a retryable generic error. MCP accepts only the external `pcb_*`
-names published by `tools/list`, and a receipt must bind exactly one `source=mcp`
-tool matching the request.
-
-The MCP server targets protocol revision `2025-11-25` through the official
-Python SDK 1.x (`mcp>=1.29,<2`; the KiCad dependency chain currently prevents an
-SDK v2 upgrade). Its current surface is stdio `tools/list` and `tools/call` only:
-there is no Streamable HTTP transport, resources/prompts surface, or bundled MCP
-client. Being maintained in 2026 does not imply support for a 2026 protocol
-revision. A client that requires a post-`2025-11-25` revision or SDK v2 behavior
-is outside the current compatibility claim.
-
-The default full-screen terminal and browser submit messages and explicit
+The default full-screen terminal submits messages and explicit
 actions through durable Agent jobs over the same orchestrator and project store.
-The terminal renders its incremental runtime activity. The browser project view
-projects the 20 most recent durable turns and tool-run receipts plus any pending
-approval into inline conversation activity; that checkpoint is read-only in Web.
-Both surfaces continue to render the same persisted project, conversation,
+The terminal renders its incremental runtime activity.
+The terminal renders the same persisted project, conversation,
 attempt, event, and decision evidence. The terminal derives a local project name
 from the first normal-language request,
 while its slash palette handles project selection and explicit engineering
 actions. The TUI presents planning, generation, validation, and bounded repair as
 tool activity inside one conversation turn instead of a mandatory multi-page
 workflow. Its default runtime policy advances an allowed plan automatically;
-the default TUI and browser `workspace` permission policy continues requested
+the default TUI `workspace` permission policy continues requested
 project-local work without artificial pauses. A TUI `review` policy can retain an
 exact call checkpoint and ask once immediately before a high-risk or
-authoritative-write tool; the current browser has no approval mutation endpoint.
+authoritative-write tool.
 Follow-up messages on a generated project are compiled into an isolated replacement,
 validated under `transactions/`, and only then atomically applied by policy.
 The terminal retains bounded tool history across recent turns; collapsed mode
 shows concise call activity, while expanded logs include effect, risk, argument
 hash, baseline/result revisions, bounded arguments, and the local result receipt.
-The parameterized <code>chat</code> command is for
-automation and does not start a line-oriented session. A restart marks an
+A restart marks an
 incomplete job and active tool interrupted rather than replaying its side
 effects. `/retry` creates another Job attempt over the same `turn_id`; completed
 tool receipts are reused. A call that was durably marked as dispatched but lacks

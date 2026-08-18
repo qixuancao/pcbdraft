@@ -17,7 +17,6 @@ from textual.widgets import Input, OptionList
 from pcbdraft.agent.events import AgentActivity, AgentUpdate
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.repository import configure_repository
-from pcbdraft.interfaces.chat import run_chat_command
 from pcbdraft.interfaces.cli import build_parser
 from pcbdraft.interfaces.cli import main as cli_main
 from pcbdraft.interfaces.tui.app import (
@@ -641,83 +640,6 @@ class PCBDraftTuiControllerTests(unittest.TestCase):
             timeout=12.0,
             approval_mode="workspace",
         )
-
-    def test_mcp_inherits_explicit_root_scope_and_local_options_win(self) -> None:
-        inherited = [
-            "--workspace",
-            "/tmp/pcbdraft-mcp-root",
-            "--provider",
-            "auto",
-            "--approval-mode",
-            "read_only",
-            "--timeout",
-            "13",
-            "mcp",
-            "--project",
-            "board",
-        ]
-        with patch("pcbdraft.interfaces.mcp.run_mcp_stdio", return_value=0) as run_mcp:
-            self.assertEqual(cli_main(inherited), 0)
-        run_mcp.assert_called_once_with(
-            workspace="/tmp/pcbdraft-mcp-root",
-            provider="auto",
-            project_id="board",
-            approval_mode="read_only",
-            timeout=13.0,
-        )
-
-        overridden = [
-            "--workspace=/tmp/ignored-root",
-            "--provider",
-            "auto",
-            "--approval-mode",
-            "read_only",
-            "--timeout",
-            "13",
-            "mcp",
-            "--project",
-            "board",
-            "--workspace",
-            "/tmp/selected-local",
-            "--provider",
-            "auto",
-            "--approval-mode",
-            "review",
-            "--timeout",
-            "21",
-        ]
-        with patch("pcbdraft.interfaces.mcp.run_mcp_stdio", return_value=0) as run_mcp:
-            self.assertEqual(cli_main(overridden), 0)
-        run_mcp.assert_called_once_with(
-            workspace="/tmp/selected-local",
-            provider="auto",
-            project_id="board",
-            approval_mode="review",
-            timeout=21.0,
-        )
-
-    def test_chat_without_an_explicit_action_does_not_open_a_repl(self) -> None:
-        with (
-            patch("pcbdraft.interfaces.chat.ApplicationService") as service,
-            self.assertRaisesRegex(
-                ValidationError, "requires --new, --project, or --list"
-            ),
-        ):
-            run_chat_command(
-                workspace=None,
-                provider="auto",
-                project_id=None,
-                new_name=None,
-                message=None,
-                assume_yes=False,
-                undo=False,
-                validate=False,
-                release=False,
-                list_only=False,
-                as_json=False,
-                timeout=45.0,
-            )
-        service.assert_not_called()
 
     def test_tui_requires_an_interactive_terminal(self) -> None:
         with (

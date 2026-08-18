@@ -16,11 +16,9 @@ MOVED_MODULES: dict[str, str] = {
     "pcbdraft.agent_repair": "pcbdraft.agent.repair",
     "pcbdraft.agent_runtime": "pcbdraft.agent.runtime",
     "pcbdraft.agent_tools": "pcbdraft.agent.tools",
-    "pcbdraft.api": "pcbdraft.interfaces.api",
     "pcbdraft.application": "pcbdraft.services.application",
     "pcbdraft.benchmark": "pcbdraft.verification.benchmark",
     "pcbdraft.blocks": "pcbdraft.domain.blocks",
-    "pcbdraft.chat": "pcbdraft.interfaces.chat",
     "pcbdraft.cli": "pcbdraft.interfaces.cli",
     "pcbdraft.component_qualification": "pcbdraft.domain.component_qualification",
     "pcbdraft.doctor": "pcbdraft.services.doctor",
@@ -54,7 +52,6 @@ MOVED_MODULES: dict[str, str] = {
     "pcbdraft.routing": "pcbdraft.kicad.routing",
     "pcbdraft.runs": "pcbdraft.core.runs",
     "pcbdraft.scope": "pcbdraft.domain.scope",
-    "pcbdraft.semantic": "pcbdraft.verification.semantic",
     "pcbdraft.semantic_rules": "pcbdraft.domain.semantic_rules",
     "pcbdraft.sync": "pcbdraft.kicad.sync",
     "pcbdraft.terminal_text": "pcbdraft.interfaces.terminal_text",
@@ -67,8 +64,6 @@ MOVED_MODULES: dict[str, str] = {
     "pcbdraft.tui_session": "pcbdraft.interfaces.tui.session",
     "pcbdraft.tui_widgets": "pcbdraft.interfaces.tui.widgets",
     "pcbdraft.validation": "pcbdraft.verification.validation",
-    "pcbdraft.webapp": "pcbdraft.interfaces.web",
-    "pcbdraft.workflows": "pcbdraft.services.workflows",
 }
 
 

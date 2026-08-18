@@ -56,6 +56,11 @@ _PROFILES: dict[str, ProviderWireProfile] = {
     # burn the whole output budget on reasoning, so disable thinking to keep
     # structured JSON replies fast and deterministic.
     "siliconflow": ProviderWireProfile(extra_request_fields={"enable_thinking": False}),
+    # OpenCode Go (opencode.ai/zen/go) ignores response_format=json_schema and
+    # returns free-form JSON, so the schema must be embedded in the prompt and
+    # enforced locally after decoding (same contract as minimax).  It accepts a
+    # large max_tokens, and circuit-plan JSON regularly exceeds the 6k default.
+    "opencode-go": ProviderWireProfile(output_mode="prompt", max_output_tokens=12000),
 }
 
 _HOST_PROFILE_IDS = {
@@ -68,6 +73,7 @@ _HOST_PROFILE_IDS = {
     "openrouter.ai": "openrouter",
     "api.siliconflow.cn": "siliconflow",
     "api.siliconflow.com": "siliconflow",
+    "opencode.ai": "opencode-go",
 }
 
 

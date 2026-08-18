@@ -13,7 +13,7 @@ other stable 10.0 patch releases are compatible but reported as non-baseline.
     uv run pcbdraft doctor --json
 
 A configured model API is required for circuit planning; no offline planner
-exists. Browser E2E tests additionally need Firefox and geckodriver.
+exists.
 
 The initializer copies only missing KiCad global library-table templates; it does
 not overwrite a valid user configuration.

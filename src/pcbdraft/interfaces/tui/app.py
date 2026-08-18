@@ -1150,11 +1150,18 @@ class PCBDraftApp(App[int], inherit_bindings=False):  # type: ignore[call-arg]
             command = self.query_one(
                 "#command-palette", CommandPalette
             ).selected_command()
-            if command is not None and self._command_needs_completion(
-                event.value, command
-            ):
-                self._set_composer_command(command)
-                return
+            if command is not None:
+                needs = self._command_needs_completion(event.value, command)
+                if needs and command.requires_argument:
+                    # A command that needs an argument only completes; the user
+                    # must then supply the value before pressing Enter again.
+                    self._set_composer_command(command)
+                    return
+                if needs:
+                    # Unambiguous non-argument commands run immediately once
+                    # selected, like a typical command palette.
+                    self._set_composer_command(command)
+                event.value = self.query_one("#composer-input", Input).value
 
         text = event.value
         if not text.strip() and self.controller.mode == "message":

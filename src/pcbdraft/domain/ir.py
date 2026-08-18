@@ -112,6 +112,30 @@ def _identifier(value: Any, path: str) -> str:
     return result
 
 
+def normalize_stable_identifier(value: str) -> str:
+    """Coerce model-authored text into a valid stable identifier.
+
+    Strictly validated identifiers are the IR contract, but planning models
+    frequently return case/spacing variants (``Power``, ``current limiting
+    resistor``).  This deterministic normalizer maps them onto the same
+    identifier space without changing intended semantics, so the plan remains
+    reviewable while the strict contract still applies afterwards.
+    """
+
+    if isinstance(value, bool):
+        return "id"
+    if not isinstance(value, str):
+        return "id"
+    result = value.strip().lower()
+    result = re.sub(r"[^a-z0-9_.-]+", "_", result)
+    result = re.sub(r"_+", "_", result).strip("._-")
+    if not result:
+        return "id"
+    if not result[0].isalpha():
+        result = "id_" + result
+    return result[:128]
+
+
 def _strings(value: Any, path: str, *, identifiers: bool = False) -> tuple[str, ...]:
     if not isinstance(value, list):
         raise ValidationError(f"{path} must be an array")

@@ -13,14 +13,13 @@ pcbdraft/
 │   ├── agent/          planning contracts, tool policy, ports, and durable turn orchestration
 │   ├── core/           errors, safe I/O, redaction, locks, processes, runs, and project paths
 │   ├── domain/         immutable PCB data and deterministic domain rules
-│   ├── interfaces/     CLI, JSON-RPC, chat, Web, and Textual presentation
+│   ├── interfaces/     Textual TUI presentation
 │   │   └── tui/        TUI app, controller, widgets, views, session, and styles
 │   ├── kicad/          native KiCad adapters and geometry algorithms
 │   ├── model/          model configuration, transport, and provider adapters
 │   ├── services/       application use cases and transactional orchestration
 │   ├── verification/   evidence, gates, validation, review, benchmark, and release
-│   ├── data/           immutable bundled catalogs and benchmark corpus
-│   └── web/            packaged browser assets
+│   └── data/           immutable bundled catalogs and benchmark corpus
 ├── tests/              responsibility-mirrored unit and integration tests
 ├── scripts/            stable development, cleanup, E2E, benchmark, and release entrypoints
 └── docs/               architecture, API, development, and roadmap documentation
@@ -74,7 +73,7 @@ candidate/release decisions. Neither layer should contain presentation code.
 
 ### Interfaces
 
-`interfaces` translates CLI, JSON-RPC, terminal, chat, and loopback Web input
+`interfaces` translates TUI input
 into service calls. Interfaces may format results, but they must not duplicate
 engineering decisions or become an independent project store.
 

@@ -6,8 +6,6 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
-from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -22,7 +20,6 @@ from pcbdraft.agent.design import (
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.domain.component_qualification import ComponentQualificationReport
 from pcbdraft.domain.semantic_rules import evaluate_semantic_rules
-from pcbdraft.interfaces.cli import main as cli_main
 from pcbdraft.kicad.schematic import generate_schematic
 from pcbdraft.services.managed import materialize_managed_design, open_managed_project
 from pcbdraft.verification.validation import validate_managed_project
@@ -945,36 +942,6 @@ class GenericAgentDesignTests(unittest.TestCase):
             self.assertEqual(checks["l4.bom_lifecycle"].outcome, "unknown")
             self.assertFalse(checks["l4.bom_lifecycle"].blocks_candidate)
 
-    def test_cli_stock_generation_reports_route_without_claiming_validation(
-        self,
-    ) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            request_path = root / "request.json"
-            plan_path = root / "plan.json"
-            request_path.write_text(
-                json.dumps(indicator_request_dict()), encoding="utf-8"
-            )
-            plan_path.write_text(json.dumps(indicator_plan_dict()), encoding="utf-8")
-            captured = StringIO()
-            with redirect_stdout(captured):
-                exit_code = cli_main(
-                    [
-                        "agent-generate",
-                        str(request_path),
-                        str(plan_path),
-                        str(root / "project"),
-                        "--json",
-                    ]
-                )
-            self.assertEqual(exit_code, 0)
-            result = json.loads(captured.getvalue())
-            self.assertEqual(result["routing"]["state"], "completed")
-            self.assertEqual(result["routing"]["unrouted"], [])
-            self.assertEqual(result["validation"], "not_run")
-            self.assertNotIn("plan_review", result)
-            self.assertTrue(Path(result["root"]).is_dir())
-
     def test_plan_cannot_drop_a_user_named_part_or_inject_raw_kicad(self) -> None:
         missing = copy.deepcopy(circuit_plan_dict())
         missing["components"] = [missing["components"][1]]
@@ -992,8 +959,10 @@ class GenericAgentDesignTests(unittest.TestCase):
 
         raw = copy.deepcopy(circuit_plan_dict())
         raw["components"][0]["x_mm"] = 12
-        with self.assertRaisesRegex(ValidationError, "unknown fields"):
-            CircuitPlan.from_dict(raw)
+        plan = CircuitPlan.from_dict(raw)
+        # Unknown model-authored fields are ignored (tolerant plan boundary);
+        # the deterministic compiler remains the authority on geometry.
+        self.assertIsNone(getattr(plan.components[0], "x_mm", None))
 
     def test_generic_plan_generates_a_native_kicad_schematic(self) -> None:
         compilation = compile_agent_plan(
@@ -1066,42 +1035,6 @@ class GenericAgentDesignTests(unittest.TestCase):
             self.assertEqual(generated.pcb.routing.state, "completed")
             self.assertEqual(generated.pcb.routing.unrouted, ())
             self.assertGreater(generated.pcb.routing.expanded_nodes, 0)
-
-    def test_cli_generic_failure_retains_the_reviewed_plan_too(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            request_path = root / "request.json"
-            plan_path = root / "plan.json"
-            request_path.write_text(json.dumps(agent_request_dict()), encoding="utf-8")
-            plan_path.write_text(json.dumps(circuit_plan_dict()), encoding="utf-8")
-            captured = StringIO()
-            failure = ValidationError(
-                "bounded router left 1 net(s) unrouted (TEST); "
-                "expanded_nodes=10; reasons: deterministic test obstruction"
-            )
-            with (
-                patch("pcbdraft.services.managed.generate_pcb", side_effect=failure),
-                redirect_stdout(captured),
-            ):
-                exit_code = cli_main(
-                    [
-                        "agent-generate",
-                        str(request_path),
-                        str(plan_path),
-                        str(root / "generated"),
-                        "--json",
-                    ]
-                )
-            self.assertEqual(exit_code, 2)
-            result = json.loads(captured.getvalue())
-            attempt = Path(result["retained_attempt"])
-            self.assertNotIn("plan_review", result)
-            self.assertTrue(result["error"])
-            self.assertTrue((attempt / "attempt.json").is_file())
-            self.assertTrue((attempt / "circuit-plan.json").is_file())
-            self.assertTrue(
-                (attempt / "native" / "generic-stm32-sht31.kicad_sch").is_file()
-            )
 
 
 if __name__ == "__main__":

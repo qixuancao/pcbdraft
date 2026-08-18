@@ -10,7 +10,7 @@ from typing import Any
 try:
     __version__ = version("pcbdraft")
 except PackageNotFoundError:  # Source tree before the distribution is installed.
-    __version__ = "1.1.0.dev0"
+    __version__ = "0.1.0"
 PRODUCT_NAME = "PCBDraft"
 DISTRIBUTION_NAME = "pcbdraft"
 PRIMARY_CLI = "pcbdraft"

@@ -5,7 +5,6 @@ set -euo pipefail
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 BRAND_DIR="$REPO_DIR/docs/assets/brand"
-WEB_MARK="$REPO_DIR/src/pcbdraft/web/pcbdraft-mark-128.png"
 SVG_SOURCE="$BRAND_DIR/pcbdraft-mark.svg"
 SVG_SHA256=05be3cff4d534f004ea188c4e3eb1df1f0428e40fb5c0648ec3db284110caf4b
 MODE=${1:-write}
@@ -81,16 +80,6 @@ for GENERATED in "$STAGING"/*.png; do
         install -m 0644 -- "$GENERATED" "$TARGET"
     fi
 done
-
-GENERATED_WEB_MARK="$STAGING/pcbdraft-mark-128.png"
-if [[ "$MODE" == "--check" ]]; then
-    if [[ ! -f "$WEB_MARK" ]] || ! cmp -s -- "$GENERATED_WEB_MARK" "$WEB_MARK"; then
-        printf 'brand asset is stale: %s\n' "$WEB_MARK" >&2
-        STATUS=1
-    fi
-elif [[ ! -f "$WEB_MARK" ]] || ! cmp -s -- "$GENERATED_WEB_MARK" "$WEB_MARK"; then
-    install -m 0644 -- "$GENERATED_WEB_MARK" "$WEB_MARK"
-fi
 
 if [[ "$MODE" == "--check" && "$STATUS" == 0 ]]; then
     printf 'PCBDraft brand assets are reproducible and current.\n'

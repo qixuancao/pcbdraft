@@ -50,7 +50,7 @@
       "ports": ["gpio", "anode", "gnd"],
       "constraints": ["led_current_budget", "polarity"],
       "evidence": ["LED and resistor manufacturer records", "Ohm-law current bound"],
-      "verification_tests": ["tests/domain/test_requirements.py", "tests/verification/test_semantic.py"]
+      "verification_tests": ["tests/domain/test_requirements.py"]
     },
     {
       "id": "spi_power_input",

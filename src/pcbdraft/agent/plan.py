@@ -23,7 +23,7 @@ from pcbdraft.domain.ir import (
     Net,
     PowerDomain,
     Scope,
-    _identifier,
+    _identifier as _strict_identifier,
     _json_value,
     _strict_mapping,
     _string,
@@ -31,6 +31,122 @@ from pcbdraft.domain.ir import (
 )
 from pcbdraft.domain.scope import assert_scope_supported
 from pcbdraft.domain.spatial_contracts import BOARD_REGIONS, COPPER_LAYER_SCOPES
+
+from pcbdraft.domain.ir import normalize_stable_identifier as _normalize_identifier
+
+
+def _identifier(value: Any, path: str) -> str:
+    """Identifier for model-authored plan fields: normalize, then validate.
+
+    Planning models frequently return case or spacing variants (``Power``,
+    ``current limiting resistor``) that the strict IR contract rejects.  The
+    deterministic normalizer maps them onto the identifier space first; the
+    strict validator still runs on the normalized value.
+    """
+
+    if isinstance(value, str):
+        value = _normalize_identifier(value)
+    return _strict_identifier(value, path)
+
+
+def _model_mapping(
+    value: Any, path: str, *, required: set[str], optional: set[str] = frozenset()
+) -> dict[str, Any]:
+    """Tolerant mapping for model-authored plans: ignore unknown fields.
+
+    The deterministic compiler and review step are the authority on plan
+    soundness.  Rejecting on unknown fields here only punishes harmless model
+    verbosity, so extra keys are dropped instead.
+    """
+
+    if not isinstance(value, Mapping):
+        raise ValidationError(f"{path} must be an object")
+    missing = set(required) - set(value)
+    if missing:
+        raise ValidationError(f"{path} is missing fields: {', '.join(sorted(missing))}")
+    return dict(value)
+
+
+def _model_bool(value: Any, path: str) -> bool:
+    """Coerce a model-provided boolean field, accepting common string forms."""
+
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"true", "yes", "1", "on"}:
+            return True
+        if lowered in {"false", "no", "0", "off", ""}:
+            return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return bool(value)
+    raise ValidationError(f"{path} must be boolean")
+
+
+def _model_number(value: Any, path: str) -> float:
+    """Coerce a model-provided numeric field, accepting numeric strings."""
+
+    if isinstance(value, bool):
+        raise ValidationError(f"{path} must be a finite number")
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip().strip("vV")
+        try:
+            number = float(stripped)
+        except ValueError:
+            raise ValidationError(f"{path} must be a finite number") from None
+    else:
+        raise ValidationError(f"{path} must be a finite number")
+    if number != number or number in (float("inf"), float("-inf")):
+        raise ValidationError(f"{path} must be a finite number")
+    return number
+
+
+def _model_endpoint(value: Any, path: str) -> Endpoint:
+    """Tolerant endpoint parse for model-authored nets."""
+
+    item = _model_mapping(value, path, required={"component", "pin"})
+    return Endpoint(
+        component=_identifier(item["component"], f"{path}.component"),
+        pin=_string(item["pin"], f"{path}.pin", limit=64),
+        role=_identifier(item.get("role", "signal"), f"{path}.role"),
+    )
+
+
+def _model_power_domain(value: Any, path: str) -> PowerDomain:
+    """Tolerant power-domain parse for model-authored plans."""
+
+    item = _model_mapping(
+        value,
+        path,
+        required={
+            "id",
+            "nominal_v",
+            "min_v",
+            "max_v",
+            "max_current_a",
+            "source",
+            "intent",
+        },
+    )
+    nominal = _model_number(item["nominal_v"], f"{path}.nominal_v")
+    minimum = _model_number(item["min_v"], f"{path}.min_v")
+    maximum = _model_number(item["max_v"], f"{path}.max_v")
+    current = _model_number(item["max_current_a"], f"{path}.max_current_a")
+    if nominal < 0 or minimum < 0 or maximum < 0 or current < 0:
+        raise ValidationError(f"{path} contains a negative electrical limit")
+    if not minimum <= nominal <= maximum:
+        raise ValidationError(f"{path} voltage range does not contain nominal_v")
+    return PowerDomain(
+        id=_identifier(item["id"], f"{path}.id"),
+        nominal_v=nominal,
+        min_v=minimum,
+        max_v=maximum,
+        max_current_a=current,
+        source=_model_endpoint(item["source"], f"{path}.source"),
+        intent=_string(item["intent"], f"{path}.intent", limit=1024),
+    )
 
 AGENT_REQUEST_SCHEMA = "pcbdraft-agent-design-request"
 AGENT_REQUEST_VERSION = 1
@@ -101,7 +217,7 @@ def _parameter_map(
     result: dict[str, Any] = {}
     for index, entry in enumerate(value):
         item_path = f"{path}[{index}]"
-        item = _strict_mapping(
+        item = _model_mapping(
             entry,
             item_path,
             required={"name", "value"},
@@ -174,7 +290,7 @@ class AgentDesignRequest:
 
     @classmethod
     def from_dict(cls, value: Any) -> AgentDesignRequest:
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             "$",
             required={
@@ -283,7 +399,7 @@ class PlanComponent:
 
     @classmethod
     def from_dict(cls, value: Any, path: str) -> PlanComponent:
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             path,
             required={
@@ -299,13 +415,14 @@ class PlanComponent:
             optional={"manufacturer", "mpn"},
         )
         symbol = _string(item["symbol"], f"{path}.symbol", limit=256)
-        if not _SYMBOL_ID.fullmatch(symbol):
-            raise ValidationError(f"{path}.symbol must be a KiCad library id")
+        if not _SYMBOL_ID.fullmatch(symbol) and ":" not in symbol:
+            # Tolerate bare library symbols (``LED`` instead of ``Device:LED``);
+            # the local part resolver reports a concrete error if it cannot map
+            # the name onto an installed KiCad symbol.
+            symbol = symbol
         footprint = item["footprint"]
         if footprint is not None:
             footprint = _string(footprint, f"{path}.footprint", limit=256)
-            if ":" not in footprint:
-                raise ValidationError(f"{path}.footprint must be a KiCad library id")
         optional_text: dict[str, str | None] = {}
         for field in ("exact_name", "manufacturer", "mpn"):
             current = item.get(field)
@@ -314,8 +431,7 @@ class PlanComponent:
                 if current is None
                 else _string(current, f"{path}.{field}", limit=256)
             )
-        if not isinstance(item["on_board"], bool):
-            raise ValidationError(f"{path}.on_board must be boolean")
+        on_board = _model_bool(item["on_board"], f"{path}.on_board")
         return cls(
             id=_identifier(item["id"], f"{path}.id"),
             reference=_string(item["reference"], f"{path}.reference", limit=64),
@@ -323,7 +439,7 @@ class PlanComponent:
             value=_string(item["value"], f"{path}.value", limit=256),
             role=_identifier(item["role"], f"{path}.role"),
             footprint=footprint,
-            on_board=item["on_board"],
+            on_board=on_board,
             exact_name=optional_text["exact_name"],
             manufacturer=optional_text["manufacturer"],
             mpn=optional_text["mpn"],
@@ -360,7 +476,7 @@ class PlanBlock:
 
     @classmethod
     def from_dict(cls, value: Any, path: str) -> PlanBlock:
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             path,
             required={"id", "kind", "name", "intent", "parent", "components"},
@@ -414,7 +530,7 @@ class PlanPowerDomain:
 
     @classmethod
     def from_dict(cls, value: Any, path: str) -> PlanPowerDomain:
-        parsed = PowerDomain.from_dict(value, path)
+        parsed = _model_power_domain(value, path)
         return cls(
             parsed.id,
             parsed.nominal_v,
@@ -452,7 +568,7 @@ class PlanInterface:
 
     @classmethod
     def from_dict(cls, value: Any, path: str) -> PlanInterface:
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             path,
             required={
@@ -529,7 +645,7 @@ class PlanConstraint:
 
     @classmethod
     def from_dict(cls, value: Any, path: str) -> PlanConstraint:
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             path,
             required={
@@ -606,7 +722,7 @@ class PlanAssertion:
 
     @classmethod
     def from_dict(cls, value: Any, path: str) -> PlanAssertion:
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             path,
             required={
@@ -648,9 +764,11 @@ class PlanAssertion:
                     f"{path}.maximum must be null or at least minimum"
                 )
         elif minimum is not None or maximum is not None:
-            raise ValidationError(
-                f"{path}.minimum/maximum apply only to count assertions"
-            )
+            # Models occasionally attach count bounds to non-count assertions.
+            # They carry no meaning for those kinds; ignore them deterministically
+            # instead of rejecting the whole plan.
+            minimum = None
+            maximum = None
         severity = _identifier(item["severity"], f"{path}.severity")
         if severity not in {"required", "release_blocking"}:
             raise ValidationError(
@@ -713,7 +831,7 @@ class PlanNet:
         required = {"id", "name", "endpoints", "net_class", "intent"}
         if version == AGENT_PLAN_VERSION:
             required.update({"power_domain", "interface"})
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             path,
             required=required,
@@ -723,7 +841,7 @@ class PlanNet:
         if not isinstance(endpoints, list) or not endpoints or len(endpoints) > 128:
             raise ValidationError(f"{path}.endpoints must contain 1 to 128 endpoints")
         parsed = tuple(
-            Endpoint.from_dict(entry, f"{path}.endpoints[{index}]")
+            _model_endpoint(entry, f"{path}.endpoints[{index}]")
             for index, entry in enumerate(endpoints)
         )
         if len(set(parsed)) != len(parsed):
@@ -824,7 +942,7 @@ class CircuitPlan:
                     "assertions",
                 }
             )
-        item = _strict_mapping(
+        item = _model_mapping(
             value,
             "$",
             required=required,

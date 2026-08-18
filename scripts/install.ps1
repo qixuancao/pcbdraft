@@ -10,7 +10,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $RepositoryUrl = "https://github.com/qixuancao/pcbdraft"
-$ExpectedVersion = "1.1.0.dev0"
+$ExpectedVersion = "0.1.0"
 $UvVersion = "0.12.1"
 $KiCadInstallVersion = "10.0.5"
 

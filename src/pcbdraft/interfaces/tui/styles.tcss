@@ -1,6 +1,6 @@
 /*
    PCBDraft's semantic theme mirrors the copper-and-solder palette used by the
-   brand mark and web UI. Copper identifies actions, green carries navigation,
+   brand mark. Copper identifies actions, green carries navigation,
    and success / warning / error retain distinct state colors.
 */
 

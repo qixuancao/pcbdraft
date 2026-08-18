@@ -6,10 +6,7 @@ import tempfile
 import threading
 import time
 import unittest
-import urllib.error
-import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from importlib.resources import files
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -25,7 +22,6 @@ from pcbdraft.agent.turns import TurnStatus
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.project import sha256_file
-from pcbdraft.interfaces.web import create_app_server
 from pcbdraft.model.providers import (
     OpenAICompatibleIntentProvider,
     OpenAICompatibleSettings,
@@ -1310,169 +1306,6 @@ class ApplicationConversationTests(unittest.TestCase):
             )
             for runner in runners:
                 runner.shutdown()
-
-
-class BrowserSecurityTests(unittest.TestCase):
-    def setUp(self) -> None:
-        self.temporary = tempfile.TemporaryDirectory()
-        provider_patch = patch(
-            "pcbdraft.services.application.resolve_provider",
-            return_value=InterpretOnlyProvider(),
-        )
-        provider_patch.start()
-        self.addCleanup(provider_patch.stop)
-        self.server = create_app_server(
-            host="127.0.0.1",
-            port=0,
-            workspace=self.temporary.name,
-            provider="auto",
-        )
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-        self.base = self.server.base_url
-        self.session = self.server.session_token
-
-    def tearDown(self) -> None:
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=5)
-        self.temporary.cleanup()
-
-    def request(
-        self,
-        path: str,
-        *,
-        body: dict[str, object] | None = None,
-        origin: str | None = None,
-        csrf: str | None = None,
-        authenticated: bool = True,
-        session: str | None = None,
-    ) -> tuple[int, dict[str, object], dict[str, str]]:
-        data = None if body is None else json.dumps(body).encode()
-        headers: dict[str, str] = {}
-        if body is not None:
-            headers["Content-Type"] = "application/json"
-        if origin is not None:
-            headers["Origin"] = origin
-        if csrf is not None:
-            headers["X-PCBDraft-CSRF"] = csrf
-        if authenticated:
-            headers["X-PCBDraft-Session"] = session or self.session
-        request = urllib.request.Request(self.base + path, data=data, headers=headers)
-        try:
-            with urllib.request.urlopen(request, timeout=5) as response:
-                return (
-                    response.status,
-                    json.loads(response.read()),
-                    dict(response.headers),
-                )
-        except urllib.error.HTTPError as exc:
-            try:
-                return exc.code, json.loads(exc.read()), dict(exc.headers)
-            finally:
-                exc.close()
-
-    def test_loopback_bootstrap_security_headers_and_csrf(self) -> None:
-        status, error, headers = self.request("/api/bootstrap", authenticated=False)
-        self.assertEqual(status, 401)
-        self.assertIn("session token", error["error"]["message"])
-        self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
-
-        status, bootstrap, headers = self.request("/api/bootstrap")
-        self.assertEqual(status, 200)
-        self.assertEqual(bootstrap["schema"], "pcbdraft-browser-bootstrap")
-        self.assertNotIn("session_token", bootstrap)
-        self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
-        self.assertEqual(headers["X-Frame-Options"], "DENY")
-        csrf = str(bootstrap["csrf_token"])
-
-        status, error, _ = self.request(
-            "/api/projects",
-            body={"name": "Sensor", "request": "TMP102 I2C sensor"},
-            origin="https://evil.example",
-            csrf=csrf,
-        )
-        self.assertEqual(status, 403)
-        self.assertIn("same-origin", error["error"]["message"])
-
-        status, created, _ = self.request(
-            "/api/projects",
-            body={"name": "Sensor", "request": "TMP102 I2C sensor"},
-            origin=self.base,
-            csrf=csrf,
-        )
-        self.assertEqual(status, 202)
-        project_id = created["project"]["project"]["id"]
-        job_id = created["job"]["id"]
-        for _ in range(100):
-            status, view, _ = self.request(f"/api/projects/{project_id}")
-            self.assertEqual(status, 200)
-            job = next(item for item in view["jobs"] if item["id"] == job_id)
-            if (
-                job["status"] not in {"queued", "running", "cancel_requested"}
-                and view["project"]["status"] != "draft"
-            ):
-                break
-            time.sleep(0.02)
-        self.assertEqual(job["status"], "completed")
-        self.assertEqual(view["project"]["status"], "planning_required")
-
-    def test_launch_fragment_is_required_for_api_access(self) -> None:
-        parsed = urllib.parse.urlsplit(self.server.launch_url)
-        self.assertEqual(f"{parsed.scheme}://{parsed.netloc}", self.base)
-        self.assertEqual(parsed.query, "")
-        self.assertEqual(
-            urllib.parse.parse_qs(parsed.fragment), {"session": [self.session]}
-        )
-
-        status, _error, _ = self.request(
-            "/api/bootstrap", authenticated=True, session="wrong-session"
-        )
-        self.assertEqual(status, 401)
-
-        status, bootstrap, _ = self.request(
-            f"/api/bootstrap?session={urllib.parse.quote(self.session)}",
-            authenticated=False,
-        )
-        self.assertEqual(status, 200)
-        self.assertEqual(bootstrap["schema"], "pcbdraft-browser-bootstrap")
-
-    def test_nonloopback_bind_is_rejected(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "loopback"):
-            create_app_server(
-                host="0.0.0.0",
-                port=0,
-                workspace=self.temporary.name,
-                provider="auto",
-            )
-
-    def test_container_wildcard_has_explicit_loopback_public_url(self) -> None:
-        server = create_app_server(
-            host="0.0.0.0",
-            public_host="127.0.0.1",
-            port=0,
-            workspace=self.temporary.name,
-            provider="auto",
-        )
-        try:
-            self.assertTrue(server.base_url.startswith("http://127.0.0.1:"))
-            self.assertNotIn("0.0.0.0", server.launch_url)
-        finally:
-            server.server_close()
-
-    def test_static_browser_shell_has_safe_setup_and_actionable_validation(
-        self,
-    ) -> None:
-        web = files("pcbdraft").joinpath("web")
-        html = web.joinpath("index.html").read_text(encoding="utf-8")
-        script = web.joinpath("app.js").read_text(encoding="utf-8")
-        self.assertIn('id="setup-dialog"', html)
-        self.assertIn("/connect", html)
-        self.assertNotIn("OPENAI_API_KEY", html)
-        self.assertNotIn('id="provider-api-key"', html)
-        self.assertIn("Findings and unavailable checks", script)
-        self.assertIn("validation_report", script)
-        self.assertIn('node("strong", "", validation.candidate_ready', script)
 
 
 if __name__ == "__main__":

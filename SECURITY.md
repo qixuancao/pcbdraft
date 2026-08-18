@@ -44,15 +44,9 @@ their provenance.
   caller's original deadline. Prompts and API keys are not written to receipts.
 - `/connect` writes credentials only to the user-owned PCBDraft config with mode
   `0600`; project files and application records never contain provider secrets.
-- the browser binds to loopback only, rejects non-loopback configuration, validates
-  Host and Origin, and requires an unguessable per-process session capability for
-  every API, event-stream, and artifact request. The capability is delivered in a
-  launch-URL fragment, never by an unauthenticated endpoint. Writes additionally
-  require a CSRF token. Restrictive CSP/security headers and body/artifact allow
-  lists remain enforced;
 - private application workspaces, cross-process project/job locks, durable
   jobs/events, explicit confirmation, and restart recovery prevent duplicate
-  active jobs, browser/terminal races, and implicit replay of interrupted effects;
+  active jobs, terminal races, and implicit replay of interrupted effects;
 - provider output uses an exact bounded schema and is normalized and scope-checked
   before deterministic code can act on it.
 - release installation requires a full immutable Git commit, uses a runtime
@@ -102,8 +96,5 @@ interpret the request; use the offline provider for data that must not leave the
 machine. Do not commit confidential receipts, model events, or board designs
 without reviewing them.
 
-The local web UI is not a multi-user service. The session capability prevents a
-blind local connection from reading project data, but another process running as
-the same OS user may still inspect that user's browser/process state or read the
-private workspace. Use separate accounts or a VM when users do not share a trust
+Use separate accounts or a VM when users do not share a trust
 boundary.
