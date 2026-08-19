@@ -4,7 +4,6 @@ import ast
 import importlib
 import tomllib
 import unittest
-from importlib.resources import files
 from pathlib import Path
 
 import pcbdraft
@@ -214,9 +213,26 @@ class PackageStructureTests(unittest.TestCase):
                 self.assertIs(historical, canonical)
                 self.assertEqual(historical.__name__, canonical_name)
 
-    def test_tui_styles_are_packaged_beside_the_tui_app(self) -> None:
-        stylesheet = files("pcbdraft").joinpath("interfaces", "tui", "styles.tcss")
-        self.assertTrue(stylesheet.is_file())
+    def test_interfaces_own_the_cli_and_hermes_terminal_only(self) -> None:
+        """The interactive frontend is the Hermes terminal, not a TUI package."""
+
+        package_root = Path(pcbdraft.__file__).resolve().parent
+        interfaces = package_root / "interfaces"
+        self.assertEqual(
+            {path.name for path in interfaces.glob("*.py")},
+            {
+                "__init__.py",
+                "cli.py",
+                "commands.py",
+                "hermes_cli.py",
+                "hermes_plugin.py",
+                "terminal_text.py",
+            },
+        )
+        self.assertFalse(
+            (interfaces / "tui").exists(),
+            "the old Textual frontend must not remain in the package",
+        )
 
     def test_package_discovery_excludes_historical_distribution_names(self) -> None:
         repository = Path(pcbdraft.__file__).resolve().parents[2]

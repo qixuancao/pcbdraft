@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from pcbdraft import PRIMARY_CLI, PRODUCT_NAME, __version__
+from pcbdraft.core.debug_trace import trace_enabled, trace_path
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.repository import configure_repository, current_repository
-from pcbdraft.hermes.bridge import launch_chat as launch_hermes_chat
+from pcbdraft.interfaces.hermes_cli import launch_cli
 from pcbdraft.services.doctor import doctor_report, setup_runtime
 
 _ROOT_OPTIONS_WITH_VALUES = frozenset(
@@ -65,7 +67,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
             f"{PRODUCT_NAME}: generate native KiCad projects from reviewable circuit plans."
         ),
         epilog=(
-            "Run without a subcommand to launch the full-screen terminal interface."
+            "Run without a subcommand to launch the interactive Hermes-based terminal."
         ),
     )
     parser.add_argument(
@@ -131,6 +133,29 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     repository.add_argument(
         "--json", action="store_true", dest="as_json", help="emit machine-readable JSON"
     )
+    trace = subcommands.add_parser(
+        "trace",
+        help="show recent agent debug trace events",
+        description=(
+            "Print the most recent events from the agent debug trace "
+            "(one JSON line per conversation step: model requests, model "
+            "responses, tool calls, and errors)."
+        ),
+    )
+    trace.add_argument(
+        "-n",
+        "--lines",
+        type=int,
+        default=40,
+        metavar="N",
+        help="number of recent events to show (default: 40)",
+    )
+    trace.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="emit raw JSONL lines instead of a summary",
+    )
     return parser
 
 
@@ -160,13 +185,93 @@ def _print_doctor(report: dict, as_json: bool) -> int:
     return 0 if report["ok"] else 1
 
 
+def _print_trace(lines: int, as_json: bool) -> int:
+    path = trace_path()
+    if not trace_enabled():
+        print(
+            "agent debug trace is disabled (unset PCBDRAFT_DEBUG_TRACE to enable)",
+            file=sys.stderr,
+        )
+        return 1
+    if not path.exists():
+        print(f"no agent debug trace yet: {path}", file=sys.stderr)
+        return 1
+    try:
+        recent = path.read_text(encoding="utf-8").splitlines()[-max(1, lines) :]
+    except OSError as exc:
+        print(f"cannot read agent debug trace: {exc}", file=sys.stderr)
+        return 1
+    if as_json:
+        for line in recent:
+            if line.strip():
+                print(line)
+        return 0
+    for line in recent:
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            print(line)
+            continue
+        summary = _trace_summary(record)
+        print(
+            f"#{record.get('seq', '?')} {record.get('timestamp', '')} "
+            f"{record.get('event', '?')}: {summary}"
+        )
+    print(f"— trace file: {path}")
+    return 0
+
+
+def _trace_summary(record: dict) -> str:
+    data = record.get("data")
+    data = data if isinstance(data, dict) else {}
+    event = record.get("event", "?")
+    if event == "model_request":
+        return (
+            f"call #{data.get('api_call_count')} model={data.get('model')} "
+            f"provider={data.get('provider')} messages={data.get('message_count')} "
+            f"tools={data.get('tool_count')}"
+        )
+    if event == "model_response":
+        usage = data.get("usage")
+        usage = usage if isinstance(usage, dict) else {}
+        return (
+            f"call #{data.get('api_call_count')} finish={data.get('finish_reason')} "
+            f"tokens={usage.get('total_tokens')} in {data.get('api_duration_seconds')}s"
+        )
+    if event == "model_error":
+        error = data.get("error")
+        error = error if isinstance(error, dict) else {}
+        return (
+            f"HTTP {data.get('http_status')} {error.get('type', '')} "
+            f"retryable={data.get('retryable')} reason={data.get('failover_reason')}"
+        )
+    if event in {"tool_start", "tool_end"}:
+        return f"tool={data.get('tool_name')} status={data.get('status', 'starting')}"
+    if event == "turn_complete":
+        reply = str(data.get("assistant_response", ""))
+        preview = reply[:80] + ("..." if len(reply) > 80 else "")
+        return f"reply={preview!r}"
+    if event in {"session_start", "session_end"}:
+        return f"session={data.get('session_id')} model={data.get('model')}"
+    return json.dumps(data, ensure_ascii=False)[:160]
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     tokens = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(tokens)
     try:
         if args.command is None:
-            return launch_hermes_chat()
+            # A caller-provided workspace keeps isolated automation working
+            # under the interactive surface (application home, not the
+            # persistent product repository).
+            if args.workspace:
+                os.environ["PCBDRAFT_HOME"] = args.workspace
+            return launch_cli()
+        if args.command == "trace":
+            return _print_trace(args.lines, args.as_json)
         if args.command == "doctor":
             return _print_doctor(doctor_report(), args.as_json)
         if args.command == "setup":

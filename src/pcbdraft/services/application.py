@@ -308,7 +308,7 @@ class ApplicationService:
                     "id": "unconfigured",
                     "available": False,
                     "planning": (
-                        "no model provider configured; run /connect in the TUI "
+                        "no model provider configured; run /connect in the interactive terminal "
                         "or create the PCBDraft config file"
                     ),
                 }
@@ -333,7 +333,7 @@ class ApplicationService:
                 "validation_note": "results state only what PCBDraft and KiCad actually checked",
             },
             "credential_guidance": {
-                "config": "Use /connect in the TUI; credentials stay in PCBDraft's private config file.",
+                "config": "Use /connect in the interactive terminal; credentials stay in PCBDraft's private config file.",
                 "persistence": "Credential values are never written to project records or model receipts.",
                 "kicad": (
                     "Run `pcbdraft setup` to detect a compatible KiCad 10.0.x "
@@ -575,7 +575,7 @@ class ApplicationService:
         try:
             if self.provider is None:
                 raise PCBDraftError(
-                    "no model provider configured; run /connect in the TUI to add "
+                    "no model provider configured; run /connect in the interactive terminal to add "
                     "a model service before sending a planning request"
                 )
             value = self.provider.interpret(

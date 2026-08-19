@@ -26,6 +26,20 @@ def user_config_home(
     return Path(value).expanduser() if value else user_home / ".config"
 
 
+def pcbdraft_config_dir() -> Path:
+    """Return the PCBDraft user configuration directory.
+
+    Honors the ``PCBDRAFT_CONFIG`` env override (its parent directory is the
+    config dir) so tests and advanced users can relocate every derived file
+    — model config, Hermes home, and the debug trace — together.
+    """
+
+    explicit = os.environ.get("PCBDRAFT_CONFIG", "").strip()
+    if explicit:
+        return Path(explicit).expanduser().parent
+    return user_config_home() / "pcbdraft"
+
+
 def user_data_home(
     *,
     system: str | None = None,

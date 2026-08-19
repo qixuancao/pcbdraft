@@ -1,10 +1,11 @@
 """Typed, policy-independent execution boundary for PCB agent tools.
 
-Interactive calls come from a capability-gated model intent router followed by
-deterministic workflow policy; ``pcbdraft.agent.tools`` retains a legacy
-synchronous compatibility path. The MCP adapter uses the same registry and
-durable gateway. Neither a provider nor MCP receives direct access to
-:class:`ApplicationService` mutation methods.
+PCBDraft exposes two tool layers to models, both defined here or derived from
+this registry: the high-level macro tools (``pcb_plan_request`` …
+``pcb_build_release``), kept as compatibility macros and shortcuts for simple
+projects, and the domain router tools (``pcb_project``, ``pcb_library``, …)
+backed by :mod:`pcbdraft.agent.capability_registry`.  The agent selects among
+them freely — this module only guarantees execution integrity.
 
 The executor keeps the authority that should remain local: a closed tool
 registry, strict arguments, status preconditions, optimistic revision checks,

@@ -1,8 +1,11 @@
-"""Typed capability catalog shared by agent clients and the durable runtime.
+"""Typed capability catalog for the legacy TUI action palette.
 
-This is deliberately a small boundary, not a plugin framework.  UI clients ask
-for a named PCB capability; the runtime maps it to one constrained application
-job.  Model providers never receive arbitrary shell or filesystem authority.
+This is the small compatibility catalog behind the durable TUI job path and
+its explicit shortcut commands.  It maps a named capability to one constrained
+application job.  The canonical agent-facing capability registry — including
+the domain routers — lives in
+:mod:`pcbdraft.agent.capability_registry`; model providers never receive
+arbitrary shell or filesystem authority from either layer.
 """
 
 from __future__ import annotations

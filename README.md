@@ -11,10 +11,13 @@ ERC、DRC 和每一步的证据留在本地。
 
 ## 特性
 
-- 类似编程智能体的全屏终端界面，支持中文自然语言输入；
+- 类似编程智能体的交互终端界面，支持中文自然语言输入；
+- 默认即自主 Agent：Hermes Agent 自己观察工程、选择工具、阅读真实结果并
+  决定下一步，没有固定的 plan/generate/validate/repair/release 顺序；
 - 不要求用户预先决定层数、尺寸或全部器件；
 - 只使用本机安装的 KiCad 符号和封装；
-- 模型只负责受约束的需求理解和电路计划，确定性代码负责生成 KiCad 文件；
+- 模型负责工程思考与工具选择，确定性代码负责生成 KiCad 文件、权限、
+  revision、事务与证据；
 - 自动布局、布线、连接检查、ERC、DRC 和项目一致性检查；
 - 所有模型服务都通过 PCBDraft 自己的配置文件接入，不依赖其他 CLI；
 - 失败会保留计划、工程和错误信息，方便继续修改。
@@ -61,9 +64,10 @@ Remove-Item $installer
 
 ## 第一次启动
 
-电路规划需要配置一个模型服务。运行 `pcbdraft` 进入 TUI 后输入 `/connect`，
-选择 DeepSeek、MiniMax、Kimi、OpenAI、OpenRouter、本地 Ollama 或自定义
-OpenAI 兼容服务并填写 API Key，之后直接在 TUI 中输入任意一句板卡需求即可。
+电路规划需要配置一个模型服务。先编辑 PCBDraft 模型配置文件，注册
+DeepSeek、MiniMax、Kimi、OpenAI、OpenRouter、本地 Ollama 或自定义
+OpenAI 兼容服务并填写 API Key，然后在交互终端中输入 `/connect` 确认连接，
+之后直接输入任意一句板卡需求即可。
 
 环境检测和非破坏性修复统一由下面两个命令完成：
 
@@ -113,9 +117,9 @@ uv run pcbdraft doctor --json
 
 ## 配置模型
 
-启动 TUI 后输入 `/connect`，选择 DeepSeek、MiniMax、Kimi、OpenAI、
+编辑 PCBDraft 模型配置文件，注册 DeepSeek、MiniMax、Kimi、OpenAI、
 OpenRouter、本地 Ollama 或自定义 OpenAI 兼容服务，然后输入 API Key。
-输入 `/models` 可以搜索并切换模型。
+交互终端中输入 `/connect` 查看当前连接，`/model` 可以切换模型。
 
 远程模型地址必须使用 HTTPS。只有字面量回环地址（`localhost`、`127.0.0.0/8`
 或 `::1`）可以使用 HTTP，以支持本机 Ollama；模型调用不会跟随重定向，返回值还
@@ -170,8 +174,96 @@ pcbdraft repository --json  # 查看当前位置
 直接描述电路板即可。用户没有指定层数时，PCBDraft 会根据小型原型的约束
 自动选择保守的初始方案，不要求用户理解叠层设计。
 
-TUI 中的每条消息现在都是一个可恢复的 Agent 回合。规划、生成、检查和有限修复会以
-对话内工具活动显示，而不是要求用户按固定四步逐页推进。每次工具调用都会在
+## 默认工作方式：自主 Agent + 工具
+
+PCBDraft 默认不再按固定顺序驱动“规划→生成→验证→修复→发布”。默认模式是
+一个类似 Coding Agent 的循环：Hermes Agent 拿到一个持续存在的 PCB 目标
+（standing goal），自己观察当前工程、选择下一个工具、阅读真实结果，再决定
+继续、修改、检查、回退还是结束。
+
+```text
+用户持续目标
+      ↓
+  Hermes Agent
+  ↙    ↓    ↘
+查看   设计   修改
+  ↘    ↓    ↙
+ PCB 工具注册表（宏 + 领域路由）
+      ↓
+ ApplicationService（权限、revision、事务）
+      ↓
+ 语义设计图 / KiCad
+      ↓
+ 事实与证据
+      ↓
+  Hermes Agent
+      ↓
+continue / done / blocked
+```
+
+要点：
+
+- **工具结果只报告事实**。每次调用返回执行了什么、是否成功、改变了什么、
+  当前状态、发现了什么、有什么限制，以及证据引用。结果不包含
+  `next_step` 这类流程指令；下一步永远由 Agent 自己判断。
+- **每次结果之后 Agent 重新选择工具**。没有“模型只选第一个工具，之后由
+  本地固定流程接管”的限制。
+- **项目状态只是工程事实**（`draft`、`generated`、`validation_failed`、
+  `validated` 等），不唯一决定下一个工具。
+- **高层宏保留为兼容方式**。`pcb_plan_request`、`pcb_generate_candidate`、
+  `pcb_validate`、`pcb_repair_candidate`、`pcb_apply_candidate`、
+  `pcb_discard_candidate`、`pcb_undo_last_change`、`pcb_render_previews`、
+  `pcb_build_release` 一次完成一整段工作，适合简单项目。
+- **领域路由提供细粒度能力**。`pcb_project`、`pcb_library`、`pcb_design`、
+  `pcb_board`、`pcb_inspect`、`pcb_verify`、`pcb_export`、`pcb_analysis`
+  通过 `operation` + `arguments` 选择具体能力（如
+  `pcb_library(operation="search_symbols", arguments={"query": "STM32"})`）。
+  每个 router 都支持 `operation="capabilities"`，列出当前真正支持的操作、
+  参数和限制。
+- **未实现的能力会如实回答**。尚未支持的操作返回
+  `{"supported": false, "reason": ...}`，不会伪造成功、静默替换操作或把
+  unsupported 当作通过。
+
+### Goal Mode（持续目标）
+
+用 `/goal <目标>` 设立一个持续目标后，Agent 每轮结束由独立 judge 判断
+`done` / `continue` / `wait`：`continue` 时自动向同一会话追加一条简单的
+continuation 消息继续推进；`wait` 时暂停等待；达到通用 turn/tool 预算时
+如实暂停，不假装完成。用户的新消息随时可以暂停、修改或替换当前目标。
+Continuation 消息只重申目标并要求“检查当前工程状态、做你判断最有用的下一
+个具体工程动作”，不规定必须执行哪个阶段。
+
+### 语义设计图（Design Graph）
+
+CircuitPlan 和语义 IR 保留为可查看、可逐步演化的设计表示：Agent 可以通过
+`pcb_design` 的 `inspect_graph` / `inspect_component` / `inspect_net` 查看
+组件、功能块、网络、电源域和接口。系统不再假设“必须先一次性产出完整
+JSON 计划才能继续工作”。细粒度图修改（`add_component`、`connect` 等）目前
+是明确的扩展点：能力目录会如实报告它们尚未实现，语义变更现阶段仍经由
+`pcb_plan_request` / `pcb_repair_candidate` 宏进入同一套编译、检查与事务
+边界。
+
+### 安全边界保持不变
+
+自由的是工程决策，硬约束的是权限、数据完整性和真实执行：
+
+- 所有写操作（宏与 router 相同）仍经过封闭工具目录、严格 Schema 校验、
+  `PermissionBroker`、baseline revision 检查、事务/工程锁和
+  ApplicationService——它是唯一工程写入权威；
+- 模型不能任意执行 Python/shell、不能任意写文件系统、不能直接手写原始
+  KiCad 文本，也不能引用 ApplicationService 内部方法；
+- ERC/DRC 等检查结果只能来自真实执行，不能由模型伪造；
+- durable dispatch 之后结果不明时照旧 fail closed。
+
+### Legacy 模式（durable job 路径）
+
+Legacy durable Agent 回合仍由 `AgentOrchestrator`/`JobRunner` 驱动，
+其历史上的确定性后续工具策略（先由模型选一次工具、之后本地策略接管）保留
+为 legacy 兼容模式和显式快捷方式（`/validate`、`/confirm` 等）。它不再是
+默认 Hermes Agent 的控制器。持久化、恢复、预算和审批仍由
+`AgentOrchestrator`/`JobRunner` 负责；它们不决定 PCB 工程下一步。
+
+Legacy durable 路径中的每条消息都是一个可恢复的 Agent 回合。每次工具调用都会在
 执行前持久化，并绑定当前工程 revision；进程中断后，显式 `/retry` 会从原 turn
 中尚未 dispatch 的边界继续，不会重新解释已经完成的那条需求。若进程在一个写工具
 dispatch 后、精确结果收据落盘前退出，运行时会保守停止并要求检查工程后提交新 turn，
@@ -186,15 +278,6 @@ interrupted/outcome-unknown；模型选择的直接动作若未完成，也不�
 以及任何绑定不明的记录都会 fail closed，只保留可见的 cancelled/interrupted/failed
 审计结果，不会因为重启而获得更宽权限。
 
-当前使用混合路由，而不是把完整工程循环交给模型。只有同时选中内置
-OpenAI preset、provider ID 为 `openai`，且 `base_url` 主机精确为
-`api.openai.com` 时，每个自然语言 turn 才会在开始处最多调用一次
-OpenAI Responses function tool，从当前工程状态允许的 `pcb_*` 工具中选择
-首个动作。规划之后必须执行的生成、验证、证据驱动修复、审批和 revision
-检查仍由本地确定性策略推进。所有其他预设、自定义 OpenAI 兼容地址和本地
-模型都使用本地路由回退；它们仍可用于受约束的需求解释和电路规划，但不会被
-当作原生 Agent 控制面。
-
 原生路由请求会在发出前写入工程内的
 `agent-turns/model-decisions/{turn_id}-router.json`。已完成的决策只会按原调用
 复用；已 dispatch 但结果不明，或已明确失败的决策，都不会自动再向模型
@@ -203,49 +286,54 @@ KiCad 检查和工程证据。无论调用来自模型、MCP 还是本地策略�
 `PermissionBroker`、封闭工具目录、严格参数 Schema 和 revision 检查；模型不会因此
 获得文件系统、shell 或原始 KiCad 写权限。
 
-TUI 默认的 `--approval-mode workspace` 会继续执行用户要求的本地工程操作；希望在
+默认的 `--approval-mode workspace` 会继续执行用户要求的本地工程操作；希望在
 每次 authoritative write 前人工确认时，可用
 `uv run pcbdraft --approval-mode review`。`read_only` 会拒绝所有会留下持久状态的
 PCB 工具。
 
-TUI 中常用命令：
+交互终端中常用命令：
 
 | 命令 | 作用 |
 | --- | --- |
-| `/connect` | 添加或更新模型服务和 API Key |
-| `/models` | 搜索并选择当前模型 |
+| `/connect` | 显示当前连接的模型服务 |
+| `/goal <目标>` | 设立持续目标；Agent 循环推进直到完成、阻塞或预算暂停 |
+| `/goal status` / `pause` / `resume` / `clear` | 管理当前持续目标 |
+| `/model` | 搜索并选择当前模型 |
 | `/project [路径]` | 查看当前项目仓库；提供路径时切换后续项目的统一存储位置 |
-| `/new [名称]` | 可选：先创建一个有名称的空项目；直接输入需求也会自动建项目 |
-| `/projects` | 打开已有项目 |
+| `/new <名称>` | 在项目仓库中创建新 PCB 项目并设为当前上下文（不传名称显示用法） |
+| `/projects` | 列出项目仓库中的全部项目（空仓库给出可操作的提示） |
+| `/open <id>` | 打开指定项目 |
 | `/review` | 查看计划、变更和检查证据 |
 | `/confirm` | 仅批准当前精确绑定的工具调用，或生成已审查方案 |
 | `/discard` | 拒绝待审批调用，或丢弃已暂存变更 |
-| `/logs on` | 展开跨 turn 的工具参数、风险、revision 与有界结果收据 |
+| `/logs [id]` | 显示最近工程事件 |
 | `/stop` | 在安全边界停止当前任务 |
 | `/retry` | 继续尚未 dispatch 的失败边界；绝不重放结果不明的写调用 |
 | `/validate` | 重新运行检查 |
 | `/release` | 生成制造候选证据包 |
-| `/quit` | 退出 TUI |
+| `/quit` | 退出交互终端 |
 
-`Ctrl+P` 打开命令面板。`Ctrl+X` 是快捷操作前缀：再按 `N` 新建项目、
-`L` 打开项目列表、`M` 切换模型、`R` 工程审查、`D` 展开工具详情、
-`S` 刷新项目状态、`C` 连接模型服务、`H` 打开帮助、`Q` 退出。
-`Esc` 关闭菜单或中断当前任务，`Ctrl+C` 依次用于复制选区、停止任务、
-清空草稿或退出，`F1` 也可查看完整帮助。
+`/help` 显示全部可用命令。与 PCB 无关的 Hermes 内置命令
+（消息网关、语音、看板、计费、技能市场等）已从帮助、自动补全和分发中裁剪，
+交互终端只暴露 PCBDraft 需要的命令面。
 
-## 工程内核（不是界面步骤）
+## 工程内核（能力，不是界面步骤）
+
+下面列出的是内核具备的工程能力。它们是 Agent 可以按任意顺序使用的活动，
+不是必须逐个经过的阶段：
 
 ```text
-自然语言需求 → 约束提取 → 电路计划 → KiCad 符号解析
-→ 原理图与 PCB → 布局/布线 → 连接、ERC、DRC → 人工审查
+约束提取 · 电路计划 · KiCad 符号解析
+· 原理图与 PCB 生成 · 布局/布线 · 连接检查、ERC、DRC · 人工审查
 ```
 
-电路计划 v2 会把层级功能块、电源域、接口、连接器完整引脚表、网络标签、
-命名布局区域、锚点禁布区、差分对验收条件和可本地复算的断言送入同一套
-语义 IR。模型只能选择受限名称和尺寸，不能直接写坐标、走线或 KiCad 文件
-文本；布局、禁布和生成后几何指标都由本地确定性代码执行与记录。当前差分对
-能力验证实际线宽、边到边间距、耦合长度比例和长度差，不代表阻抗仿真，也不
-代表已有专用的耦合布线器。
+语义设计图（CircuitPlan v2 / 语义 IR）会表达层级功能块、电源域、接口、
+连接器完整引脚表、网络标签、命名布局区域、锚点禁布区、差分对验收条件和
+可本地复算的断言。它是可查看、可逐步演化的设计表示，不要求一次性产出完整
+JSON 才能开始其他工作。模型只能选择受限名称和尺寸，不能直接写坐标、走线
+或 KiCad 文件文本；布局、禁布和生成后几何指标都由本地确定性代码执行与记录。
+当前差分对能力验证实际线宽、边到边间距、耦合长度比例和长度差，不代表阻抗
+仿真，也不代表已有专用的耦合布线器。
 
 生成的工程可以直接用 KiCad 打开和继续编辑。PCBDraft 不锁定文件格式，
 也不把模型服务绑定到某一家供应商。
@@ -267,7 +355,7 @@ L4/L6/L7 外部记录会被复制、哈希并校验结构，但不会被当作�
 | `pcbdraft/kicad/` | KiCad 原理图、PCB、布局、布线、预览与同步 |
 | `pcbdraft/services/` | 应用服务、任务、托管工程、事务和工作流 |
 | `pcbdraft/verification/` | 证据、验证、评审、基准和发布门禁 |
-| `pcbdraft/interfaces/` | TUI 界面 |
+| `pcbdraft/interfaces/` | CLI 与 Hermes 交互终端（命令面、终端启动、调试插件） |
 
 `tests/` 使用相同的职责目录，能够直接找到每层对应的测试。详细边界和
 新增代码的放置规则见 [项目结构说明](docs/PROJECT_STRUCTURE.md)。1.0 版本

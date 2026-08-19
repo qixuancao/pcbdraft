@@ -13,8 +13,11 @@ pcbdraft/
 │   ├── agent/          planning contracts, tool policy, ports, and durable turn orchestration
 │   ├── core/           errors, safe I/O, redaction, locks, processes, runs, and project paths
 │   ├── domain/         immutable PCB data and deterministic domain rules
-│   ├── interfaces/     Textual TUI presentation
-│   │   └── tui/        TUI app, controller, widgets, views, session, and styles
+│   ├── interfaces/     CLI and the interactive Hermes-based terminal
+│   │   ├── cli.py       subcommands (doctor/setup/repository/trace) and bare launch
+│   │   ├── hermes_cli.py  terminal startup, tool registration, plugin install
+│   │   ├── commands.py  pruned slash-command surface (PCB project commands)
+│   │   └── hermes_plugin.py  agent debug trace observer plugin body
 │   ├── kicad/          native KiCad adapters and geometry algorithms
 │   ├── model/          model configuration, transport, and provider adapters
 │   ├── services/       application use cases and transactional orchestration
@@ -73,9 +76,12 @@ candidate/release decisions. Neither layer should contain presentation code.
 
 ### Interfaces
 
-`interfaces` translates TUI input
-into service calls. Interfaces may format results, but they must not duplicate
-engineering decisions or become an independent project store.
+`interfaces` owns the ``pcbdraft`` CLI and the interactive Hermes-based
+terminal. A bare ``pcbdraft`` launch starts the vendored Hermes
+``prompt_toolkit`` runtime; the PCBDraft slash commands (``/new``, ``/projects``,
+``/project``, ``/open`` and the PCB workflow commands) translate terminal input
+into ``ApplicationService`` calls. Interfaces may format results, but they must
+not duplicate engineering decisions or become an independent project store.
 
 ## Compatibility policy
 
@@ -87,7 +93,7 @@ paths such as `pcbdraft.agent.design`, `pcbdraft.kicad.pcb`, and
 `pcbdraft.verification.validation`.
 
 The package-structure test enforces the allowed root files, canonical internal
-imports, compatibility aliases, and packaged TUI stylesheet.
+imports, compatibility aliases, and the slim ``interfaces`` module set.
 
 ## Adding a module
 

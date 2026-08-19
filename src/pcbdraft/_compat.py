@@ -56,13 +56,6 @@ MOVED_MODULES: dict[str, str] = {
     "pcbdraft.sync": "pcbdraft.kicad.sync",
     "pcbdraft.terminal_text": "pcbdraft.interfaces.terminal_text",
     "pcbdraft.transactions": "pcbdraft.services.transactions",
-    "pcbdraft.tui": "pcbdraft.interfaces.tui.controller",
-    "pcbdraft.tui_app": "pcbdraft.interfaces.tui.app",
-    "pcbdraft.tui_commands": "pcbdraft.interfaces.tui.commands",
-    "pcbdraft.tui_projection": "pcbdraft.interfaces.tui.projection",
-    "pcbdraft.tui_review": "pcbdraft.interfaces.tui.review",
-    "pcbdraft.tui_session": "pcbdraft.interfaces.tui.session",
-    "pcbdraft.tui_widgets": "pcbdraft.interfaces.tui.widgets",
     "pcbdraft.validation": "pcbdraft.verification.validation",
 }
 

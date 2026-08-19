@@ -1,11 +1,57 @@
 # PCBDraft architecture
 
 PCBDraft is an agent-safe runtime around KiCad, not a replacement EDA GUI.
-It exists to turn a schema-constrained semantic circuit plan into reviewable KiCad
-artifacts while retaining enough evidence to explain either success or failure.
-The product is model-agnostic: a model can interpret requirements and propose
-topology, but it never owns raw KiCad text, geometry, filesystem writes, command
-execution, validation outcomes, or release identity.
+It exists to let an autonomous agent turn a standing engineering goal into
+reviewable KiCad artifacts while retaining enough evidence to explain either
+success or failure. The product is model-agnostic: a model interprets
+requirements, plans circuit topology, and selects tools, but it never owns raw
+KiCad text, geometry, filesystem writes, command execution, validation
+outcomes, or release identity.
+
+## Control ownership
+
+Engineering decisions are free; permissions, data integrity, and real
+execution are not:
+
+    User Standing Goal
+            |
+            v
+       Hermes Agent
+       /      |      \
+   inspect  design  modify
+       \      |      /
+      PCB Tool Registry (macros + domain routers)
+            |
+            v
+     ApplicationService
+            |
+            v
+     Semantic Graph / KiCad
+            |
+            v
+     Facts and Evidence
+            |
+            v
+       Hermes Agent
+            |
+            v
+    continue / done / blocked
+
+- **Hermes** owns reasoning, conversation, and autonomous tool selection.
+  After every tool result the model may freely choose the next tool; there is
+  no mandatory plan/generate/validate/repair/release sequence.
+- **GoalManager** (vendored Hermes `/goal`) owns standing-goal continuation
+  and the done/continue/wait judgment. Goal state stays minimal: goal,
+  status, turns_used, max_turns.
+- **AgentOrchestrator / JobRunner** own durable dispatch, persistence,
+  recovery, and budgets for the legacy TUI job path. They do not decide PCB
+  engineering next steps.
+- **PCBToolRegistry / PCBToolExecutor** own tool authority, schemas, and
+  fixed dispatch; **PermissionBroker** owns approval policy;
+  **ApplicationService** owns authoritative project mutation;
+  **CircuitPlan / Design IR** own semantic PCB data; KiCad adapters own exact
+  native file and geometry operations; **Verification** owns real engineering
+  evidence.
 
 ## Code organization
 
@@ -20,7 +66,7 @@ package root:
       kicad/         native KiCad generation, layout, routing, preview, and sync
       services/      application use cases, jobs, managed projects, transactions
       verification/  evidence, validation, review, benchmark, and release gates
-      interfaces/    Textual TUI
+      interfaces/    the ``pcbdraft`` CLI and the interactive Hermes terminal
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,
@@ -29,116 +75,150 @@ input without becoming a second business-logic layer. See
 [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) for placement rules and the
 compatibility policy for historical module paths.
 
+## Tool layers
+
+The agent sees two layers, both exported from one canonical catalog:
+
+- **High-level macros** (compatibility tools / shortcuts for simple projects):
+  `pcb_plan_request`, `pcb_generate_candidate`, `pcb_validate`,
+  `pcb_repair_candidate`, `pcb_apply_candidate`, `pcb_discard_candidate`,
+  `pcb_undo_last_change`, `pcb_render_previews`, `pcb_build_release`. Each
+  macro completes a bounded chunk of work in one call.
+- **Domain routers**: `pcb_project`, `pcb_library`, `pcb_design`,
+  `pcb_board`, `pcb_inspect`, `pcb_verify`, `pcb_export`, `pcb_analysis`.
+  Each router selects a concrete capability via `operation` + `arguments`
+  (for example `pcb_library(operation="search_symbols", ...)`). Every router
+  supports `operation="capabilities"`, which lists what is actually supported
+  — including honest `supported: false` entries with reasons for declared but
+  unimplemented capabilities (fine-grained graph mutation, per-footprint board
+  operations, standalone exports, and all analysis engines).
+
+The canonical capability catalog lives in
+`pcbdraft/agent/capability_registry.py`. Hermes tool schemas, MCP tool
+descriptors, and future native model tools all derive from the same
+registry, so no transport maintains a second hand-written tool list.
+
+Tool results report facts only: what ran, whether it succeeded, what changed,
+current state, findings, limitations, and evidence references. Results never
+contain prescriptive `next_step` or `required_workflow_stage` fields; project
+status (`draft`, `generated`, `validation_failed`, `validated`, ...) is an
+engineering fact, not a router for the next tool call.
+
 ## Product path
 
-        full-screen terminal
-                 |
-                 v
-           AgentRuntime
-                 |
-                 +-------------- durable JobRunner
-                                      |
-                                      v
-                 AgentOrchestrator <--> AgentTurnStore
-                 - durable Thread + Turn + ToolRun + Approval identities
-                 - persist intent before side effects
-                 - resume the same checkpoint after failure or restart
-                                      |
-                                      v
-                 Tool intent source
-                 - exact OpenAI Responses: at most one initial selection
-                 - deterministic mandatory continuation and fallback
-                                      |
-                                      v
-                 PermissionBroker: allow / ask / deny
-                 - exact call + argument hash + baseline revision binding
-                                      |
-                                      v
-                 PCBToolRegistry / PCBToolExecutor
-                 - closed semantic tool catalog
-                 - strict JSON Schema and allowed states
-                 - source, effect, risk, and baseline-revision checks
-                 - OpenAI Responses descriptor exports
-                                      |
-                                      v
-                 ApplicationService: projects, events, locks,
-                 confirmation, recovery, retained attempts
-                 - emits the project event stream used by both clients
-                       |
-                       v
-             requirement interpretation
-             - preserve named parts
-             - state assumptions and missing facts
-             - retain complex domains and attach non-blocking warnings
-                       |
-                       v
-             schema-constrained circuit plan
-             - functional blocks, components, nets, power domains, interfaces
-             - scalar constraints and locally evaluated assertions
-             - no coordinates, traces, KiCad syntax, code, or commands
-                       |
-                       v
-             local KiCad resolver
-             - installed symbol and footprint availability
-             - project-local PartGraph records
-             - stock KiCad library identity and pin data
-                       |
-                       v
-             deterministic topology preflight
-             - power-input and rail-source evidence
-             - applicable I2C pull-up / decoupling evidence
-             - explicit findings; normal attempts remain possible
-                       |
-                       v
-             semantic Design IR
-             - immutable canonical form and content hash
-             - transactions, snapshots, diffs, recovery
-                       |
-             +---------+-----------------------+
-             |                                 |
-             v                                 v
-    KiCad schematic / bounded PCB attempt     L0–L7 evidence gates
-             |                                 |
-             +------------- retained attempt --+
-                             |
-                 bounded semantic repair (max 2)
-                 - sanitized generation evidence
-                 - completed deterministic L1-L3 failures only
-                 - replacement plan through the same compiler
-                 - staged validation before atomic apply
+          interactive terminal (default, Hermes)
+                        |
+                        v
+                 Hermes agent loop
+                        |
+              +--- durable JobRunner (legacy) ---+
+              |                                  |
+              v                                  v
+                  AgentOrchestrator <--> AgentTurnStore
+                  - durable Thread + Turn + ToolRun + Approval identities
+                  - persist intent before side effects
+                  - resume the same checkpoint after failure or restart
+                                       |
+                                       v
+                  Tool intent source
+                  - default Hermes agent: model re-selects the next tool
+                    after every result (no fixed sequence)
+                  - legacy mode: one initial model selection, then the
+                    deterministic producer for explicit shortcut turns
+                                       |
+                                       v
+                  PermissionBroker: allow / ask / deny
+                  - exact call + argument hash + baseline revision binding
+                                       |
+                                       v
+                  PCBToolRegistry / PCBToolExecutor / capability registry
+                  - closed semantic tool and capability catalog
+                  - strict JSON Schema and allowed states
+                  - source, effect, risk, and baseline-revision checks
+                  - OpenAI Responses / MCP descriptor exports
+                                       |
+                                       v
+                  ApplicationService: projects, events, locks,
+                  confirmation, recovery, retained attempts
+                  - emits the project event stream used by both clients
+                        |
+                        v
+              requirement interpretation
+              - preserve named parts
+              - state assumptions and missing facts
+              - retain complex domains and attach non-blocking warnings
+                        |
+                        v
+              schema-constrained circuit plan
+              - functional blocks, components, nets, power domains, interfaces
+              - scalar constraints and locally evaluated assertions
+              - no coordinates, traces, KiCad syntax, code, or commands
+                        |
+                        v
+              local KiCad resolver
+              - installed symbol and footprint availability
+              - project-local PartGraph records
+              - stock KiCad library identity and pin data
+                        |
+                        v
+              deterministic topology preflight
+              - power-input and rail-source evidence
+              - applicable I2C pull-up / decoupling evidence
+              - explicit findings; normal attempts remain possible
+                        |
+                        v
+              semantic Design IR
+              - immutable canonical form and content hash
+              - transactions, snapshots, diffs, recovery
+                        |
+              +---------+-----------------------+
+              |                                 |
+              v                                 v
+     KiCad schematic / bounded PCB attempt     L0–L7 evidence gates
+              |                                 |
+              +------------- retained attempt --+
+                              |
+                  bounded semantic repair (legacy macro path)
+                  - sanitized generation evidence
+                  - completed deterministic L1-L3 failures only
+                  - replacement plan through the same compiler
+                  - staged validation before atomic apply
 
 The application service is the only business write authority. `AgentRuntime`
 and `JobRunner` turn its synchronous, transactional operations into durable
-background turns and UI-neutral activity events; the Textual client owns
-rendering and input only. Before any side effect, `AgentOrchestrator` persists a
+background turns and UI-neutral activity events; the interactive terminal
+owns rendering and input only. Before any side effect, `AgentOrchestrator` persists a
 versioned `TurnRecord` and `ToolRunRecord` under `agent-turns/`. The compound
 `(thread_id, turn_id, tool_call_id)` identity owns progress, result, and approval
 state. A waiting approval additionally binds the canonical argument hash and
 observed engineering revision, so UI status alone can never authorize a write.
 
-The deterministic producer is a separate pure policy module: it receives only a
-durable turn and public project view, then emits at most one bounded tool intent.
-The orchestrator, fixed tool executor, and model router consume narrow agent
-ports instead of importing the concrete application service. This preserves the
-single write authority while keeping state policy, transport adapters, and
-transactional storage independently changeable.
+The semantic design graph is a working engineering representation. The agent
+may inspect it (`pcb_design` inspect operations), extend it, and revise it
+over time; the architecture no longer assumes a complete JSON plan must exist
+before other work can begin. Today semantic changes flow through the
+`pcb_plan_request` / `pcb_repair_candidate` macros; fine-grained graph
+mutation capabilities (add/remove/update component, connect/disconnect,
+semantic patch) are declared extension points that honestly report
+`supported: false`.
 
-The current next-tool producer is hybrid. At the start of a natural-language
-turn, it permits at most one native OpenAI Responses function-tool decision, and
-only when the selected provider uses the built-in OpenAI preset, provider ID
-`openai`, and the exact `api.openai.com` hostname. The model chooses an initial
-tool from the registry entries allowed in the current project state; the
-`pcb_plan_request.message` argument is additionally constrained to the exact
-durable user message. Slash-command turns, every later operation in that turn,
-and mandatory generation, validation, evidence-driven repair, approval, and
-revision transitions use the deterministic producer. All other providers,
-including custom OpenAI-compatible endpoints, use that local-policy fallback for
-intent routing even though they may still supply schema-constrained requirement
-interpretation and circuit planning.
+### Legacy deterministic producer
+
+The historical next-tool producer is retained as an explicit legacy mode. At
+the start of a natural-language turn it permitted at most one native OpenAI
+Responses function-tool decision, and only when the selected provider used the
+built-in OpenAI preset, provider ID `openai`, and the exact `api.openai.com`
+hostname; every later operation in that turn used the deterministic producer.
+This hybrid routing is no longer the controller of the default Hermes agent —
+the model now re-selects tools after every result — but it still drives the
+durable TUI job path and explicit shortcut turns. All other providers,
+including custom OpenAI-compatible endpoints, use that local-policy fallback
+for the legacy path even though they may still supply schema-constrained
+requirement interpretation and circuit planning.
 
 Before the native request is sent, the router writes
-`agent-turns/model-decisions/{turn_id}-router.json`. The journal binds the
-request hash to the project, turn, durable message, project status and revision,
+`agent-turns/model-decisions/{turn_id}-router.json`. The journal binds
+the request hash to the project, turn, durable message, project status and revision,
 provider, model, endpoint, and offered tools. A completed decision can be reused
 as the same call. A dispatched decision without an exact result, and a recorded
 failure, are not automatically POSTed again; the producer falls back to the
@@ -165,18 +245,17 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-The default full-screen terminal submits messages and explicit
-actions through durable Agent jobs over the same orchestrator and project store.
-The terminal renders its incremental runtime activity.
-The terminal renders the same persisted project, conversation,
-attempt, event, and decision evidence. The terminal derives a local project name
-from the first normal-language request,
-while its slash palette handles project selection and explicit engineering
-actions. The TUI presents planning, generation, validation, and bounded repair as
-tool activity inside one conversation turn instead of a mandatory multi-page
-workflow. Its default runtime policy advances an allowed plan automatically;
-the default TUI `workspace` permission policy continues requested
-project-local work without artificial pauses. A TUI `review` policy can retain an
+The interactive terminal (a bare `pcbdraft` launch) runs the vendored Hermes
+`prompt_toolkit` runtime as the only product frontend. Its PCBDraft slash
+commands (`/new`, `/projects`, `/project`, `/open`, plus the PCB workflow
+commands) translate terminal input into `ApplicationService` calls over the
+configured project repository. The legacy durable JobRunner path still submits
+explicit actions through Agent jobs over the same orchestrator and project
+store, but it is no longer a product frontend: this durable job path is the
+legacy compatibility mode — its producer follows the historical deterministic
+continuation, while the default Hermes agent re-selects every tool
+autonomously. Its default `workspace` permission policy continues requested
+project-local work without artificial pauses; a `review` policy can retain an
 exact call checkpoint and ask once immediately before a high-risk or
 authoritative-write tool.
 Follow-up messages on a generated project are compiled into an isolated replacement,
@@ -191,6 +270,26 @@ tool receipts are reused. A call that was durably marked as dispatched but lacks
 an exact matching result receipt is ambiguous even when the project revision did
 not advance; it is failed closed and is never dispatched again. The user must
 inspect the retained project and submit a new turn.
+
+## Goal Mode
+
+The default agent loop is a simple Ralph-style goal loop built on the vendored
+Hermes `GoalManager` (no PCBDraft-specific task system is added):
+
+1. the user's PCB request becomes a standing goal (`/goal <objective>`);
+2. the Hermes agent runs one normal turn with the full tool surface;
+3. after the turn, a judge decides `done`, `continue`, or `wait`;
+4. on `continue`, a plain continuation message is appended to the same session
+   — it restates the goal and asks the agent to inspect current project state
+   and take the next concrete engineering action it judges most useful; it
+   never names plan/generate/validate/repair/release as required stages;
+5. a new user message can pause, change, or replace the goal;
+6. generic turn/tool budgets pause the loop honestly instead of pretending
+   completion.
+
+Goal state stays minimal — goal, status, turns_used, max_turns (plus the
+optional verification contract the vendored manager already supports). There is
+no WorkPlan, TaskGraph, milestone graph, or risk ledger.
 
 ## Generic request and plan
 
@@ -295,7 +394,9 @@ artifact that had already been produced. A router failure is therefore a useful,
 inspectable result, not a hidden substitution, a later stitching error that masks
 the cause, or a false success.
 
-The autonomous terminal may make at most two repair attempts. A repair provider
+The legacy TUI path may make at most two bounded repair attempts per turn; the
+default Hermes agent decides itself how many repair cycles are useful within the
+generic turn/tool budgets. A repair provider
 receives a bounded JSON feedback record and must return a complete replacement
 <code>CircuitPlan</code>; it cannot patch native KiCad text. The replacement is
 resolved against the same installed symbols and compiled through the same

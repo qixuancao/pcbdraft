@@ -1,11 +1,12 @@
-"""Capability-gated model routing for the conversational PCB agent.
+"""Legacy capability-gated model routing for the durable TUI job path.
 
-The model may open a fresh turn conversationally: it can answer in prose, select
-one eligible registry tool, or do both, and the durable reply plus intent are
-journaled exactly once per turn. Mandatory generation, validation,
-evidence-based repair, approvals, and revision checks remain in the
-deterministic orchestrator and executor, which always follow up on the model's
-intent.
+This module implements the historical hybrid router: the model opens a turn
+conversationally with at most one tool selection, after which the legacy
+deterministic producer owns follow-up tools.  It remains the controller for
+the durable TUI/JobRunner turns (the legacy compatibility mode), but the
+default Hermes agent now runs the full reasoning loop itself — every tool
+result returns to the model, which re-selects the next tool autonomously —
+and this module is not part of that default path.
 """
 
 from __future__ import annotations

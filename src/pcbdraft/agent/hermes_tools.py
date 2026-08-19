@@ -1,9 +1,20 @@
 """Register the PCBDraft PCB tools into the vendored Hermes tool registry.
 
-Each existing :class:`~pcbdraft.agent.tooling.ToolSpec` becomes one Hermes
-tool whose handler executes through the authoritative
-:class:`~pcbdraft.agent.tooling.PCBToolExecutor`.  The Hermes agent decides
-when to call which tool; it is no longer driven by a hardcoded control flow.
+Two layers are exposed to the Hermes agent:
+
+* the existing high-level macro tools (:class:`~pcbdraft.agent.tooling.ToolSpec`
+  entries such as ``pcb_validate``), kept as compatibility macros and
+  shortcuts for simple projects; and
+* the domain router tools (``pcb_project``, ``pcb_library``, ``pcb_design``,
+  ``pcb_board``, ``pcb_inspect``, ``pcb_verify``, ``pcb_export``,
+  ``pcb_analysis``) backed by the canonical capability registry in
+  :mod:`pcbdraft.agent.capability_registry`.
+
+Every handler executes through the authoritative
+:class:`~pcbdraft.agent.tooling.PCBToolExecutor` /
+:func:`~pcbdraft.agent.capability_registry.execute_capability` boundary.
+The Hermes agent decides when to call which tool in any order; results
+report facts only and never prescribe the next tool.
 """
 
 from __future__ import annotations
@@ -12,6 +23,13 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from pcbdraft.agent.capability_registry import (
+    CAPABILITY_DOMAINS,
+    DEFAULT_CAPABILITY_REGISTRY,
+    PCBCapabilityRegistry,
+    execute_capability,
+    router_tool_schema,
+)
 from pcbdraft.agent.repair import (
     MAX_AUTOMATIC_REPAIRS,
     REPAIR_FEEDBACK_SCHEMA,
@@ -22,17 +40,26 @@ from pcbdraft.agent.tooling import (
     DEFAULT_PCB_TOOL_REGISTRY,
     PCBToolExecutor,
     PCBToolRegistry,
-    ToolCall,
     ToolResult,
     ToolSpec,
     call_from_view,
 )
 from pcbdraft.core.errors import PCBDraftError
-from pcbdraft.hermes.bridge import DEFAULT_PCB_TOOL_TIMEOUT, _MODEL_SUMMARY_EVENT_LIMIT
 
-__all__ = ("register_all_pcb_tools",)
+__all__ = (
+    "get_current_project_id",
+    "get_service",
+    "register_all_pcb_tools",
+    "set_current_project_id",
+)
 
 _PCB_TOOLSET = "hermes-cli"
+
+#: Timeout shared by the Hermes-facing macro and router handlers.
+DEFAULT_PCB_TOOL_TIMEOUT = 600.0
+
+#: Tool result JSON is bounded so model context stays reviewable.
+_MODEL_SUMMARY_EVENT_LIMIT = 8
 
 #: Keep a process-scoped default project so the agent does not need to echo
 #: the project id on every call.  Handlers still honour an explicit id.
@@ -58,31 +85,34 @@ def _set_service(service: Any) -> None:
     _service_cache = service
 
 
+def get_service() -> Any:
+    """Return the authoritative ApplicationService for this process."""
+
+    return _service()
+
+
+def get_current_project_id() -> str | None:
+    """Return the process-scoped current PCB project id, if any."""
+
+    return _current_project_id
+
+
+def set_current_project_id(value: str | None) -> None:
+    """Set or clear the process-scoped current PCB project id.
+
+    This is a convenience cursor for the interactive surface only; durable
+    state always lives in the project records under the repository.
+    """
+
+    global _current_project_id
+    _current_project_id = value
+
+
 def _project_slug(message: str) -> str:
     text = " ".join(message.replace("\x00", "").split())
     if not text:
         return "pcbdraft"
     return text[:48]
-
-
-def _status_next_step(status: Any) -> str:
-    guidance: dict[str, str] = {
-        "draft": "call pcb_plan_request with the user's request to produce a circuit plan",
-        "needs_clarification": "ask the user for the missing information, then call pcb_plan_request again",
-        "planning_required": "call pcb_plan_request again with a clearer request, or ask the user",
-        "awaiting_confirmation": "call pcb_generate_candidate to materialize the plan as native KiCad files",
-        "generated": "call pcb_validate to run connection checks, ERC, and DRC",
-        "validation_failed": "review the validation findings and call pcb_repair_candidate with feedback, then pcb_validate",
-        "validated": "call pcb_render_previews for previews, then pcb_build_release for the manufacturing bundle",
-        "change_ready": "call pcb_apply_candidate to publish the staged change, or pcb_discard_candidate to reject it",
-        "released": "call pcb_render_previews or pcb_build_release to (re)produce artifacts",
-        "repair_failed": "call pcb_plan_request to revise the plan from the retained evidence",
-        "generation_failed": "call pcb_repair_candidate with generation feedback, then pcb_generate_candidate",
-        "interrupted": "continue by calling the next appropriate PCB tool",
-        "release_failed": "review the release evidence and call pcb_build_release again",
-        "provider_error": "ask the user to configure a model service, then call pcb_plan_request again",
-    }
-    return guidance.get(status, "continue with the next appropriate PCB tool")
 
 
 def _readiness(value: Any) -> Any:
@@ -105,18 +135,24 @@ def _event_summary(event: Any) -> dict[str, Any]:
 
 
 def _model_summary(spec: ToolSpec, view: Mapping[str, Any]) -> dict[str, Any]:
-    """Bound the public view into a compact, model-readable tool result."""
+    """Bound the public view into a compact, fact-only model-readable result.
+
+    The result states what happened, what changed, and what evidence exists.
+    It does not instruct the agent which tool to call next.
+    """
 
     project = view.get("project") or {}
+    state = view.get("state") or {}
     artifacts = view.get("artifacts") or {}
     conversation = view.get("conversation") or {}
     result: dict[str, Any] = {
         "tool": spec.external_name,
+        "success": True,
         "project_id": project.get("id"),
         "project_name": project.get("name"),
         "status": project.get("status"),
+        "revision": state.get("revision"),
         "design_revision": project.get("design_revision"),
-        "next_step": _status_next_step(project.get("status")),
     }
     proposal = conversation.get("proposal")
     if isinstance(proposal, Mapping):
@@ -173,9 +209,12 @@ def _normalize_repair_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
     attempt = feedback.get("attempt")
     if isinstance(attempt, bool) or not isinstance(attempt, int) or attempt < 1:
         attempt = 1
-    if attempt > MAX_AUTOMATIC_REPAIRS:
-        attempt = MAX_AUTOMATIC_REPAIRS
-    phase = feedback.get("phase") if isinstance(feedback.get("phase"), str) else "validation"
+    attempt = min(attempt, MAX_AUTOMATIC_REPAIRS)
+    phase = (
+        feedback.get("phase")
+        if isinstance(feedback.get("phase"), str)
+        else "validation"
+    )
     if phase not in {"generation", "validation", "user_request"}:
         phase = "validation"
     normalized = normalize_repair_feedback(
@@ -192,7 +231,7 @@ def _normalize_repair_arguments(arguments: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _execute_tool(spec: ToolSpec, arguments: dict[str, Any]) -> dict[str, Any]:
-    """Execute one PCB tool through the authoritative executor and summarize."""
+    """Execute one PCB macro tool through the authoritative executor."""
 
     global _current_project_id
     service = _service()
@@ -248,6 +287,7 @@ def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], str]:
         except PCBDraftError as exc:
             payload: dict[str, Any] = {
                 "tool": spec.external_name,
+                "success": False,
                 "error": str(exc),
             }
             try:
@@ -257,14 +297,14 @@ def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], str]:
                 project = view.get("project") or {}
                 payload["project_id"] = project.get("id")
                 payload["status"] = project.get("status")
-                payload["next_step"] = _status_next_step(project.get("status"))
-            except Exception:
-                payload["next_step"] = _status_next_step(None)
+            except PCBDraftError:
+                pass
             return json.dumps(payload, ensure_ascii=False)
-        except Exception as exc:  # pragma: no cover - defensive Hermes boundary
+        except Exception as exc:  # noqa: BLE001 - defensive Hermes boundary
             return json.dumps(
                 {
                     "tool": spec.external_name,
+                    "success": False,
                     "error": f"{type(exc).__name__}: {exc}",
                 },
                 ensure_ascii=False,
@@ -273,8 +313,101 @@ def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], str]:
     return handle
 
 
+def _router_description(
+    domain: str,
+    *,
+    registry: PCBCapabilityRegistry = DEFAULT_CAPABILITY_REGISTRY,
+) -> str:
+    """Describe one domain router honestly, including what it cannot do."""
+
+    supported = [
+        spec.operation for spec in registry.capabilities_for(domain) if spec.supported
+    ]
+    unsupported = [
+        spec.operation
+        for spec in registry.capabilities_for(domain)
+        if not spec.supported
+    ]
+    lines = [
+        (
+            f"PCB {domain.removeprefix('pcb_')} domain router. Invoke one "
+            f"capability per call via operation and arguments. Currently "
+            f"supported operations: {', '.join(supported)}."
+        ),
+        (
+            "Results report facts only (what ran, what changed, what evidence "
+            "exists); the next action is always your decision."
+        ),
+    ]
+    if unsupported:
+        lines.append(
+            f"Declared but not yet implemented (they will honestly return "
+            f"supported=false): {', '.join(unsupported)}."
+        )
+    lines.append(
+        'Call operation="capabilities" to list every operation with its '
+        "argument schema and limitations."
+    )
+    return " ".join(lines)
+
+
+def _router_handler(
+    domain: str,
+    *,
+    registry: PCBCapabilityRegistry = DEFAULT_CAPABILITY_REGISTRY,
+) -> Callable[[dict[str, Any]], str]:
+    def handle(args: dict[str, Any], **_kwargs: Any) -> str:
+        global _current_project_id
+        arguments = dict(args or {})
+        operation = arguments.get("operation")
+        payload: dict[str, Any] = {"tool": domain, "operation": operation}
+        try:
+            if not isinstance(operation, str) or not operation:
+                raise PCBDraftError(
+                    f'{domain} requires operation="..." (use operation="capabilities" '
+                    "to list supported operations)"
+                )
+            operation_arguments = arguments.get("arguments") or {}
+            if not isinstance(operation_arguments, Mapping):
+                raise PCBDraftError(f"{domain} arguments must be a JSON object")
+            project_id = arguments.get("project_id") or _current_project_id
+            if project_id is not None:
+                payload["project_id"] = project_id
+            result = execute_capability(
+                domain,
+                operation,
+                service=_service(),
+                arguments=operation_arguments,
+                project_id=project_id,
+                registry=DEFAULT_PCB_TOOL_REGISTRY,
+                capabilities=registry,
+                timeout=DEFAULT_PCB_TOOL_TIMEOUT,
+            )
+            observed = result.get("project_id")
+            if isinstance(observed, str) and observed:
+                _current_project_id = observed
+            return json.dumps(result, ensure_ascii=False)
+        except PCBDraftError as exc:
+            payload["success"] = False
+            payload["error"] = str(exc)
+            try:
+                view = _service().open_project(str(_current_project_id or ""))
+                project = view.get("project") or {}
+                payload["project_id"] = project.get("id")
+                payload["status"] = project.get("status")
+            except PCBDraftError:
+                pass
+            return json.dumps(payload, ensure_ascii=False)
+        except Exception as exc:  # noqa: BLE001 - defensive Hermes boundary
+            payload["success"] = False
+            payload["error"] = f"{type(exc).__name__}: {exc}"
+            return json.dumps(payload, ensure_ascii=False)
+
+    return handle
+
+
 def register_all_pcb_tools() -> None:
-    """Register every PCB tool spec into the Hermes tool registry."""
+    """Register the macro tools and domain routers into Hermes' registry."""
 
     from tools.registry import registry as hermes_registry
 
@@ -284,11 +417,28 @@ def register_all_pcb_tools() -> None:
             toolset=_PCB_TOOLSET,
             schema={
                 "name": spec.external_name,
-                "description": spec.protocol_description,
+                "description": (
+                    f"{spec.protocol_description} (high-level macro; domain "
+                    "routers offer finer-grained capabilities)"
+                ),
                 "parameters": spec.input_schema,
             },
             handler=_handler(spec),
             description=spec.protocol_description,
+            emoji="🔌",
+            max_result_size_chars=64 * 1024,
+        )
+    for domain in CAPABILITY_DOMAINS:
+        hermes_registry.register(
+            name=domain,
+            toolset=_PCB_TOOLSET,
+            schema={
+                "name": domain,
+                "description": _router_description(domain),
+                "parameters": router_tool_schema(domain),
+            },
+            handler=_router_handler(domain),
+            description=_router_description(domain),
             emoji="🔌",
             max_result_size_chars=64 * 1024,
         )

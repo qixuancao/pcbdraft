@@ -4,7 +4,14 @@ recursive-include constraints *.txt
 recursive-include docs *.md *.png *.svg
 recursive-include scripts *.sh *.py
 recursive-include tests *.py
-recursive-include src/pcbdraft *.tcss
 recursive-include src/pcbdraft/data *.json *.md
+recursive-include vendor/hermes *.py *.yaml *.yml *.json *.md *.txt
 prune artifacts
+prune vendor/hermes/.venv
+prune vendor/hermes/__pycache__
+prune vendor/hermes/.github
+prune vendor/hermes/docs
+prune vendor/hermes/locales
+prune vendor/hermes/native
+prune vendor/hermes/hermes_agent.egg-info
 global-exclude *.py[cod] __pycache__ *.kicad_prl

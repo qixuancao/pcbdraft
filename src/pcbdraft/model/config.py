@@ -1,8 +1,8 @@
 """User-facing provider catalog and private model configuration.
 
-This module is intentionally independent from the terminal UI.  The TUI only
-collects a provider, API key, and model; the application can then resolve the
-same configuration without knowing which screen wrote it.
+This module is intentionally independent from the interactive terminal.  The
+terminal only collects a provider, API key, and model; the application can
+then resolve the same configuration without knowing which surface wrote it.
 """
 
 from __future__ import annotations
@@ -205,7 +205,7 @@ def _toml_string(value: str) -> str:
 CONFIG_TEMPLATE = """\
 # PCBDraft model provider configuration.
 # This file was generated automatically because it did not exist.  Edit it to
-# connect an OpenAI-compatible model service, or run /connect in the TUI.
+# connect an OpenAI-compatible model service, or run /connect in the interactive terminal.
 version = 1
 
 # Example: uncomment and adjust to register a local llama.cpp server.

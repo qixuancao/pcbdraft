@@ -1,4 +1,11 @@
-"""Deterministic next-tool policy for one durable PCB agent turn.
+"""Legacy deterministic next-tool policy for one durable PCB agent turn.
+
+This producer implements the historical fixed plan/generate/validate/repair
+workflow.  It is retained as an explicit legacy mode: the TUI/JobRunner
+durable-turn path and compatibility macros still use it, but it is not the
+controller of the default Hermes agent.  In the default Hermes Goal Mode the
+model re-selects the next tool itself after every result, and project status
+reports engineering facts only.
 
 This module intentionally contains no persistence, permission, provider, or
 application-service implementation details.  It translates retained turn state
@@ -61,7 +68,13 @@ class PCBCallProducer(Protocol):
 
 
 class DeterministicPCBCallProducer:
-    """Choose the next bounded PCB tool from durable state and current evidence."""
+    """Legacy workflow policy: one bounded PCB tool from durable state.
+
+    Kept as the compatibility/legacy controller for explicit shortcut turns
+    (slash commands) and the durable TUI job path.  It must not be used to
+    override a model's autonomous tool selection in the default Hermes Goal
+    Mode.
+    """
 
     def conversation_step(
         self,
