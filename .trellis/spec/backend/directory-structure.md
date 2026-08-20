@@ -31,8 +31,9 @@ The package is layered by dependency responsibility, documented in
   slash-command surface (`commands.py`), and the debug plugin body
   (`hermes_plugin.py`). Thin; no business logic.
 - Hermes integration is distributed by responsibility: paths/home in
-  `core/hermes_paths.py`, model→Hermes config in `model/hermes_config.py`,
-  persona in `agent/persona.py`, PCB tool registration in
+  `core/hermes_paths.py`, provider/auth onboarding and sanitized status in
+  `services/provider_connection.py`, Hermes-owned config defaults in
+  `model/hermes_config.py`, persona in `agent/persona.py`, PCB tool registration in
   `agent/hermes_tools.py`, debug trace in `core/debug_trace.py` — no
   catch-all `hermes/` bridge package.
 - `data/` — bundled, immutable JSON catalogs (`parts/catalog.json`,
@@ -54,7 +55,7 @@ src/pcbdraft/
 ├── domain/         # pure business logic: parts, blocks, ir, operations, scope, requirements
 ├── interfaces/     # cli.py + hermes_cli.py + commands.py + hermes_plugin.py (interactive Hermes terminal)
 ├── kicad/          # pcb, schematic, placement, routing, pcbnew_worker, sync, runtime
-├── model/          # LLM providers: api, config, contracts, retry, tool_calls
+├── model/          # LLM providers: Hermes adapter, API contracts, retry, tool calls
 ├── services/       # application, transactions, patching, jobs, doctor, managed
 └── verification/   # gates, evidence, benchmark, release, report, validation
 
