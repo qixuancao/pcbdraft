@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Preserve package responsibilities while adding flat tool, transaction, geometry, and verification owners."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Keep expected tool and transaction failures sanitized and typed."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Apply project test, evidence, typing, and bounded-I/O conventions."}
+{"file":".trellis/spec/backend/hermes-provider-integration.md","reason":"Preserve the vendored Hermes provider/auth authority while replacing its PCB tool surface."}
