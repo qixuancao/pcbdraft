@@ -1,11 +1,8 @@
-"""Typed, policy-independent execution boundary for PCB agent tools.
+"""Typed, policy-independent execution boundary for flat PCB agent tools.
 
-PCBDraft exposes two tool layers to models, both defined here or derived from
-this registry: the high-level macro tools (``pcb_plan_request`` …
-``pcb_build_release``), kept as compatibility macros and shortcuts for simple
-projects, and the domain router tools (``pcb_project``, ``pcb_library``, …)
-backed by :mod:`pcbdraft.agent.capability_registry`.  The agent selects among
-them freely — this module only guarantees execution integrity.
+PCBDraft exposes one canonical layer of concrete ``pcb_*`` operations to the
+model. Historical macro handlers remain internal only so durable legacy records
+can still be read and resolved without returning them to Hermes or MCP.
 
 The executor keeps the authority that should remain local: a closed tool
 registry, strict arguments, status preconditions, optimistic revision checks,
@@ -24,6 +21,9 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Literal, cast
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+
 from pcbdraft.agent.ports import PCBToolServicePort
 from pcbdraft.agent.repair import (
     MAX_AUTOMATIC_REPAIRS,
@@ -37,6 +37,7 @@ from pcbdraft.core.redaction import sanitize_user_text
 
 ToolSource = Literal["runtime_policy", "model", "mcp", "user"]
 ToolEffect = Literal[
+    "read",
     "conversation_write",
     "candidate_write",
     "evidence_write",
@@ -48,6 +49,7 @@ ToolRisk = Literal["low", "medium", "high"]
 _TOOL_SOURCES = frozenset({"runtime_policy", "model", "mcp", "user"})
 _TOOL_EFFECTS = frozenset(
     {
+        "read",
         "conversation_write",
         "candidate_write",
         "evidence_write",
@@ -188,6 +190,10 @@ class ToolArgumentSpec:
             inferred_type = "string"
         elif self.value_type is dict:
             inferred_type = "object"
+        elif self.value_type is float:
+            inferred_type = "number"
+        elif self.value_type is int:
+            inferred_type = "integer"
         else:
             raise ValueError(f"unsupported PCB tool argument type: {self.value_type!r}")
         raw_schema = (
@@ -202,6 +208,12 @@ class ToolArgumentSpec:
             )
         encoded = _schema_json(raw_schema)
         decoded = cast(dict[str, Any], json.loads(encoded))
+        try:
+            Draft202012Validator.check_schema(decoded)
+        except SchemaError as exc:
+            raise ValueError(
+                f"PCB tool argument {self.name} has an invalid JSON schema"
+            ) from exc
         _assert_closed_object_schemas(decoded, path=f"argument.{self.name}")
         object.__setattr__(self, "schema", _freeze_json(decoded))
         object.__setattr__(self, "_schema_json", encoded)
@@ -253,9 +265,13 @@ class ToolSpec:
             self.effect == "authoritative_write" or self.risk == "high"
         ) and not self.annotations.destructive:
             raise ValueError(f"PCB tool {self.name} cannot hide destructive authority")
-        if self.annotations.read_only and self.effect in _TOOL_EFFECTS:
+        if self.annotations.read_only and self.effect != "read":
             raise ValueError(
                 f"PCB tool {self.name} writes state and cannot be marked read-only"
+            )
+        if self.effect == "read" and not self.annotations.read_only:
+            raise ValueError(
+                f"PCB tool {self.name} is read-only and must declare that annotation"
             )
         if (
             not isinstance(self.allowed_statuses, frozenset)
@@ -472,7 +488,7 @@ _REPAIR_FEEDBACK_INPUT_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-PCB_TOOL_SPECS = (
+LEGACY_PCB_TOOL_SPECS = (
     ToolSpec(
         name="plan_request",
         external_name="pcb_plan_request",
@@ -877,7 +893,7 @@ def _build_release(
     )
 
 
-_TOOL_HANDLERS: dict[str, ToolHandler] = {
+_LEGACY_TOOL_HANDLERS: dict[str, ToolHandler] = {
     "plan_request": _plan_request,
     "generate_candidate": _generate_candidate,
     "validate": _validate,
@@ -887,6 +903,636 @@ _TOOL_HANDLERS: dict[str, ToolHandler] = {
     "undo_last_change": _undo_last_change,
     "render_previews": _render_previews,
     "build_release": _build_release,
+}
+
+
+_ALL_PROJECT_STATUSES = frozenset((*_PLAN_REQUEST_STATUSES, "change_ready"))
+_DESIGN_PROJECT_STATUSES = frozenset(
+    {
+        "generated",
+        "validated",
+        "validation_failed",
+        "released",
+        "release_failed",
+        "interrupted",
+    }
+)
+_READ_ANNOTATIONS = MCPToolAnnotations(
+    read_only=True, destructive=False, idempotent=True, open_world=False
+)
+_WRITE_ANNOTATIONS = MCPToolAnnotations(
+    read_only=False, destructive=True, idempotent=False, open_world=False
+)
+_EVIDENCE_ANNOTATIONS = MCPToolAnnotations(
+    read_only=False, destructive=False, idempotent=False, open_world=False
+)
+
+
+def _argument(name: str, value_type: type, description: str) -> ToolArgumentSpec:
+    return ToolArgumentSpec(name, value_type, description)
+
+
+def _object_argument(
+    name: str,
+    description: str,
+    properties: Mapping[str, Any],
+) -> ToolArgumentSpec:
+    return ToolArgumentSpec(
+        name,
+        dict,
+        description,
+        {
+            "type": "object",
+            "properties": dict(properties),
+            "required": list(properties),
+            "additionalProperties": False,
+        },
+    )
+
+
+def _flat_spec(
+    name: str,
+    description: str,
+    *,
+    effect: ToolEffect = "read",
+    risk: ToolRisk = "low",
+    arguments: tuple[ToolArgumentSpec, ...] = (),
+) -> ToolSpec:
+    annotations = (
+        _READ_ANNOTATIONS
+        if effect == "read"
+        else _EVIDENCE_ANNOTATIONS
+        if effect == "evidence_write"
+        else _WRITE_ANNOTATIONS
+    )
+    return ToolSpec(
+        name=name,
+        external_name=f"pcb_{name}",
+        description=description,
+        result_description=(
+            "bounded project facts and the observed revision"
+            if effect == "read"
+            else "a fact-only receipt with synchronized hashes and the resulting revision"
+        ),
+        error_description=(
+            "invalid input, missing local data, stale revision, denied permission, or operation failure"
+        ),
+        effect=effect,
+        risk=risk,
+        annotations=annotations,
+        allowed_statuses=(
+            _ALL_PROJECT_STATUSES
+            if effect == "read" or name == "create_project"
+            else _DESIGN_PROJECT_STATUSES
+        ),
+        arguments=arguments,
+    )
+
+
+_TEXT_SCHEMA: dict[str, Any] = {"type": "string", "minLength": 1, "pattern": r"\S"}
+_ID = lambda name, description: ToolArgumentSpec(
+    name,
+    str,
+    description,
+    _TEXT_SCHEMA,
+)
+_NUMBER = lambda name, description: _argument(name, float, description)
+
+_ENDPOINT_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "component": _TEXT_SCHEMA,
+        "pin": _TEXT_SCHEMA,
+        "role": _TEXT_SCHEMA,
+    },
+    "required": ["component", "pin", "role"],
+    "additionalProperties": False,
+}
+_PARAMETER_SCALAR_SCHEMA: dict[str, Any] = {
+    "anyOf": [
+        {"type": "string"},
+        {"type": "number"},
+        {"type": "integer"},
+        {"type": "boolean"},
+        {"type": "null"},
+    ]
+}
+_PARAMETER_VALUE_SCHEMA: dict[str, Any] = {
+    "anyOf": [
+        *_PARAMETER_SCALAR_SCHEMA["anyOf"],
+        {"type": "array", "items": _PARAMETER_SCALAR_SCHEMA},
+    ]
+}
+_PARAMETER_ENTRY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "name": _TEXT_SCHEMA,
+        "value": _PARAMETER_VALUE_SCHEMA,
+    },
+    "required": ["name", "value"],
+    "additionalProperties": False,
+}
+_PARAMETERS_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": _PARAMETER_ENTRY_SCHEMA,
+}
+_BLOCK_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "kind": _TEXT_SCHEMA,
+    "name": _TEXT_SCHEMA,
+    "version": _TEXT_SCHEMA,
+    "intent": _TEXT_SCHEMA,
+    "provenance": {"type": "array", "items": _TEXT_SCHEMA},
+}
+_COMPONENT_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "reference": _TEXT_SCHEMA,
+    "part_id": _TEXT_SCHEMA,
+    "value": _TEXT_SCHEMA,
+    "block_id": _TEXT_SCHEMA,
+}
+_NET_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "name": _TEXT_SCHEMA,
+    "net_class": _TEXT_SCHEMA,
+    "power_domain": {"anyOf": [_TEXT_SCHEMA, {"type": "null"}]},
+    "interface": {"anyOf": [_TEXT_SCHEMA, {"type": "null"}]},
+    "intent": _TEXT_SCHEMA,
+}
+_POWER_DOMAIN_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "nominal_v": {"type": "number"},
+    "min_v": {"type": "number"},
+    "max_v": {"type": "number"},
+    "max_current_a": {"type": "number"},
+    "source": _ENDPOINT_SCHEMA,
+    "intent": _TEXT_SCHEMA,
+}
+_INTERFACE_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "kind": _TEXT_SCHEMA,
+    "power_domain": _TEXT_SCHEMA,
+    "members": {"type": "array", "items": _ENDPOINT_SCHEMA},
+    "controller": {"anyOf": [_ENDPOINT_SCHEMA, {"type": "null"}]},
+    "params": _PARAMETERS_SCHEMA,
+    "intent": _TEXT_SCHEMA,
+}
+_CONSTRAINT_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "kind": _TEXT_SCHEMA,
+    "targets": {"type": "array", "items": _TEXT_SCHEMA},
+    "params": _PARAMETERS_SCHEMA,
+    "severity": {
+        "type": "string",
+        "enum": ["advisory", "required", "release_blocking"],
+    },
+    "rationale": _TEXT_SCHEMA,
+    "provenance": {"type": "array", "items": _TEXT_SCHEMA},
+}
+_COMPONENT_CHANGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "field": {
+            "type": "string",
+            "enum": ["reference", "part_id", "value", "block_id"],
+        },
+        "value": {"type": "string", "minLength": 1},
+    },
+    "required": ["field", "value"],
+    "additionalProperties": False,
+}
+_BOARD_RULE_CHANGE_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "field": {
+            "type": "string",
+            "enum": [
+                "layers",
+                "thickness_mm",
+                "edge_clearance_mm",
+                "min_track_mm",
+                "min_clearance_mm",
+                "min_drill_mm",
+                "finish",
+            ],
+        },
+        "value": {
+            "anyOf": [
+                {"type": "number"},
+                {"type": "integer"},
+                {"type": "string", "minLength": 1},
+            ]
+        },
+    },
+    "required": ["field", "value"],
+    "additionalProperties": False,
+}
+
+
+PCB_TOOL_SPECS = (
+    _flat_spec("list_projects", "List local PCB projects"),
+    _flat_spec(
+        "create_project",
+        "Create an empty synchronized semantic and KiCad project",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(_ID("name", "Human-readable project name"),),
+    ),
+    _flat_spec(
+        "open_project",
+        "Open a local PCB project and select it as the current project",
+        arguments=(_ID("project_id", "Local project identity"),),
+    ),
+    _flat_spec(
+        "inspect_project", "Inspect project identity, status, hashes, and revision"
+    ),
+    _flat_spec("inspect_design", "Inspect the retained semantic design graph"),
+    _flat_spec(
+        "inspect_component",
+        "Inspect one semantic component and its connected nets",
+        arguments=(_ID("component_id", "Stable component identity"),),
+    ),
+    _flat_spec(
+        "inspect_net",
+        "Inspect one semantic net and its retained native geometry",
+        arguments=(_ID("net_id", "Stable net identity"),),
+    ),
+    _flat_spec(
+        "inspect_board", "Inspect native board placements, tracks, vias, and rules"
+    ),
+    _flat_spec("inspect_events", "Inspect recent durable project events"),
+    _flat_spec("inspect_evidence", "Inspect retained check and output evidence"),
+    _flat_spec(
+        "search_symbols",
+        "Search installed local KiCad symbol libraries",
+        arguments=(_ID("query", "Symbol name or library query"),),
+    ),
+    _flat_spec(
+        "describe_symbol",
+        "Describe one installed local KiCad symbol",
+        arguments=(_ID("symbol", "KiCad Library:Symbol identity"),),
+    ),
+    _flat_spec(
+        "search_footprints",
+        "Search installed local KiCad footprint libraries",
+        arguments=(_ID("query", "Footprint name or library query"),),
+    ),
+    _flat_spec(
+        "describe_footprint",
+        "Describe one installed local KiCad footprint",
+        arguments=(_ID("footprint", "KiCad Library:Footprint identity"),),
+    ),
+    _flat_spec(
+        "add_block",
+        "Add one functional block",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(_object_argument("value", "Functional block", _BLOCK_PROPERTIES),),
+    ),
+    _flat_spec(
+        "remove_block",
+        "Remove one empty functional block",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(_ID("block_id", "Stable block identity"),),
+    ),
+    _flat_spec(
+        "add_component",
+        "Add one component",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _object_argument("value", "Unplaced component", _COMPONENT_PROPERTIES),
+        ),
+    ),
+    _flat_spec(
+        "remove_component",
+        "Remove one disconnected component",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(_ID("component_id", "Stable component identity"),),
+    ),
+    _flat_spec(
+        "update_component",
+        "Update fields on one component",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _ID("component_id", "Stable component identity"),
+            ToolArgumentSpec(
+                "changes",
+                dict,
+                "Non-placement component field changes",
+                {
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": _COMPONENT_CHANGE_SCHEMA,
+                        }
+                    },
+                    "required": ["entries"],
+                    "additionalProperties": False,
+                },
+            ),
+        ),
+    ),
+    _flat_spec(
+        "assign_footprint",
+        "Assign an installed footprint to one component",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _ID("component_id", "Stable component identity"),
+            _ID("footprint", "KiCad Library:Footprint identity"),
+        ),
+    ),
+    _flat_spec(
+        "add_net",
+        "Add one semantic net",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(_object_argument("value", "Net", _NET_PROPERTIES),),
+    ),
+    _flat_spec(
+        "remove_net",
+        "Remove one semantic net",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(_ID("net_id", "Stable net identity"),),
+    ),
+    _flat_spec(
+        "rename_net",
+        "Rename one semantic net",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _ID("net_id", "Stable net identity"),
+            _ID("name", "New KiCad-safe net name"),
+        ),
+    ),
+    _flat_spec(
+        "connect_pin",
+        "Connect one component pin to one net",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _ID("net_id", "Stable net identity"),
+            _ID("component_id", "Stable component identity"),
+            _ID("pin", "Physical symbol pin number"),
+            _ID("role", "Endpoint role"),
+        ),
+    ),
+    _flat_spec(
+        "disconnect_pin",
+        "Disconnect one component pin from one net",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _ID("net_id", "Stable net identity"),
+            _ID("component_id", "Stable component identity"),
+            _ID("pin", "Physical symbol pin number"),
+            _ID("role", "Endpoint role"),
+        ),
+    ),
+    *tuple(
+        _flat_spec(
+            name,
+            description,
+            effect="authoritative_write",
+            risk="medium",
+            arguments=(
+                (
+                    _object_argument(
+                        "value",
+                        "Complete object",
+                        _POWER_DOMAIN_PROPERTIES
+                        if "power_domain" in name
+                        else _INTERFACE_PROPERTIES
+                        if "interface" in name
+                        else _CONSTRAINT_PROPERTIES,
+                    )
+                    if action != "remove"
+                    else _ID("id", "Stable object identity")
+                ),
+            ),
+        )
+        for name, description, action in (
+            ("add_power_domain", "Add one power domain", "upsert"),
+            ("update_power_domain", "Update one power domain", "upsert"),
+            ("remove_power_domain", "Remove one unreferenced power domain", "remove"),
+            ("add_interface", "Add one interface", "upsert"),
+            ("update_interface", "Update one interface", "upsert"),
+            ("remove_interface", "Remove one unreferenced interface", "remove"),
+            ("add_constraint", "Add one design constraint", "upsert"),
+            ("update_constraint", "Update one design constraint", "upsert"),
+            ("remove_constraint", "Remove one design constraint", "remove"),
+        )
+    ),
+    _flat_spec(
+        "update_board_rules",
+        "Update semantic board fabrication rules",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            ToolArgumentSpec(
+                "changes",
+                dict,
+                "Board-rule field changes",
+                {
+                    "type": "object",
+                    "properties": {
+                        "entries": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": _BOARD_RULE_CHANGE_SCHEMA,
+                        }
+                    },
+                    "required": ["entries"],
+                    "additionalProperties": False,
+                },
+            ),
+        ),
+    ),
+    _flat_spec(
+        "set_board_outline",
+        "Set the supported rectangular board outline",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            ToolArgumentSpec(
+                "width_mm",
+                float,
+                "Positive width in millimetres",
+                {"type": "number", "exclusiveMinimum": 0},
+            ),
+            ToolArgumentSpec(
+                "height_mm",
+                float,
+                "Positive height in millimetres",
+                {"type": "number", "exclusiveMinimum": 0},
+            ),
+        ),
+    ),
+    _flat_spec(
+        "place_footprint",
+        "Place and fix one footprint pose",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            _ID("component_id", "Stable component identity"),
+            _NUMBER("x_mm", "X coordinate in millimetres"),
+            _NUMBER("y_mm", "Y coordinate in millimetres"),
+            _NUMBER("rotation_deg", "Clockwise rotation in degrees"),
+            ToolArgumentSpec(
+                "side",
+                str,
+                "Board side",
+                {"type": "string", "enum": ["front", "back"]},
+            ),
+        ),
+    ),
+    _flat_spec(
+        "move_footprint",
+        "Move one placed footprint without changing rotation or side",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            _ID("component_id", "Stable component identity"),
+            _NUMBER("x_mm", "X coordinate in millimetres"),
+            _NUMBER("y_mm", "Y coordinate in millimetres"),
+        ),
+    ),
+    _flat_spec(
+        "rotate_footprint",
+        "Rotate one placed footprint",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            _ID("component_id", "Stable component identity"),
+            _NUMBER("rotation_deg", "Clockwise rotation in degrees"),
+        ),
+    ),
+    _flat_spec(
+        "unplace_footprint",
+        "Remove one explicit footprint pose",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(_ID("component_id", "Stable component identity"),),
+    ),
+    _flat_spec(
+        "route_net",
+        "Deterministically route one selected net while preserving retained geometry",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(_ID("net_id", "Stable net identity"),),
+    ),
+    _flat_spec(
+        "unroute_net",
+        "Remove retained route segments and vias for one selected net",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(_ID("net_id", "Stable net identity"),),
+    ),
+    _flat_spec(
+        "add_via",
+        "Add one explicit through via",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            _ID("via_id", "Stable via identity"),
+            _ID("net_id", "Stable net identity"),
+            _NUMBER("x_mm", "X coordinate in millimetres"),
+            _NUMBER("y_mm", "Y coordinate in millimetres"),
+            ToolArgumentSpec(
+                "diameter_mm",
+                float,
+                "Via diameter in millimetres",
+                {"type": "number", "exclusiveMinimum": 0},
+            ),
+            ToolArgumentSpec(
+                "drill_mm",
+                float,
+                "Via drill in millimetres",
+                {"type": "number", "exclusiveMinimum": 0},
+            ),
+            ToolArgumentSpec(
+                "from_layer",
+                int,
+                "First logical copper layer",
+                {"type": "integer", "minimum": 0},
+            ),
+            ToolArgumentSpec(
+                "to_layer",
+                int,
+                "Last logical copper layer",
+                {"type": "integer", "minimum": 0},
+            ),
+        ),
+    ),
+    _flat_spec(
+        "remove_via",
+        "Remove one explicit via",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(_ID("via_id", "Stable via identity"),),
+    ),
+    *tuple(
+        _flat_spec(name, description, effect="evidence_write")
+        for name, description in (
+            ("check_semantics", "Run only deterministic semantic checks"),
+            ("check_connectivity", "Run only component/pin/net connectivity checks"),
+            ("run_erc", "Run only KiCad electrical-rules checking"),
+            ("run_drc", "Run only KiCad board design-rules checking"),
+            ("render_schematic", "Render only schematic preview outputs"),
+            ("render_board", "Render only 2D board preview outputs"),
+            ("render_3d", "Render only the 3D board preview"),
+            ("export_gerbers", "Export only Gerber fabrication layers"),
+            ("export_drill", "Export only drill fabrication files"),
+            ("export_bom", "Export only the bill of materials"),
+            ("export_pick_place", "Export only pick-and-place positions"),
+            ("export_step", "Export only the STEP board model"),
+        )
+    ),
+)
+
+
+def _execute_flat_operation(
+    service: PCBToolServicePort,
+    project_id: str,
+    arguments: dict[str, Any],
+    timeout: float,
+    expected_revision: int,
+    *,
+    tool_name: str,
+) -> dict[str, Any]:
+    return _invoke_service_method(
+        service,
+        "execute_pcb_tool",
+        project_id,
+        tool_name,
+        arguments,
+        timeout=timeout,
+        expected_revision=expected_revision,
+    )
+
+
+def _flat_handler(tool_name: str) -> ToolHandler:
+    return lambda service, project_id, arguments, timeout, expected_revision: (
+        _execute_flat_operation(
+            service,
+            project_id,
+            arguments,
+            timeout,
+            expected_revision,
+            tool_name=tool_name,
+        )
+    )
+
+
+_TOOL_HANDLERS: dict[str, ToolHandler] = {
+    spec.name: _flat_handler(spec.name) for spec in PCB_TOOL_SPECS
 }
 
 
@@ -914,6 +1560,14 @@ class PCBToolRegistry:
                 )
         self._specs = MappingProxyType(by_name)
         self._external_specs = MappingProxyType(by_external_name)
+        # Historical durable calls remain resolvable for audit/internal human
+        # shortcuts, but are deliberately absent from every new model export.
+        self._legacy_specs = MappingProxyType(
+            {spec.name: spec for spec in LEGACY_PCB_TOOL_SPECS}
+        )
+        self._legacy_external_specs = MappingProxyType(
+            {spec.external_name: spec for spec in LEGACY_PCB_TOOL_SPECS}
+        )
 
     @staticmethod
     def _authority_contract(spec: ToolSpec) -> tuple[Any, ...]:
@@ -938,7 +1592,12 @@ class PCBToolRegistry:
     def resolve(self, name: str) -> ToolSpec:
         # Internal deterministic callers keep their established short names,
         # while provider/MCP adapters submit the stable protocol names.
-        spec = self._specs.get(name) or self._external_specs.get(name)
+        spec = (
+            self._specs.get(name)
+            or self._external_specs.get(name)
+            or self._legacy_specs.get(name)
+            or self._legacy_external_specs.get(name)
+        )
         if spec is None:
             raise ValidationError(f"unknown PCB tool: {name}")
         return spec
@@ -971,10 +1630,24 @@ class PCBToolRegistry:
             )
         for argument in spec.arguments:
             value = normalized[argument.name]
-            if not isinstance(value, argument.value_type):
+            valid_type = (
+                isinstance(value, (int, float)) and not isinstance(value, bool)
+                if argument.value_type is float
+                else isinstance(value, int) and not isinstance(value, bool)
+                if argument.value_type is int
+                else isinstance(value, argument.value_type)
+            )
+            if not valid_type:
                 raise ValidationError(
                     f"PCB tool {spec.name} argument {argument.name} has an invalid type"
                 )
+        schema_errors = list(
+            Draft202012Validator(spec.input_schema).iter_errors(normalized)
+        )
+        if schema_errors:
+            raise ValidationError(
+                f"PCB tool {spec.name} arguments do not satisfy its strict schema"
+            )
         if spec.name == "plan_request":
             message = sanitize_user_text(
                 normalized["message"].replace("\x00", "").strip()
@@ -1005,11 +1678,30 @@ class PCBToolRegistry:
 
         return [spec.to_mcp_tool() for spec in self.specs]
 
+    def schema_fingerprint(self) -> str:
+        """Hash the complete exported authority surface for drift detection."""
+
+        encoded = json.dumps(
+            self.mcp_tools(),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        )
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
     def _handler(self, name: str) -> ToolHandler:
         """Resolve internal dispatch; call producers receive specs, not handlers."""
 
         spec = self.resolve(name)
-        return _TOOL_HANDLERS[spec.name]
+        if spec.name in self._legacy_specs:
+            raise ValidationError(
+                f"legacy PCB tool {spec.external_name} is audit-only and cannot be replayed"
+            )
+        handler = _TOOL_HANDLERS.get(spec.name)
+        if handler is None:
+            raise ValidationError(f"PCB tool {name} has no local handler")
+        return handler
 
 
 DEFAULT_PCB_TOOL_REGISTRY = PCBToolRegistry()

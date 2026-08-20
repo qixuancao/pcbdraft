@@ -37,8 +37,8 @@ class PermissionBroker:
     to the current local PCB project may proceed, including reversible writes.
     ``review`` pauses autonomous authoritative writes. A trusted client may bind
     an explicit user action to one call; the untrusted ``call.source`` label is
-    never sufficient by itself. ``read_only`` refuses every current PCB tool
-    because all of them retain at least conversation or evidence state.
+    never sufficient by itself. ``read_only`` permits only factual reads and
+    rejects every operation that retains conversation, evidence, or design state.
     """
 
     def __init__(self, mode: PermissionMode = "workspace") -> None:
@@ -68,6 +68,10 @@ class PermissionBroker:
                 "only a trusted user action may satisfy explicit PCB approval"
             )
         if self.mode == "read_only":
+            if spec.effect == "read":
+                return PermissionVerdict(
+                    "allow", "read-only mode permits factual PCB inspection"
+                )
             return PermissionVerdict(
                 "deny",
                 "read-only mode does not permit durable PCB project changes",

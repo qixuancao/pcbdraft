@@ -39,6 +39,205 @@ def operation(
 
 
 class SemanticOperationTests(unittest.TestCase):
+    def test_add_update_remove_component_maintains_block_membership(self) -> None:
+        before = Design.from_dict(minimal_design_dict())
+        added = apply_change_set(
+            before,
+            change_set(
+                before,
+                [
+                    operation(
+                        "add_block",
+                        {
+                            "value": {
+                                "id": "other",
+                                "kind": "logic",
+                                "name": "Other",
+                                "version": "1",
+                                "intent": "Second block.",
+                                "components": [],
+                                "provenance": ["user_spec"],
+                            }
+                        },
+                        operation_id="op_1",
+                    ),
+                    operation(
+                        "add_component",
+                        {
+                            "value": {
+                                "id": "new_r",
+                                "reference": "R2",
+                                "part_id": "yageo.rc0603fr-074k7l",
+                                "value": "4.7k",
+                                "block_id": "power_block",
+                            }
+                        },
+                        operation_id="op_2",
+                    ),
+                ],
+            ),
+        )
+        moved = apply_change_set(
+            added,
+            change_set(
+                added,
+                [
+                    operation(
+                        "update_component",
+                        {"component_id": "new_r", "changes": {"block_id": "other"}},
+                    )
+                ],
+                change_id="change_2",
+            ),
+        )
+        removed = apply_change_set(
+            moved,
+            change_set(
+                moved,
+                [operation("remove_component", {"id": "new_r"})],
+                change_id="change_3",
+            ),
+        )
+
+        self.assertIn(
+            "new_r", next(b for b in added.blocks if b.id == "power_block").components
+        )
+        self.assertNotIn(
+            "new_r",
+            next(b for b in moved.blocks if b.id == "power_block").components,
+        )
+        self.assertIn(
+            "new_r", next(b for b in moved.blocks if b.id == "other").components
+        )
+        self.assertNotIn(
+            "new_r", next(b for b in removed.blocks if b.id == "other").components
+        )
+
+    def test_remove_net_requires_explicit_disconnect_and_unroute(self) -> None:
+        before = Design.from_dict(minimal_design_dict())
+        with self.assertRaisesRegex(ValidationError, "connected endpoints"):
+            apply_change_set(
+                before,
+                change_set(before, [operation("remove_net", {"id": "net_out"})]),
+            )
+
+        routed = apply_change_set(
+            before,
+            change_set(
+                before,
+                [
+                    operation(
+                        "route_net",
+                        {
+                            "net_id": "net_out",
+                            "segments": [
+                                {
+                                    "id": "route_out_1",
+                                    "net": "net_out",
+                                    "layer": 0,
+                                    "x1_mm": 1.0,
+                                    "y1_mm": 1.0,
+                                    "x2_mm": 2.0,
+                                    "y2_mm": 1.0,
+                                    "width_mm": 0.25,
+                                }
+                            ],
+                            "vias": [],
+                        },
+                    )
+                ],
+            ),
+        )
+        disconnected_document = routed.to_dict()
+        next(net for net in disconnected_document["nets"] if net["id"] == "net_out")[
+            "endpoints"
+        ] = []
+        disconnected = Design.from_dict(disconnected_document)
+        with self.assertRaisesRegex(ValidationError, "retained copper"):
+            apply_change_set(
+                disconnected,
+                change_set(disconnected, [operation("remove_net", {"id": "net_out"})]),
+            )
+
+    def test_disconnect_requires_the_exact_endpoint_role(self) -> None:
+        design = Design.from_dict(minimal_design_dict())
+        changes = change_set(
+            design,
+            [
+                operation(
+                    "disconnect",
+                    {
+                        "net_id": "net_out",
+                        "endpoint": {
+                            "component": "load_r",
+                            "pin": "2",
+                            "role": "power",
+                        },
+                    },
+                )
+            ],
+        )
+        with self.assertRaisesRegex(ValidationError, "different endpoint role"):
+            apply_change_set(design, changes)
+
+    def test_first_atomic_write_promotes_v1_and_records_native_outline(self) -> None:
+        before = Design.from_dict(minimal_design_dict())
+        changes = change_set(
+            before,
+            [operation("set_board_outline", {"width_mm": 30, "height_mm": 24})],
+        )
+
+        after = apply_change_set(before, changes)
+
+        self.assertEqual(after.version, 2)
+        self.assertEqual((after.board.width_mm, after.board.height_mm), (30.0, 24.0))
+        self.assertEqual(len(after.native_intent.outline), 4)
+        self.assertEqual(after.native_intent.geometry_revision, 1)
+        self.assertEqual(before.version, 1)
+
+    def test_route_and_unroute_replace_only_the_target_net_geometry(self) -> None:
+        before = Design.from_dict(minimal_design_dict())
+        routed = apply_change_set(
+            before,
+            change_set(
+                before,
+                [
+                    operation(
+                        "route_net",
+                        {
+                            "net_id": "net_out",
+                            "segments": [
+                                {
+                                    "id": "route_out_1",
+                                    "net": "net_out",
+                                    "layer": 0,
+                                    "x1_mm": 1.0,
+                                    "y1_mm": 1.0,
+                                    "x2_mm": 2.0,
+                                    "y2_mm": 1.0,
+                                    "width_mm": 0.25,
+                                }
+                            ],
+                            "vias": [],
+                        },
+                    )
+                ],
+            ),
+        )
+        unrouted = apply_change_set(
+            routed,
+            change_set(
+                routed,
+                [operation("unroute_net", {"net_id": "net_out"})],
+                change_id="change_2",
+            ),
+        )
+
+        self.assertEqual(len(routed.native_intent.routes), 1)
+        self.assertEqual(unrouted.native_intent.routes, ())
+        self.assertEqual(unrouted.native_intent.unrouted_nets, ("net_out",))
+        self.assertEqual(unrouted.native_intent.geometry_revision, 2)
+
     def test_update_preview_has_object_and_field_level_impact(self) -> None:
         before = Design.from_dict(minimal_design_dict())
         changes = change_set(

@@ -464,7 +464,9 @@ class ConfiguredPCBCallProducerTests(unittest.TestCase):
                 "pcbdraft.model.tool_calls.OpenAIResponsesClient",
                 side_effect=AssertionError("capability gate was bypassed"),
             ):
-                self.assertIsNone(producer.conversation_step(record, _view(), timeout=5))
+                self.assertIsNone(
+                    producer.conversation_step(record, _view(), timeout=5)
+                )
                 proposal = producer.next_call(record, _view(), timeout=5)
 
         self.assertIsNotNone(proposal)
@@ -493,16 +495,14 @@ class ConfiguredPCBCallProducerTests(unittest.TestCase):
                     nonlocal client_calls
                     client_calls += 1
                     tools = kwargs["tools"]
-                    plan_tool = next(
-                        tool for tool in tools if tool["name"] == "pcb_plan_request"
-                    )
-                    self.assert_plan_binding(plan_tool, record.user_message)
+                    if not any(tool["name"] == "pcb_inspect_project" for tool in tools):
+                        raise AssertionError("flat inspection tool was not offered")
                     return (
-                        "Planning that board now.",
+                        "Inspecting that board now.",
                         ResponsesFunctionCall(
                             call_id="provider-call-model",
-                            name="pcb_plan_request",
-                            arguments={"message": record.user_message},
+                            name="pcb_inspect_project",
+                            arguments={},
                         ),
                         {
                             "completed": True,
@@ -510,11 +510,6 @@ class ConfiguredPCBCallProducerTests(unittest.TestCase):
                             "response_id": "response-model",
                         },
                     )
-
-                @staticmethod
-                def assert_plan_binding(tool: dict[str, Any], message: str) -> None:
-                    if tool["parameters"]["properties"]["message"]["const"] != message:
-                        raise AssertionError("plan request was not bound to the turn")
 
             with patch(
                 "pcbdraft.model.tool_calls.OpenAIResponsesClient",
@@ -542,14 +537,15 @@ class ConfiguredPCBCallProducerTests(unittest.TestCase):
         self.assertIsNotNone(first)
         self.assertEqual(first, replayed)
         assert first is not None
-        self.assertEqual(first.reply, "Planning that board now.")
+        self.assertEqual(first.reply, "Inspecting that board now.")
         self.assertIsNotNone(first.proposal)
         assert first.proposal is not None
         self.assertEqual(first.proposal.source, "model")
         self.assertEqual(first.proposal.tool_call_id, "provider-call-model")
-        self.assertEqual(first.proposal.arguments, {"message": record.user_message})
+        self.assertEqual(first.proposal.name, "pcb_inspect_project")
+        self.assertEqual(first.proposal.arguments, {})
         self.assertEqual(journal["status"], "completed")
-        self.assertEqual(journal["reply"], "Planning that board now.")
+        self.assertEqual(journal["reply"], "Inspecting that board now.")
         self.assertEqual(journal["call"]["call_id"], "provider-call-model")
 
     def test_conversational_reply_only_is_durable_and_uses_no_tool(self) -> None:
@@ -575,9 +571,7 @@ class ConfiguredPCBCallProducerTests(unittest.TestCase):
                         {"completed": True, "response_id": "response-chat"},
                     )
 
-            with patch(
-                "pcbdraft.model.tool_calls.OpenAIResponsesClient", ChatClient
-            ):
+            with patch("pcbdraft.model.tool_calls.OpenAIResponsesClient", ChatClient):
                 first = ConfiguredPCBCallProducer(  # type: ignore[arg-type]
                     service
                 ).conversation_step(record, _view(), timeout=5)
@@ -622,7 +616,7 @@ class ConfiguredPCBCallProducerTests(unittest.TestCase):
                         "Running validation now.",
                         ResponsesFunctionCall(
                             call_id="provider-call-validate",
-                            name="pcb_validate",
+                            name="pcb_check_semantics",
                             arguments={},
                         ),
                         {"completed": True, "response_id": "response-validate"},

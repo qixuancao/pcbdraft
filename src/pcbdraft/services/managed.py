@@ -9,7 +9,7 @@ import stat
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias
 
 from pcbdraft import __version__
 from pcbdraft.agent.plan import AgentDesignRequest, CircuitPlan
@@ -28,7 +28,15 @@ from pcbdraft.domain.component_qualification import (
     ComponentQualificationReport,
     qualify_components,
 )
-from pcbdraft.domain.ir import Design, canonical_json_bytes, load_design
+from pcbdraft.domain.ir import (
+    BoardSpec,
+    Design,
+    Scope,
+    _strict_mapping,
+    _string,
+    canonical_json_bytes,
+    load_design,
+)
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.requirements import (
     RequirementsSpec,
@@ -51,7 +59,66 @@ REQUIREMENTS_NAME = "requirements.pcbreq.json"
 IR_NAME = "design.pcbir.json"
 PART_CATALOG_NAME = "parts.pcbdraft.json"
 CIRCUIT_PLAN_NAME = "circuit-plan.json"
-GenerationRequest = RequirementsSpec | AgentDesignRequest
+
+
+@dataclass(frozen=True)
+class EmptyDesignRequest:
+    """Durable provenance for a synchronized empty flat-toolbox project."""
+
+    design_id: str
+    name: str
+    revision: str
+    scope: Scope
+    board: BoardSpec
+
+    @classmethod
+    def from_dict(cls, value: Any) -> EmptyDesignRequest:
+        item = _strict_mapping(
+            value,
+            "$",
+            required={
+                "schema",
+                "version",
+                "design_id",
+                "name",
+                "revision",
+                "scope",
+                "board",
+            },
+            optional=set(),
+        )
+        if item["schema"] != "pcbdraft-empty-design-request" or item["version"] != 1:
+            raise ValidationError("unsupported empty design request schema/version")
+        scope = Scope.from_dict(item["scope"])
+        board = BoardSpec.from_dict(item["board"])
+        if scope.layers != board.layers:
+            raise ValidationError("empty design scope and board layers differ")
+        return cls(
+            design_id=_string(item["design_id"], "$.design_id", limit=128),
+            name=_string(item["name"], "$.name", limit=256),
+            revision=_string(item["revision"], "$.revision", limit=64),
+            scope=scope,
+            board=board,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "pcbdraft-empty-design-request",
+            "version": 1,
+            "design_id": self.design_id,
+            "name": self.name,
+            "revision": self.revision,
+            "scope": self.scope.to_dict(),
+            "board": self.board.to_dict(),
+        }
+
+    def canonical_bytes(self) -> bytes:
+        return canonical_json_bytes(self.to_dict())
+
+
+GenerationRequest: TypeAlias = (
+    RequirementsSpec | AgentDesignRequest | EmptyDesignRequest
+)
 
 
 @dataclass(frozen=True)
@@ -155,9 +222,12 @@ def materialize_managed_design(
     system_python: str | Path | None = None,
     retain_failed_attempt: str | Path | None = None,
     lock_timeout: float = 10.0,
+    auto_place: bool = True,
+    route_net_ids: frozenset[str] | None = None,
+    allow_incomplete: bool = False,
 ) -> ManagedGeneration:
     """Publish an already-validated semantic design as a new managed project."""
-    resolved_graph = graph or PartGraph.bundled()
+    resolved_graph = (graph or PartGraph.bundled()).with_footprint_overrides(design)
     design.assert_valid()
     expected_requirements_hash = hashlib.sha256(
         requirements.canonical_bytes()
@@ -262,13 +332,19 @@ def materialize_managed_design(
 
             stem = design.design_id
             schematic = generate_schematic(
-                design, temporary / f"{stem}.kicad_sch", graph=resolved_graph
+                design,
+                temporary / f"{stem}.kicad_sch",
+                graph=resolved_graph,
+                allow_incomplete=allow_incomplete,
             )
             pcb = generate_pcb(
                 design,
                 temporary / f"{stem}.kicad_pcb",
                 graph=resolved_graph,
                 system_python=system_python,
+                auto_place=auto_place,
+                route_net_ids=route_net_ids,
+                allow_incomplete=allow_incomplete,
             )
             files = {
                 "manifest": MANAGED_MANIFEST,
@@ -571,6 +647,8 @@ def load_generation_request(path: str | Path) -> GenerationRequest:
         return RequirementsSpec.from_dict(value)
     if schema == "pcbdraft-agent-design-request":
         return AgentDesignRequest.from_dict(value)
+    if schema == "pcbdraft-empty-design-request":
+        return EmptyDesignRequest.from_dict(value)
     raise ValidationError(
         "managed project contains an unknown generation request schema"
     )

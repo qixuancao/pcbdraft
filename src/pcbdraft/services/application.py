@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
+import json
 import os
 import re
 import secrets
@@ -36,11 +39,19 @@ from pcbdraft.core.repository import (
     explicit_repository,
 )
 from pcbdraft.core.runs import new_run_id, utc_timestamp
+from pcbdraft.domain.component_qualification import (
+    COMPONENT_QUALIFICATION_SCHEMA,
+    qualify_components,
+)
 from pcbdraft.domain.ir import BoardSpec, Design, Scope
-from pcbdraft.domain.operations import semantic_diff
+from pcbdraft.domain.operations import (
+    ChangeSet,
+    apply_change_set,
+    semantic_diff,
+)
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.scope import evaluate_scope
-from pcbdraft.kicad.previews import generate_previews
+from pcbdraft.kicad.previews import generate_preview, generate_previews
 from pcbdraft.model.providers import (
     MAX_USER_MESSAGE_BYTES,
     IntentProvider,
@@ -49,14 +60,20 @@ from pcbdraft.model.providers import (
 )
 from pcbdraft.services.doctor import doctor_report
 from pcbdraft.services.managed import (
+    EmptyDesignRequest,
+    load_generation_request,
     materialize_managed_design,
     open_managed_project,
 )
 from pcbdraft.verification.release import (
     build_manufacturing_release,
+    export_manufacturing_output,
     verify_manufacturing_release,
 )
-from pcbdraft.verification.validation import validate_managed_project
+from pcbdraft.verification.validation import (
+    run_individual_check,
+    validate_managed_project,
+)
 
 APP_PROJECT_SCHEMA = "pcbdraft-application-project"
 APP_PROJECT_VERSION = 1
@@ -421,6 +438,133 @@ class ApplicationService:
             raise
         return self.open_project(project_id)
 
+    def create_empty_project(self, name: str) -> dict[str, Any]:
+        """Create and publish an empty synchronized semantic/KiCad project."""
+
+        draft = self.create_draft(name)
+        project_id = str(draft["project"]["id"])
+        project = self._open(project_id)
+        board = BoardSpec.from_dict(
+            {
+                "width_mm": 80.0,
+                "height_mm": 50.0,
+                "layers": 2,
+                "thickness_mm": 1.6,
+                "edge_clearance_mm": 0.5,
+                "min_track_mm": 0.2,
+                "min_clearance_mm": 0.2,
+                "min_drill_mm": 0.3,
+                "finish": "hasl_lead_free",
+            }
+        )
+        scope = Scope.from_dict(
+            {
+                "domains": ["simple_control"],
+                "max_voltage_v": 24.0,
+                "max_current_a": 2.0,
+                "max_power_w": 24.0,
+                "layers": 2,
+                "intended_use": "small non-safety-critical prototype board",
+                "risk_class": "prototype",
+            }
+        )
+        request = EmptyDesignRequest(
+            design_id=project_id,
+            name=str(draft["project"]["name"]),
+            revision="1",
+            scope=scope,
+            board=board,
+        )
+        design = Design.from_dict(
+            {
+                "schema": "pcbdraft-ir",
+                "version": 2,
+                "design_id": project_id,
+                "name": request.name,
+                "revision": request.revision,
+                "scope": scope.to_dict(),
+                "requirements": [],
+                "provenance": [],
+                "blocks": [],
+                "power_domains": [],
+                "interfaces": [],
+                "components": [],
+                "nets": [
+                    {
+                        "id": "gnd",
+                        "name": "GND",
+                        "endpoints": [],
+                        "net_class": "power",
+                        "intent": "Required native reference plane.",
+                    }
+                ],
+                "constraints": [],
+                "board": board.to_dict(),
+                "analyses": [],
+                "metadata": {
+                    "generator": "flat_toolbox_v1",
+                    "requirements_hash": hashlib.sha256(
+                        request.canonical_bytes()
+                    ).hexdigest(),
+                    "assurance": "verified",
+                },
+                "native_intent": {
+                    "outline": [
+                        {"x_mm": 0.0, "y_mm": 0.0},
+                        {"x_mm": board.width_mm, "y_mm": 0.0},
+                        {"x_mm": board.width_mm, "y_mm": board.height_mm},
+                        {"x_mm": 0.0, "y_mm": board.height_mm},
+                    ],
+                    "footprint_poses": [],
+                    "routes": [],
+                    "vias": [],
+                    "unrouted_nets": [],
+                    "provenance": "pcbdraft",
+                    "geometry_revision": 0,
+                },
+            }
+        )
+        try:
+            generated = materialize_managed_design(
+                request,
+                design,
+                project.design_root,
+                graph=PartGraph.bundled(),
+            )
+        except BaseException:
+            # Creation is one atomic operation: a native-generation failure
+            # must not leave a misleading draft with the requested identity.
+            shutil.rmtree(project.root, ignore_errors=True)
+            raise
+        try:
+            with ResourceLock(project.root, self.locks_root):
+                current = self._open(project_id)
+                current.state["status"] = "generated"
+                current.state["revision"] = 1
+                current.state["design_revision"] = 1
+                current.state["updated_at"] = utc_timestamp()
+                self._event(
+                    current.state,
+                    current.root,
+                    "project.synchronized_empty",
+                    "Created an empty synchronized semantic and KiCad project",
+                )
+                self._write_records(current.root, current.state, current.conversation)
+        except BaseException:
+            # No project identity is published until both native and
+            # application records describe the same synchronized revision.
+            shutil.rmtree(project.root, ignore_errors=True)
+            raise
+        return self._with_tool_result(
+            self.open_project(project_id),
+            {
+                "created": True,
+                "synchronized": True,
+                "design_content_hash": generated.project.design.content_hash(),
+                "manifest_hashes": generated.project.manifest["hashes"],
+            },
+        )
+
     def open_project(self, project_id: str) -> dict[str, Any]:
         return self._public_project(self._open(project_id))
 
@@ -453,6 +597,934 @@ class ApplicationService:
         """Return a validated application-owned root for internal adapters."""
 
         return self._open(project_id).root
+
+    def execute_pcb_tool(
+        self,
+        project_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        """Execute one registry-bound flat PCB operation.
+
+        The model-facing name is already resolved by the closed registry. This
+        method owns the final service dispatch and always returns one public
+        project view augmented with a bounded, fact-only operation result.
+        """
+
+        if tool_name == "inspect_project":
+            return self._with_tool_result(
+                self.open_project(project_id), {"inspection": "project"}
+            )
+        if tool_name in {
+            "inspect_design",
+            "inspect_component",
+            "inspect_net",
+            "inspect_board",
+            "inspect_events",
+            "inspect_evidence",
+        }:
+            return self._inspect_pcb_tool(project_id, tool_name, arguments)
+        if tool_name in {
+            "search_symbols",
+            "describe_symbol",
+            "search_footprints",
+            "describe_footprint",
+        }:
+            return self._inspect_library_tool(project_id, tool_name, arguments)
+        if tool_name in {
+            "check_semantics",
+            "check_connectivity",
+            "run_erc",
+            "run_drc",
+        }:
+            return self.run_pcb_check(
+                project_id,
+                tool_name,
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
+        if tool_name in {"render_schematic", "render_board", "render_3d"}:
+            return self.render_pcb_output(
+                project_id,
+                tool_name,
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
+        if tool_name in {
+            "export_gerbers",
+            "export_drill",
+            "export_bom",
+            "export_pick_place",
+            "export_step",
+        }:
+            return self.export_pcb_output(
+                project_id,
+                tool_name,
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
+        return self.apply_pcb_operation(
+            project_id,
+            tool_name,
+            arguments,
+            timeout=timeout,
+            expected_revision=expected_revision,
+        )
+
+    @staticmethod
+    def _with_tool_result(
+        view: dict[str, Any], result: dict[str, Any]
+    ) -> dict[str, Any]:
+        detached = dict(view)
+        detached["tool_result"] = result
+        return detached
+
+    def _inspect_pcb_tool(
+        self, project_id: str, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        project = self._open(project_id)
+        view = self._public_project(project)
+        if tool_name == "inspect_events":
+            facts: dict[str, Any] = {"events": self.events(project_id)[-100:]}
+        elif tool_name == "inspect_evidence":
+            facts = {
+                "artifacts": view["artifacts"],
+                "attempts": view["attempts"],
+                "individual_checks": self._retained_evidence(
+                    project.root / "validation",
+                    schema="pcbdraft-individual-check-receipt",
+                ),
+                "individual_renders": self._retained_evidence(
+                    project.root / "previews",
+                    schema="pcbdraft-preview-bundle",
+                    require_single="renders",
+                ),
+                "individual_exports": self._retained_evidence(
+                    project.root / "releases",
+                    schema="pcbdraft-individual-manufacturing-export",
+                ),
+            }
+        else:
+            if not project.design_root.is_dir() or project.design_root.is_symlink():
+                raise ValidationError("project has no synchronized design to inspect")
+            managed = open_managed_project(project.design_root)
+            managed.assert_synchronized()
+            if tool_name == "inspect_design":
+                facts = {
+                    "design": managed.design.to_dict(),
+                    "content_hash": managed.design.content_hash(),
+                }
+            elif tool_name == "inspect_board":
+                facts = {
+                    "board": managed.manifest["native_snapshots"]["board"],
+                    "content_hash": managed.design.content_hash(),
+                }
+            elif tool_name == "inspect_component":
+                component_id = str(arguments["component_id"])
+                component = next(
+                    (
+                        item
+                        for item in managed.design.components
+                        if item.id == component_id
+                    ),
+                    None,
+                )
+                if component is None:
+                    raise ValidationError(f"component is absent: {component_id}")
+                facts = {
+                    "component": component.to_dict(),
+                    "nets": [
+                        net.to_dict()
+                        for net in managed.design.nets
+                        if any(
+                            endpoint.component == component_id
+                            for endpoint in net.endpoints
+                        )
+                    ],
+                }
+            else:
+                net_id = str(arguments["net_id"])
+                net = next(
+                    (item for item in managed.design.nets if item.id == net_id), None
+                )
+                if net is None:
+                    raise ValidationError(f"net is absent: {net_id}")
+                facts = {
+                    "net": net.to_dict(),
+                    "routes": [
+                        item.to_dict()
+                        for item in managed.design.native_intent.routes
+                        if item.net == net_id
+                    ],
+                    "vias": [
+                        item.to_dict()
+                        for item in managed.design.native_intent.vias
+                        if item.net == net_id
+                    ],
+                }
+        facts["project_id"] = project_id
+        facts["revision"] = project.state["revision"]
+        return self._with_tool_result(view, facts)
+
+    @staticmethod
+    def _retained_evidence(
+        root: Path,
+        *,
+        schema: str,
+        require_single: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return bounded completed evidence receipts without trusting paths."""
+
+        if root.is_symlink() or not root.is_dir():
+            return []
+        records: list[dict[str, Any]] = []
+        for candidate in sorted(root.iterdir(), reverse=True):
+            if candidate.is_symlink() or not candidate.is_dir():
+                continue
+            receipt_path = candidate / "receipt.json"
+            try:
+                receipt = load_json_limited(receipt_path, APP_FILE_LIMIT)
+            except PCBDraftError:
+                continue
+            if (
+                not isinstance(receipt, dict)
+                or receipt.get("schema") != schema
+                or receipt.get("status") != "complete"
+            ):
+                continue
+            if require_single is not None:
+                selected = receipt.get(require_single)
+                if not isinstance(selected, list) or len(selected) != 1:
+                    continue
+            record = dict(receipt)
+            record["run_id"] = candidate.name
+            record["receipt"] = receipt_path.relative_to(root.parent).as_posix()
+            records.append(record)
+            if len(records) >= 100:
+                break
+        return records
+
+    def _inspect_library_tool(
+        self, project_id: str, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        if tool_name in {"search_symbols", "describe_symbol"}:
+            from pcbdraft.agent.part_resolver import LocalKiCadPartResolver
+
+            resolver = LocalKiCadPartResolver()
+            if tool_name == "search_symbols":
+                facts: dict[str, Any] = {
+                    "query": arguments["query"],
+                    "symbols": [
+                        item.to_dict()
+                        for item in resolver.find(str(arguments["query"]), limit=24)
+                    ],
+                }
+            else:
+                facts = resolver.describe(str(arguments["symbol"])).to_dict()
+        else:
+            from pcbdraft.agent.footprint_resolver import LocalKiCadFootprintResolver
+
+            footprint_resolver = LocalKiCadFootprintResolver()
+            facts = (
+                {
+                    "query": arguments["query"],
+                    "footprints": [
+                        item.to_dict()
+                        for item in footprint_resolver.find(
+                            str(arguments["query"]), limit=24
+                        )
+                    ],
+                }
+                if tool_name == "search_footprints"
+                else footprint_resolver.describe(str(arguments["footprint"])).to_dict()
+            )
+        return self._with_tool_result(self.open_project(project_id), facts)
+
+    def run_pcb_check(
+        self,
+        project_id: str,
+        kind: str,
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        """Run and retain exactly one source-bound flat-toolbox check."""
+
+        project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation=kind
+        )
+        managed = open_managed_project(project.design_root)
+        managed.assert_synchronized()
+        run_id = new_run_id()
+        output = project.root / "validation" / run_id
+        result = run_individual_check(
+            managed,
+            kind,
+            output=output,
+            timeout=timeout,
+        )
+        summary = {
+            "run_id": run_id,
+            "check": kind,
+            "report": result.report_path.relative_to(project.root).as_posix(),
+            "report_sha256": result.report_sha256,
+            "state": result.state,
+            "outcome": result.outcome,
+            "design_content_hash": result.design_content_hash,
+            "source_revision": expected_revision,
+            "source_design_revision": project.state["design_revision"],
+            "production_ready": False,
+            "production_claimed": False,
+        }
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed while the check was running")
+            current_managed = open_managed_project(current.design_root)
+            current_managed.assert_synchronized()
+            if current_managed.design.content_hash() != result.design_content_hash:
+                raise ValidationError("design changed while the check was running")
+            current.state["last_validation"] = summary
+            current.state["revision"] += 1
+            current.state["updated_at"] = utc_timestamp()
+            self._event(
+                current.state,
+                current.root,
+                "pcb.check_complete",
+                f"Completed individual PCB check {kind}",
+                level="error" if result.outcome == "fail" else "info",
+            )
+            self._write_records(current.root, current.state, current.conversation)
+        return self._with_tool_result(
+            self.open_project(project_id),
+            {**summary, "revision": current.state["revision"]},
+        )
+
+    def render_pcb_output(
+        self,
+        project_id: str,
+        kind: str,
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        """Generate and retain only one requested preview family."""
+
+        project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation=kind
+        )
+        managed = open_managed_project(project.design_root)
+        managed.assert_synchronized()
+        run_id = new_run_id()
+        bundle = generate_preview(
+            managed,
+            project.root / "previews" / run_id,
+            kind,
+            timeout=timeout,
+        )
+        summary = {
+            "run_id": run_id,
+            "render": kind,
+            "root": bundle.root.relative_to(project.root).as_posix(),
+            "receipt": bundle.receipt_path.relative_to(project.root).as_posix(),
+            "design_content_hash": bundle.design_content_hash,
+            "source_revision": expected_revision,
+            "source_design_revision": project.state["design_revision"],
+            "files": {
+                key: path.relative_to(project.root).as_posix()
+                for key, path in bundle.files.items()
+            },
+        }
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed while the preview was rendered")
+            if (
+                open_managed_project(current.design_root).design.content_hash()
+                != bundle.design_content_hash
+            ):
+                raise ValidationError("design changed while the preview was rendered")
+            current.state["last_preview"] = summary
+            current.state["revision"] += 1
+            current.state["updated_at"] = utc_timestamp()
+            self._event(
+                current.state,
+                current.root,
+                "pcb.render_complete",
+                f"Completed individual PCB render {kind}",
+            )
+            self._write_records(current.root, current.state, current.conversation)
+        return self._with_tool_result(
+            self.open_project(project_id),
+            {**summary, "revision": current.state["revision"]},
+        )
+
+    def export_pcb_output(
+        self,
+        project_id: str,
+        kind: str,
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        """Generate and retain only one requested manufacturing export."""
+
+        project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation=kind
+        )
+        managed = open_managed_project(project.design_root)
+        managed.assert_synchronized()
+        run_id = new_run_id()
+        exported = export_manufacturing_output(
+            managed,
+            project.root / "releases" / run_id,
+            kind,
+            timeout=timeout,
+        )
+        summary = {
+            "id": run_id,
+            "export": kind,
+            "root": exported.root.relative_to(project.root).as_posix(),
+            "receipt": exported.receipt_path.relative_to(project.root).as_posix(),
+            "design_content_hash": exported.design_content_hash,
+            "source_revision": expected_revision,
+            "source_design_revision": project.state["design_revision"],
+            "artifacts": list(exported.artifacts),
+            "production_ready": False,
+            "production_claimed": False,
+        }
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed while the export was generated")
+            if (
+                open_managed_project(current.design_root).design.content_hash()
+                != exported.design_content_hash
+            ):
+                raise ValidationError("design changed while the export was generated")
+            current.state["last_release"] = summary
+            current.state["revision"] += 1
+            current.state["updated_at"] = utc_timestamp()
+            self._event(
+                current.state,
+                current.root,
+                "pcb.export_complete",
+                f"Completed individual PCB export {kind}",
+            )
+            self._write_records(current.root, current.state, current.conversation)
+        return self._with_tool_result(
+            self.open_project(project_id),
+            {**summary, "revision": current.state["revision"]},
+        )
+
+    def apply_pcb_operation(
+        self,
+        project_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        """Stage, materialize, verify, and publish exactly one typed operation."""
+
+        project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation=tool_name
+        )
+        if not project.design_root.is_dir() or project.design_root.is_symlink():
+            raise ValidationError("project has no synchronized design to modify")
+        authoritative = open_managed_project(project.design_root)
+        authoritative.assert_synchronized()
+        operation = self._flat_semantic_operation(
+            tool_name, arguments, authoritative.design
+        )
+        change_set = ChangeSet.from_dict(
+            {
+                "schema": "pcbdraft-change-set",
+                "version": 1,
+                "id": f"flat_{secrets.token_hex(6)}",
+                "base_hash": authoritative.design.content_hash(),
+                "intent": f"Apply concrete PCB operation {tool_name}.",
+                "actor": "flat-pcb-toolbox",
+                "operations": [operation],
+                "provenance": [f"tool:{tool_name}"],
+            }
+        )
+        candidate = apply_change_set(authoritative.design, change_set)
+        request = load_generation_request(authoritative.requirements_path)
+        graph = authoritative.graph.with_footprint_overrides(candidate)
+        if isinstance(request, AgentDesignRequest):
+            qualification = qualify_components(candidate, graph)
+            if qualification.pad_mapping_failures:
+                raise ValidationError(
+                    "component qualification contains invalid local pad mappings"
+                )
+            document = candidate.to_dict()
+            document["metadata"]["component_qualification_schema"] = (
+                COMPONENT_QUALIFICATION_SCHEMA
+            )
+            document["metadata"]["component_qualification_hash"] = (
+                qualification.sha256()
+            )
+            candidate = Design.from_dict(document)
+        candidate_diff = semantic_diff(authoritative.design, candidate)
+        transaction_id = new_run_id()
+        transaction = make_directory(project.root / "transactions" / transaction_id)
+        staged = transaction / "staged"
+        before = transaction / "before"
+        receipt_path = transaction / "receipt.json"
+        receipt: dict[str, Any] = {
+            "schema": "pcbdraft-flat-operation-receipt",
+            "version": 1,
+            "status": "preparing",
+            "operation": tool_name,
+            "created_at": utc_timestamp(),
+            "before_hash": authoritative.design.content_hash(),
+            "after_hash": candidate.content_hash(),
+            "baseline_revision": expected_revision,
+        }
+        atomic_write_json(receipt_path, receipt)
+        atomic_write_json(transaction / "semantic-diff.json", candidate_diff)
+        try:
+            generated = materialize_managed_design(
+                request,
+                candidate,
+                staged,
+                graph=graph,
+                plan=authoritative.plan,
+                retain_failed_attempt=transaction / "failed-native",
+                lock_timeout=min(10.0, timeout),
+                auto_place=False,
+                route_net_ids=(
+                    frozenset({str(arguments["net_id"])})
+                    if tool_name == "route_net"
+                    else frozenset()
+                ),
+                allow_incomplete=True,
+            )
+            if tool_name == "route_net":
+                candidate = self._retain_generated_route(
+                    candidate,
+                    str(arguments["net_id"]),
+                    generated.pcb.routing,
+                )
+                candidate_diff = semantic_diff(authoritative.design, candidate)
+                receipt["after_hash"] = candidate.content_hash()
+                atomic_write_json(receipt_path, receipt)
+                atomic_write_json(transaction / "semantic-diff.json", candidate_diff)
+                os.replace(staged, transaction / "routing-probe")
+                materialize_managed_design(
+                    request,
+                    candidate,
+                    staged,
+                    graph=graph,
+                    plan=authoritative.plan,
+                    retain_failed_attempt=transaction / "failed-native-final",
+                    lock_timeout=min(10.0, timeout),
+                    auto_place=False,
+                    route_net_ids=frozenset(),
+                    allow_incomplete=True,
+                )
+            staged_project = open_managed_project(staged)
+            staged_project.assert_synchronized()
+            if staged_project.design.content_hash() != candidate.content_hash():
+                raise ValidationError("staged semantic design hash changed")
+        except BaseException as exc:
+            receipt["status"] = "failed"
+            receipt["failed_at"] = utc_timestamp()
+            receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+            atomic_write_json(receipt_path, receipt)
+            raise
+
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            original_state = copy.deepcopy(current.state)
+            original_conversation = copy.deepcopy(current.conversation)
+            moved_before = False
+            event_path: Path | None = None
+            try:
+                if current.state["revision"] != expected_revision:
+                    raise ValidationError(
+                        "project changed while PCB operation was staged"
+                    )
+                current_design = open_managed_project(current.design_root)
+                current_design.assert_synchronized()
+                if current_design.design.content_hash() != receipt["before_hash"]:
+                    raise ValidationError(
+                        "authoritative design changed before publication"
+                    )
+                os.replace(current.design_root, before)
+                moved_before = True
+                os.replace(staged, current.design_root)
+                published = open_managed_project(current.design_root)
+                published.assert_synchronized()
+                receipt.update(
+                    {
+                        "status": "applied",
+                        "applied_at": utc_timestamp(),
+                        "manifest_hashes": published.manifest["hashes"],
+                    }
+                )
+                atomic_write_json(receipt_path, receipt)
+                current.state["status"] = "generated"
+                current.state["revision"] += 1
+                current.state["design_revision"] += 1
+                current.state["updated_at"] = utc_timestamp()
+                current.state["last_validation"] = None
+                current.state["last_preview"] = None
+                current.state["last_release"] = None
+                current.state["last_transaction"] = transaction_id
+                event_path = (
+                    current.root
+                    / "events"
+                    / f"{current.state['event_sequence'] + 1:08d}.json"
+                )
+                self._event(
+                    current.state,
+                    current.root,
+                    "pcb.operation_applied",
+                    f"Applied concrete PCB operation {tool_name}",
+                )
+                self._write_records(current.root, current.state, current.conversation)
+            except BaseException as exc:
+                rollback_failures: list[BaseException] = []
+                if moved_before:
+                    try:
+                        failed_published = transaction / "failed-published"
+                        if current.design_root.exists():
+                            os.replace(current.design_root, failed_published)
+                        if before.exists():
+                            os.replace(before, current.design_root)
+                    except BaseException as rollback_exc:  # noqa: BLE001 - complete rollback audit
+                        rollback_failures.append(rollback_exc)
+                try:
+                    atomic_write_json(
+                        current.root / "conversation.json", original_conversation
+                    )
+                    atomic_write_json(current.root / "project.json", original_state)
+                    if event_path is not None and event_path.is_file():
+                        event_path.unlink()
+                except BaseException as rollback_exc:  # noqa: BLE001 - complete rollback audit
+                    rollback_failures.append(rollback_exc)
+                receipt["status"] = "failed"
+                receipt["failed_at"] = utc_timestamp()
+                receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+                try:
+                    atomic_write_json(receipt_path, receipt)
+                except PCBDraftError:
+                    # Preserve the publication failure; an applied receipt was
+                    # never authoritative without the matching project record.
+                    pass
+                if rollback_failures:
+                    raise PCBDraftError(
+                        "PCB operation publication failed and rollback was incomplete"
+                    ) from exc
+                raise
+        result = {
+            "operation": tool_name,
+            "transaction_id": transaction_id,
+            "before_hash": receipt["before_hash"],
+            "after_hash": receipt["after_hash"],
+            "design_revision": current.state["design_revision"],
+            "revision": current.state["revision"],
+            "changed": candidate_diff["summary"],
+            "synchronized": True,
+        }
+        return self._with_tool_result(self.open_project(project_id), result)
+
+    @staticmethod
+    def _retain_generated_route(design: Design, net_id: str, routing: Any) -> Design:
+        """Promote generated copper for one net into deterministic native intent."""
+
+        net = next((item for item in design.nets if item.id == net_id), None)
+        if net is None:
+            raise ValidationError(f"net is absent: {net_id}")
+        if net.name in routing.unrouted:
+            raise ValidationError(f"router could not complete net: {net_id}")
+        segments = [item for item in routing.segments if item.net == net.name]
+        if len(net.endpoints) > 1 and not segments:
+            raise ValidationError(f"router produced no copper for net: {net_id}")
+        document = design.to_dict()
+        native = document["native_intent"]
+
+        def stable_id(prefix: str, value: dict[str, Any]) -> str:
+            payload = json.dumps(
+                value,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            ).encode("utf-8")
+            return f"{prefix}_{hashlib.sha256(payload).hexdigest()[:20]}"
+
+        native["routes"] = [
+            item for item in native["routes"] if item.get("net") != net_id
+        ] + [
+            {
+                "id": stable_id(
+                    "route",
+                    {
+                        "net": net_id,
+                        "layer": item.layer,
+                        "x1_mm": item.x1_mm,
+                        "y1_mm": item.y1_mm,
+                        "x2_mm": item.x2_mm,
+                        "y2_mm": item.y2_mm,
+                        "width_mm": item.width_mm,
+                    },
+                ),
+                "net": net_id,
+                "layer": item.layer,
+                "x1_mm": item.x1_mm,
+                "y1_mm": item.y1_mm,
+                "x2_mm": item.x2_mm,
+                "y2_mm": item.y2_mm,
+                "width_mm": item.width_mm,
+            }
+            for item in segments
+        ]
+        native["vias"] = [
+            item for item in native["vias"] if item.get("net") != net_id
+        ] + [
+            {
+                "id": stable_id(
+                    "via",
+                    {
+                        "net": net_id,
+                        "x_mm": item.x_mm,
+                        "y_mm": item.y_mm,
+                        "diameter_mm": item.diameter_mm,
+                        "drill_mm": item.drill_mm,
+                        "from_layer": item.from_layer,
+                        "to_layer": item.to_layer,
+                    },
+                ),
+                "net": net_id,
+                "x_mm": item.x_mm,
+                "y_mm": item.y_mm,
+                "diameter_mm": item.diameter_mm,
+                "drill_mm": item.drill_mm,
+                "from_layer": item.from_layer,
+                "to_layer": item.to_layer,
+            }
+            for item in routing.vias
+            if item.net == net.name
+        ]
+        return Design.from_dict(document)
+
+    @staticmethod
+    def _entry_mapping(value: Any, field: str) -> dict[str, Any]:
+        """Convert one strict list-of-entries object into a unique mapping."""
+
+        if not isinstance(value, dict) or set(value) != {"entries"}:
+            raise ValidationError(f"{field} has an invalid object shape")
+        entries = value["entries"]
+        if not isinstance(entries, list) or not entries:
+            raise ValidationError(f"{field}.entries must be a non-empty array")
+        result: dict[str, Any] = {}
+        for index, entry in enumerate(entries):
+            if not isinstance(entry, dict) or set(entry) != {"field", "value"}:
+                raise ValidationError(f"{field}.entries[{index}] is malformed")
+            name = entry["field"]
+            if not isinstance(name, str) or not name or name in result:
+                raise ValidationError(f"{field} contains a duplicate or invalid field")
+            result[name] = entry["value"]
+        return result
+
+    @staticmethod
+    def _parameter_mapping(value: Any, field: str) -> dict[str, Any]:
+        """Convert strict named parameter entries into a domain mapping."""
+
+        if not isinstance(value, list):
+            raise ValidationError(f"{field} must be an array")
+        result: dict[str, Any] = {}
+        for index, entry in enumerate(value):
+            if not isinstance(entry, dict) or set(entry) != {"name", "value"}:
+                raise ValidationError(f"{field}[{index}] is malformed")
+            name = entry["name"]
+            if not isinstance(name, str) or not name or name in result:
+                raise ValidationError(f"{field} contains a duplicate or invalid name")
+            result[name] = entry["value"]
+        return result
+
+    @classmethod
+    def _flat_semantic_operation(
+        cls, tool_name: str, arguments: dict[str, Any], design: Design
+    ) -> dict[str, Any]:
+        operation_id = f"op_{secrets.token_hex(6)}"
+        args: dict[str, Any]
+        expected: dict[str, Any] = {}
+        op = tool_name
+        if tool_name.startswith("add_") and tool_name in {
+            "add_block",
+            "add_component",
+            "add_net",
+        }:
+            value = copy.deepcopy(arguments["value"])
+            if tool_name == "add_block":
+                value["components"] = []
+            elif tool_name == "add_net":
+                value["endpoints"] = []
+            args = {"value": value}
+        elif tool_name in {"remove_block", "remove_component", "remove_net"}:
+            key = tool_name.removeprefix("remove_") + "_id"
+            if tool_name == "remove_net":
+                net = next(
+                    (item for item in design.nets if item.id == arguments[key]),
+                    None,
+                )
+                if net is not None and net.name.upper() in {"GND", "GROUND", "VSS"}:
+                    raise ValidationError(
+                        "the required reference-plane net cannot be removed"
+                    )
+            args = {"id": arguments[key]}
+        elif tool_name == "update_component":
+            args = {
+                "component_id": arguments["component_id"],
+                "changes": cls._entry_mapping(arguments["changes"], "changes"),
+            }
+        elif tool_name in {"assign_footprint", "rename_net"}:
+            args = dict(arguments)
+        elif tool_name in {"connect_pin", "disconnect_pin"}:
+            op = "connect" if tool_name == "connect_pin" else "disconnect"
+            args = {
+                "net_id": arguments["net_id"],
+                "endpoint": {
+                    "component": arguments["component_id"],
+                    "pin": arguments["pin"],
+                    "role": arguments["role"],
+                },
+            }
+        elif any(
+            tool_name.endswith(suffix)
+            for suffix in ("power_domain", "interface", "constraint")
+        ):
+            collection = next(
+                name
+                for name in ("power_domain", "interface", "constraint")
+                if tool_name.endswith(name)
+            )
+            if tool_name.startswith("remove_"):
+                op = f"remove_{collection}"
+                args = {"id": arguments["id"]}
+            else:
+                op = (
+                    "upsert_constraint"
+                    if collection == "constraint"
+                    else f"upsert_{collection}"
+                )
+                value = copy.deepcopy(arguments["value"])
+                if collection in {"interface", "constraint"}:
+                    value["params"] = cls._parameter_mapping(
+                        value["params"], f"{collection}.params"
+                    )
+                entry_id = str(value["id"])
+                exists = (
+                    any(item.id == entry_id for item in design.power_domains)
+                    if collection == "power_domain"
+                    else any(item.id == entry_id for item in design.interfaces)
+                    if collection == "interface"
+                    else any(item.id == entry_id for item in design.constraints)
+                )
+                if tool_name.startswith("add_"):
+                    if exists:
+                        raise ValidationError(
+                            f"cannot add existing {collection}: {entry_id}"
+                        )
+                    expected = {"absent": True}
+                else:
+                    if not exists:
+                        raise ValidationError(
+                            f"cannot update absent {collection}: {entry_id}"
+                        )
+                    expected = {"id": entry_id}
+                args = {"value": value}
+        elif tool_name == "update_board_rules":
+            op = "update_board"
+            args = {"changes": cls._entry_mapping(arguments["changes"], "changes")}
+        elif tool_name == "set_board_outline":
+            args = {
+                "width_mm": float(arguments["width_mm"]),
+                "height_mm": float(arguments["height_mm"]),
+            }
+        elif tool_name in {"place_footprint", "move_footprint", "rotate_footprint"}:
+            op = "place_footprint"
+            component_id = str(arguments["component_id"])
+            component = next(
+                (item for item in design.components if item.id == component_id), None
+            )
+            if component is None:
+                raise ValidationError(f"component is absent: {component_id}")
+            existing = component.placement
+            args = {
+                "component_id": component_id,
+                "x_mm": float(
+                    arguments.get("x_mm", existing.x_mm if existing else 0.0)
+                ),
+                "y_mm": float(
+                    arguments.get("y_mm", existing.y_mm if existing else 0.0)
+                ),
+                "rotation_deg": float(
+                    arguments.get(
+                        "rotation_deg", existing.rotation_deg if existing else 0.0
+                    )
+                ),
+                "side": str(
+                    arguments.get("side", existing.side if existing else "front")
+                ),
+                "fixed": True,
+            }
+        elif tool_name == "unplace_footprint":
+            args = {"component_id": arguments["component_id"]}
+        elif tool_name in {"route_net", "unroute_net"}:
+            net = next(
+                (item for item in design.nets if item.id == arguments["net_id"]),
+                None,
+            )
+            if net is None:
+                raise ValidationError(f"net is absent: {arguments['net_id']}")
+            if tool_name == "unroute_net" and net.name.upper() in {
+                "GND",
+                "GROUND",
+                "VSS",
+            }:
+                raise ValidationError(
+                    "the required reference-plane net cannot be unrouted"
+                )
+            args = {"net_id": arguments["net_id"]}
+            if tool_name == "route_net":
+                args.update({"segments": [], "vias": []})
+        elif tool_name == "add_via":
+            args = {
+                "value": {
+                    "id": arguments["via_id"],
+                    "net": arguments["net_id"],
+                    "x_mm": float(arguments["x_mm"]),
+                    "y_mm": float(arguments["y_mm"]),
+                    "diameter_mm": float(arguments["diameter_mm"]),
+                    "drill_mm": float(arguments["drill_mm"]),
+                    "from_layer": int(arguments["from_layer"]),
+                    "to_layer": int(arguments["to_layer"]),
+                }
+            }
+        elif tool_name == "remove_via":
+            args = {"via_id": arguments["via_id"]}
+        else:
+            raise ValidationError(f"flat PCB write is not implemented: {tool_name}")
+        return {
+            "id": operation_id,
+            "op": op,
+            "args": args,
+            "expected": expected,
+            "reason": f"Concrete flat PCB tool {tool_name}.",
+        }
 
     def record_progress(
         self,

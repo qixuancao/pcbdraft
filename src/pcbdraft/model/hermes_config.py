@@ -32,7 +32,9 @@ def write_hermes_config() -> Path:
     config = read_user_config_raw(config_path)
     _mapping(config, "model")["persist_switch_by_default"] = True
     _mapping(config, "display")["interface"] = "cli"
-    _mapping(config, "platform_toolsets")["cli"] = ["hermes-cli", "pcbdraft"]
+    # The PCB agent receives only the closed concrete PCB toolbox. General
+    # shell/file/code tools are intentionally outside the default authority.
+    _mapping(config, "platform_toolsets")["cli"] = ["pcbdraft"]
     plugins = _mapping(config, "plugins")
     enabled = plugins.get("enabled")
     enabled_list = [str(item) for item in enabled] if isinstance(enabled, list) else []

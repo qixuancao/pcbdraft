@@ -22,7 +22,8 @@ from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import atomic_write_bytes, read_bytes_limited
 
 IR_SCHEMA = "pcbdraft-ir"
-IR_VERSION = 1
+IR_VERSION = 2
+IR_LEGACY_VERSION = 1
 IR_FILE_LIMIT = 32 * 1024 * 1024
 _ID_RE = re.compile(r"^[a-z][a-z0-9_.-]{0,127}$")
 _REF_RE = re.compile(r"^(?:#?[A-Z][A-Z0-9]*[0-9]+)$")
@@ -799,6 +800,351 @@ class BoardSpec:
         }
 
 
+@dataclass(frozen=True, order=True)
+class OutlinePoint:
+    """One point in the explicitly retained rectangular board outline."""
+
+    x_mm: float
+    y_mm: float
+
+    @classmethod
+    def from_dict(cls, value: Any, path: str) -> OutlinePoint:
+        item = _strict_mapping(value, path, required={"x_mm", "y_mm"}, optional=set())
+        if not _is_number(item["x_mm"]) or not _is_number(item["y_mm"]):
+            raise ValidationError(f"{path} coordinates must be finite numbers")
+        return cls(float(item["x_mm"]), float(item["y_mm"]))
+
+    def to_dict(self) -> dict[str, float]:
+        return {"x_mm": self.x_mm, "y_mm": self.y_mm}
+
+
+@dataclass(frozen=True, order=True)
+class FootprintPose:
+    """A stable native footprint pose override keyed by component identity."""
+
+    component: str
+    x_mm: float
+    y_mm: float
+    rotation_deg: float
+    side: str
+    fixed: bool
+
+    @classmethod
+    def from_dict(cls, value: Any, path: str) -> FootprintPose:
+        item = _strict_mapping(
+            value,
+            path,
+            required={
+                "component",
+                "x_mm",
+                "y_mm",
+                "rotation_deg",
+                "side",
+                "fixed",
+            },
+            optional=set(),
+        )
+        placement = Placement.from_dict(
+            {
+                key: item[key]
+                for key in ("x_mm", "y_mm", "rotation_deg", "side", "fixed")
+            },
+            path,
+        )
+        return cls(
+            component=_identifier(item["component"], f"{path}.component"),
+            x_mm=placement.x_mm,
+            y_mm=placement.y_mm,
+            rotation_deg=placement.rotation_deg,
+            side=placement.side,
+            fixed=placement.fixed,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "component": self.component,
+            "x_mm": self.x_mm,
+            "y_mm": self.y_mm,
+            "rotation_deg": self.rotation_deg,
+            "side": self.side,
+            "fixed": self.fixed,
+        }
+
+
+@dataclass(frozen=True, order=True)
+class NativeRouteSegment:
+    """One retained copper segment owned by a concrete net operation."""
+
+    id: str
+    net: str
+    layer: int
+    x1_mm: float
+    y1_mm: float
+    x2_mm: float
+    y2_mm: float
+    width_mm: float
+
+    @classmethod
+    def from_dict(cls, value: Any, path: str) -> NativeRouteSegment:
+        item = _strict_mapping(
+            value,
+            path,
+            required={
+                "id",
+                "net",
+                "layer",
+                "x1_mm",
+                "y1_mm",
+                "x2_mm",
+                "y2_mm",
+                "width_mm",
+            },
+            optional=set(),
+        )
+        layer = item["layer"]
+        if isinstance(layer, bool) or not isinstance(layer, int) or layer < 0:
+            raise ValidationError(f"{path}.layer must be a non-negative integer")
+        for name in ("x1_mm", "y1_mm", "x2_mm", "y2_mm", "width_mm"):
+            if not _is_number(item[name]):
+                raise ValidationError(f"{path}.{name} must be finite")
+        if float(item["width_mm"]) <= 0:
+            raise ValidationError(f"{path}.width_mm must be positive")
+        return cls(
+            id=_identifier(item["id"], f"{path}.id"),
+            net=_identifier(item["net"], f"{path}.net"),
+            layer=layer,
+            x1_mm=float(item["x1_mm"]),
+            y1_mm=float(item["y1_mm"]),
+            x2_mm=float(item["x2_mm"]),
+            y2_mm=float(item["y2_mm"]),
+            width_mm=float(item["width_mm"]),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "net": self.net,
+            "layer": self.layer,
+            "x1_mm": self.x1_mm,
+            "y1_mm": self.y1_mm,
+            "x2_mm": self.x2_mm,
+            "y2_mm": self.y2_mm,
+            "width_mm": self.width_mm,
+        }
+
+
+@dataclass(frozen=True, order=True)
+class NativeVia:
+    """One explicit retained through via keyed by a stable identity."""
+
+    id: str
+    net: str
+    x_mm: float
+    y_mm: float
+    diameter_mm: float
+    drill_mm: float
+    from_layer: int
+    to_layer: int
+
+    @classmethod
+    def from_dict(cls, value: Any, path: str) -> NativeVia:
+        item = _strict_mapping(
+            value,
+            path,
+            required={
+                "id",
+                "net",
+                "x_mm",
+                "y_mm",
+                "diameter_mm",
+                "drill_mm",
+                "from_layer",
+                "to_layer",
+            },
+            optional=set(),
+        )
+        for name in ("x_mm", "y_mm", "diameter_mm", "drill_mm"):
+            if not _is_number(item[name]):
+                raise ValidationError(f"{path}.{name} must be finite")
+        start, stop = item["from_layer"], item["to_layer"]
+        if (
+            isinstance(start, bool)
+            or not isinstance(start, int)
+            or isinstance(stop, bool)
+            or not isinstance(stop, int)
+            or start < 0
+            or stop <= start
+        ):
+            raise ValidationError(f"{path} layer pair is invalid")
+        diameter, drill = float(item["diameter_mm"]), float(item["drill_mm"])
+        if drill <= 0 or diameter <= drill:
+            raise ValidationError(f"{path} diameter must exceed its positive drill")
+        return cls(
+            id=_identifier(item["id"], f"{path}.id"),
+            net=_identifier(item["net"], f"{path}.net"),
+            x_mm=float(item["x_mm"]),
+            y_mm=float(item["y_mm"]),
+            diameter_mm=diameter,
+            drill_mm=drill,
+            from_layer=start,
+            to_layer=stop,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "net": self.net,
+            "x_mm": self.x_mm,
+            "y_mm": self.y_mm,
+            "diameter_mm": self.diameter_mm,
+            "drill_mm": self.drill_mm,
+            "from_layer": self.from_layer,
+            "to_layer": self.to_layer,
+        }
+
+
+@dataclass(frozen=True)
+class NativeIntent:
+    """Versioned, deterministic native geometry retained beside semantic intent."""
+
+    outline: tuple[OutlinePoint, ...] = ()
+    footprint_poses: tuple[FootprintPose, ...] = ()
+    routes: tuple[NativeRouteSegment, ...] = ()
+    vias: tuple[NativeVia, ...] = ()
+    unrouted_nets: tuple[str, ...] = ()
+    provenance: str = "pcbdraft"
+    geometry_revision: int = 0
+
+    @classmethod
+    def from_dict(cls, value: Any, path: str = "$.native_intent") -> NativeIntent:
+        item = _strict_mapping(
+            value,
+            path,
+            required={
+                "outline",
+                "footprint_poses",
+                "routes",
+                "vias",
+                "unrouted_nets",
+                "provenance",
+                "geometry_revision",
+            },
+            optional=set(),
+        )
+
+        def entries(name: str, parser: Any) -> tuple[Any, ...]:
+            raw = item[name]
+            if not isinstance(raw, list):
+                raise ValidationError(f"{path}.{name} must be an array")
+            return tuple(
+                parser(entry, f"{path}.{name}[{index}]")
+                for index, entry in enumerate(raw)
+            )
+
+        revision = item["geometry_revision"]
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+            raise ValidationError(
+                f"{path}.geometry_revision must be a non-negative integer"
+            )
+        outline = entries("outline", OutlinePoint.from_dict)
+        if outline and len(outline) != 4:
+            raise ValidationError(f"{path}.outline must contain four corners")
+        poses = entries("footprint_poses", FootprintPose.from_dict)
+        routes = entries("routes", NativeRouteSegment.from_dict)
+        vias = entries("vias", NativeVia.from_dict)
+        unrouted_nets = tuple(
+            sorted(
+                _strings(
+                    item.get("unrouted_nets", []),
+                    f"{path}.unrouted_nets",
+                    identifiers=True,
+                )
+            )
+        )
+        for label, values in (
+            ("footprint pose", [entry.component for entry in poses]),
+            ("route", [entry.id for entry in routes]),
+            ("via", [entry.id for entry in vias]),
+        ):
+            if len(values) != len(set(values)):
+                raise ValidationError(f"{path} contains duplicate {label} identities")
+        return cls(
+            outline=outline,
+            footprint_poses=tuple(sorted(poses)),
+            routes=tuple(sorted(routes)),
+            vias=tuple(sorted(vias)),
+            unrouted_nets=unrouted_nets,
+            provenance=_identifier(item["provenance"], f"{path}.provenance"),
+            geometry_revision=revision,
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "outline": [entry.to_dict() for entry in self.outline],
+            "footprint_poses": [
+                entry.to_dict() for entry in sorted(self.footprint_poses)
+            ],
+            "routes": [entry.to_dict() for entry in sorted(self.routes)],
+            "vias": [entry.to_dict() for entry in sorted(self.vias)],
+            "unrouted_nets": list(self.unrouted_nets),
+            "provenance": self.provenance,
+            "geometry_revision": self.geometry_revision,
+        }
+
+
+def _block_membership_issues(
+    blocks: tuple[FunctionalBlock, ...], components: tuple[Component, ...]
+) -> list[IRIssue]:
+    """Require the component/block relation to agree in both directions."""
+
+    issues: list[IRIssue] = []
+    component_by_id = {component.id: component for component in components}
+    block_by_id = {block.id: block for block in blocks}
+    for index, block in enumerate(blocks):
+        for component_id in block.components:
+            component = component_by_id.get(component_id)
+            if (
+                component is not None
+                and component.block_id in block_by_id
+                and component.block_id != block.id
+            ):
+                issues.append(
+                    IRIssue(
+                        "error",
+                        "ir.block_membership_mismatch",
+                        f"$.blocks[{index}].components",
+                        f"component {component_id} belongs to a different block",
+                    )
+                )
+    for index, component in enumerate(components):
+        owning_block = block_by_id.get(component.block_id)
+        if owning_block is not None and component.id not in owning_block.components:
+            issues.append(
+                IRIssue(
+                    "error",
+                    "ir.block_membership_mismatch",
+                    f"$.components[{index}].block_id",
+                    "component is absent from its owning block membership",
+                )
+            )
+    return issues
+
+
+def _zero_length_route_issues(
+    routes: tuple[NativeRouteSegment, ...],
+) -> list[IRIssue]:
+    return [
+        IRIssue(
+            "error",
+            "ir.zero_length_route",
+            f"$.native_intent.routes[{index}]",
+            "retained route segment has zero length",
+        )
+        for index, route in enumerate(routes)
+        if route.x1_mm == route.x2_mm and route.y1_mm == route.y2_mm
+    ]
+
+
 @dataclass(frozen=True)
 class Design:
     design_id: str
@@ -816,6 +1162,7 @@ class Design:
     board: BoardSpec
     analyses: tuple[dict[str, Any], ...]
     metadata: dict[str, Any]
+    native_intent: NativeIntent = field(default_factory=NativeIntent)
     schema: str = IR_SCHEMA
     version: int = IR_VERSION
 
@@ -843,12 +1190,19 @@ class Design:
                 "analyses",
                 "metadata",
             },
-            optional=set(),
+            optional={"native_intent"},
         )
-        if item["schema"] != IR_SCHEMA or item["version"] != IR_VERSION:
+        if item["schema"] != IR_SCHEMA or item["version"] not in {
+            IR_LEGACY_VERSION,
+            IR_VERSION,
+        }:
             raise ValidationError(
                 f"unsupported IR schema/version: {item.get('schema')!r}/{item.get('version')!r}"
             )
+        if item["version"] == IR_LEGACY_VERSION and "native_intent" in item:
+            raise ValidationError("IR v1 cannot contain v2 native intent")
+        if item["version"] == IR_VERSION and "native_intent" not in item:
+            raise ValidationError("IR v2 requires native intent")
 
         def parse_array(name: str, parser: Any) -> tuple[Any, ...]:
             raw = item[name]
@@ -891,13 +1245,19 @@ class Design:
                 )
             ),
             metadata=_json_value(metadata, "$.metadata"),
+            native_intent=(
+                NativeIntent.from_dict(item["native_intent"])
+                if item.get("native_intent") is not None
+                else NativeIntent()
+            ),
+            version=int(item["version"]),
         )
         if validate:
             design.assert_valid()
         return design
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "schema": self.schema,
             "version": self.version,
             "design_id": self.design_id,
@@ -942,6 +1302,9 @@ class Design:
             ),
             "metadata": _json_value(self.metadata),
         }
+        if self.version >= IR_VERSION:
+            result["native_intent"] = self.native_intent.to_dict()
+        return result
 
     def canonical_bytes(self) -> bytes:
         return canonical_json_bytes(self.to_dict())
@@ -984,6 +1347,8 @@ class Design:
         interfaces = unique(self.interfaces, "id", "interfaces")
         constraint_ids = unique(self.constraints, "id", "constraints")
         del requirements, constraint_ids
+        issues.extend(_block_membership_issues(self.blocks, self.components))
+        issues.extend(_zero_length_route_issues(self.native_intent.routes))
 
         for index, requirement in enumerate(self.requirements):
             for source in requirement.provenance:
@@ -1162,6 +1527,102 @@ class Design:
                     "board layer count differs from declared scope",
                 )
             )
+        for index, pose in enumerate(self.native_intent.footprint_poses):
+            if pose.component not in component_ids:
+                issues.append(
+                    IRIssue(
+                        "error",
+                        "ir.missing_component",
+                        f"$.native_intent.footprint_poses[{index}].component",
+                        f"unknown footprint-pose component: {pose.component}",
+                    )
+                )
+        native_entries: tuple[
+            tuple[str, tuple[NativeRouteSegment | NativeVia, ...]], ...
+        ] = (
+            ("routes", self.native_intent.routes),
+            ("vias", self.native_intent.vias),
+        )
+        for collection_name, entries in native_entries:
+            for index, entry in enumerate(entries):
+                if entry.net not in net_ids:
+                    issues.append(
+                        IRIssue(
+                            "error",
+                            "ir.missing_net",
+                            f"$.native_intent.{collection_name}[{index}].net",
+                            f"unknown native-geometry net: {entry.net}",
+                        )
+                    )
+                last_layer = (
+                    entry.to_layer if isinstance(entry, NativeVia) else entry.layer
+                )
+                if last_layer >= self.board.layers:
+                    issues.append(
+                        IRIssue(
+                            "error",
+                            "ir.missing_layer",
+                            f"$.native_intent.{collection_name}[{index}]",
+                            "native geometry references an unavailable copper layer",
+                        )
+                    )
+                coordinates = (
+                    ((entry.x_mm, entry.y_mm),)
+                    if isinstance(entry, NativeVia)
+                    else (
+                        (entry.x1_mm, entry.y1_mm),
+                        (entry.x2_mm, entry.y2_mm),
+                    )
+                )
+                if any(
+                    not (
+                        0 <= x_mm <= self.board.width_mm
+                        and 0 <= y_mm <= self.board.height_mm
+                    )
+                    for x_mm, y_mm in coordinates
+                ):
+                    issues.append(
+                        IRIssue(
+                            "error",
+                            "ir.native_geometry_outside_board",
+                            f"$.native_intent.{collection_name}[{index}]",
+                            "native geometry lies outside the board outline",
+                        )
+                    )
+                if (
+                    isinstance(entry, NativeVia)
+                    and entry.drill_mm + 1e-9 < self.board.min_drill_mm
+                ):
+                    issues.append(
+                        IRIssue(
+                            "error",
+                            "ir.via_drill_below_minimum",
+                            f"$.native_intent.vias[{index}].drill_mm",
+                            "via drill is below the board minimum",
+                        )
+                    )
+                if (
+                    isinstance(entry, NativeRouteSegment)
+                    and entry.width_mm + 1e-9 < self.board.min_track_mm
+                ):
+                    issues.append(
+                        IRIssue(
+                            "error",
+                            "ir.route_width_below_minimum",
+                            f"$.native_intent.routes[{index}].width_mm",
+                            "retained route width is below the board minimum",
+                        )
+                    )
+        for index, net_id in enumerate(self.native_intent.unrouted_nets):
+            if net_id not in net_ids:
+                issues.append(
+                    IRIssue(
+                        "error",
+                        "ir.missing_net",
+                        f"$.native_intent.unrouted_nets[{index}]",
+                        f"unknown explicitly unrouted net: {net_id}",
+                    )
+                )
         return sorted(set(issues))
 
     def assert_valid(self) -> None:
@@ -1240,13 +1701,14 @@ def ir_json_schema() -> dict[str, Any]:
         "revision": {"type": "string", "minLength": 1},
         "scope": {"type": "object"},
         "board": {"type": "object"},
+        "native_intent": {"type": "object"},
         "metadata": {"type": "object"},
         **arrays,
     }
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "$id": "https://pcbdraft.invalid/schema/ir-v1.json",
-        "title": "PCBDraft semantic design IR v1",
+        "$id": "https://pcbdraft.invalid/schema/ir-v2.json",
+        "title": "PCBDraft semantic/native design IR v2",
         "type": "object",
         "additionalProperties": False,
         "required": sorted(properties),

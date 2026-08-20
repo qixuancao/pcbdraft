@@ -387,6 +387,11 @@ class ConfiguredPCBCallProducer:
         if not isinstance(arguments, Mapping):
             raise ValidationError("completed model tool arguments are malformed")
         status, _revision = project_status_and_revision(view)
+        exported = {spec.external_name: spec for spec in self.registry.specs}
+        if name not in exported:
+            raise ValidationError(
+                "completed model decision selected a PCB tool outside its whitelist"
+            )
         spec = self.registry.resolve(name)
         if (
             name != spec.external_name

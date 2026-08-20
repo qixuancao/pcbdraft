@@ -72,7 +72,8 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
             f"{PRODUCT_NAME}: generate native KiCad projects from reviewable circuit plans."
         ),
         epilog=(
-            "Run without a subcommand to launch the interactive Hermes-based terminal."
+            "Run without a subcommand to launch the Hermes terminal with its "
+            "closed, flat PCB toolset."
         ),
     )
     parser.add_argument(

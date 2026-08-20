@@ -23,16 +23,18 @@ from pcbdraft.domain.ir import (
     Net,
     PowerDomain,
     Scope,
-    _identifier as _strict_identifier,
     _json_value,
-    _strict_mapping,
     _string,
     canonical_json_bytes,
 )
+from pcbdraft.domain.ir import (
+    _identifier as _strict_identifier,
+)
+from pcbdraft.domain.ir import (
+    normalize_stable_identifier as _normalize_identifier,
+)
 from pcbdraft.domain.scope import assert_scope_supported
 from pcbdraft.domain.spatial_contracts import BOARD_REGIONS, COPPER_LAYER_SCOPES
-
-from pcbdraft.domain.ir import normalize_stable_identifier as _normalize_identifier
 
 
 def _identifier(value: Any, path: str) -> str:
@@ -50,7 +52,7 @@ def _identifier(value: Any, path: str) -> str:
 
 
 def _model_mapping(
-    value: Any, path: str, *, required: set[str], optional: set[str] = frozenset()
+    value: Any, path: str, *, required: set[str], optional: set[str] | None = None
 ) -> dict[str, Any]:
     """Tolerant mapping for model-authored plans: ignore unknown fields.
 
@@ -59,6 +61,7 @@ def _model_mapping(
     verbosity, so extra keys are dropped instead.
     """
 
+    del optional
     if not isinstance(value, Mapping):
         raise ValidationError(f"{path} must be an object")
     missing = set(required) - set(value)
@@ -98,7 +101,7 @@ def _model_number(value: Any, path: str) -> float:
             raise ValidationError(f"{path} must be a finite number") from None
     else:
         raise ValidationError(f"{path} must be a finite number")
-    if number != number or number in (float("inf"), float("-inf")):
+    if not math.isfinite(number):
         raise ValidationError(f"{path} must be a finite number")
     return number
 
@@ -148,6 +151,7 @@ def _model_power_domain(value: Any, path: str) -> PowerDomain:
         intent=_string(item["intent"], f"{path}.intent", limit=1024),
     )
 
+
 AGENT_REQUEST_SCHEMA = "pcbdraft-agent-design-request"
 AGENT_REQUEST_VERSION = 1
 AGENT_PLAN_SCHEMA = "pcbdraft-circuit-plan"
@@ -161,7 +165,6 @@ MAX_PLAN_INTERFACES = 64
 MAX_PLAN_CONSTRAINTS = 256
 MAX_PLAN_ASSERTIONS = 128
 MAX_PLAN_PARAMETERS = 128
-_SYMBOL_ID = re.compile(r"^[A-Za-z0-9_.+-]+:[A-Za-z0-9_.+~{}/-]+$")
 _PHYSICAL_PIN_NUMBER = re.compile(r"^[A-Za-z0-9_+./~{}-]{1,64}$")
 _PLAN_CONSTRAINT_KINDS = {
     "board_keepout",
@@ -415,11 +418,8 @@ class PlanComponent:
             optional={"manufacturer", "mpn"},
         )
         symbol = _string(item["symbol"], f"{path}.symbol", limit=256)
-        if not _SYMBOL_ID.fullmatch(symbol) and ":" not in symbol:
-            # Tolerate bare library symbols (``LED`` instead of ``Device:LED``);
-            # the local part resolver reports a concrete error if it cannot map
-            # the name onto an installed KiCad symbol.
-            symbol = symbol
+        # Bare library symbols (``LED`` instead of ``Device:LED``) remain valid;
+        # the local part resolver reports if no installed symbol can map them.
         footprint = item["footprint"]
         if footprint is not None:
             footprint = _string(footprint, f"{path}.footprint", limit=256)
@@ -1475,7 +1475,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "exact_name",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 128,
+                        },
                         "reference": {"type": "string", "maxLength": 64},
                         "symbol": {"type": "string", "maxLength": 256},
                         "value": {"type": "string", "maxLength": 256},
@@ -1513,7 +1517,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "intent",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 128,
+                        },
                         "name": {"type": "string", "maxLength": 128},
                         "endpoints": {
                             "type": "array",
@@ -1544,7 +1552,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "components",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 128,
+                        },
                         "kind": {"type": "string", "maxLength": 128},
                         "name": {"type": "string", "maxLength": 256},
                         "intent": {"type": "string", "maxLength": 2048},
@@ -1573,7 +1585,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "intent",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 128,
+                        },
                         "nominal_v": {"type": "number", "minimum": 0},
                         "min_v": {"type": "number", "minimum": 0},
                         "max_v": {"type": "number", "minimum": 0},
@@ -1599,7 +1615,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "intent",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 128,
+                        },
                         "kind": {"type": "string", "maxLength": 128},
                         "power_domain": {"type": "string", "maxLength": 128},
                         "members": {
@@ -1633,7 +1653,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "rationale",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 128},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 128,
+                        },
                         "kind": {
                             "type": "string",
                             "enum": sorted(_PLAN_CONSTRAINT_KINDS),
@@ -1673,7 +1697,11 @@ def circuit_plan_schema() -> dict[str, Any]:
                         "rationale",
                     ],
                     "properties": {
-                        "id": {"type": "string", "pattern": "^[a-z][a-z0-9_.-]{0,127}$", "maxLength": 120},
+                        "id": {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_.-]{0,127}$",
+                            "maxLength": 120,
+                        },
                         "kind": {"type": "string", "enum": sorted(ASSERTION_KINDS)},
                         "targets": {
                             "type": "array",

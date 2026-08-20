@@ -184,6 +184,8 @@ class GridRouter:
         keepouts: Iterable[RoutingKeepout] = (),
         power_nets: Iterable[str] = (),
         seed_segments: Iterable[RouteSegment] = (),
+        obstacle_segments: Iterable[RouteSegment] = (),
+        obstacle_vias: Iterable[RouteVia] = (),
     ) -> RoutingResult:
         pads_tuple = tuple(sorted(pads))
         if len(pads_tuple) > MAX_PADS:
@@ -224,6 +226,38 @@ class GridRouter:
         self.expanded_nodes = 0
         self._remaining_expansions = self.max_total_expansions
         diagnostics: list[str] = []
+
+        for segment in sorted(obstacle_segments):
+            if (
+                segment.layer < 0
+                or segment.layer >= self.layer_count
+                or segment.width_mm < self.min_track_mm
+            ):
+                raise ValidationError(
+                    "retained obstacle segment violates layer or width bounds"
+                )
+            self._reserve(
+                f"__retained__{segment.net}",
+                self._segment_path(segment),
+                segment.width_mm,
+            )
+        for via in sorted(obstacle_vias):
+            if (
+                via.from_layer < 0
+                or via.to_layer >= self.layer_count
+                or via.from_layer >= via.to_layer
+                or via.drill_mm <= 0
+                or via.diameter_mm <= via.drill_mm
+            ):
+                raise ValidationError("retained obstacle via violates board bounds")
+            x_cell, y_cell = self._point(via.x_mm, via.y_mm)
+            owner = f"__retained__{via.net}"
+            for layer in range(via.from_layer, via.to_layer + 1):
+                self._reserve(
+                    owner,
+                    [(x_cell, y_cell, layer)],
+                    via.diameter_mm,
+                )
 
         seeds = tuple(sorted(seed_segments))
         accepted_seeds: list[RouteSegment] = []

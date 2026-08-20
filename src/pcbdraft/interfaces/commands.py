@@ -275,12 +275,22 @@ PCBDRAFT_COMMANDS: tuple[tuple[str, str, str, Callable[[str], str]], ...] = (
         "[--no-browser] [--refresh] [--reauthenticate]",
         handle_connect,
     ),
-    ("review", "Summarize the current project state", "[id]", handle_review),
+    (
+        "review",
+        "Inspect and summarize the current project state",
+        "[id]",
+        handle_review,
+    ),
     ("confirm", "Approve the current candidate for generation", "[id]", handle_confirm),
     ("discard", "Discard the staged semantic change", "[id]", handle_discard),
     ("logs", "Show recent project events", "[id]", handle_logs),
-    ("validate", "Run engineering validation", "[id]", handle_validate),
-    ("release", "Build a manufacturing-candidate release", "[id]", handle_release),
+    (
+        "validate",
+        "Run the aggregate human validation shortcut",
+        "[id]",
+        handle_validate,
+    ),
+    ("release", "Build the aggregate human release shortcut", "[id]", handle_release),
 )
 
 #: Dispatch map used by the terminal's process_command wrapper.

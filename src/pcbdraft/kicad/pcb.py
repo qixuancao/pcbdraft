@@ -209,6 +209,9 @@ def generate_pcb(
     graph: PartGraph | None = None,
     system_python: str | Path | None = None,
     require_routed: bool = True,
+    auto_place: bool = True,
+    route_net_ids: frozenset[str] | None = None,
+    allow_incomplete: bool = False,
 ) -> PcbGeneration:
     """Place, route, and materialize a board; never report an unrouted board complete."""
     resolved_graph = graph or PartGraph.bundled()
@@ -217,6 +220,7 @@ def generate_pcb(
         design,
         check_libraries=True,
         allow_provisional=design.metadata.get("assurance") == "provisional",
+        allow_incomplete=allow_incomplete,
     )
     target = Path(output).resolve(strict=False)
     if target.suffix != ".kicad_pcb":
@@ -230,39 +234,67 @@ def generate_pcb(
         if not component.attributes.get("exclude_from_board", False)
         and resolved_graph.get(component.part_id).footprint is not None
     )
-    if not board_components:
-        raise ValidationError("design contains no board components")
-
-    inspection, kicad_version = inspect_footprints(
-        design,
-        board_components,
-        resolved_graph,
-        system_python=system_python,
-    )
-    assert_supported_kicad_version(kicad_version)
-    placement_result, placements = _place(design, board_components, inspection)
-    if placement_result.state != "completed":
-        raise ValidationError(
-            "placement constraints remain unsatisfied: "
-            + "; ".join(placement_result.diagnostics)
+    if board_components:
+        inspection, kicad_version = inspect_footprints(
+            design,
+            board_components,
+            resolved_graph,
+            system_python=system_python,
         )
-    routing = _route(
-        design,
-        board_components,
-        resolved_graph,
-        inspection,
-        placements,
-    )
-    if require_routed and routing.unrouted:
-        raise ValidationError(_routing_failure_message(routing))
-    constraint_metrics = _native_constraint_metrics(
-        design,
-        board_components,
-        resolved_graph,
-        inspection,
-        placements,
-        routing,
-    )
+        assert_supported_kicad_version(kicad_version)
+        if auto_place:
+            placement_result, placements = _place(design, board_components, inspection)
+            if placement_result.state != "completed":
+                raise ValidationError(
+                    "placement constraints remain unsatisfied: "
+                    + "; ".join(placement_result.diagnostics)
+                )
+            placement_state = placement_result.state
+            placement_objective = placement_result.objective
+            placement_iterations = placement_result.iterations
+            placement_diagnostics = placement_result.diagnostics
+        else:
+            placements = _retained_placements(board_components)
+            placement_state = "completed"
+            placement_objective = 0.0
+            placement_iterations = 0
+            placement_diagnostics = (
+                "automatic placement disabled; retained poses and explicit unplaced origins were materialized",
+            )
+        routing = _route(
+            design,
+            board_components,
+            resolved_graph,
+            inspection,
+            placements,
+            route_net_ids=route_net_ids,
+        )
+        if require_routed and routing.unrouted:
+            raise ValidationError(_routing_failure_message(routing))
+        constraint_metrics = (
+            _native_constraint_metrics(
+                design,
+                board_components,
+                resolved_graph,
+                inspection,
+                placements,
+                routing,
+            )
+            if auto_place and route_net_ids is None
+            else {}
+        )
+    else:
+        # A newly created toolbox project is a real synchronized empty board.
+        # It carries only the required GND reference plane until the model adds
+        # concrete topology and footprints one operation at a time.
+        kicad_version = ""
+        placements = {}
+        routing = RoutingResult((), (), (), "completed", 0, ())
+        constraint_metrics = {}
+        placement_state = "completed"
+        placement_objective = 0.0
+        placement_iterations = 0
+        placement_diagnostics = ()
 
     job = _build_job(
         design,
@@ -296,10 +328,10 @@ def generate_pcb(
         worker_receipt_sha256=sha256_file(receipt, max_bytes=WORKER_RESULT_LIMIT),
         kicad_version=str(result.get("kicad_version", kicad_version)),
         placements=placements,
-        placement_state=placement_result.state,
-        placement_objective=placement_result.objective,
-        placement_iterations=placement_result.iterations,
-        placement_diagnostics=placement_result.diagnostics,
+        placement_state=placement_state,
+        placement_objective=placement_objective,
+        placement_iterations=placement_iterations,
+        placement_diagnostics=placement_diagnostics,
         routing=routing,
         reference_planes=reference_planes,
         constraint_metrics=constraint_metrics,
@@ -593,14 +625,56 @@ def _place(
     return result, placements
 
 
+def _retained_placements(
+    components: tuple[Component, ...],
+) -> dict[str, dict[str, float | str | bool]]:
+    """Materialize explicit poses without making a layout decision."""
+
+    placements: dict[str, dict[str, float | str | bool]] = {}
+    for component in components:
+        placement = component.placement
+        placements[component.id] = {
+            "x_mm": placement.x_mm if placement is not None else 0.0,
+            "y_mm": placement.y_mm if placement is not None else 0.0,
+            "rotation_deg": placement.rotation_deg if placement is not None else 0.0,
+            "side": placement.side if placement is not None else "front",
+            "fixed": placement.fixed if placement is not None else False,
+        }
+    return placements
+
+
 def _route(
     design: Design,
     components: tuple[Component, ...],
     graph: PartGraph,
     inspections: dict[str, FootprintInspection],
     placements: dict[str, dict[str, float | str | bool]],
+    *,
+    route_net_ids: frozenset[str] | None = None,
 ) -> RoutingResult:
     endpoint_nets: dict[tuple[str, str], str] = {}
+    net_names_by_id = {net.id: net.name for net in design.nets}
+    suppressed_net_names = {
+        net_names_by_id[net_id] for net_id in design.native_intent.unrouted_nets
+    }
+    retained_net_names = {
+        net_names_by_id[segment.net] for segment in design.native_intent.routes
+    }
+    unknown_selected = set(route_net_ids or ()) - set(net_names_by_id)
+    if unknown_selected:
+        raise ValidationError(
+            "selected routing nets are absent: " + ", ".join(sorted(unknown_selected))
+        )
+    selected_net_names = (
+        {net_names_by_id[net_id] for net_id in route_net_ids}
+        if route_net_ids is not None
+        else set(net_names_by_id.values())
+    )
+    bypass_net_names = (
+        suppressed_net_names
+        | retained_net_names
+        | (set(net_names_by_id.values()) - selected_net_names)
+    )
     component_by_id = {component.id: component for component in components}
     for net in design.nets:
         for endpoint in net.endpoints:
@@ -627,13 +701,15 @@ def _route(
         for pad in inspections[component.id].pads:
             if not pad.layers:
                 continue
-            net_name = endpoint_nets.get((component.id, pad.number))
-            if net_name is None:
-                net_name = f"__obstacle__{component.id}_{pad.index}"
+            semantic_net_name = endpoint_nets.get((component.id, pad.number))
+            if semantic_net_name is None or semantic_net_name in bypass_net_names:
+                router_net_name = f"__obstacle__{component.id}_{pad.index}"
+            else:
+                router_net_name = semantic_net_name
             pads.append(
                 RoutingPad(
                     id=f"{component.id}/{pad.index}/{pad.number}",
-                    net=net_name,
+                    net=router_net_name,
                     x_mm=float(origin["x_mm"]) + pad.x_mm,
                     y_mm=float(origin["y_mm"]) + pad.y_mm,
                     width_mm=pad.width_mm,
@@ -642,12 +718,12 @@ def _route(
                 )
             )
             if (
-                not net_name.startswith("__obstacle__")
+                not router_net_name.startswith("__obstacle__")
                 and min(pad.width_mm, pad.height_mm) < 0.5
             ):
                 escape_segments.append(
                     _escape_segment(
-                        net_name,
+                        router_net_name,
                         pad,
                         info,
                         float(origin["x_mm"]),
@@ -656,7 +732,12 @@ def _route(
                         design.board.min_clearance_mm + ROUTING_GEOMETRY_MARGIN_MM,
                     )
                 )
-    widths = {net.name: max(design.board.min_track_mm, 0.25) for net in design.nets}
+    routed_net_names = set(endpoint_nets.values()) - bypass_net_names
+    widths = {
+        net.name: max(design.board.min_track_mm, 0.25)
+        for net in design.nets
+        if net.name in routed_net_names
+    }
     net_name_by_id = {net.id: net.name for net in design.nets}
     for constraint in design.constraints:
         if constraint.kind not in {"routing", "differential_pair"}:
@@ -665,9 +746,34 @@ def _route(
         if not isinstance(width, (int, float)) or isinstance(width, bool):
             continue
         for target in constraint.targets:
-            if target in net_name_by_id:
+            if target in net_name_by_id and net_name_by_id[target] in widths:
                 widths[net_name_by_id[target]] = float(width)
     provisional = design.metadata.get("assurance") == "provisional"
+    net_names = net_names_by_id
+    retained_segments = tuple(
+        RouteSegment(
+            net=net_names[item.net],
+            layer=item.layer,
+            x1_mm=item.x1_mm,
+            y1_mm=item.y1_mm,
+            x2_mm=item.x2_mm,
+            y2_mm=item.y2_mm,
+            width_mm=item.width_mm,
+        )
+        for item in design.native_intent.routes
+    )
+    explicit_vias = tuple(
+        RouteVia(
+            net=net_names[item.net],
+            x_mm=item.x_mm,
+            y_mm=item.y_mm,
+            diameter_mm=item.diameter_mm,
+            drill_mm=item.drill_mm,
+            from_layer=item.from_layer,
+            to_layer=item.to_layer,
+        )
+        for item in design.native_intent.vias
+    )
     router = GridRouter(
         board_width_mm=design.board.width_mm,
         board_height_mm=design.board.height_mm,
@@ -692,7 +798,22 @@ def _route(
         keepouts=_board_routing_keepouts(design),
         power_nets=(net.name for net in design.nets if net.net_class == "power"),
         seed_segments=escape_segments,
+        obstacle_segments=retained_segments,
+        obstacle_vias=explicit_vias,
     )
+    routed = RoutingResult(
+        segments=tuple(sorted((*routed.segments, *retained_segments))),
+        vias=tuple(sorted((*routed.vias, *explicit_vias))),
+        unrouted=routed.unrouted,
+        state=routed.state,
+        expanded_nodes=routed.expanded_nodes,
+        diagnostics=routed.diagnostics,
+    )
+    # Flat semantic tools pass an explicit selection (including the empty set).
+    # Stitching-via synthesis is a legacy whole-board routing behavior and must
+    # not add unrelated copper during one concrete flat operation.
+    if route_net_ids is not None:
+        return routed
     return _add_reference_stitching_vias(
         design,
         components,

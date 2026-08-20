@@ -59,6 +59,38 @@ def _assert_all_object_schemas_are_strict(case: unittest.TestCase, value: Any) -
             _assert_all_object_schemas_are_strict(case, item)
 
 
+def _schema_example(schema: Mapping[str, Any]) -> Any:
+    if "const" in schema:
+        return schema["const"]
+    if isinstance(schema.get("enum"), (list, tuple)):
+        return schema["enum"][0]
+    if isinstance(schema.get("anyOf"), (list, tuple)):
+        return _schema_example(schema["anyOf"][0])
+    schema_type = schema.get("type")
+    if schema_type == "object":
+        properties = schema.get("properties") or {}
+        return {name: _schema_example(value) for name, value in properties.items()}
+    if schema_type == "array":
+        return (
+            [_schema_example(schema["items"])]
+            if int(schema.get("minItems", 0)) > 0
+            else []
+        )
+    if schema_type == "number":
+        return 1.0
+    if schema_type == "integer":
+        return 1
+    if schema_type == "boolean":
+        return True
+    if schema_type == "null":
+        return None
+    return "x"
+
+
+def _arguments_for(name: str) -> dict[str, Any]:
+    return _schema_example(DEFAULT_PCB_TOOL_REGISTRY.resolve(name).input_schema)
+
+
 class ToolService:
     def __init__(self, *, status: str = "draft", revision: int = 3) -> None:
         self.view = _view(status=status, revision=revision)
@@ -156,28 +188,94 @@ class ToolService:
         self.calls.append(("build_release", project_id, timeout, expected_revision))
         return self.view
 
+    def execute_pcb_tool(
+        self,
+        project_id: str,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        self.calls.append(
+            (
+                "execute_pcb_tool",
+                project_id,
+                tool_name,
+                arguments,
+                timeout,
+                expected_revision,
+            )
+        )
+        return self.view
+
 
 class PCBToolingTests(unittest.TestCase):
     def test_registry_is_closed_and_declares_effect_and_risk(self) -> None:
         specs = {spec.name: spec for spec in DEFAULT_PCB_TOOL_REGISTRY.specs}
 
-        self.assertEqual(
-            set(specs),
+        self.assertEqual(len(specs), 56)
+        self.assertTrue(
+            {
+                "list_projects",
+                "inspect_design",
+                "add_component",
+                "set_board_outline",
+                "route_net",
+                "run_drc",
+                "render_board",
+                "export_gerbers",
+            }
+            <= set(specs)
+        )
+        self.assertFalse(
             {
                 "plan_request",
                 "generate_candidate",
-                "validate",
-                "repair_candidate",
-                "apply_candidate",
-                "discard_candidate",
-                "undo_last_change",
-                "render_previews",
-                "build_release",
-            },
+                "apply_design_change_set",
+                "generate_fresh_project",
+                "modify_existing_project",
+            }
+            & set(specs)
         )
-        self.assertEqual(specs["plan_request"].effect, "conversation_write")
-        self.assertEqual(specs["apply_candidate"].effect, "authoritative_write")
-        self.assertEqual(specs["apply_candidate"].risk, "high")
+        self.assertEqual(specs["inspect_design"].effect, "read")
+        self.assertEqual(specs["set_board_outline"].effect, "authoritative_write")
+        self.assertEqual(specs["set_board_outline"].risk, "high")
+        self.assertEqual(
+            DEFAULT_PCB_TOOL_REGISTRY.schema_fingerprint(),
+            "a2d579eb8ff79137b2ad8418e347a9af1475e45b215fcc1d59127b80c4391dfd",
+        )
+        self.assertTrue(
+            all(
+                "operation" not in spec.input_schema["properties"]
+                for spec in specs.values()
+            )
+        )
+        encoded = json.dumps(
+            [spec.input_schema for spec in specs.values()], sort_keys=True
+        )
+        self.assertNotIn("value_json", encoded)
+        self.assertNotIn("changes_json", encoded)
+        self.assertNotIn(
+            "components",
+            specs["add_block"].input_schema["properties"]["value"]["properties"],
+        )
+        self.assertNotIn(
+            "endpoints",
+            specs["add_net"].input_schema["properties"]["value"]["properties"],
+        )
+        outline = specs["set_board_outline"].input_schema["properties"]
+        self.assertEqual(outline["width_mm"]["type"], "number")
+        self.assertEqual(outline["height_mm"]["type"], "number")
+        self.assertEqual(outline["width_mm"]["exclusiveMinimum"], 0)
+        self.assertEqual(outline["height_mm"]["exclusiveMinimum"], 0)
+        place = specs["place_footprint"].input_schema["properties"]
+        self.assertEqual(place["side"]["enum"], ["front", "back"])
+        via = specs["add_via"].input_schema["properties"]
+        self.assertEqual(via["diameter_mm"]["exclusiveMinimum"], 0)
+        self.assertEqual(via["drill_mm"]["exclusiveMinimum"], 0)
+        self.assertEqual(via["from_layer"]["minimum"], 0)
+        self.assertEqual(via["to_layer"]["minimum"], 0)
 
     def test_every_exported_object_schema_is_closed_and_fully_required(self) -> None:
         for spec in DEFAULT_PCB_TOOL_REGISTRY.specs:
@@ -203,23 +301,31 @@ class PCBToolingTests(unittest.TestCase):
         self.assertNotIn("uniqueItems", json.dumps(exported, sort_keys=True))
 
     def test_schema_exports_are_fresh_and_static_specs_are_immutable(self) -> None:
-        spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("repair_candidate")
-        first = spec.to_openai_responses_tool()
-        first["parameters"]["properties"]["feedback"]["properties"]["summary"][
-            "type"
-        ] = "integer"
-        first["parameters"]["required"].clear()
+        for name, nested_property in (
+            ("add_component", "reference"),
+            ("add_constraint", "params"),
+        ):
+            with self.subTest(tool=name):
+                spec = DEFAULT_PCB_TOOL_REGISTRY.resolve(name)
+                first = spec.to_openai_responses_tool()
+                value = first["parameters"]["properties"]["value"]
+                original_type = value["properties"][nested_property]["type"]
+                value["properties"][nested_property]["type"] = "integer"
+                first["parameters"]["required"].clear()
 
-        second = spec.to_openai_responses_tool()
-        feedback = second["parameters"]["properties"]["feedback"]
-        self.assertEqual(feedback["properties"]["summary"]["type"], "string")
-        self.assertEqual(second["parameters"]["required"], ["feedback"])
+                second = spec.to_openai_responses_tool()
+                fresh_value = second["parameters"]["properties"]["value"]
+                self.assertEqual(
+                    fresh_value["properties"][nested_property]["type"],
+                    original_type,
+                )
+                self.assertEqual(second["parameters"]["required"], ["value"])
 
-        stored_schema = spec.arguments[0].schema
-        with self.assertRaises(TypeError):
-            stored_schema["type"] = "string"  # type: ignore[index]
-        with self.assertRaises(TypeError):
-            stored_schema["properties"]["summary"]["type"] = "integer"  # type: ignore[index]
+                stored_schema = spec.arguments[0].schema
+                with self.assertRaises(TypeError):
+                    stored_schema["type"] = "string"  # type: ignore[index]
+                with self.assertRaises(TypeError):
+                    stored_schema["properties"][nested_property]["type"] = "integer"  # type: ignore[index]
 
     def test_openai_and_mcp_exports_share_names_schema_and_descriptions(self) -> None:
         openai_tools = DEFAULT_PCB_TOOL_REGISTRY.openai_responses_tools()
@@ -243,16 +349,16 @@ class PCBToolingTests(unittest.TestCase):
         tools = {item["name"]: item for item in DEFAULT_PCB_TOOL_REGISTRY.mcp_tools()}
 
         self.assertEqual(
-            tools["pcb_plan_request"]["annotations"],
+            tools["pcb_list_projects"]["annotations"],
             {
-                "readOnlyHint": False,
+                "readOnlyHint": True,
                 "destructiveHint": False,
-                "idempotentHint": False,
-                "openWorldHint": True,
+                "idempotentHint": True,
+                "openWorldHint": False,
             },
         )
         self.assertEqual(
-            tools["pcb_validate"]["annotations"],
+            tools["pcb_check_semantics"]["annotations"],
             {
                 "readOnlyHint": False,
                 "destructiveHint": False,
@@ -260,21 +366,18 @@ class PCBToolingTests(unittest.TestCase):
                 "openWorldHint": False,
             },
         )
+        self.assertTrue(tools["pcb_add_component"]["annotations"]["destructiveHint"])
         self.assertTrue(
-            tools["pcb_generate_candidate"]["annotations"]["destructiveHint"]
+            tools["pcb_set_board_outline"]["annotations"]["destructiveHint"]
         )
-        self.assertTrue(tools["pcb_apply_candidate"]["annotations"]["destructiveHint"])
-        self.assertTrue(
-            tools["pcb_discard_candidate"]["annotations"]["destructiveHint"]
-        )
-        self.assertTrue(tools["pcb_repair_candidate"]["annotations"]["openWorldHint"])
+        self.assertFalse(tools["pcb_run_drc"]["annotations"]["openWorldHint"])
 
     def test_tool_specs_reject_invalid_or_hidden_authority_metadata(self) -> None:
-        plan = DEFAULT_PCB_TOOL_REGISTRY.resolve("plan_request")
-        apply = DEFAULT_PCB_TOOL_REGISTRY.resolve("apply_candidate")
+        plan = DEFAULT_PCB_TOOL_REGISTRY.resolve("list_projects")
+        apply = DEFAULT_PCB_TOOL_REGISTRY.resolve("set_board_outline")
 
         with self.assertRaisesRegex(ValueError, "invalid effect"):
-            replace(plan, effect="read")  # type: ignore[arg-type]
+            replace(plan, effect="invalid")  # type: ignore[arg-type]
         with self.assertRaisesRegex(ValueError, "invalid risk"):
             replace(plan, risk="extreme")  # type: ignore[arg-type]
         with self.assertRaisesRegex(ValueError, "1-64"):
@@ -294,7 +397,7 @@ class PCBToolingTests(unittest.TestCase):
 
     def test_registry_cannot_downgrade_a_fixed_handler_contract(self) -> None:
         downgraded = replace(
-            DEFAULT_PCB_TOOL_REGISTRY.resolve("apply_candidate"), risk="medium"
+            DEFAULT_PCB_TOOL_REGISTRY.resolve("set_board_outline"), risk="medium"
         )
         specs = tuple(
             downgraded if spec.name == downgraded.name else spec
@@ -304,14 +407,13 @@ class PCBToolingTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "fixed handler authority"):
             PCBToolRegistry(specs)
 
-    def test_registry_status_contracts_match_service_entry_states(self) -> None:
-        generate = DEFAULT_PCB_TOOL_REGISTRY.resolve("generate_candidate")
-        repair = DEFAULT_PCB_TOOL_REGISTRY.resolve("repair_candidate")
+    def test_flat_write_status_contracts_require_a_materialized_design(self) -> None:
+        add_component = DEFAULT_PCB_TOOL_REGISTRY.resolve("add_component")
+        run_drc = DEFAULT_PCB_TOOL_REGISTRY.resolve("run_drc")
 
-        self.assertNotIn("generated", generate.allowed_statuses)
-        self.assertTrue(
-            {"released", "release_failed", "interrupted"} <= repair.allowed_statuses
-        )
+        self.assertNotIn("draft", add_component.allowed_statuses)
+        self.assertNotIn("awaiting_confirmation", run_drc.allowed_statuses)
+        self.assertIn("generated", add_component.allowed_statuses)
 
     def test_unknown_tool_is_rejected_before_dispatch(self) -> None:
         service = ToolService()
@@ -329,6 +431,25 @@ class PCBToolingTests(unittest.TestCase):
 
         self.assertEqual(service.calls, [])
 
+    def test_flat_tool_dispatches_one_concrete_service_operation(self) -> None:
+        service = ToolService(status="generated")
+        executor = PCBToolExecutor(service)  # type: ignore[arg-type]
+        call = ToolCall(
+            name="inspect_design",
+            project_id="board",
+            source="model",
+            arguments={},
+            baseline_revision=3,
+        )
+
+        result = executor.execute(call, timeout=12.0)
+
+        self.assertEqual(
+            service.calls,
+            [("execute_pcb_tool", "board", "inspect_design", {}, 12.0, 3)],
+        )
+        self.assertEqual(result.spec.name, "inspect_design")
+
     def test_extra_argument_is_rejected_before_dispatch(self) -> None:
         service = ToolService()
 
@@ -343,46 +464,54 @@ class PCBToolingTests(unittest.TestCase):
 
         self.assertEqual(service.calls, [])
 
-    def test_stale_baseline_is_rejected_before_dispatch(self) -> None:
-        service = ToolService(revision=4)
-        executor = PCBToolExecutor(service)  # type: ignore[arg-type]
-        call = ToolCall(
-            name="plan_request",
-            project_id="board",
-            source="runtime_policy",
-            arguments={"message": "Build a sensor board"},
-            baseline_revision=3,
-        )
+    def test_every_flat_write_rejects_a_stale_baseline_before_dispatch(self) -> None:
+        for spec in DEFAULT_PCB_TOOL_REGISTRY.specs:
+            if spec.effect == "read" or spec.name == "create_project":
+                continue
+            with self.subTest(tool=spec.name):
+                service = ToolService(status="generated", revision=4)
+                executor = PCBToolExecutor(service)  # type: ignore[arg-type]
+                call = ToolCall(
+                    name=spec.name,
+                    project_id="board",
+                    source="model",
+                    arguments=_arguments_for(spec.name),
+                    baseline_revision=3,
+                )
+                with self.assertRaisesRegex(ValidationError, "stale baseline revision"):
+                    executor.execute(call, timeout=12.0)
+                self.assertEqual(service.calls, [])
 
-        with self.assertRaisesRegex(ValidationError, "stale baseline revision"):
-            executor.execute(call, timeout=12.0)
+    def test_every_flat_write_rejects_disallowed_status_before_dispatch(self) -> None:
+        for spec in DEFAULT_PCB_TOOL_REGISTRY.specs:
+            if spec.effect == "read" or spec.name == "create_project":
+                continue
+            with self.subTest(tool=spec.name):
+                service = ToolService(status="invalid-test-status")
+                executor = PCBToolExecutor(service)  # type: ignore[arg-type]
+                call = ToolCall(
+                    name=spec.name,
+                    project_id="board",
+                    source="runtime_policy",
+                    arguments=_arguments_for(spec.name),
+                    baseline_revision=3,
+                )
 
-        self.assertEqual(service.calls, [])
+                with self.assertRaisesRegex(
+                    ValidationError, "status is invalid-test-status"
+                ):
+                    executor.execute(call, timeout=12.0)
 
-    def test_disallowed_status_is_rejected_before_dispatch(self) -> None:
-        service = ToolService(status="draft")
-        executor = PCBToolExecutor(service)  # type: ignore[arg-type]
-        call = ToolCall(
-            name="generate_candidate",
-            project_id="board",
-            source="runtime_policy",
-            arguments={},
-            baseline_revision=3,
-        )
+                self.assertEqual(service.calls, [])
 
-        with self.assertRaisesRegex(ValidationError, "status is draft"):
-            executor.execute(call, timeout=12.0)
-
-        self.assertEqual(service.calls, [])
-
-    def test_valid_call_returns_a_typed_audit_receipt(self) -> None:
-        service = ToolService()
+    def test_valid_flat_call_returns_a_typed_audit_receipt(self) -> None:
+        service = ToolService(status="generated")
         executor = PCBToolExecutor(service)  # type: ignore[arg-type]
         call = call_from_view(
-            "plan_request",
+            "inspect_design",
             "board",
-            source="runtime_policy",
-            arguments={"message": "Build a sensor board"},
+            source="model",
+            arguments={},
             view=service.view,
         )
 
@@ -390,40 +519,66 @@ class PCBToolingTests(unittest.TestCase):
 
         self.assertEqual(
             service.calls,
-            [("send_message", "board", "Build a sensor board", 12.0, 3)],
+            [("execute_pcb_tool", "board", "inspect_design", {}, 12.0, 3)],
         )
-        self.assertEqual(result.call.source, "runtime_policy")
+        self.assertEqual(result.call.source, "model")
         self.assertEqual(len(result.call.arguments_hash), 64)
-        self.assertEqual(result.spec.name, "plan_request")
-        self.assertEqual((result.before_status, result.before_revision), ("draft", 3))
+        self.assertEqual(result.spec.name, "inspect_design")
+        self.assertEqual(
+            (result.before_status, result.before_revision), ("generated", 3)
+        )
         self.assertEqual(
             (result.after_status, result.after_revision),
-            ("awaiting_confirmation", 4),
+            ("generated", 3),
         )
 
-    def test_apply_forwards_timeout_and_bound_revision_to_service_cas(self) -> None:
-        service = ToolService(status="change_ready")
-        executor = PCBToolExecutor(service)  # type: ignore[arg-type]
-        call = ToolCall(
-            name="apply_candidate",
-            project_id="board",
-            source="runtime_policy",
-            arguments={},
-            baseline_revision=3,
-        )
-
-        executor.execute(call, timeout=12.0)
-
-        self.assertEqual(service.calls, [("apply_modification", "board", 12.0, 3)])
+    def test_every_flat_write_dispatches_one_fixed_revision_bound_service_call(
+        self,
+    ) -> None:
+        for spec in DEFAULT_PCB_TOOL_REGISTRY.specs:
+            if spec.effect == "read" or spec.name == "create_project":
+                continue
+            with self.subTest(tool=spec.name):
+                service = ToolService(status="generated")
+                executor = PCBToolExecutor(service)  # type: ignore[arg-type]
+                arguments = _arguments_for(spec.name)
+                result = executor.execute(
+                    ToolCall(
+                        name=spec.name,
+                        project_id="board",
+                        source="model",
+                        arguments=arguments,
+                        baseline_revision=3,
+                    ),
+                    timeout=12.0,
+                )
+                self.assertEqual(
+                    service.calls,
+                    [
+                        (
+                            "execute_pcb_tool",
+                            "board",
+                            spec.name,
+                            arguments,
+                            12.0,
+                            3,
+                        )
+                    ],
+                )
+                self.assertEqual(result.spec, spec)
+                self.assertEqual(result.call.name, spec.name)
+                self.assertEqual(result.call.arguments, arguments)
+                self.assertEqual(result.before_revision, 3)
+                self.assertEqual(result.after_revision, 3)
 
     def test_protocol_name_dispatches_to_the_same_closed_internal_handler(self) -> None:
         service = ToolService()
         executor = PCBToolExecutor(service)  # type: ignore[arg-type]
         call = ToolCall(
-            name="pcb_plan_request",
+            name="pcb_inspect_design",
             project_id="board",
-            source="runtime_policy",
-            arguments={"message": "Build a sensor board"},
+            source="model",
+            arguments={},
             baseline_revision=3,
         )
 
@@ -431,10 +586,10 @@ class PCBToolingTests(unittest.TestCase):
 
         self.assertEqual(
             service.calls,
-            [("send_message", "board", "Build a sensor board", 12.0, 3)],
+            [("execute_pcb_tool", "board", "inspect_design", {}, 12.0, 3)],
         )
-        self.assertEqual(result.spec.name, "plan_request")
-        self.assertEqual(result.spec.external_name, "pcb_plan_request")
+        self.assertEqual(result.spec.name, "inspect_design")
+        self.assertEqual(result.spec.external_name, "pcb_inspect_design")
 
     def test_repair_arguments_are_normalized_before_hash_and_dispatch(self) -> None:
         service = ToolService(status="generated")
@@ -464,11 +619,9 @@ class PCBToolingTests(unittest.TestCase):
         )
         self.assertEqual(call.arguments_hash, equivalent.arguments_hash)
 
-        executor.execute(call, timeout=12.0)
-
-        self.assertEqual(service.calls[0][0], "prepare_agent_repair")
-        self.assertEqual(service.calls[0][2], normalized)
-        self.assertEqual(service.calls[0][-1], 3)
+        with self.assertRaisesRegex(ValidationError, "audit-only"):
+            executor.execute(call, timeout=12.0)
+        self.assertEqual(service.calls, [])
 
     def test_nested_argument_mutation_is_detected_before_dispatch(self) -> None:
         service = ToolService(status="generated")
@@ -509,7 +662,7 @@ class PCBToolingTests(unittest.TestCase):
     def test_overlong_repair_text_is_rejected_instead_of_truncated(self) -> None:
         service = ToolService(status="generated")
 
-        with self.assertRaisesRegex(ValidationError, "2048 character limit"):
+        with self.assertRaisesRegex(ValidationError, "strict schema"):
             ToolCall(
                 name="repair_candidate",
                 project_id="board",
@@ -523,7 +676,7 @@ class PCBToolingTests(unittest.TestCase):
     def test_nested_repair_arguments_remain_exact(self) -> None:
         service = ToolService(status="generated")
 
-        with self.assertRaisesRegex(ValidationError, "invalid shape"):
+        with self.assertRaisesRegex(ValidationError, "strict schema"):
             ToolCall(
                 name="pcb_repair_candidate",
                 project_id="board",

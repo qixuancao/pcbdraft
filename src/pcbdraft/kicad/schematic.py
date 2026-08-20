@@ -108,6 +108,7 @@ def generate_schematic(
     output: str | Path,
     *,
     graph: PartGraph | None = None,
+    allow_incomplete: bool = False,
 ) -> SchematicGeneration:
     """Compile a validated IR into a self-contained modern ``.kicad_sch`` file."""
     resolved_graph = graph or PartGraph.bundled()
@@ -116,6 +117,7 @@ def generate_schematic(
         design,
         check_libraries=True,
         allow_provisional=design.metadata.get("assurance") == "provisional",
+        allow_incomplete=allow_incomplete,
     )
     target = Path(output).resolve(strict=False)
     if target.suffix != ".kicad_sch":

@@ -224,12 +224,10 @@ class AgentOrchestrator:
                 return view
             active = self._active_tool(record)
             if active is None:
-                step = self.producer.conversation_step(
-                    record, view, timeout=timeout
-                )
+                step = self.producer.conversation_step(record, view, timeout=timeout)
                 proposal = step.proposal if step is not None else None
                 delivered_reply = step is not None and step.reply is not None
-                if delivered_reply:
+                if step is not None and step.reply is not None:
                     record = self._deliver_reply(store, record, step.reply)
                 if proposal is None and not delivered_reply:
                     proposal = self.producer.next_call(record, view, timeout=timeout)

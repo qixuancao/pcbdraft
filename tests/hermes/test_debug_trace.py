@@ -335,6 +335,9 @@ class DebugPluginInstallTests(unittest.TestCase):
                 no_provider = path.read_text(encoding="utf-8")
                 self.assertIn("plugins:", no_provider)
                 self.assertIn(f"- {DEBUG_PLUGIN_DIR_NAME}", no_provider)
+                self.assertIn("platform_toolsets:", no_provider)
+                self.assertIn("- pcbdraft", no_provider)
+                self.assertNotIn("- hermes-cli", no_provider)
                 from hermes_cli.config import read_raw_config, save_config
 
                 config = read_raw_config()

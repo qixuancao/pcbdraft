@@ -1,11 +1,9 @@
 """Typed capability catalog for the legacy TUI action palette.
 
 This is the small compatibility catalog behind the durable TUI job path and
-its explicit shortcut commands.  It maps a named capability to one constrained
-application job.  The canonical agent-facing capability registry — including
-the domain routers — lives in
-:mod:`pcbdraft.agent.capability_registry`; model providers never receive
-arbitrary shell or filesystem authority from either layer.
+its explicit shortcut commands. It maps a named capability to one constrained
+application job. Model providers receive the canonical flat registry from
+``pcbdraft.agent.tooling``; this human shortcut catalog is never exported.
 """
 
 from __future__ import annotations

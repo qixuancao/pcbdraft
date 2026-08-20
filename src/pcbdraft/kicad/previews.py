@@ -42,6 +42,42 @@ def generate_previews(
 ) -> PreviewBundle:
     """Export schematic/PCB SVGs, a PDF, and a real 3D board render."""
 
+    return _generate_selected_previews(
+        project_value,
+        output,
+        kinds=frozenset({"render_schematic", "render_board", "render_3d"}),
+        timeout=timeout,
+    )
+
+
+def generate_preview(
+    project_value: ManagedProject | str | Path,
+    output: str | Path,
+    kind: str,
+    *,
+    timeout: float = 90.0,
+) -> PreviewBundle:
+    """Generate only the explicitly requested flat-toolbox preview."""
+
+    if kind not in {"render_schematic", "render_board", "render_3d"}:
+        raise ValidationError(f"unknown PCB preview kind: {kind}")
+    return _generate_selected_previews(
+        project_value,
+        output,
+        kinds=frozenset({kind}),
+        timeout=timeout,
+    )
+
+
+def _generate_selected_previews(
+    project_value: ManagedProject | str | Path,
+    output: str | Path,
+    *,
+    kinds: frozenset[str],
+    timeout: float,
+) -> PreviewBundle:
+    """Execute a bounded subset of the deterministic preview commands."""
+
     if timeout <= 0 or timeout > 600:
         raise ValidationError("preview timeout must be in (0, 600] seconds")
     project = (
@@ -126,6 +162,13 @@ def generate_previews(
             ],
         ),
     ]
+    requested_commands = {
+        "render_schematic": {"schematic_svg", "schematic_pdf"},
+        "render_board": {"board_svg"},
+        "render_3d": {"board_render"},
+    }
+    selected_names = set().union(*(requested_commands[kind] for kind in kinds))
+    commands = [item for item in commands if item[0] in selected_names]
     deadline = time.monotonic() + timeout
     runs: list[dict[str, Any]] = []
     for name, argv in commands:
@@ -154,18 +197,27 @@ def generate_previews(
         )
         if result.returncode != 0 or result.timed_out or result.output_limited:
             raise PCBDraftError(f"KiCad preview export failed: {name}")
-    schematic_svgs = sorted(
-        path
-        for path in schematic_dir.glob("*.svg")
-        if path.is_file() and not path.is_symlink()
+    schematic_svgs = (
+        sorted(
+            path
+            for path in schematic_dir.glob("*.svg")
+            if path.is_file() and not path.is_symlink()
+        )
+        if "schematic_svg" in selected_names
+        else []
     )
-    if len(schematic_svgs) != 1:
+    if "schematic_svg" in selected_names and len(schematic_svgs) != 1:
         raise ValidationError("expected exactly one schematic SVG preview")
-    files = {
-        "schematic_svg": schematic_svgs[0],
+    available_files = {
+        "schematic_svg": schematic_svgs[0] if schematic_svgs else None,
         "schematic_pdf": schematic_pdf,
         "board_svg": board_svg,
         "board_render": board_png,
+    }
+    files = {
+        name: path
+        for name, path in available_files.items()
+        if name in selected_names and path is not None
     }
     inventory: dict[str, Any] = {}
     for name, path in files.items():
@@ -186,6 +238,7 @@ def generate_previews(
             "schema": "pcbdraft-preview-bundle",
             "version": 1,
             "created_at": utc_timestamp(),
+            "renders": sorted(kinds),
             "design_content_hash": project.design.content_hash(),
             "files": inventory,
             "tool_runs": runs,

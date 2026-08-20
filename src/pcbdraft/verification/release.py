@@ -62,6 +62,17 @@ class ManufacturingRelease:
 
 
 @dataclass(frozen=True)
+class IndividualManufacturingExport:
+    """One source-bound manufacturing artifact family and its receipt."""
+
+    kind: str
+    root: Path
+    receipt_path: Path
+    design_content_hash: str
+    artifacts: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
 class ReleaseVerification:
     root: Path
     manifest_sha256: str
@@ -252,6 +263,124 @@ def build_manufacturing_release(
         raise
 
 
+def export_manufacturing_output(
+    project_value: ManagedProject | str | Path,
+    output: str | Path,
+    kind: str,
+    *,
+    graph: PartGraph | None = None,
+    timeout: float = 180.0,
+) -> IndividualManufacturingExport:
+    """Export exactly one flat-toolbox manufacturing artifact family."""
+
+    command_by_kind = {
+        "export_gerbers": "gerbers",
+        "export_drill": "drill",
+        "export_bom": "bom",
+        "export_pick_place": "positions",
+        "export_step": "step",
+    }
+    command = command_by_kind.get(kind)
+    if command is None:
+        raise ValidationError(f"unknown manufacturing export kind: {kind}")
+    if not math.isfinite(timeout) or timeout <= 0 or timeout > 3600:
+        raise ValidationError("export timeout must be in (0, 3600] seconds")
+    project = (
+        project_value
+        if isinstance(project_value, ManagedProject)
+        else open_managed_project(project_value)
+    )
+    project.assert_synchronized()
+    resolved_graph = graph or project.graph
+    root = _new_release_root(output)
+    for directory in (root / "gerber", root / "drill"):
+        make_directory(directory)
+    receipt_path = root / "receipt.json"
+    design_hash = project.design.content_hash()
+    receipt: dict[str, Any] = {
+        "schema": "pcbdraft-individual-manufacturing-export",
+        "version": 1,
+        "status": "running",
+        "export": kind,
+        "created_at": utc_timestamp(),
+        "project": portable_record_path(project.root),
+        "design_content_hash": design_hash,
+    }
+    atomic_write_json(receipt_path, receipt)
+    try:
+        deadline = time.monotonic() + timeout
+        with ResourceLock(
+            project.root,
+            project.root.parent / ".pcbdraft-locks",
+            timeout=min(10.0, timeout),
+        ):
+            source_hashes = _source_hashes(project)
+            runs = _run_exports(
+                project,
+                root,
+                deadline,
+                names=frozenset({command}),
+            )
+            normalization = _normalize_export_metadata(root)
+            if kind == "export_bom":
+                contract: dict[str, Any] | None = _verify_bom(
+                    project, resolved_graph, root
+                )
+            elif kind == "export_pick_place":
+                contract = _verify_positions(project, resolved_graph, root)
+            else:
+                contract = None
+            if _source_hashes(project) != source_hashes:
+                raise ValidationError("managed project changed during export")
+            if kind == "export_gerbers":
+                generated = [path for path in (root / "gerber").glob("*")]
+            elif kind == "export_drill":
+                generated = [path for path in (root / "drill").glob("*")]
+            elif kind == "export_bom":
+                generated = [root / "bom.csv"]
+            elif kind == "export_pick_place":
+                generated = [root / "positions.csv"]
+            else:
+                generated = [root / "board.step"]
+            if not generated or any(
+                path.is_symlink() or not path.is_file() or path.stat().st_size <= 0
+                for path in generated
+            ):
+                raise ValidationError(f"manufacturing export is incomplete: {kind}")
+            artifacts = tuple(
+                {
+                    "path": path.relative_to(root).as_posix(),
+                    "size": path.stat().st_size,
+                    "sha256": sha256_file(path, max_bytes=128 * 1024 * 1024),
+                }
+                for path in sorted(generated)
+            )
+            receipt.update(
+                {
+                    "status": "complete",
+                    "completed_at": utc_timestamp(),
+                    "tool_runs": runs,
+                    "normalization": normalization,
+                    "contract": contract,
+                    "artifacts": list(artifacts),
+                }
+            )
+            atomic_write_json(receipt_path, receipt)
+            return IndividualManufacturingExport(
+                kind=kind,
+                root=root,
+                receipt_path=receipt_path,
+                design_content_hash=design_hash,
+                artifacts=artifacts,
+            )
+    except BaseException as exc:
+        receipt["status"] = "failed"
+        receipt["completed_at"] = utc_timestamp()
+        receipt["failure"] = str(exc)[:2048]
+        atomic_write_json(receipt_path, receipt)
+        raise
+
+
 def verify_manufacturing_release(value: str | Path) -> ReleaseVerification:
     """Verify a release directory and its deterministic archive without trust in names."""
     root = canonical_project(value)
@@ -346,7 +475,11 @@ def _new_release_root(value: str | Path) -> Path:
 
 
 def _run_exports(
-    project: ManagedProject, output: Path, deadline: float
+    project: ManagedProject,
+    output: Path,
+    deadline: float,
+    *,
+    names: frozenset[str] | None = None,
 ) -> list[dict[str, Any]]:
     executable = find_kicad_cli()
     if executable is None:
@@ -508,6 +641,11 @@ def _run_exports(
             ],
         ),
     ]
+    if names is not None:
+        known = {name for name, _argv in commands}
+        if not names or not names <= known:
+            raise ValidationError("manufacturing export selection is invalid")
+        commands = [item for item in commands if item[0] in names]
     results = []
     redactions = {str(project.root): "<PROJECT>", str(output.parent): "<RELEASE>"}
     for name, argv in commands:

@@ -12,6 +12,81 @@ from tests.support.design_factory import minimal_design_dict
 
 
 class SemanticIRTests(unittest.TestCase):
+    def test_v1_read_preserves_bytes_until_a_successful_write(self) -> None:
+        legacy = Design.from_dict(minimal_design_dict())
+
+        self.assertEqual(legacy.version, 1)
+        self.assertNotIn("native_intent", legacy.to_dict())
+        self.assertEqual(legacy.clone().canonical_bytes(), legacy.canonical_bytes())
+
+    def test_v2_native_intent_round_trips_deterministically(self) -> None:
+        value = minimal_design_dict()
+        value["version"] = 2
+        value["native_intent"] = {
+            "outline": [],
+            "footprint_poses": [],
+            "routes": [],
+            "vias": [],
+            "unrouted_nets": ["net_out"],
+            "provenance": "pcbdraft",
+            "geometry_revision": 1,
+        }
+
+        design = Design.from_dict(value)
+
+        self.assertEqual(design.version, 2)
+        self.assertEqual(design.native_intent.unrouted_nets, ("net_out",))
+        self.assertEqual(Design.from_dict(design.to_dict()), design)
+
+    def test_v2_requires_complete_native_intent_and_rejects_v1_geometry(self) -> None:
+        missing = minimal_design_dict()
+        missing["version"] = 2
+        with self.assertRaisesRegex(ValidationError, "requires native intent"):
+            Design.from_dict(missing)
+
+        legacy = minimal_design_dict()
+        legacy["native_intent"] = {
+            "outline": [],
+            "footprint_poses": [],
+            "routes": [],
+            "vias": [],
+            "unrouted_nets": [],
+            "provenance": "pcbdraft",
+            "geometry_revision": 0,
+        }
+        with self.assertRaisesRegex(ValidationError, "v1 cannot contain"):
+            Design.from_dict(legacy)
+
+    def test_native_via_must_be_on_board_and_meet_drill_minimum(self) -> None:
+        value = minimal_design_dict()
+        value["version"] = 2
+        value["native_intent"] = {
+            "outline": [],
+            "footprint_poses": [],
+            "routes": [],
+            "vias": [
+                {
+                    "id": "via_out",
+                    "net": "net_out",
+                    "x_mm": 21.0,
+                    "y_mm": 1.0,
+                    "diameter_mm": 0.4,
+                    "drill_mm": 0.2,
+                    "from_layer": 0,
+                    "to_layer": 1,
+                }
+            ],
+            "unrouted_nets": [],
+            "provenance": "pcbdraft",
+            "geometry_revision": 1,
+        }
+        with self.assertRaisesRegex(ValidationError, "native_geometry_outside_board"):
+            Design.from_dict(value)
+
+        value["native_intent"]["vias"][0]["x_mm"] = 10.0
+        with self.assertRaisesRegex(ValidationError, "via_drill_below_minimum"):
+            Design.from_dict(value)
+
     def test_round_trip_is_byte_deterministic_and_order_independent(self) -> None:
         value = minimal_design_dict()
         first = Design.from_dict(value)

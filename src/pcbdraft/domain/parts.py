@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -350,6 +350,42 @@ class PartGraph:
             source=source or self.source,
         )
 
+    def with_footprint_overrides(self, design: Design) -> PartGraph:
+        """Apply component-scoped installed-footprint choices to a project graph.
+
+        The semantic component remains the owner of the assignment. A shared
+        canonical part record is copied only when exactly one selected override
+        exists for that part identity; conflicting per-instance assignments are
+        rejected because the current native compiler consumes a part-level graph.
+        """
+
+        selected: dict[str, str] = {}
+        for component in design.components:
+            footprint = component.attributes.get("footprint")
+            if footprint is None:
+                continue
+            if not isinstance(footprint, str) or ":" not in footprint:
+                raise ValidationError(
+                    f"component {component.id} has an invalid footprint override"
+                )
+            prior = selected.get(component.part_id)
+            if prior is not None and prior != footprint:
+                raise ValidationError(
+                    "components sharing one part id cannot select different footprints"
+                )
+            selected[component.part_id] = footprint
+        if not selected:
+            return self
+        records = [
+            replace(part, footprint=selected.get(part.id, part.footprint))
+            for part in self._parts.values()
+        ]
+        return PartGraph(
+            records,
+            license_id=self.license_id,
+            source=self.source,
+        )
+
     def find(
         self,
         *,
@@ -611,6 +647,7 @@ class PartGraph:
         *,
         check_libraries: bool = False,
         allow_provisional: bool = False,
+        allow_incomplete: bool = False,
     ) -> None:
         errors = [
             issue
@@ -620,6 +657,7 @@ class PartGraph:
                 allow_provisional=allow_provisional,
             )
             if issue.severity == "error"
+            and not (allow_incomplete and issue.code == "part.required_pin_unconnected")
         ]
         if errors:
             first = errors[0]

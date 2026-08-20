@@ -115,6 +115,175 @@ class ValidationRun:
     production_ready: bool
 
 
+@dataclass(frozen=True)
+class IndividualCheckRun:
+    """Evidence for one explicitly requested semantic or KiCad check."""
+
+    kind: str
+    output_dir: Path
+    report_path: Path
+    report_sha256: str
+    state: str
+    outcome: str
+    design_content_hash: str
+
+
+_INDIVIDUAL_CHECKS = frozenset(
+    {"check_semantics", "check_connectivity", "run_erc", "run_drc"}
+)
+_CONNECTIVITY_ISSUE_CODES = frozenset(
+    {
+        "ir.empty_net",
+        "ir.missing_component",
+        "ir.pin_on_multiple_nets",
+        "part.invalid_unconnected_policy",
+        "part.pad_mapping_missing",
+        "part.pin_missing",
+        "part.required_pin_unconnected",
+    }
+)
+
+
+def run_individual_check(
+    project_value: ManagedProject | str | Path,
+    kind: str,
+    *,
+    output: str | Path | None = None,
+    graph: PartGraph | None = None,
+    timeout: float = 90.0,
+) -> IndividualCheckRun:
+    """Run exactly one flat-toolbox check and retain a source-bound receipt."""
+
+    if kind not in _INDIVIDUAL_CHECKS:
+        raise ValidationError(f"unknown individual PCB check: {kind}")
+    if not math.isfinite(timeout) or timeout <= 0 or timeout > 3600:
+        raise ValidationError("check timeout must be in (0, 3600] seconds")
+    project = (
+        project_value
+        if isinstance(project_value, ManagedProject)
+        else open_managed_project(project_value)
+    )
+    project.assert_synchronized()
+    resolved_graph = graph or project.graph
+    output_dir = _validation_output(project, output)
+    report_path = output_dir / "check.json"
+    design_hash = project.design.content_hash()
+    receipt: dict[str, Any] = {
+        "schema": "pcbdraft-individual-check-receipt",
+        "version": 1,
+        "status": "running",
+        "check": kind,
+        "started_at": utc_timestamp(),
+        "project": portable_record_path(project.root),
+        "design_content_hash": design_hash,
+    }
+    atomic_write_json(output_dir / "receipt.json", receipt)
+    try:
+        with ResourceLock(
+            project.root,
+            project.root.parent / ".pcbdraft-locks",
+            timeout=min(10.0, timeout),
+        ):
+            if kind in {"check_semantics", "check_connectivity"}:
+                issues = sorted(
+                    {
+                        *project.design.issues(),
+                        *resolved_graph.validate_design(
+                            project.design,
+                            check_libraries=kind == "check_semantics",
+                            allow_provisional=(
+                                project.design.metadata.get("assurance")
+                                == "provisional"
+                            ),
+                        ),
+                    }
+                )
+                if kind == "check_connectivity":
+                    issues = [
+                        issue
+                        for issue in issues
+                        if issue.code in _CONNECTIVITY_ISSUE_CODES
+                    ]
+                state = "completed"
+                outcome = "fail" if issues else "pass"
+                details: dict[str, Any] = {
+                    "issues": [issue.to_dict() for issue in issues]
+                }
+                tool_run = None
+            else:
+                tool_kind = "erc" if kind == "run_erc" else "drc"
+                tool_run = _run_kicad_report(
+                    tool_kind,
+                    project,
+                    output_dir / f"{tool_kind}.json",
+                    time.monotonic() + timeout,
+                )
+                state = str(tool_run["status"])
+                violations = (
+                    _erc_violations(tool_run)
+                    if tool_kind == "erc"
+                    else [
+                        *_drc_section(tool_run, "violations"),
+                        *_drc_section(tool_run, "unconnected_items"),
+                        *_drc_section(tool_run, "schematic_parity"),
+                    ]
+                )
+                outcome = (
+                    "unknown"
+                    if state != "completed"
+                    else "fail"
+                    if violations
+                    else "pass"
+                )
+                details = {
+                    "failure": tool_run.get("failure"),
+                    "violations": violations,
+                }
+            report = {
+                "schema": "pcbdraft-individual-check",
+                "version": 1,
+                "check": kind,
+                "created_at": utc_timestamp(),
+                "design_content_hash": design_hash,
+                "state": state,
+                "outcome": outcome,
+                "details": details,
+                "tool_run": (
+                    _public_tool_result(tool_run)
+                    if isinstance(tool_run, dict)
+                    else None
+                ),
+            }
+            atomic_write_json(report_path, report)
+            report_hash = sha256_file(report_path, max_bytes=16 * 1024 * 1024)
+            receipt.update(
+                {
+                    "status": "complete",
+                    "completed_at": utc_timestamp(),
+                    "state": state,
+                    "outcome": outcome,
+                    "report": report_path.name,
+                    "report_sha256": report_hash,
+                }
+            )
+            atomic_write_json(output_dir / "receipt.json", receipt)
+            return IndividualCheckRun(
+                kind=kind,
+                output_dir=output_dir,
+                report_path=report_path,
+                report_sha256=report_hash,
+                state=state,
+                outcome=outcome,
+                design_content_hash=design_hash,
+            )
+    except BaseException as exc:
+        receipt["status"] = "failed"
+        receipt["completed_at"] = utc_timestamp()
+        receipt["failure"] = str(exc)[:2048]
+        atomic_write_json(output_dir / "receipt.json", receipt)
+        raise
+
+
 def validate_managed_project(
     project_value: ManagedProject | str | Path,
     *,

@@ -34,8 +34,20 @@ SUPPORTED_OPERATIONS = {
     "connect",
     "disconnect",
     "rename_net",
+    "upsert_power_domain",
+    "remove_power_domain",
+    "upsert_interface",
+    "remove_interface",
     "upsert_constraint",
     "remove_constraint",
+    "assign_footprint",
+    "set_board_outline",
+    "place_footprint",
+    "unplace_footprint",
+    "route_net",
+    "unroute_net",
+    "add_via",
+    "remove_via",
     "update_board",
     "set_metadata",
 }
@@ -181,6 +193,19 @@ def apply_change_set(design: Design, change_set: ChangeSet) -> Design:
             f"({change_set.base_hash} != {design.content_hash()})"
         )
     document = copy.deepcopy(design.to_dict())
+    # Every successful write is the lazy, non-destructive v1 -> v2 migration
+    # boundary. Loading and inspecting a v1 project preserves its original hash.
+    if document.get("version") == 1:
+        document["version"] = 2
+        document["native_intent"] = {
+            "outline": [],
+            "footprint_poses": [],
+            "routes": [],
+            "vias": [],
+            "unrouted_nets": [],
+            "provenance": "pcbdraft",
+            "geometry_revision": 0,
+        }
     for index, operation in enumerate(change_set.operations):
         try:
             _apply_operation(document, operation)
@@ -233,13 +258,23 @@ def _required_id(args: Mapping[str, Any], name: str = "id") -> str:
     return _identifier(args[name], f"args.{name}")
 
 
-def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> None:
+def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
+    document: dict[str, Any], operation: SemanticOperation
+) -> None:
     op, args, expected = operation.op, operation.args, operation.expected
-    if op in {"add_block", "add_component", "add_net"}:
+    if op in {
+        "add_block",
+        "add_component",
+        "add_net",
+        "upsert_power_domain",
+        "upsert_interface",
+    }:
         collection_name = {
             "add_block": "blocks",
             "add_component": "components",
             "add_net": "nets",
+            "upsert_power_domain": "power_domains",
+            "upsert_interface": "interfaces",
         }[op]
         value = args.get("value")
         if not isinstance(value, Mapping):
@@ -247,19 +282,42 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
         entry_id = _required_id(value)
         entries = _collection(document, collection_name)
         existing = _find(entries, entry_id, kind=collection_name[:-1])
-        _expect(
-            existing,
-            expected or {"absent": True},
-            label=f"{collection_name}.{entry_id}",
-        )
-        entries.append(copy.deepcopy(dict(value)))
+        _expect(existing, expected, label=f"{collection_name}.{entry_id}")
+        if existing is None:
+            entries.append(copy.deepcopy(dict(value)))
+            if op == "add_component":
+                block_id = _required_id(value, "block_id")
+                block = _find(_collection(document, "blocks"), block_id, kind="block")
+                if block is None:
+                    raise ValidationError(f"component block is absent: {block_id}")
+                members = block.get("components")
+                if not isinstance(members, list):
+                    raise ValidationError(f"block components are malformed: {block_id}")
+                if entry_id not in members:
+                    members.append(entry_id)
+        elif op.startswith("upsert_"):
+            existing.clear()
+            existing.update(copy.deepcopy(dict(value)))
+        else:
+            raise ValidationError(
+                f"cannot add existing {collection_name[:-1]}: {entry_id}"
+            )
         return
 
-    if op in {"remove_block", "remove_component", "remove_net", "remove_constraint"}:
+    if op in {
+        "remove_block",
+        "remove_component",
+        "remove_net",
+        "remove_power_domain",
+        "remove_interface",
+        "remove_constraint",
+    }:
         collection_name = {
             "remove_block": "blocks",
             "remove_component": "components",
             "remove_net": "nets",
+            "remove_power_domain": "power_domains",
+            "remove_interface": "interfaces",
             "remove_constraint": "constraints",
         }[op]
         entry_id = _required_id(args)
@@ -288,11 +346,50 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
             for block in _collection(document, "blocks"):
                 if entry_id in block.get("components", []):
                     block["components"].remove(entry_id)
+            native = document.get("native_intent")
+            if isinstance(native, dict):
+                native["footprint_poses"] = [
+                    item
+                    for item in native.get("footprint_poses", [])
+                    if item.get("component") != entry_id
+                ]
         if op == "remove_block" and any(
             component.get("block_id") == entry_id
             for component in _collection(document, "components")
         ):
             raise ValidationError(f"block {entry_id} still owns components")
+        if op == "remove_power_domain" and (
+            any(
+                net.get("power_domain") == entry_id
+                for net in _collection(document, "nets")
+            )
+            or any(
+                interface.get("power_domain") == entry_id
+                for interface in _collection(document, "interfaces")
+            )
+        ):
+            raise ValidationError(f"power domain {entry_id} is still referenced")
+        if op == "remove_interface" and any(
+            net.get("interface") == entry_id for net in _collection(document, "nets")
+        ):
+            raise ValidationError(f"interface {entry_id} is still referenced")
+        if op == "remove_net":
+            endpoints = existing.get("endpoints")
+            if isinstance(endpoints, list) and endpoints:
+                raise ValidationError(f"net {entry_id} still has connected endpoints")
+            native = document.get("native_intent")
+            if isinstance(native, dict):
+                if any(
+                    item.get("net") == entry_id for item in native.get("routes", [])
+                ) or any(
+                    item.get("net") == entry_id for item in native.get("vias", [])
+                ):
+                    raise ValidationError(
+                        f"net {entry_id} still has retained copper or vias"
+                    )
+                native["unrouted_nets"] = [
+                    item for item in native.get("unrouted_nets", []) if item != entry_id
+                ]
         entries.remove(existing)
         return
 
@@ -312,7 +409,6 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
             "part_id",
             "value",
             "block_id",
-            "placement",
             "attributes",
         }
         unknown = set(changes) - allowed
@@ -320,7 +416,46 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
             raise ValidationError(
                 f"update_component fields are unsupported: {', '.join(sorted(unknown))}"
             )
+        new_block_id = changes.get("block_id")
+        if new_block_id is not None and new_block_id != component.get("block_id"):
+            normalized_block_id = _identifier(new_block_id, "args.changes.block_id")
+            old_block_id = _identifier(component.get("block_id"), "component.block_id")
+            old_block = _find(
+                _collection(document, "blocks"), old_block_id, kind="block"
+            )
+            new_block = _find(
+                _collection(document, "blocks"), normalized_block_id, kind="block"
+            )
+            if old_block is None or new_block is None:
+                raise ValidationError(
+                    "component block reassignment references an absent block"
+                )
+            old_members = old_block.get("components")
+            new_members = new_block.get("components")
+            if not isinstance(old_members, list) or not isinstance(new_members, list):
+                raise ValidationError("component block membership is malformed")
+            if component_id in old_members:
+                old_members.remove(component_id)
+            if component_id not in new_members:
+                new_members.append(component_id)
         component.update(copy.deepcopy(dict(changes)))
+        return
+
+    if op == "assign_footprint":
+        component_id = _required_id(args, "component_id")
+        component = _find(
+            _collection(document, "components"), component_id, kind="component"
+        )
+        _expect(component, expected, label=f"components.{component_id}")
+        if component is None:
+            raise ValidationError(f"component is absent: {component_id}")
+        footprint = _string(args.get("footprint"), "args.footprint", limit=256)
+        if ":" not in footprint:
+            raise ValidationError("args.footprint must be a KiCad library id")
+        attributes = component.setdefault("attributes", {})
+        if not isinstance(attributes, dict):
+            raise ValidationError("component attributes are malformed")
+        attributes["footprint"] = footprint
         return
 
     if op in {"connect", "disconnect"}:
@@ -372,6 +507,10 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
                 raise ValidationError(
                     "cannot disconnect a pin that is not on the target net"
                 )
+            if matching[0] != normalized:
+                raise ValidationError(
+                    "cannot disconnect a pin with a different endpoint role"
+                )
             endpoints.remove(matching[0])
         return
 
@@ -397,6 +536,123 @@ def _apply_operation(document: dict[str, Any], operation: SemanticOperation) -> 
         else:
             existing.clear()
             existing.update(copy.deepcopy(dict(value)))
+        return
+
+    if op in {
+        "set_board_outline",
+        "place_footprint",
+        "unplace_footprint",
+        "route_net",
+        "unroute_net",
+        "add_via",
+        "remove_via",
+    }:
+        native = document.get("native_intent")
+        if not isinstance(native, dict):
+            raise ValidationError("design native intent is malformed")
+        native["geometry_revision"] = int(native.get("geometry_revision", 0)) + 1
+
+        if op == "set_board_outline":
+            width = args.get("width_mm")
+            height = args.get("height_mm")
+            if (
+                isinstance(width, bool)
+                or not isinstance(width, (int, float))
+                or isinstance(height, bool)
+                or not isinstance(height, (int, float))
+                or float(width) <= 0
+                or float(height) <= 0
+            ):
+                raise ValidationError(
+                    "board outline dimensions must be positive numbers"
+                )
+            board = document.get("board")
+            if not isinstance(board, dict):
+                raise ValidationError("design board contract is malformed")
+            _expect(board, expected, label="board")
+            board["width_mm"] = float(width)
+            board["height_mm"] = float(height)
+            native["outline"] = [
+                {"x_mm": 0.0, "y_mm": 0.0},
+                {"x_mm": float(width), "y_mm": 0.0},
+                {"x_mm": float(width), "y_mm": float(height)},
+                {"x_mm": 0.0, "y_mm": float(height)},
+            ]
+            return
+
+        if op in {"place_footprint", "unplace_footprint"}:
+            component_id = _required_id(args, "component_id")
+            component = _find(
+                _collection(document, "components"), component_id, kind="component"
+            )
+            _expect(component, expected, label=f"components.{component_id}")
+            if component is None:
+                raise ValidationError(f"component is absent: {component_id}")
+            poses = native.get("footprint_poses")
+            if not isinstance(poses, list):
+                raise ValidationError("native footprint poses are malformed")
+            poses[:] = [item for item in poses if item.get("component") != component_id]
+            if op == "unplace_footprint":
+                component.pop("placement", None)
+                return
+            placement = {
+                "x_mm": args.get("x_mm"),
+                "y_mm": args.get("y_mm"),
+                "rotation_deg": args.get("rotation_deg", 0.0),
+                "side": args.get("side", "front"),
+                "fixed": args.get("fixed", True),
+            }
+            # Placement owns strict numeric/side validation in Design.from_dict.
+            component["placement"] = placement
+            poses.append({"component": component_id, **placement})
+            return
+
+        if op in {"route_net", "unroute_net"}:
+            net_id = _required_id(args, "net_id")
+            target_net = _find(_collection(document, "nets"), net_id, kind="net")
+            _expect(target_net, expected, label=f"nets.{net_id}")
+            if target_net is None:
+                raise ValidationError(f"net is absent: {net_id}")
+            native["routes"] = [
+                item for item in native.get("routes", []) if item.get("net") != net_id
+            ]
+            native["vias"] = [
+                item for item in native.get("vias", []) if item.get("net") != net_id
+            ]
+            if op == "route_net":
+                native["unrouted_nets"] = [
+                    item for item in native.get("unrouted_nets", []) if item != net_id
+                ]
+                segments = args.get("segments", [])
+                vias = args.get("vias", [])
+                if not isinstance(segments, list) or not isinstance(vias, list):
+                    raise ValidationError("route geometry must be arrays")
+                native["routes"].extend(copy.deepcopy(segments))
+                native["vias"].extend(copy.deepcopy(vias))
+            elif net_id not in native.get("unrouted_nets", []):
+                native.setdefault("unrouted_nets", []).append(net_id)
+            return
+
+        vias = native.get("vias")
+        if not isinstance(vias, list):
+            raise ValidationError("native vias are malformed")
+        if op == "add_via":
+            value = args.get("value")
+            if not isinstance(value, Mapping):
+                raise ValidationError("args.value must be an object")
+            via_id = _required_id(value)
+            existing = _find(vias, via_id, kind="via")
+            _expect(existing, expected or {"absent": True}, label=f"vias.{via_id}")
+            if existing is not None:
+                raise ValidationError(f"via already exists: {via_id}")
+            vias.append(copy.deepcopy(dict(value)))
+            return
+        via_id = _required_id(args, "via_id")
+        existing = _find(vias, via_id, kind="via")
+        _expect(existing, expected, label=f"vias.{via_id}")
+        if existing is None:
+            raise ValidationError(f"via is absent: {via_id}")
+        vias.remove(existing)
         return
 
     if op == "update_board":
@@ -459,6 +715,9 @@ def semantic_diff(before: Design, after: Design) -> dict[str, Any]:
         }
     board_fields = _field_diff(before_doc["board"], after_doc["board"])
     metadata_fields = _field_diff(before_doc["metadata"], after_doc["metadata"])
+    native_fields = _field_diff(
+        before_doc.get("native_intent", {}), after_doc.get("native_intent", {})
+    )
     summary = {
         "objects_added": sum(len(value["added"]) for value in collections.values()),
         "objects_removed": sum(len(value["removed"]) for value in collections.values()),
@@ -470,6 +729,7 @@ def semantic_diff(before: Design, after: Design) -> dict[str, Any]:
         "requires_connectivity_validation": before_doc["nets"] != after_doc["nets"],
         "requires_geometry_validation": (
             before_doc["board"] != after_doc["board"]
+            or before_doc.get("native_intent") != after_doc.get("native_intent")
             or any(
                 entry.get("placement")
                 != {current["id"]: current for current in before_doc["components"]}.get(
@@ -488,6 +748,7 @@ def semantic_diff(before: Design, after: Design) -> dict[str, Any]:
         "collections": collections,
         "board_fields": board_fields,
         "metadata_fields": metadata_fields,
+        "native_intent_fields": native_fields,
     }
 
 
