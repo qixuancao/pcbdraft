@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Defines current src/pcbdraft layering and vendor/hermes note; must be updated when interfaces/tui is removed and hermes bridge is split."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Fast-iteration check budget and forbidden-pattern rules that the new hermes_cli/debug trace and Textual removal must respect."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Data flow across cli ↔ hermes runtime ↔ ApplicationService/repository ↔ PCB tools must keep a single source of truth."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Old bridge mixes core/model/agent/interfaces; reuse search before creating new hermes_paths/hermes_config helpers."}
