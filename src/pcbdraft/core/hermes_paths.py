@@ -10,7 +10,7 @@ This module owns where that runtime lives in the three supported situations:
   ``pcbdraft/data/vendor/hermes`` inside the distribution;
 * an explicit override via ``PCBDRAFT_HERMES_DIR`` (tests and advanced users).
 
-It also owns the PCBDraft-owned Hermes home (``HERMES_HOME``), which stays
+It also owns the PCBDraft-owned Hermes home (exported to ``HERMES_HOME``), which stays
 under the PCBDraft configuration directory — never inside the PCB project
 repository.
 """
@@ -67,12 +67,13 @@ def hermes_vendor_dir() -> Path:
 def hermes_home() -> Path:
     """Return the PCBDraft-owned Hermes home directory.
 
-    ``HERMES_HOME`` wins when set; otherwise the home lives under the
-    PCBDraft configuration directory (honoring ``PCBDRAFT_CONFIG``) so Hermes
-    state stays separate from the PCB project repository.
+    ``PCBDRAFT_HERMES_HOME`` is the product-specific test/advanced override.
+    A generic ``HERMES_HOME`` is deliberately ignored because it may belong to
+    an independently installed Hermes program.  Otherwise the home lives
+    under the PCBDraft configuration directory (honoring ``PCBDRAFT_CONFIG``).
     """
 
-    explicit = os.environ.get("HERMES_HOME", "").strip()
+    explicit = os.environ.get("PCBDRAFT_HERMES_HOME", "").strip()
     if explicit:
         return Path(explicit).expanduser()
     return pcbdraft_config_dir() / "hermes"

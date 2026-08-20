@@ -71,7 +71,7 @@ class IndependentBenchmarkTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "benchmark.json"
             with patch(
-                "pcbdraft.verification.benchmark.OpenAICompatibleSettings.from_config",
+                "pcbdraft.verification.benchmark.HermesIntentProvider.from_config",
                 return_value=None,
             ):
                 result = run_benchmark(output, repetitions=2, model_runs=2)

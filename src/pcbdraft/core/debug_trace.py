@@ -15,8 +15,8 @@ Enable/disable and location:
   trace; any other non-empty value (and the default unset state) keeps it
   on.
 * ``PCBDRAFT_DEBUG_TRACE_PATH`` — explicit trace file path.  Defaults to
-  ``<pcbdraft config dir>/debug/agent-trace.jsonl`` next to the user's
-  ``config.toml``.
+  ``<pcbdraft config dir>/debug/agent-trace.jsonl`` outside the private
+  Hermes credential home.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.core.platform_paths import pcbdraft_config_dir
+from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 
 __all__ = (
@@ -106,6 +107,7 @@ def _sanitize(value: Any, *, depth: int = 0) -> Any:
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
+        value = sanitize_user_text(value)
         if len(value) > _MAX_STRING:
             return (
                 value[:_MAX_STRING] + f"...[truncated {len(value) - _MAX_STRING} chars]"

@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pcbdraft.core.errors import ValidationError
-from pcbdraft.model.api import invoke_structured_model
+from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.io import load_json_limited
+from pcbdraft.model.providers import HermesIntentProvider
+
+_RECEIPT_LIMIT = 64 * 1024
 
 
 def review_schema() -> dict[str, Any]:
@@ -226,14 +229,19 @@ def invoke_model(
         raise ValidationError(f"unknown model mode: {mode}")
     schema = review_schema() if mode == "review" else patch_schema()
     prefix = "model-review" if mode == "review" else "model-patch"
-    value, receipt = invoke_structured_model(
+    provider = HermesIntentProvider.from_config()
+    if provider is None:
+        raise PCBDraftError("model provider is not configured; run `pcbdraft connect`")
+    value = provider._structured(
+        prompt,
+        f"pcbdraft_{mode}",
+        schema,
+        timeout,
         run_dir=run_dir,
-        prompt=prompt,
-        schema_name=f"pcbdraft_{mode}",
-        schema=schema,
-        timeout=timeout,
         artifact_prefix=prefix,
     )
+    raw_receipt = load_json_limited(run_dir / f"{prefix}.receipt.json", _RECEIPT_LIMIT)
+    receipt = raw_receipt if isinstance(raw_receipt, dict) else {}
     validated = validate_review(value) if mode == "review" else validate_patch(value)
     return ModelResult(validated, receipt)
 

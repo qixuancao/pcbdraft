@@ -34,7 +34,6 @@ MOVED_MODULES: dict[str, str] = {
     "pcbdraft.locking": "pcbdraft.core.locking",
     "pcbdraft.managed": "pcbdraft.services.managed",
     "pcbdraft.model_api": "pcbdraft.model.api",
-    "pcbdraft.model_config": "pcbdraft.model.config",
     "pcbdraft.model_review": "pcbdraft.model.review",
     "pcbdraft.operations": "pcbdraft.domain.operations",
     "pcbdraft.parts": "pcbdraft.domain.parts",

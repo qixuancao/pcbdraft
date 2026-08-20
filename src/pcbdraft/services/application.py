@@ -308,8 +308,7 @@ class ApplicationService:
                     "id": "unconfigured",
                     "available": False,
                     "planning": (
-                        "no model provider configured; run /connect in the interactive terminal "
-                        "or create the PCBDraft config file"
+                        "no model provider configured; run `pcbdraft connect` or /connect"
                     ),
                 }
             ),
@@ -333,7 +332,7 @@ class ApplicationService:
                 "validation_note": "results state only what PCBDraft and KiCad actually checked",
             },
             "credential_guidance": {
-                "config": "Use /connect in the interactive terminal; credentials stay in PCBDraft's private config file.",
+                "config": "Use `pcbdraft connect` or /connect; credentials stay in PCBDraft's private Hermes home.",
                 "persistence": "Credential values are never written to project records or model receipts.",
                 "kicad": (
                     "Run `pcbdraft setup` to detect a compatible KiCad 10.0.x "
@@ -378,7 +377,9 @@ class ApplicationService:
             "updated_at": created_at,
             "status": "draft",
             "provider": (
-                self.provider.provider_id if self.provider is not None else "unconfigured"
+                self.provider.provider_id
+                if self.provider is not None
+                else "unconfigured"
             ),
             "revision": 0,
             "design_revision": 0,
@@ -507,8 +508,10 @@ class ApplicationService:
             current = self._open(project_id)
             conversation = current.conversation
             if turn_id is not None or index is not None:
-                if not isinstance(turn_id, str) or isinstance(index, bool) or not (
-                    isinstance(index, int) and index >= 0
+                if (
+                    not isinstance(turn_id, str)
+                    or isinstance(index, bool)
+                    or not (isinstance(index, int) and index >= 0)
                 ):
                     raise ValidationError("reply delivery binding is invalid")
                 for message in conversation["messages"]:
@@ -575,7 +578,7 @@ class ApplicationService:
         try:
             if self.provider is None:
                 raise PCBDraftError(
-                    "no model provider configured; run /connect in the interactive terminal to add "
+                    "no model provider configured; run `pcbdraft connect` or /connect to add "
                     "a model service before sending a planning request"
                 )
             value = self.provider.interpret(

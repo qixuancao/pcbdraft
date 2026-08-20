@@ -5,8 +5,8 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pcbdraft.core.errors import PCBDraftError
-from pcbdraft.model.config import ModelConfig
 from pcbdraft.services.doctor import doctor_report, setup_runtime
+from pcbdraft.services.provider_connection import ConnectionStatus
 
 
 class DoctorTests(unittest.TestCase):
@@ -26,13 +26,8 @@ class DoctorTests(unittest.TestCase):
                 return_value=tables,
             ),
             patch(
-                "pcbdraft.services.doctor.load_model_config",
-                return_value=ModelConfig(
-                    active_provider=None,
-                    active_model=None,
-                    providers=(),
-                    path=Path("/tmp/pcbdraft-doctor-test/config.toml"),
-                ),
+                "pcbdraft.services.doctor.connection_status",
+                return_value=ConnectionStatus(False, False, None, None, None, None),
             ),
         ):
             return doctor_report()

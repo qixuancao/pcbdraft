@@ -19,7 +19,7 @@ def sanitize_user_text(value: str) -> str:
         r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}",
         r"\bsk-[A-Za-z0-9_-]{8,}",
         r"\bgh[opusr]_[A-Za-z0-9]{20,}",
-        r"(?i)\b(api[_ -]?key|token|secret|password)\s*[:=]\s*[^\s,;]+",
+        r"(?i)\b(api[_ -]?key|(?:(?:access|refresh|oauth|api)[_ -]?)?token|secret|password)\s*[:=]\s*[^\s,;]+",
     )
     for pattern in patterns:
         result = re.sub(pattern, "[REDACTED]", result)

@@ -22,7 +22,6 @@ from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json
 from pcbdraft.model.contracts import (
-    provider_config_path,
     validate_provider_base_url,
     validate_provider_credential,
     validate_provider_model_id,
@@ -216,26 +215,6 @@ class OpenAICompatibleSettings:
     source: str = "explicit"
     provider_id: str = "openai-compatible"
     provider_name: str = "OpenAI-compatible"
-
-    @classmethod
-    def from_config(cls) -> OpenAICompatibleSettings | None:
-        # The catalog owns the multi-provider format used by /connect and
-        # /models.  Keeping this adapter here lets the model transport stay
-        # unaware of TUI and TOML details.
-        from pcbdraft.model.config import load_model_config
-
-        config = load_model_config()
-        connection = config.active
-        if connection is None:
-            return None
-        return cls(
-            base_url=connection.base_url,
-            model=config.active_model or connection.models[0],
-            api_key=connection.api_key,
-            source=connection.source,
-            provider_id=connection.id,
-            provider_name=connection.name,
-        ).validated()
 
     def validated(self) -> OpenAICompatibleSettings:
         validate_provider_base_url(self.base_url)
@@ -845,15 +824,6 @@ class OpenAIResponsesClient(StructuredModelClient):
         return ResponsesFunctionCall(call_id=call_id, name=name, arguments=arguments)
 
 
-def configured_model_client() -> StructuredModelClient:
-    settings = OpenAICompatibleSettings.from_config()
-    if settings is None:
-        raise PCBDraftError(
-            f"model provider is not configured; create {provider_config_path()}"
-        )
-    return StructuredModelClient(settings)
-
-
 def invoke_structured_model(
     *,
     run_dir: Path,
@@ -873,11 +843,11 @@ def invoke_structured_model(
     receipt_path = run_dir / f"{artifact_prefix}.receipt.json"
     atomic_write_json(schema_path, schema)
     try:
-        client = (
-            StructuredModelClient(settings)
-            if settings is not None
-            else configured_model_client()
-        )
+        if settings is None:
+            raise PCBDraftError(
+                "explicit OpenAI-compatible settings are required for this legacy adapter"
+            )
+        client = StructuredModelClient(settings)
         value, receipt = client.request(
             prompt=prompt,
             schema_name=schema_name,

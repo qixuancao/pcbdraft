@@ -24,11 +24,16 @@ from typing import Any
 from pcbdraft.agent.hermes_tools import (
     get_current_project_id,
     get_service,
+    refresh_service_provider,
     set_current_project_id,
 )
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.repository import current_repository
-from pcbdraft.model.config import load_model_config
+from pcbdraft.services.provider_connection import (
+    ConnectionOptions,
+    connect,
+    format_connection_status,
+)
 
 __all__ = (
     "HANDLERS",
@@ -134,25 +139,22 @@ def handle_open(raw_args: str) -> str:
 
 
 def handle_connect(raw_args: str) -> str:
-    """Show the active model provider connection."""
+    """Open the shared Hermes provider/auth/model wizard."""
 
-    config = load_model_config()
-    provider = config.active
-    if provider is None:
-        return (
-            "No model provider connected.\n"
-            f"Edit the PCBDraft config file at {config.path} to register an "
-            "OpenAI-compatible service, then rerun /connect."
+    tokens = {token.casefold() for token in raw_args.split()}
+    status = connect(
+        ConnectionOptions(
+            no_browser="--no-browser" in tokens,
+            refresh="--refresh" in tokens,
+            reauthenticate=bool(
+                tokens & {"reauthenticate", "--reauthenticate", "--reauth"}
+            ),
         )
-    model = config.active_model or (provider.models[0] if provider.models else "")
-    lines = [
-        f"Active model: {provider.name} ({provider.id})",
-        f"  model: {model}",
-        f"  base_url: {provider.base_url}",
-    ]
-    if provider.docs_url:
-        lines.append(f"  docs: {provider.docs_url}")
-    return "\n".join(lines)
+    )
+    if status.outcome == "cancelled":
+        return "Connection unchanged.\n" + format_connection_status(status)
+    refresh_service_provider()
+    return format_connection_status(status)
 
 
 def handle_review(raw_args: str) -> str:
@@ -267,7 +269,12 @@ PCBDRAFT_COMMANDS: tuple[tuple[str, str, str, Callable[[str], str]], ...] = (
         handle_project,
     ),
     ("open", "Open an existing PCB project by id", "<id>", handle_open),
-    ("connect", "Show the active model provider connection", "", handle_connect),
+    (
+        "connect",
+        "Connect, switch, or reauthenticate a model provider",
+        "[--no-browser] [--refresh] [--reauthenticate]",
+        handle_connect,
+    ),
     ("review", "Summarize the current project state", "[id]", handle_review),
     ("confirm", "Approve the current candidate for generation", "[id]", handle_confirm),
     ("discard", "Discard the staged semantic change", "[id]", handle_discard),

@@ -15,10 +15,9 @@ from pcbdraft.core.debug_trace import (
     trace_enabled,
     trace_path,
 )
-from pcbdraft.core.hermes_paths import DEBUG_PLUGIN_DIR_NAME
+from pcbdraft.core.hermes_paths import DEBUG_PLUGIN_DIR_NAME, install_vendor_path
 from pcbdraft.interfaces.hermes_cli import install_debug_plugin
 from pcbdraft.interfaces.hermes_plugin import register
-from pcbdraft.model.config import ModelConfig, ProviderConnection
 from pcbdraft.model.hermes_config import write_hermes_config
 
 
@@ -69,6 +68,9 @@ class DebugTraceTests(unittest.TestCase):
                     "model_request",
                     model="test-model",
                     api_key="sk-secret",
+                    provider_error=(
+                        "Bearer oauth-access-token-123456 refresh_token=refresh-secret-123"
+                    ),
                     messages=["hello" * 4000],
                 )
                 record_event("model_response", reply="ok")
@@ -77,6 +79,8 @@ class DebugTraceTests(unittest.TestCase):
             self.assertEqual(events[0]["event"], "model_request")
             self.assertEqual(events[0]["data"]["model"], "test-model")
             self.assertEqual(events[0]["data"]["api_key"], "***redacted***")
+            self.assertNotIn("oauth-access-token", json.dumps(events[0]))
+            self.assertNotIn("refresh-secret", json.dumps(events[0]))
             self.assertIn("truncated", events[0]["data"]["messages"][0])
             self.assertEqual(events[1]["data"]["reply"], "ok")
             for event in events:
@@ -305,7 +309,7 @@ class DebugPluginInstallTests(unittest.TestCase):
     def test_install_debug_plugin_writes_idempotent_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
-            with patch.dict(os.environ, {"HERMES_HOME": str(home)}):
+            with patch.dict(os.environ, {"PCBDRAFT_HERMES_HOME": str(home)}):
                 plugin_dir = install_debug_plugin()
                 self.assertEqual(plugin_dir.name, DEBUG_PLUGIN_DIR_NAME)
                 manifest = (plugin_dir / "plugin.yaml").read_text(encoding="utf-8")
@@ -324,25 +328,28 @@ class DebugPluginInstallTests(unittest.TestCase):
     def test_write_hermes_config_enables_debug_plugin(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             home = Path(temporary)
-            config = ModelConfig(None, None, (), home / "unused.toml")
-            with patch.dict(os.environ, {"HERMES_HOME": str(home)}):
-                path = write_hermes_config(config)
+            with patch.dict(os.environ, {"PCBDRAFT_HERMES_HOME": str(home)}):
+                install_vendor_path()
+                os.environ["HERMES_HOME"] = str(home)
+                path = write_hermes_config()
                 no_provider = path.read_text(encoding="utf-8")
                 self.assertIn("plugins:", no_provider)
                 self.assertIn(f"- {DEBUG_PLUGIN_DIR_NAME}", no_provider)
-                provider = ProviderConnection(
-                    id="lab",
-                    name="Lab",
-                    base_url="http://127.0.0.1:8080/v1",
-                    api_key="local",
-                    models=("board-model",),
-                )
-                write_hermes_config(
-                    ModelConfig("lab", "board-model", (provider,), config.path)
-                )
+                from hermes_cli.config import read_raw_config, save_config
+
+                config = read_raw_config()
+                config["model"] = {
+                    "provider": "custom",
+                    "default": "board-model",
+                    "base_url": "http://127.0.0.1:8080/v1",
+                    "api_key": "local",
+                }
+                save_config(config, strip_defaults=False)
+                write_hermes_config()
                 configured = path.read_text(encoding="utf-8")
             self.assertIn("plugins:", configured)
             self.assertIn(f"- {DEBUG_PLUGIN_DIR_NAME}", configured)
+            self.assertIn("default: board-model", configured)
 
 
 if __name__ == "__main__":

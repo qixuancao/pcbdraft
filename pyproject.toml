@@ -91,7 +91,12 @@ include = ["pcbdraft*"]
 exclude = ["copperwright*"]
 
 [tool.setuptools.package-data]
-pcbdraft = ["data/**/*.json", "data/**/*.md", "data/**/*.yml"]
+pcbdraft = [
+    "data/**/*.json",
+    "data/**/*.md",
+    "data/**/*.yml",
+    "data/vendor/hermes/LICENSE",
+]
 
 [tool.ruff.lint]
 extend-select = ["B", "C90", "S"]

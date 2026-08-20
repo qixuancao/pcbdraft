@@ -1,19 +1,11 @@
-"""Provider configuration contracts shared by catalog and transport layers.
-
-This low-level module deliberately does not import the provider catalog or HTTP
-client. Keeping validation and configuration-path ownership here prevents the
-catalog/transport import cycle while preserving their public compatibility APIs.
-"""
+"""Validation contracts for explicit legacy OpenAI-compatible adapters."""
 
 from __future__ import annotations
 
 import ipaddress
-import os
 import urllib.parse
-from pathlib import Path
 
 from pcbdraft.core.errors import ValidationError
-from pcbdraft.core.platform_paths import user_config_home
 
 
 def validate_provider_base_url(value: str) -> urllib.parse.SplitResult:
@@ -77,15 +69,6 @@ def validate_provider_credential(value: str) -> str:
     ):
         raise ValidationError("provider credential is invalid")
     return value
-
-
-def provider_config_path() -> Path:
-    """Return the user-owned provider configuration path."""
-
-    explicit = os.environ.get("PCBDRAFT_CONFIG", "").strip()
-    if explicit:
-        return Path(explicit).expanduser()
-    return user_config_home() / "pcbdraft" / "config.toml"
 
 
 def _is_literal_loopback(hostname: str) -> bool:

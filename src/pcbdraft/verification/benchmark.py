@@ -15,7 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.core.io import atomic_write_json, make_directory, read_bytes_limited
+from pcbdraft.core.io import (
+    atomic_write_json,
+    load_json_limited,
+    make_directory,
+    read_bytes_limited,
+)
 from pcbdraft.core.resources import data_path
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.domain.ir import Design, canonical_json_bytes
@@ -24,7 +29,7 @@ from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.requirements import RequirementsSpec, compile_requirements
 from pcbdraft.domain.semantic_rules import RuleFinding, evaluate_semantic_rules
 from pcbdraft.kicad.pcb import inspect_footprints
-from pcbdraft.model.api import OpenAICompatibleSettings, invoke_structured_model
+from pcbdraft.model.providers import HermesIntentProvider
 
 CORPUS_SCHEMA = "pcbdraft-error-corpus"
 CORPUS_VERSION = 1
@@ -617,11 +622,11 @@ def _run_model_benchmark(
     runs: int,
     timeout: float,
 ) -> dict[str, Any]:
-    settings = OpenAICompatibleSettings.from_config()
-    if settings is None:
+    provider = HermesIntentProvider.from_config()
+    if provider is None:
         return {
             "state": "unavailable",
-            "reason": "no model is configured in PCBDraft config",
+            "reason": "no Hermes model is configured; run `pcbdraft connect`",
             "requested_runs": runs,
             "completed_runs": 0,
             "deterministic_results_are_not_reported_as_model_results": True,
@@ -641,14 +646,18 @@ def _run_model_benchmark(
         run_dir = artifacts / f"run-{index + 1:02d}-{secrets.token_hex(3)}"
         make_directory(run_dir)
         try:
-            value, receipt = invoke_structured_model(
+            value = provider._structured(
+                prompt,
+                "pcbdraft_benchmark",
+                schema,
+                timeout,
                 run_dir=run_dir,
-                prompt=prompt,
-                schema=schema,
-                timeout=timeout,
-                schema_name="pcbdraft_benchmark",
                 artifact_prefix="benchmark-model",
             )
+            raw_receipt = load_json_limited(
+                run_dir / "benchmark-model.receipt.json", 64 * 1024
+            )
+            receipt = raw_receipt if isinstance(raw_receipt, dict) else {}
             outputs.append(_validate_model_output(value, selected, receipt))
         except (PCBDraftError, ValidationError, OSError) as exc:
             failures.append(
@@ -666,9 +675,9 @@ def _run_model_benchmark(
             "completed_runs": 0,
             "failures": failures,
             "artifacts": str(artifacts),
-            "provider": settings.provider_id,
-            "model": settings.model,
-            "config": settings.source,
+            "provider": provider.provider_id,
+            "model": provider.model,
+            "config": "hermes-config",
             "deterministic_results_are_not_reported_as_model_results": True,
         }
     vectors = [tuple(item["fault"] for item in output["results"]) for output in outputs]
@@ -719,9 +728,9 @@ def _run_model_benchmark(
         "requested_runs": runs,
         "completed_runs": len(outputs),
         "failures": failures,
-        "provider": settings.provider_id,
-        "model": settings.model,
-        "config": settings.source,
+        "provider": provider.provider_id,
+        "model": provider.model,
+        "config": "hermes-config",
         "sample": {
             "selection": "sha256-stratified, at most 16 fault and 8 clean model-eligible cases",
             "case_ids": [case.id for case in selected],

@@ -8,8 +8,8 @@ tool registration in :mod:`pcbdraft.agent.hermes_tools`, the debug observer in
 :mod:`pcbdraft.interfaces.commands`.
 
 :func:`activate` inserts the vendored runtime at the front of ``sys.path``,
-points ``HERMES_HOME`` at the PCBDraft-owned config directory, writes the
-derived Hermes config and persona, prunes the command registry, registers the
+points ``HERMES_HOME`` at the PCBDraft-owned config directory, merges the
+PCBDraft defaults and persona, prunes the command registry, registers the
 PCB tools, and installs the debug plugin.  :func:`launch_cli` then patches
 ``HermesCLI.process_command`` so the PCBDraft slash commands dispatch to
 :mod:`pcbdraft.interfaces.commands` handlers before Hermes sees them, and runs
@@ -19,20 +19,26 @@ the Hermes ``prompt_toolkit`` REPL.
 from __future__ import annotations
 
 import functools
-import os
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
 from pcbdraft.agent.persona import write_soul
+from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.hermes_paths import (
     DEBUG_PLUGIN_DIR_NAME,
     hermes_home,
-    install_vendor_path,
 )
 from pcbdraft.interfaces.commands import apply_command_surface
-from pcbdraft.model.config import ModelConfig
 from pcbdraft.model.hermes_config import write_hermes_config
+from pcbdraft.services.provider_connection import (
+    ConnectionOptions,
+    activate_provider_runtime,
+    connect,
+    connection_status,
+    format_connection_status,
+)
 
 __all__ = (
     "DEBUG_PLUGIN_DIR_NAME",
@@ -65,6 +71,46 @@ _PLUGIN_INIT = """\
 from pcbdraft.interfaces.hermes_plugin import register  # noqa: F401
 """
 
+_deferred_connection_options: ConnectionOptions | None = None
+_deferred_connection_lock = threading.Lock()
+
+
+def _defer_connection(options: ConnectionOptions) -> None:
+    """Record one wizard request for the outer main-thread launch loop."""
+
+    global _deferred_connection_options
+    with _deferred_connection_lock:
+        if _deferred_connection_options is None:
+            _deferred_connection_options = options
+
+
+def _take_deferred_connection() -> ConnectionOptions | None:
+    """Consume the pending wizard request, if the exiting REPL left one."""
+
+    global _deferred_connection_options
+    with _deferred_connection_lock:
+        options = _deferred_connection_options
+        _deferred_connection_options = None
+    return options
+
+
+def _has_deferred_connection() -> bool:
+    """Return whether the current Hermes exit is a wizard handoff."""
+
+    with _deferred_connection_lock:
+        return _deferred_connection_options is not None
+
+
+def _slash_connection_options(raw_args: str) -> ConnectionOptions:
+    tokens = {token.casefold() for token in raw_args.split()}
+    return ConnectionOptions(
+        no_browser="--no-browser" in tokens,
+        refresh="--refresh" in tokens,
+        reauthenticate=bool(
+            tokens & {"reauthenticate", "--reauthenticate", "--reauth"}
+        ),
+    )
+
 
 def register_pcb_tools() -> None:
     """Register the existing PCBDraft PCB tools into the Hermes registry."""
@@ -84,7 +130,8 @@ def install_debug_plugin() -> Path:
     """
 
     plugin_dir = hermes_home() / "plugins" / DEBUG_PLUGIN_DIR_NAME
-    plugin_dir.mkdir(parents=True, exist_ok=True)
+    plugin_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    plugin_dir.chmod(0o700)
     manifest_path = plugin_dir / "plugin.yaml"
     init_path = plugin_dir / "__init__.py"
     if (
@@ -94,27 +141,25 @@ def install_debug_plugin() -> Path:
         manifest_path.write_text(_PLUGIN_MANIFEST, encoding="utf-8")
     if not init_path.exists() or init_path.read_text(encoding="utf-8") != _PLUGIN_INIT:
         init_path.write_text(_PLUGIN_INIT, encoding="utf-8")
+    manifest_path.chmod(0o600)
+    init_path.chmod(0o600)
     return plugin_dir
 
 
-def activate(*, model: ModelConfig | None = None) -> None:
+def activate() -> None:
     """Prepare the vendored Hermes runtime for one PCBDraft process.
 
     Safe to call repeatedly: vendor-path insertion, config and persona writes,
     the command-surface rebuild, and tool registration are idempotent.
     """
 
-    install_vendor_path()
-    home = hermes_home()
-    if not os.environ.get("HERMES_HOME"):
-        os.environ["HERMES_HOME"] = str(home)
-    home.mkdir(parents=True, exist_ok=True)
+    activate_provider_runtime()
     # The vendored trim omits the messaging gateway; install no-op stubs for
     # the ``gateway.*`` modules Hermes tool code imports lazily at runtime.
     import gateway as _gateway_stub
 
     _gateway_stub.install()
-    write_hermes_config(model)
+    write_hermes_config()
     write_soul()
     # Prune the vendored command registry to the PCBDraft surface before any
     # help/autocomplete consumer is built (vendor files stay untouched).
@@ -140,7 +185,6 @@ def _apply_process_command_patch() -> None:
 
     import cli as hermes_cli_module
 
-    from pcbdraft.core.errors import PCBDraftError
     from pcbdraft.interfaces.commands import HANDLERS
 
     target = hermes_cli_module.HermesCLI
@@ -152,10 +196,21 @@ def _apply_process_command_patch() -> None:
     def _pcbdraft_process_command(self: Any, command: str) -> bool:
         tokens = command.strip().split(None, 1)
         base = tokens[0].lstrip("/").casefold() if tokens else ""
+        raw_args = tokens[1].strip() if len(tokens) > 1 else ""
+        if base == "connect" or (base == "model" and raw_args in {"", "--refresh"}):
+            options = (
+                _slash_connection_options(raw_args)
+                if base == "connect"
+                else ConnectionOptions(refresh=raw_args == "--refresh")
+            )
+            _defer_connection(options)
+            hermes_cli_module._cprint(
+                "  Leaving the terminal briefly to open the model connection wizard..."
+            )
+            return False
         handler = HANDLERS.get(base)
         if handler is None:
             return original(self, command)
-        raw_args = tokens[1].strip() if len(tokens) > 1 else ""
         try:
             result = handler(raw_args)
         except PCBDraftError as exc:
@@ -169,6 +224,103 @@ def _apply_process_command_patch() -> None:
     target._pcbdraft_command_patched = True
 
 
+def _apply_connection_lifecycle_patch() -> None:
+    """Keep process cleanup from destroying a wizard-bound relaunch.
+
+    Hermes' normal ``run()`` teardown restores prompt_toolkit and closes the
+    current session before calling its process-global cleanup. The latter also
+    shuts shared clients and arms a force-exit watchdog, so it must run only on
+    the final terminal exit, not while PCBDraft briefly hands the main thread
+    to the connection wizard.
+    """
+
+    import cli as hermes_cli_module
+
+    if getattr(hermes_cli_module, "_pcbdraft_connection_lifecycle_patched", False):
+        return
+    original = hermes_cli_module._run_cleanup
+
+    @functools.wraps(original)
+    def _pcbdraft_run_cleanup(*args: Any, **kwargs: Any) -> Any:
+        if _has_deferred_connection():
+            # prompt_toolkit has already returned. Retain Hermes' explicit
+            # terminal-mode seat belt while leaving process-global resources
+            # alive for the next in-process terminal instance.
+            hermes_cli_module._reset_terminal_input_modes_on_exit()
+            return None
+        return original(*args, **kwargs)
+
+    hermes_cli_module._run_cleanup = _pcbdraft_run_cleanup
+    hermes_cli_module._pcbdraft_connection_lifecycle_patched = True
+
+
+def _apply_model_persistence_patch() -> None:
+    """Make every successful PCBDraft ``/model`` switch authoritative.
+
+    Hermes normally treats explicit provider switches as session-only even
+    when ``persist_switch_by_default`` is enabled.  PCBDraft has one provider
+    authority, so its process-local adapter makes picker, target, and provider
+    forms global and rejects Hermes' ephemeral-only flags.
+    """
+
+    import cli as hermes_cli_module
+    from hermes_cli import model_switch
+
+    target = hermes_cli_module.HermesCLI
+    if getattr(target, "_pcbdraft_model_persistence_patched", False):
+        return
+    original = target._handle_model_switch
+    original_cli_apply = target._confirm_and_apply_cli_model_switch
+    original_picker_apply = target._confirm_and_apply_model_switch_result
+
+    @functools.wraps(original)
+    def _persistent_model_switch(self: Any, command: str) -> Any:
+        request = model_switch.parse_model_switch_args(
+            command.split(None, 1)[1] if len(command.split(None, 1)) > 1 else ""
+        )
+        if request.is_once or request.is_session:
+            hermes_cli_module._cprint(
+                "  ✗ PCBDraft keeps one persistent model; use /model without "
+                "--once or --session."
+            )
+            return None
+        return original(self, command)
+
+    def _persist_every_switch(
+        is_global: bool,
+        is_session: bool,
+        *,
+        is_once: bool = False,
+        explicit_provider: str = "",
+    ) -> bool:
+        del is_global, is_session, is_once, explicit_provider
+        return True
+
+    @functools.wraps(original_cli_apply)
+    def _refresh_after_cli_switch(self: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return original_cli_apply(self, *args, **kwargs)
+        finally:
+            from pcbdraft.agent.hermes_tools import refresh_service_provider
+
+            refresh_service_provider()
+
+    @functools.wraps(original_picker_apply)
+    def _refresh_after_picker_switch(self: Any, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return original_picker_apply(self, *args, **kwargs)
+        finally:
+            from pcbdraft.agent.hermes_tools import refresh_service_provider
+
+            refresh_service_provider()
+
+    target._handle_model_switch = _persistent_model_switch
+    target._confirm_and_apply_cli_model_switch = _refresh_after_cli_switch
+    target._confirm_and_apply_model_switch_result = _refresh_after_picker_switch
+    target._pcbdraft_model_persistence_patched = True
+    model_switch.resolve_persist_behavior = _persist_every_switch
+
+
 def launch_cli(argv: list[str] | None = None) -> int:
     """Launch the Hermes interactive terminal (prompt_toolkit REPL) as PCBDraft.
 
@@ -176,17 +328,53 @@ def launch_cli(argv: list[str] | None = None) -> int:
     arguments.  Returns the process exit code.
     """
 
+    # A prior failed/aborted invocation in this process must never make an
+    # otherwise normal terminal exit look like a new wizard request.
+    _take_deferred_connection()
     activate()
+    status = connection_status()
+    if not status.usable:
+        if not sys.stdin.isatty():
+            raise PCBDraftError(
+                "no usable model provider is connected; run `pcbdraft connect` "
+                "from an interactive terminal"
+            )
+        print("A model connection is required before the PCB terminal can start.")
+        status = connect()
+        if status.outcome == "cancelled" or not status.usable:
+            print(format_connection_status(status))
+            print("Connection was not completed. Run `pcbdraft connect` to try again.")
+            return 1
     import hermes_cli.main as hermes_main
 
     _apply_process_command_patch()
+    _apply_connection_lifecycle_patch()
+    _apply_model_persistence_patch()
     tokens = list(argv) if argv is not None else sys.argv[1:]
     previous = list(sys.argv)
     sys.argv = ["pcbdraft"] + tokens
     try:
-        hermes_main.main()
-    except SystemExit as exc:
-        return int(exc.code or 0)
+        while True:
+            exit_code = 0
+            try:
+                hermes_main.main()
+            except SystemExit as exc:
+                exit_code = int(exc.code or 0)
+            requested = _take_deferred_connection()
+            if requested is None:
+                return exit_code
+            try:
+                status = connect(requested)
+            except PCBDraftError as exc:
+                print(f"✗ {exc}", file=sys.stderr)
+                print("Returning to the PCBDraft terminal.")
+                continue
+            if status.outcome != "cancelled":
+                from pcbdraft.agent.hermes_tools import refresh_service_provider
+
+                refresh_service_provider()
+            print(format_connection_status(status))
+            print("Returning to the PCBDraft terminal.")
     finally:
+        _take_deferred_connection()
         sys.argv = previous
-    return 0

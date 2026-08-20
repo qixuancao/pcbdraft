@@ -15,6 +15,11 @@ from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.repository import configure_repository, current_repository
 from pcbdraft.interfaces.hermes_cli import launch_cli
 from pcbdraft.services.doctor import doctor_report, setup_runtime
+from pcbdraft.services.provider_connection import (
+    ConnectionOptions,
+    connect,
+    format_connection_status,
+)
 
 _ROOT_OPTIONS_WITH_VALUES = frozenset(
     {"--workspace", "--provider", "--project", "--timeout", "--approval-mode"}
@@ -80,7 +85,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--provider",
         choices=(
             "auto",
-            "openai-compatible",
+            "hermes",
         ),
         default="auto",
         help="terminal planning provider",
@@ -108,6 +113,33 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
     )
     doctor.add_argument(
         "--json", action="store_true", dest="as_json", help="emit machine-readable JSON"
+    )
+
+    connection = subcommands.add_parser(
+        "connect", help="connect, switch, or reauthenticate a model provider"
+    )
+    connection.add_argument(
+        "--no-browser",
+        action="store_true",
+        help="print OAuth URLs without opening a browser",
+    )
+    connection.add_argument(
+        "--timeout",
+        type=positive_timeout,
+        dest="connection_timeout",
+        metavar="SEC",
+        help="provider authentication timeout",
+    )
+    connection.add_argument(
+        "--region", choices=("global", "china"), help="provider account region"
+    )
+    connection.add_argument(
+        "--refresh", action="store_true", help="refresh provider model discovery"
+    )
+    connection.add_argument(
+        "--reauthenticate",
+        action="store_true",
+        help="request fresh provider authentication",
     )
 
     setup = subcommands.add_parser(
@@ -182,6 +214,15 @@ def _print_doctor(report: dict, as_json: bool) -> int:
         if data:
             ready = sum(bool(item.get("available")) for item in data.values())
             print(f"KiCad stock-library directories: {ready}/{len(data)} ready")
+        model = report.get("model", {})
+        if model.get("configured"):
+            readiness = "ready" if model.get("usable") else "reauthentication required"
+            print(
+                f"Model connection: {model.get('provider')} / {model.get('model')} "
+                f"({readiness})"
+            )
+        else:
+            print("Model connection: not configured (run `pcbdraft connect`)")
     return 0 if report["ok"] else 1
 
 
@@ -274,6 +315,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _print_trace(args.lines, args.as_json)
         if args.command == "doctor":
             return _print_doctor(doctor_report(), args.as_json)
+        if args.command == "connect":
+            if not sys.stdin.isatty():
+                raise PCBDraftError(
+                    "`pcbdraft connect` requires an interactive terminal"
+                )
+            status = connect(
+                ConnectionOptions(
+                    no_browser=args.no_browser,
+                    timeout=args.connection_timeout,
+                    region=args.region,
+                    refresh=args.refresh,
+                    reauthenticate=args.reauthenticate,
+                )
+            )
+            print(format_connection_status(status))
+            return 0 if status.usable else 1
         if args.command == "setup":
             report = setup_runtime()
             if args.as_json:

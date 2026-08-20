@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
+
 from pcbdraft.agent.plan import (
     AgentDesignRequest,
     CircuitPlan,
@@ -20,8 +24,14 @@ from pcbdraft.agent.plan import (
 )
 from pcbdraft.agent.repair import normalize_repair_feedback
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.core.io import make_directory
-from pcbdraft.model.api import OpenAICompatibleSettings, invoke_structured_model
+from pcbdraft.core.io import atomic_write_json, make_directory
+from pcbdraft.model.api import (
+    MAX_MODEL_PROMPT_BYTES,
+    MAX_MODEL_RESPONSE_BYTES,
+    OpenAICompatibleSettings,
+    _extract_json_object,
+    invoke_structured_model,
+)
 
 MAX_USER_MESSAGE_BYTES = 16_384
 _INTERPRETATION_FIELDS = {
@@ -510,8 +520,202 @@ class OpenAICompatibleIntentProvider:
         )
 
 
+class HermesIntentProvider:
+    """Structured PCB planning through Hermes' normalized provider runtime."""
+
+    supports_planning = True
+
+    def __init__(self, provider_id: str, model: str) -> None:
+        self.provider_id = provider_id
+        self.model = model
+
+    @classmethod
+    def from_config(cls) -> HermesIntentProvider | None:
+        from pcbdraft.services.provider_connection import connection_status
+
+        status = connection_status()
+        if not status.usable or status.provider is None or status.model is None:
+            return None
+        return cls(status.provider, status.model)
+
+    def diagnostic(self) -> dict[str, Any]:
+        return {
+            "id": self.provider_id,
+            "model": self.model,
+            "available": True,
+            "planning": "Hermes provider runtime",
+        }
+
+    def _structured(
+        self,
+        prompt: str,
+        schema_name: str,
+        schema: dict[str, Any],
+        timeout: float,
+        *,
+        run_dir: Path,
+        artifact_prefix: str,
+    ) -> dict[str, Any]:
+        if isinstance(timeout, bool) or timeout <= 0 or timeout > 1800:
+            raise ValidationError("model timeout must be in (0, 1800] seconds")
+        try:
+            Draft202012Validator.check_schema(schema)
+        except SchemaError as exc:
+            raise ValidationError("model output schema is invalid") from exc
+        schema_text = json.dumps(
+            schema, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        full_prompt = (
+            prompt + "\n\nReturn exactly one JSON object satisfying this JSON Schema; "
+            "do not add markdown or prose:\n" + schema_text
+        )
+        if len(full_prompt.encode("utf-8")) > MAX_MODEL_PROMPT_BYTES:
+            raise ValidationError("model prompt exceeds 2 MiB")
+        make_directory(run_dir)
+        schema_path = run_dir / f"{artifact_prefix}.schema.json"
+        final_path = run_dir / f"{artifact_prefix}.final.json"
+        receipt_path = run_dir / f"{artifact_prefix}.receipt.json"
+        atomic_write_json(schema_path, schema)
+        try:
+            from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+
+            response = call_llm(
+                task="pcbdraft_planning",
+                provider=self.provider_id,
+                model=self.model,
+                messages=[{"role": "user", "content": full_prompt}],
+                temperature=0,
+                max_tokens=16384,
+                timeout=timeout,
+            )
+            finish_reason = getattr(response.choices[0], "finish_reason", None)
+            if finish_reason == "length":
+                raise ValidationError("model output was truncated at its token limit")
+            text = extract_content_or_reasoning(response)
+        except ValidationError:
+            raise
+        except Exception as exc:  # Normalize all vendored provider failures here.
+            from pcbdraft.services.provider_connection import (
+                _STATE_MESSAGES,
+                classify_provider_error,
+            )
+
+            failure_state = classify_provider_error(exc)
+            atomic_write_json(
+                receipt_path,
+                {
+                    "completed": False,
+                    "schema_valid": False,
+                    "provider": self.provider_id,
+                    "model": self.model,
+                    "failure": type(exc).__name__,
+                    "failure_category": failure_state,
+                    "prompt_persisted": False,
+                    "credential_persisted": False,
+                },
+            )
+            raise PCBDraftError(
+                _STATE_MESSAGES[failure_state]
+                or "configured model request failed; check `pcbdraft doctor`"
+            ) from exc
+        if len(text.encode("utf-8")) > MAX_MODEL_RESPONSE_BYTES:
+            raise ValidationError("model response exceeds 1 MiB")
+        try:
+            value = _extract_json_object(text)
+        except (TypeError, ValueError, RecursionError) as exc:
+            raise ValidationError("model returned invalid JSON content") from exc
+        if not isinstance(value, dict):
+            raise ValidationError("model output must be one JSON object")
+        try:
+            Draft202012Validator(schema).validate(value)
+        except JSONSchemaValidationError as exc:
+            raise ValidationError(
+                "model output does not satisfy the requested JSON schema"
+            ) from exc
+        atomic_write_json(final_path, value)
+        atomic_write_json(
+            receipt_path,
+            {
+                "completed": True,
+                "schema_valid": True,
+                "provider": self.provider_id,
+                "model": self.model,
+                "schema_artifact": schema_path.name,
+                "output_artifact": final_path.name,
+                "prompt_persisted": False,
+                "credential_persisted": False,
+            },
+        )
+        return value
+
+    def interpret(
+        self,
+        context: ProviderContext,
+        *,
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> dict[str, Any]:
+        del project_dir
+        return validate_interpretation(
+            self._structured(
+                _provider_prompt(context),
+                "pcbdraft_intent",
+                interpretation_schema(),
+                timeout,
+                run_dir=run_dir,
+                artifact_prefix="intent",
+            )
+        )
+
+    def plan(
+        self,
+        request: AgentDesignRequest,
+        *,
+        symbol_context: dict[str, list[dict[str, Any]]],
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> CircuitPlan:
+        del project_dir
+        return CircuitPlan.from_dict(
+            self._structured(
+                _planning_prompt(request, symbol_context),
+                "pcbdraft_circuit_plan",
+                circuit_plan_schema(),
+                timeout,
+                run_dir=run_dir,
+                artifact_prefix="circuit-plan",
+            )
+        )
+
+    def revise_plan(
+        self,
+        request: AgentDesignRequest,
+        previous_plan: CircuitPlan,
+        feedback: dict[str, Any],
+        *,
+        symbol_context: dict[str, list[dict[str, Any]]],
+        project_dir: Path,
+        run_dir: Path,
+        timeout: float,
+    ) -> CircuitPlan:
+        del project_dir
+        normalized = normalize_repair_feedback(feedback)
+        return CircuitPlan.from_dict(
+            self._structured(
+                _repair_prompt(request, previous_plan, normalized, symbol_context),
+                "pcbdraft_repair_plan",
+                circuit_plan_schema(),
+                timeout,
+                run_dir=run_dir,
+                artifact_prefix=f"repair-plan-{feedback.get('attempt', 'unknown')}",
+            )
+        )
+
+
 def resolve_provider(name: str = "auto") -> IntentProvider | None:
-    """Resolve a configured provider without returning, or persisting, a credential.
+    """Resolve the active Hermes provider without returning a credential.
 
     ``auto`` returns ``None`` when nothing is configured so that the terminal can
     still start and guide the user through ``/connect``; every planning path
@@ -519,13 +723,11 @@ def resolve_provider(name: str = "auto") -> IntentProvider | None:
     """
 
     normalized = name.strip().casefold()
-    if normalized not in {"auto", "openai-compatible"}:
+    if normalized not in {"auto", "hermes"}:
         raise ValidationError(f"unknown provider: {name}")
-    settings = OpenAICompatibleSettings.from_config()
-    if settings is not None:
-        provider = OpenAICompatibleIntentProvider(settings)
-        if normalized == "openai-compatible" or provider.diagnostic()["available"]:
-            return provider
-    if normalized == "openai-compatible":
-        raise PCBDraftError("OpenAI-compatible provider is not configured")
-    return None
+    provider = HermesIntentProvider.from_config()
+    if provider is None and normalized == "hermes":
+        raise PCBDraftError(
+            "Hermes model provider is not configured; run `pcbdraft connect`"
+        )
+    return provider

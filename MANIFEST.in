@@ -6,6 +6,7 @@ recursive-include scripts *.sh *.py
 recursive-include tests *.py
 recursive-include src/pcbdraft/data *.json *.md
 recursive-include vendor/hermes *.py *.yaml *.yml *.json *.md *.txt
+include vendor/hermes/LICENSE
 prune artifacts
 prune vendor/hermes/.venv
 prune vendor/hermes/__pycache__

@@ -19,7 +19,7 @@ from pcbdraft.kicad.runtime import (
     library_table_status,
 )
 from pcbdraft.kicad.support import evaluate_kicad_version
-from pcbdraft.model.config import load_model_config
+from pcbdraft.services.provider_connection import connection_status
 
 VERSION_TIMEOUT = 10.0
 VERSION_OUTPUT_LIMIT = 128 * 1024
@@ -95,13 +95,8 @@ def doctor_report() -> dict[str, Any]:
         and support.supported
     )
     try:
-        config = load_model_config()
-        model = {
-            "configured": config.active is not None,
-            "provider": config.active.name if config.active else None,
-            "model": config.active_model,
-            "config": str(config.path),
-        }
+        status = connection_status()
+        model = status.to_dict()
     except PCBDraftError as exc:
         model = {"configured": False, "error": str(exc)}
     paths = {

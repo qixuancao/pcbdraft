@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import io
 import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,8 +28,15 @@ from pcbdraft.interfaces.commands import (
     PCBDRAFT_CATEGORY,
     apply_command_surface,
 )
-from pcbdraft.interfaces.hermes_cli import _apply_process_command_patch
+from pcbdraft.interfaces.hermes_cli import (
+    _apply_connection_lifecycle_patch,
+    _apply_model_persistence_patch,
+    _apply_process_command_patch,
+    _take_deferred_connection,
+    launch_cli,
+)
 from pcbdraft.services.application import ApplicationService
+from pcbdraft.services.provider_connection import ConnectionOptions, ConnectionStatus
 
 
 class FakeService:
@@ -36,7 +45,7 @@ class FakeService:
     def __init__(self, root: Path) -> None:
         self.projects_root = root / "projects"
         self.views: dict[str, dict[str, Any]] = {}
-        self.calls: list[tuple[str, Any]] = []
+        self.calls: list[tuple[Any, ...]] = []
 
     def create_draft(self, name: str) -> dict[str, Any]:
         self.calls.append(("create_draft", name))
@@ -207,13 +216,34 @@ class SlashHandlerTests(unittest.TestCase):
         )
 
     def test_connect_without_provider_is_actionable(self) -> None:
-        with patch.dict(
-            os.environ,
-            {"PCBDRAFT_CONFIG": str(self.root / "config" / "config.toml")},
-            clear=False,
+        with patch(
+            "pcbdraft.interfaces.commands.connect",
+            return_value=ConnectionStatus(
+                False, False, None, None, None, None, outcome="cancelled"
+            ),
         ):
             result = HANDLERS["connect"]("")
         self.assertIn("No model provider connected", result)
+
+    def test_successful_connect_refreshes_cached_planning_provider(self) -> None:
+        connected = ConnectionStatus(
+            True,
+            True,
+            "zai",
+            "glm-test",
+            "api_key",
+            "hermes-config",
+            outcome="changed",
+        )
+        with (
+            patch("pcbdraft.interfaces.commands.connect", return_value=connected),
+            patch(
+                "pcbdraft.interfaces.commands.refresh_service_provider"
+            ) as refresh_provider,
+        ):
+            result = HANDLERS["connect"]("")
+        refresh_provider.assert_called_once_with()
+        self.assertIn("zai / glm-test", result)
 
     def test_process_command_wrapper_routes_and_renders_errors(self) -> None:
         install_vendor_path()
@@ -237,6 +267,261 @@ class SlashHandlerTests(unittest.TestCase):
         rendered = "\n".join(str(call.args[0]) for call in mocked_print.call_args_list)
         self.assertIn("✗", rendered)
         self.assertIn("project not found", rendered)
+
+    def test_repl_connect_defers_wizard_until_after_terminal_exit(self) -> None:
+        install_vendor_path()
+        _apply_process_command_patch()
+        import cli as hermes_cli_module
+
+        with (
+            patch("pcbdraft.interfaces.hermes_cli.connect") as wizard,
+            patch.object(hermes_cli_module, "_cprint") as mocked_print,
+        ):
+            continue_loop = hermes_cli_module.HermesCLI.process_command(
+                object(), "/connect --no-browser --reauthenticate"
+            )
+        self.assertFalse(continue_loop)
+        wizard.assert_not_called()
+        requested = _take_deferred_connection()
+        self.assertIsNotNone(requested)
+        assert requested is not None
+        self.assertTrue(requested.no_browser)
+        self.assertTrue(requested.reauthenticate)
+        rendered = "\n".join(str(call.args[0]) for call in mocked_print.call_args_list)
+        self.assertIn("Leaving the terminal", rendered)
+
+    def test_bare_model_defers_full_wizard_outside_process_command(self) -> None:
+        install_vendor_path()
+        _apply_process_command_patch()
+        import cli as hermes_cli_module
+
+        with patch("pcbdraft.interfaces.hermes_cli.connect") as wizard:
+            continue_loop = hermes_cli_module.HermesCLI.process_command(
+                object(), "/model --refresh"
+            )
+        self.assertFalse(continue_loop)
+        wizard.assert_not_called()
+        requested = _take_deferred_connection()
+        self.assertIsNotNone(requested)
+        assert requested is not None
+        self.assertTrue(requested.refresh)
+
+    def test_deferred_exit_restores_terminal_without_global_cleanup(self) -> None:
+        install_vendor_path()
+        import cli as hermes_cli_module
+
+        _apply_connection_lifecycle_patch()
+        before_cleanup_done = hermes_cli_module._cleanup_done
+        with patch.object(
+            hermes_cli_module, "_reset_terminal_input_modes_on_exit"
+        ) as reset_modes:
+            from pcbdraft.interfaces.hermes_cli import _defer_connection
+
+            _defer_connection(ConnectionOptions(refresh=True))
+            hermes_cli_module._run_cleanup()
+        reset_modes.assert_called_once_with()
+        self.assertEqual(hermes_cli_module._cleanup_done, before_cleanup_done)
+        self.assertEqual(_take_deferred_connection(), ConnectionOptions(refresh=True))
+
+    def test_deferred_wizard_runs_on_main_thread_and_relaunches(self) -> None:
+        install_vendor_path()
+        import hermes_cli.main as hermes_main
+
+        connected = ConnectionStatus(
+            True,
+            True,
+            "openai-codex",
+            "gpt-5-codex",
+            "oauth_device_code",
+            "provider-auth",
+            outcome="changed",
+        )
+        launches = 0
+
+        def run_terminal() -> None:
+            nonlocal launches
+            launches += 1
+            if launches == 1:
+                import cli as hermes_cli_module
+
+                self.assertFalse(
+                    hermes_cli_module.HermesCLI.process_command(
+                        object(), "/connect --refresh"
+                    )
+                )
+
+        def run_wizard(_options: ConnectionOptions) -> ConnectionStatus:
+            self.assertIs(threading.current_thread(), threading.main_thread())
+            return connected
+
+        with (
+            patch("pcbdraft.interfaces.hermes_cli.activate"),
+            patch(
+                "pcbdraft.interfaces.hermes_cli.connection_status",
+                return_value=connected,
+            ),
+            patch.object(hermes_main, "main", side_effect=run_terminal) as terminal,
+            patch(
+                "pcbdraft.interfaces.hermes_cli.connect", side_effect=run_wizard
+            ) as wizard,
+            patch("pcbdraft.agent.hermes_tools.refresh_service_provider") as refresh,
+        ):
+            self.assertEqual(launch_cli([]), 0)
+        self.assertEqual(terminal.call_count, 2)
+        wizard.assert_called_once_with(ConnectionOptions(refresh=True))
+        refresh.assert_called_once_with()
+
+    def test_deferred_cancellation_relaunches_without_refreshing(self) -> None:
+        install_vendor_path()
+        import hermes_cli.main as hermes_main
+
+        connected = ConnectionStatus(
+            True, True, "zai", "glm-test", "api_key", "hermes-config"
+        )
+        cancelled = ConnectionStatus(
+            True,
+            True,
+            "zai",
+            "glm-test",
+            "api_key",
+            "hermes-config",
+            outcome="cancelled",
+            state="cancelled",
+        )
+        launches = 0
+
+        def run_terminal() -> None:
+            nonlocal launches
+            launches += 1
+            if launches == 1:
+                import cli as hermes_cli_module
+
+                self.assertFalse(
+                    hermes_cli_module.HermesCLI.process_command(object(), "/connect")
+                )
+
+        with (
+            patch("pcbdraft.interfaces.hermes_cli.activate"),
+            patch(
+                "pcbdraft.interfaces.hermes_cli.connection_status",
+                return_value=connected,
+            ),
+            patch.object(hermes_main, "main", side_effect=run_terminal) as terminal,
+            patch("pcbdraft.interfaces.hermes_cli.connect", return_value=cancelled),
+            patch("pcbdraft.agent.hermes_tools.refresh_service_provider") as refresh,
+        ):
+            self.assertEqual(launch_cli([]), 0)
+        self.assertEqual(terminal.call_count, 2)
+        refresh.assert_not_called()
+
+    def test_deferred_wizard_error_is_reported_before_relaunch(self) -> None:
+        install_vendor_path()
+        import hermes_cli.main as hermes_main
+
+        connected = ConnectionStatus(
+            True, True, "zai", "glm-test", "api_key", "hermes-config"
+        )
+        launches = 0
+
+        def run_terminal() -> None:
+            nonlocal launches
+            launches += 1
+            if launches == 1:
+                import cli as hermes_cli_module
+
+                self.assertFalse(
+                    hermes_cli_module.HermesCLI.process_command(object(), "/connect")
+                )
+
+        errors = io.StringIO()
+        with (
+            patch("pcbdraft.interfaces.hermes_cli.activate"),
+            patch(
+                "pcbdraft.interfaces.hermes_cli.connection_status",
+                return_value=connected,
+            ),
+            patch.object(hermes_main, "main", side_effect=run_terminal) as terminal,
+            patch(
+                "pcbdraft.interfaces.hermes_cli.connect",
+                side_effect=PCBDraftError("safe connection failure"),
+            ),
+            patch("sys.stderr", errors),
+        ):
+            self.assertEqual(launch_cli([]), 0)
+        self.assertEqual(terminal.call_count, 2)
+        self.assertIn("safe connection failure", errors.getvalue())
+
+    def test_normal_exit_clears_stale_request_without_relaunching(self) -> None:
+        install_vendor_path()
+        import hermes_cli.main as hermes_main
+
+        from pcbdraft.interfaces.hermes_cli import _defer_connection
+
+        connected = ConnectionStatus(
+            True, True, "zai", "glm-test", "api_key", "hermes-config"
+        )
+        _defer_connection(ConnectionOptions(refresh=True))
+        with (
+            patch("pcbdraft.interfaces.hermes_cli.activate"),
+            patch(
+                "pcbdraft.interfaces.hermes_cli.connection_status",
+                return_value=connected,
+            ),
+            patch.object(hermes_main, "main") as terminal,
+            patch("pcbdraft.interfaces.hermes_cli.connect") as wizard,
+        ):
+            self.assertEqual(launch_cli([]), 0)
+        terminal.assert_called_once_with()
+        wizard.assert_not_called()
+        self.assertIsNone(_take_deferred_connection())
+
+    def test_explicit_model_forms_always_use_the_persistent_authority(self) -> None:
+        install_vendor_path()
+        _apply_model_persistence_patch()
+        import cli as hermes_cli_module
+        from hermes_cli import inventory, model_switch
+
+        context = SimpleNamespace(user_providers={}, custom_providers=[])
+        context.with_overrides = lambda **_kwargs: context
+        failed_result = SimpleNamespace(success=False, error_message="test stop")
+        target = SimpleNamespace(
+            provider="zai",
+            model="glm-4.5",
+            base_url="",
+            api_key="",
+        )
+        with (
+            patch.object(inventory, "load_picker_context", return_value=context),
+            patch.object(
+                model_switch, "switch_model", return_value=failed_result
+            ) as switch,
+            patch.object(hermes_cli_module, "_cprint"),
+        ):
+            hermes_cli_module.HermesCLI._handle_model_switch(
+                target, "/model board-target"
+            )
+            self.assertTrue(switch.call_args.kwargs["is_global"])
+            hermes_cli_module.HermesCLI._handle_model_switch(
+                target, "/model board-target --provider anthropic"
+            )
+            self.assertTrue(switch.call_args.kwargs["is_global"])
+            self.assertEqual(switch.call_args.kwargs["explicit_provider"], "anthropic")
+
+    def test_ephemeral_model_flags_are_rejected_before_switching(self) -> None:
+        install_vendor_path()
+        _apply_model_persistence_patch()
+        import cli as hermes_cli_module
+        from hermes_cli import model_switch
+
+        with (
+            patch.object(model_switch, "switch_model") as switch,
+            patch.object(hermes_cli_module, "_cprint") as rendered,
+        ):
+            hermes_cli_module.HermesCLI._handle_model_switch(
+                object(), "/model board-target --session"
+            )
+        switch.assert_not_called()
+        self.assertIn("one persistent model", str(rendered.call_args.args[0]))
 
 
 class CommandSurfaceTests(unittest.TestCase):
@@ -345,7 +630,7 @@ class RepositoryInvariantTests(unittest.TestCase):
             repository_path = root / "pbd-repo"
             environment = {
                 "PCBDRAFT_REPOSITORY_CONFIG": str(root / "pointer.json"),
-                "HERMES_HOME": str(root / "hermes-home"),
+                "PCBDRAFT_HERMES_HOME": str(root / "hermes-home"),
             }
             with patch.dict(os.environ, environment, clear=False):
                 configure_repository(repository_path)

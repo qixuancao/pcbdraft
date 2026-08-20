@@ -64,10 +64,14 @@ Remove-Item $installer
 
 ## 第一次启动
 
-电路规划需要配置一个模型服务。先编辑 PCBDraft 模型配置文件，注册
-DeepSeek、MiniMax、Kimi、OpenAI、OpenRouter、本地 Ollama 或自定义
-OpenAI 兼容服务并填写 API Key，然后在交互终端中输入 `/connect` 确认连接，
-之后直接输入任意一句板卡需求即可。
+电路规划需要连接一个模型服务。首次在交互终端启动 `pcbdraft`
+时会直接打开提供商、登录/API Key 和模型选择向导；也可先单独运行：
+
+```bash
+pcbdraft connect
+```
+
+完成后再启动 `pcbdraft`，直接输入任意一句板卡需求即可。
 
 环境检测和非破坏性修复统一由下面两个命令完成：
 
@@ -93,10 +97,9 @@ echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-模型服务和 API Key 保存在平台的用户配置目录（Linux 默认为
-`~/.config/pcbdraft/config.toml`，macOS 默认为
-`~/Library/Application Support/pcbdraft/config.toml`，Windows 默认为
-`%APPDATA%\pcbdraft\config.toml`）。首次启动会创建并
+模型选择和认证信息保存在平台的 PCBDraft 用户配置目录下的
+私有 `hermes/` 子目录。该目录与独立安装的 Hermes 及其 `~/.hermes`
+数据隔离。首次启动还会创建并
 记录统一的 PCB 项目仓库 `~/PCBDraft/`；以后无论从哪个目录执行 `pcbdraft`，
 新项目、KiCad 原理图、`.kicad_pcb`、检查记录和发布文件都会位于这个仓库的
 `projects/` 下。要更新或修复安装，重新运行上面的安装命令即可。
@@ -117,42 +120,15 @@ uv run pcbdraft doctor --json
 
 ## 配置模型
 
-编辑 PCBDraft 模型配置文件，注册 DeepSeek、MiniMax、Kimi、OpenAI、
-OpenRouter、本地 Ollama 或自定义 OpenAI 兼容服务，然后输入 API Key。
-交互终端中输入 `/connect` 查看当前连接，`/model` 可以切换模型。
+运行 `pcbdraft connect`，或在交互终端中输入 `/connect`、`/model`，
+可以连接、切换或重新认证当前内置 Hermes 版本发现的提供商。向导支持
+API Key、浏览器/设备代码登录、云身份、本地端点、聚合服务和自定义端点；
+无浏览器的远程终端可使用 `pcbdraft connect --no-browser`。
 
-远程模型地址必须使用 HTTPS。只有字面量回环地址（`localhost`、`127.0.0.0/8`
-或 `::1`）可以使用 HTTP，以支持本机 Ollama；模型调用不会跟随重定向，返回值还
-会在本地再次执行 JSON Schema 校验。
-
-模型接入层会按服务声明生成兼容请求：DeepSeek 使用 JSON Object，MiniMax M2
-使用提示词约束并由本地 Schema 做最终裁决，Kimi、OpenAI、OpenRouter 和 Ollama
-使用各自支持的结构化输出与令牌字段。网络瞬断、408、429 和 5xx 只会在同一个
-总超时内进行至多三次带抖动的重试，并遵守有界 `Retry-After`；PCBDraft 不会在
-失败后静默切换模型或提供商。
-
-密钥由 PCBDraft 写入上述平台配置目录，且在 POSIX 系统使用文件权限 `600`；
-它不会进入 PCB 工程、对话记录或运行收据。也可以手动创建同样的配置：
-
-```toml
-version = 1
-active_provider = "deepseek"
-active_model = "deepseek-v4-pro"
-
-[providers.deepseek]
-name = "DeepSeek"
-base_url = "https://api.deepseek.com"
-api_key = "在这里填写密钥"
-models = ["deepseek-v4-pro", "deepseek-v4-flash"]
-docs_url = "https://platform.deepseek.com/"
-```
-
-在 Linux 手动创建后执行；macOS 请对上面列出的实际配置目录应用相同权限：
-
-```bash
-chmod 700 ~/.config/pcbdraft
-chmod 600 ~/.config/pcbdraft/config.toml
-```
+提供商认证、端点检测、令牌刷新和传输路由随 PCBDraft 打包的 Hermes
+运行时统一处理。PCBDraft 仍会对用于板卡规划的返回值执行本地 JSON Schema
+和领域校验。密钥和刷新令牌只保存在私有认证存储中，不会写入 PCB
+工程、对话记录、调试跟踪或模型运行收据。
 
 ## 启动
 
@@ -295,10 +271,10 @@ PCB 工具。
 
 | 命令 | 作用 |
 | --- | --- |
-| `/connect` | 显示当前连接的模型服务 |
+| `/connect` | 连接、切换或重新认证模型提供商 |
 | `/goal <目标>` | 设立持续目标；Agent 循环推进直到完成、阻塞或预算暂停 |
 | `/goal status` / `pause` / `resume` / `clear` | 管理当前持续目标 |
-| `/model` | 搜索并选择当前模型 |
+| `/model` | 打开同一提供商与模型向导 |
 | `/project [路径]` | 查看当前项目仓库；提供路径时切换后续项目的统一存储位置 |
 | `/new <名称>` | 在项目仓库中创建新 PCB 项目并设为当前上下文（不传名称显示用法） |
 | `/projects` | 列出项目仓库中的全部项目（空仓库给出可操作的提示） |

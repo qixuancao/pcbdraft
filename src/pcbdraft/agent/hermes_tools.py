@@ -49,6 +49,7 @@ from pcbdraft.core.errors import PCBDraftError
 __all__ = (
     "get_current_project_id",
     "get_service",
+    "refresh_service_provider",
     "register_all_pcb_tools",
     "set_current_project_id",
 )
@@ -83,6 +84,16 @@ def _set_service(service: Any) -> None:
 
     global _service_cache
     _service_cache = service
+
+
+def refresh_service_provider() -> None:
+    """Refresh a cached service after the persistent model authority changes."""
+
+    if _service_cache is None:
+        return
+    from pcbdraft.model.providers import resolve_provider
+
+    _service_cache.provider = resolve_provider("auto")
 
 
 def get_service() -> Any:
