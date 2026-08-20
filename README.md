@@ -164,7 +164,7 @@ PCBDraft 默认不再按固定顺序驱动“规划→生成→验证→修复�
   ↙    ↓    ↘
 查看   设计   修改
   ↘    ↓    ↙
- PCB 工具注册表（宏 + 领域路由）
+ PCB 工具注册表（具体扁平操作）
       ↓
  ApplicationService（权限、revision、事务）
       ↓
@@ -186,19 +186,15 @@ continue / done / blocked
   本地固定流程接管”的限制。
 - **项目状态只是工程事实**（`draft`、`generated`、`validation_failed`、
   `validated` 等），不唯一决定下一个工具。
-- **高层宏保留为兼容方式**。`pcb_plan_request`、`pcb_generate_candidate`、
-  `pcb_validate`、`pcb_repair_candidate`、`pcb_apply_candidate`、
-  `pcb_discard_candidate`、`pcb_undo_last_change`、`pcb_render_previews`、
-  `pcb_build_release` 一次完成一整段工作，适合简单项目。
-- **领域路由提供细粒度能力**。`pcb_project`、`pcb_library`、`pcb_design`、
-  `pcb_board`、`pcb_inspect`、`pcb_verify`、`pcb_export`、`pcb_analysis`
-  通过 `operation` + `arguments` 选择具体能力（如
-  `pcb_library(operation="search_symbols", arguments={"query": "STM32"})`）。
-  每个 router 都支持 `operation="capabilities"`，列出当前真正支持的操作、
-  参数和限制。
-- **未实现的能力会如实回答**。尚未支持的操作返回
-  `{"supported": false, "reason": ...}`，不会伪造成功、静默替换操作或把
-  unsupported 当作通过。
+- **模型只看到具体扁平工具**。工程、检查、符号/封装库、语义编辑、摆放、
+  布线、验证、渲染和导出分别使用独立名称，例如 `pcb_inspect_design`、
+  `pcb_search_footprints`、`pcb_add_component`、`pcb_connect_pin`、
+  `pcb_place_footprint`、`pcb_route_net`、`pcb_run_drc` 和
+  `pcb_export_gerbers`。没有再通过 `operation` 选择第二层动作的 router，
+  也不向模型暴露一次执行整个阶段的宏。
+- **一次调用只做一个动作**。成功的写操作在同一事务里更新语义 IR、重新
+  物化 KiCad、检查同步关系并返回 revision、前后内容哈希和事实差异；任何
+  阶段失败都不会发布部分结果。
 
 ### Goal Mode（持续目标）
 
@@ -211,19 +207,17 @@ Continuation 消息只重申目标并要求“检查当前工程状态、做你�
 
 ### 语义设计图（Design Graph）
 
-CircuitPlan 和语义 IR 保留为可查看、可逐步演化的设计表示：Agent 可以通过
-`pcb_design` 的 `inspect_graph` / `inspect_component` / `inspect_net` 查看
-组件、功能块、网络、电源域和接口。系统不再假设“必须先一次性产出完整
-JSON 计划才能继续工作”。细粒度图修改（`add_component`、`connect` 等）目前
-是明确的扩展点：能力目录会如实报告它们尚未实现，语义变更现阶段仍经由
-`pcb_plan_request` / `pcb_repair_candidate` 宏进入同一套编译、检查与事务
-边界。
+CircuitPlan 和语义/原生意图 IR 保留为可查看、可逐步演化的设计表示。Agent
+使用 `pcb_inspect_design`、`pcb_inspect_component` 和 `pcb_inspect_net` 查看
+组件、功能块、网络、电源域、接口及保留的板级几何；再通过独立的 add、
+remove、update、connect、place、route 或 via 工具逐项修改。旧版 IR 在只读
+打开时保持原字节和哈希，第一次成功写入才原子升级为 IR v2。
 
 ### 安全边界保持不变
 
 自由的是工程决策，硬约束的是权限、数据完整性和真实执行：
 
-- 所有写操作（宏与 router 相同）仍经过封闭工具目录、严格 Schema 校验、
+- 所有写操作仍经过封闭工具目录、严格 Schema 校验、
   `PermissionBroker`、baseline revision 检查、事务/工程锁和
   ApplicationService——它是唯一工程写入权威；
 - 模型不能任意执行 Python/shell、不能任意写文件系统、不能直接手写原始

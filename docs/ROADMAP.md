@@ -18,6 +18,13 @@ regions, anchored board keepouts, measurable differential-pair acceptance
 criteria, and locally evaluated assertions into the existing semantic IR.
 Coordinates remain local deterministic output. Version-1 plans remain readable.
 
+The Hermes product surface is a closed flat PCB toolbox: each project read,
+semantic edit, board operation, check, render, or export is a separate strict
+tool call. IR v2 retains native outline, footprint pose, route, unroute, and via
+intent; existing IR v1 projects remain stable on read and migrate on their first
+successful atomic write. General Hermes shell/web tools, phase-sized PCB macros,
+and second-level domain routers are not part of the PCB model surface.
+
 Release acceptance currently includes three materially different small boards:
 
 - a connector, bypass capacitor, resistor, and LED indicator;

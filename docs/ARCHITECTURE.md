@@ -20,7 +20,7 @@ execution are not:
        /      |      \
    inspect  design  modify
        \      |      /
-      PCB Tool Registry (macros + domain routers)
+      PCB Tool Registry (flat concrete operations)
             |
             v
      ApplicationService
@@ -75,28 +75,23 @@ input without becoming a second business-logic layer. See
 [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) for placement rules and the
 compatibility policy for historical module paths.
 
-## Tool layers
+## Flat tool protocol
 
-The agent sees two layers, both exported from one canonical catalog:
+The model sees one layer of concrete `pcb_*` operations exported from the
+canonical `PCBToolRegistry`. Project/inspection/library reads, semantic edits,
+native placement/routing, checks, renders, and exports each have a distinct
+closed schema. There is no model-facing macro and no `operation` router field.
+Hermes and MCP descriptors derive from the same immutable specs and share a
+regression-tested schema fingerprint.
 
-- **High-level macros** (compatibility tools / shortcuts for simple projects):
-  `pcb_plan_request`, `pcb_generate_candidate`, `pcb_validate`,
-  `pcb_repair_candidate`, `pcb_apply_candidate`, `pcb_discard_candidate`,
-  `pcb_undo_last_change`, `pcb_render_previews`, `pcb_build_release`. Each
-  macro completes a bounded chunk of work in one call.
-- **Domain routers**: `pcb_project`, `pcb_library`, `pcb_design`,
-  `pcb_board`, `pcb_inspect`, `pcb_verify`, `pcb_export`, `pcb_analysis`.
-  Each router selects a concrete capability via `operation` + `arguments`
-  (for example `pcb_library(operation="search_symbols", ...)`). Every router
-  supports `operation="capabilities"`, which lists what is actually supported
-  — including honest `supported: false` entries with reasons for declared but
-  unimplemented capabilities (fine-grained graph mutation, per-footprint board
-  operations, standalone exports, and all analysis engines).
-
-The canonical capability catalog lives in
-`pcbdraft/agent/capability_registry.py`. Hermes tool schemas, MCP tool
-descriptors, and future native model tools all derive from the same
-registry, so no transport maintains a second hand-written tool list.
+Every authoritative write maps to exactly one typed semantic/native operation.
+`ApplicationService` stages the new IR and complete KiCad materialization,
+verifies content-hash/native parity, then publishes under the project lock and
+baseline-revision comparison. A failed semantic change, resolver lookup,
+materialization, or publication leaves the authoritative project unchanged.
+IR v1 remains byte/hash stable for reads and is promoted lazily to IR v2 on the
+first successful write; v2 records outline, footprint poses, retained routes,
+vias, explicit unrouted nets, and geometry provenance.
 
 Tool results report facts only: what ran, whether it succeeded, what changed,
 current state, findings, limitations, and evidence references. Results never
@@ -131,8 +126,8 @@ engineering fact, not a router for the next tool call.
                   - exact call + argument hash + baseline revision binding
                                        |
                                        v
-                  PCBToolRegistry / PCBToolExecutor / capability registry
-                  - closed semantic tool and capability catalog
+                  PCBToolRegistry / PCBToolExecutor
+                  - closed flat semantic/native operation catalog
                   - strict JSON Schema and allowed states
                   - source, effect, risk, and baseline-revision checks
                   - OpenAI Responses / MCP descriptor exports
@@ -194,13 +189,10 @@ state. A waiting approval additionally binds the canonical argument hash and
 observed engineering revision, so UI status alone can never authorize a write.
 
 The semantic design graph is a working engineering representation. The agent
-may inspect it (`pcb_design` inspect operations), extend it, and revise it
-over time; the architecture no longer assumes a complete JSON plan must exist
-before other work can begin. Today semantic changes flow through the
-`pcb_plan_request` / `pcb_repair_candidate` macros; fine-grained graph
-mutation capabilities (add/remove/update component, connect/disconnect,
-semantic patch) are declared extension points that honestly report
-`supported: false`.
+may inspect it with concrete inspection tools, then extend or revise it with
+individual add/remove/update/connect operations. Native board intent is stored
+beside semantic topology so regenerated KiCad artifacts preserve deliberate
+outline, pose, route, unroute, and via decisions.
 
 ### Legacy deterministic producer
 

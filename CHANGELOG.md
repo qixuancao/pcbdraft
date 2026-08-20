@@ -5,6 +5,13 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
 
 ## Unreleased
 
+- Replaced model-facing PCB macros and second-level domain routers with one
+  canonical flat toolbox of concrete project, inspection, library, semantic,
+  native-board, check, render, and export operations. Hermes exposes only the
+  PCBDraft toolset; each write crosses the permission gateway and atomically
+  republishes synchronized semantic IR and KiCad artifacts. Added backward-
+  compatible IR v2 native intent for outlines, poses, routes, explicit unrouting,
+  and vias, plus an installed-footprint fact resolver and schema fingerprint.
 - Removed the offline `builtin` provider and the model-free `pcbdraft demo`
   first-board command. Circuit planning now requires a configured model API;
   without one, the TUI and every planning path report an actionable

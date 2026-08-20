@@ -23,6 +23,7 @@ codebase, with real file paths and code examples.
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | Done |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Done |
 | [Hermes Provider Integration](./hermes-provider-integration.md) | Provider/auth authority, isolation, rollback, status, and tests | Done |
+| [Flat PCB Toolbox](./flat-pcb-toolbox.md) | Concrete model tools, IR v2 migration, and atomic semantic/native writes | Done |
 
 ---
 
