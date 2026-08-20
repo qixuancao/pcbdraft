@@ -27,3 +27,25 @@ Replaced legacy PCBDraft provider TOML authority with isolated vendored-Hermes o
 ### Status
 
 [OK] **Completed**
+
+
+## Session 2: Flatten PCB agent tools
+
+**Date**: 2026-08-20
+**Task**: Flatten PCB agent tools
+**Branch**: `main`
+
+### Summary
+
+Replaced Hermes PCB routers and phase macros with 56 concrete flat tools, added atomic semantic/native writes with IR v2 intent, split checks/renders/exports, prevented hidden placement/routing, and added focused contract and rollback coverage.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f7b0730` | (see git log) |
+| `513d462` | (see git log) |
+
+### Status
+
+[OK] **Completed**
