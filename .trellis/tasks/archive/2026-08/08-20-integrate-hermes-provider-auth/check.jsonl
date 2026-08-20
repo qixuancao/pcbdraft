@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify focused checks, test mirroring, secret redaction, permissions, and accurate validation reporting."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Review every user-visible auth failure for stable sanitized CLI behavior."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that no static PCBDraft provider catalog or duplicate auth implementation was introduced."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Verify one provider choice survives every boundary through PCB planning and restart."}
+{"file":".trellis/tasks/08-20-integrate-hermes-provider-auth/research/hermes-provider-inventory.md","reason":"Check the implementation against the actual Hermes catalog, auth, transport, packaging, and license evidence."}

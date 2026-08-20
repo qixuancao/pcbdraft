@@ -1,0 +1,6 @@
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Own the layer placement for the CLI adapter, model provider, and vendored Hermes boundary."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Provider and authentication failures must cross into PCBDraft as sanitized expected errors."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Apply private-file, redaction, typing, focused-test, and fast-validation rules."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"The full provider catalog must remain registry-derived instead of being duplicated in PCBDraft."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace provider selection through CLI, config/auth storage, runtime transport, and PCB planning."}
+{"file":".trellis/tasks/08-20-integrate-hermes-provider-auth/research/hermes-provider-inventory.md","reason":"Repository evidence for current split authority and the Hermes registries/runtime call boundary to reuse."}
