@@ -6,7 +6,7 @@
 
 ## Overview
 
-This directory contains guidelines for backend development. All five guideline
+This directory contains guidelines for backend development. The guideline
 files are populated from the project's actual conventions (AGENTS.md,
 CONTRIBUTING.md, docs/PROJECT_STRUCTURE.md) and verified against the real
 codebase, with real file paths and code examples.
@@ -24,6 +24,7 @@ codebase, with real file paths and code examples.
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | Done |
 | [Hermes Provider Integration](./hermes-provider-integration.md) | Provider/auth authority, isolation, rollback, status, and tests | Done |
 | [Flat PCB Toolbox](./flat-pcb-toolbox.md) | Concrete model tools, IR v2 migration, and atomic semantic/native writes | Done |
+| [Installer Contract](./installer-contract.md) | One-command preflight, package repair, provenance, and readiness contract | Done |
 
 ---
 

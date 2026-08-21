@@ -30,42 +30,59 @@ PCBDraft 支持 Linux、macOS 和 Windows，兼容稳定版 KiCad
 
 ### Linux / macOS 一键安装
 
-只需系统自带的 shell 和 `curl`。安装器会检测 KiCad 与 uv；uv 缺失或过旧时使用
-官方固定版本安装器，KiCad 缺失时在 Ubuntu、Debian、Fedora、Arch Linux 或装有
-Homebrew 的 macOS 上调用对应包管理器。安装 KiCad 时可能要求输入管理员密码，
-PCBDraft 本身仍安装在当前用户目录：
+只需 Bash 和 `curl`。下面是一条完整命令：它会先下载完脚本，再让 Bash 执行，
+不会占用安装器的标准输入，因此确认提示和 `sudo` 密码输入都能正常工作。
 
 ```bash
-installer=$(mktemp /tmp/pcbdraft-install.XXXXXX)
-curl --fail --location --proto '=https' --tlsv1.2 \
-  --output "$installer" \
-  https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.sh
-bash "$installer"
-rm -f -- "$installer"
+(installer="$(mktemp "${TMPDIR:-/tmp}/pcbdraft-install.XXXXXX")" && trap 'rm -f -- "$installer"' EXIT && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$installer" https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.sh && bash "$installer")
 ```
 
-安装器会先把公开 `main` 解析为完整提交 SHA，随后只从这个不可变提交读取源码和
-锁定约束。记录最后输出的 SHA 即可复现；也可传入
-`--ref 40位提交SHA`。不需要 Git、预装 Python 或 GitHub 凭据。
+Ubuntu 使用 apt 和 KiCad 10 稳定版 PPA；Debian、Fedora、Arch Linux 与 Linux
+Mint 保留各自已有的包管理器路径。macOS 需要事先装好 Homebrew，安装器不会替你
+安装通用包管理器。PCBDraft 本身始终装在当前用户目录；只有缺少或需要升级系统
+KiCad 时，包管理器才会请求管理员权限。
 
 ### Windows 一键安装
 
-在普通 PowerShell 中运行；安装器使用 uv 官方安装器，并通过 WinGet（或已有的
-Chocolatey）安装缺失的 KiCad：
+在普通 PowerShell 中运行下面这一条命令。Windows 优先使用系统已有的 WinGet，
+找不到 WinGet 时才使用已有的 Chocolatey；两者都没有时，安装器会在修改系统前
+给出明确的手动安装入口，而不会自动安装包管理器。
 
 ```powershell
-$installer = Join-Path $env:TEMP "pcbdraft-install.ps1"
-Invoke-WebRequest `
-  https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.ps1 `
-  -OutFile $installer
-powershell -ExecutionPolicy Bypass -File $installer
-Remove-Item $installer
+& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.ps1')))
 ```
+
+### 先检查、无人值守与重新运行
+
+安装器一开始只做非破坏性检查，并显示平台、uv、KiCad、PCBDraft、将使用的包管理器
+以及是否需要管理员权限。只查看计划、不做任何修改：
+
+```bash
+(installer="$(mktemp "${TMPDIR:-/tmp}/pcbdraft-install.XXXXXX")" && trap 'rm -f -- "$installer"' EXIT && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$installer" https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.sh && bash "$installer" --check)
+```
+
+```powershell
+& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.ps1'))) -Check
+```
+
+`--check` / `-Check` 在已经就绪时返回 0，需要执行已支持的安装动作时返回 10，
+遇到不受支持或不安全的状态时返回普通失败码。自动化环境可传 `--yes` / `-Yes`
+跳过 PCBDraft 自己的一次确认；这不会绕过 `sudo`、UAC 或包管理器的安全策略。
+`--ref` / `-Ref` 可指定完整的 40 位提交 SHA；原有的
+`--no-install-kicad`、`--no-install-uv`（PowerShell 中为
+`-NoInstallKiCad`、`-NoInstallUv`）也继续可用。
+
+安装器会先把公开 `main` 解析为完整提交 SHA，随后只从这个不可变提交读取源码和
+锁定约束。重复运行会重新检查实际状态：兼容的 uv、KiCad 和相同提交的 PCBDraft
+直接复用，中断或失败后运行同一条命令即可继续，不依赖临时状态文件。安装成功页的
+`Launch now:` 会给出当前机器上的绝对可执行路径，可以立刻复制运行；同时会在 PATH
+缺失时打印一条持久化修复提示。不需要 Git、预装 Python 或 GitHub 凭据。
 
 ## 第一次启动
 
-电路规划需要连接一个模型服务。首次在交互终端启动 `pcbdraft`
-时会直接打开提供商、登录/API Key 和模型选择向导；也可先单独运行：
+核心安装就绪与模型登录是两件事：KiCad、PCBDraft 和库表全部通过检查后，即使尚未
+登录模型，安装仍然成功。需要开始自然语言设计时，再运行成功页给出的绝对路径并
+附加 `connect`，或在 PATH 已生效后单独运行：
 
 ```bash
 pcbdraft connect
@@ -133,7 +150,7 @@ API Key、浏览器/设备代码登录、云身份、本地端点、聚合服务
 ## 启动
 
 ```bash
-uv run pcbdraft
+pcbdraft
 ```
 
 默认项目仓库是首次启动时创建的 `~/PCBDraft/`。如要放在另一块磁盘或已有的
