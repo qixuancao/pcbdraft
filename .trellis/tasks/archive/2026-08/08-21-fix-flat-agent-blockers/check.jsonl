@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/flat-pcb-toolbox.md","reason":"Verify no router/macro regression, exact flat registry authority, atomic catalog/design writes, and explicit physical actions."}
+{"file":".trellis/spec/backend/hermes-provider-integration.md","reason":"Verify trusted session binding and middleware preserve Hermes protocol pairing, provider authority, and trace observability."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Audit sanitized errors and full rollback for cross-project, part mapping, stale, publication, and second-call failures."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Check focused tests, mypy/lint/diff gates, evidence honesty, and the user-authorized isolated real CLI acceptance."}

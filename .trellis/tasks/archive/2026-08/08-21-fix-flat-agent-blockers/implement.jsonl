@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/flat-pcb-toolbox.md","reason":"Preserve the concrete one-action toolbox, atomic semantic/native publication, strict schema, and no-hidden-placement/routing contracts while adding part and authority tools."}
+{"file":".trellis/spec/backend/hermes-provider-integration.md","reason":"Keep the PCBDraft-owned Hermes runtime, trusted session context, plugin middleware, provider authentication, and debug hooks within the existing integration boundary."}
+{"file":".trellis/spec/backend/error-handling.md","reason":"Return bounded actionable project-authority, batch-policy, part-validation, and rollback failures without raw internal errors."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Apply typed domain records, atomic evidence, focused unittest coverage, and the explicitly authorized real CLI acceptance."}
