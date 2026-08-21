@@ -1148,16 +1148,26 @@ def _validate_plan_references(plan: CircuitPlan) -> None:
             visited.add(cursor)
             cursor = parents.get(cursor)
 
-    net_by_endpoint = {endpoint: net for net in plan.nets for endpoint in net.endpoints}
+    net_by_physical_endpoint = {
+        (endpoint.component, endpoint.pin): net
+        for net in plan.nets
+        for endpoint in net.endpoints
+    }
     for domain in plan.power_domains:
         if domain.source.component not in component_ids:
             raise ValidationError(
                 f"power domain {domain.id} references unknown source component"
             )
-        source_net = net_by_endpoint.get(domain.source)
-        if source_net is None or source_net.power_domain != domain.id:
+        source_net = net_by_physical_endpoint.get(
+            (domain.source.component, domain.source.pin)
+        )
+        if source_net is None:
             raise ValidationError(
-                f"power domain {domain.id} source must occur on a net assigned to that domain"
+                f"power domain {domain.id} source component/pin is not connected to any net"
+            )
+        if source_net.power_domain != domain.id:
+            raise ValidationError(
+                f"power domain {domain.id} source component/pin is connected to net {source_net.id}, which is assigned to {source_net.power_domain!r}"
             )
     for net in plan.nets:
         if net.power_domain is not None and net.power_domain not in power_domain_ids:

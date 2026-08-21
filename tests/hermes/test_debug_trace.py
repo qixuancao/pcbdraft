@@ -26,9 +26,13 @@ class FakePluginContext:
 
     def __init__(self) -> None:
         self.hooks: dict[str, list] = {}
+        self.middleware: dict[str, list] = {}
 
     def register_hook(self, hook_name: str, callback) -> None:
         self.hooks.setdefault(hook_name, []).append(callback)
+
+    def register_middleware(self, kind: str, callback) -> None:
+        self.middleware.setdefault(kind, []).append(callback)
 
 
 def _read_events(path: Path) -> list[dict]:
@@ -166,6 +170,8 @@ class DebugPluginTests(unittest.TestCase):
             {
                 "on_session_start",
                 "on_session_end",
+                "on_session_finalize",
+                "on_session_reset",
                 "pre_api_request",
                 "post_api_request",
                 "api_request_error",
@@ -174,6 +180,48 @@ class DebugPluginTests(unittest.TestCase):
                 "post_llm_call",
             },
         )
+        self.assertEqual(set(context.middleware), {"tool_execution"})
+
+    def test_middleware_dispatches_only_one_pcb_call_per_provider_response(
+        self,
+    ) -> None:
+        context = FakePluginContext()
+        register(context)
+        middleware = context.middleware["tool_execution"][0]
+        calls: list[dict] = []
+
+        def dispatch(args: dict) -> str:
+            calls.append(args)
+            return "executed"
+
+        common = {
+            "session_id": "session-one-action",
+            "turn_id": "turn-1",
+            "api_request_id": "turn-1:api:1",
+        }
+        first = middleware(
+            tool_name="pcb_inspect_project",
+            args={},
+            next_call=dispatch,
+            **common,
+        )
+        second = middleware(
+            tool_name="pcb_search_parts",
+            args={"query": "LED"},
+            next_call=dispatch,
+            **common,
+        )
+        next_decision = middleware(
+            tool_name="pcb_search_parts",
+            args={"query": "LED"},
+            next_call=dispatch,
+            **{**common, "api_request_id": "turn-1:api:2"},
+        )
+
+        self.assertEqual(first, "executed")
+        self.assertTrue(json.loads(second)["blocked"])
+        self.assertEqual(next_decision, "executed")
+        self.assertEqual(calls, [{}, {"query": "LED"}])
 
     def test_hooks_forward_full_conversation_step(self) -> None:
         import os as _os

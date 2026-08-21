@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 from unittest.mock import Mock, patch
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
@@ -62,7 +62,173 @@ def _seed_managed_project(root: Path) -> tuple[ApplicationService, str, Design]:
     return service, project_id, design
 
 
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def _generic_led_part(*, footprint_pad: str = "1") -> dict[str, Any]:
+    return {
+        "id": "kicad.generic-led-5mm-green",
+        "kind": "led",
+        "description": "Green 5 mm LED",
+        "symbol": "Device:LED",
+        "footprint": "LED_THT:LED_D5.0mm",
+        "bom": True,
+        "pins": [
+            {
+                "number": "1",
+                "name": "K",
+                "electrical_type": "passive",
+                "functions": ["cathode"],
+                "required": True,
+                "footprint_pad": footprint_pad,
+            },
+            {
+                "number": "2",
+                "name": "A",
+                "electrical_type": "passive",
+                "functions": ["anode"],
+                "required": True,
+                "footprint_pad": "2",
+            },
+        ],
+    }
+
+
 class FlatPCBServiceTests(unittest.TestCase):
+    def test_model_symbol_search_returns_ids_without_describing_candidates(
+        self,
+    ) -> None:
+        with patch(
+            "pcbdraft.agent.part_resolver.LocalKiCadPartResolver"
+        ) as resolver_type:
+            resolver = resolver_type.return_value
+            resolver.find_ids.return_value = ("Device:R", "Device:R_US")
+
+            facts = ApplicationService.inspect_installed_library(
+                "search_symbols", {"query": "Device:R"}
+            )
+
+        self.assertEqual(facts["symbols"], ["Device:R", "Device:R_US"])
+        resolver.find_ids.assert_called_once_with("Device:R", limit=24)
+        resolver.describe.assert_not_called()
+
+    def test_bad_installed_part_mapping_retains_failure_without_mutation(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            provider = cast(IntentProvider, SimpleNamespace(provider_id="test"))
+            service = ApplicationService(Path(temp), provider=provider)
+            view = service.create_empty_project("Bad mapping")
+            project_id = str(view["project"]["id"])
+            project = service._open(project_id)
+            before_state = dict(project.state)
+            before_design = _tree_bytes(project.design_root)
+
+            with self.assertRaisesRegex(ValidationError, "missing footprint pad"):
+                service.register_kicad_part(
+                    project_id,
+                    _generic_led_part(footprint_pad="99"),
+                    timeout=30.0,
+                    expected_revision=int(project.state["revision"]),
+                )
+
+            restored = service._open(project_id)
+            self.assertEqual(restored.state, before_state)
+            self.assertEqual(_tree_bytes(restored.design_root), before_design)
+            receipt_path = next((restored.root / "transactions").glob("*/receipt.json"))
+            receipt = load_json_limited(receipt_path, 1024 * 1024)
+            self.assertEqual(receipt["status"], "failed")
+            self.assertEqual(
+                receipt["schema"],
+                "pcbdraft-kicad-part-registration-receipt",
+            )
+
+    def test_part_record_publication_failure_rolls_back_catalog_and_design(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            provider = cast(IntentProvider, SimpleNamespace(provider_id="test"))
+            service = ApplicationService(Path(temp), provider=provider)
+            view = service.create_empty_project("Publication rollback")
+            project_id = str(view["project"]["id"])
+            project = service._open(project_id)
+            before_state = dict(project.state)
+            before_design = _tree_bytes(project.design_root)
+
+            with (
+                patch.object(
+                    service,
+                    "_write_records",
+                    side_effect=PCBDraftError("injected part record failure"),
+                ),
+                self.assertRaisesRegex(PCBDraftError, "injected part record failure"),
+            ):
+                service.register_kicad_part(
+                    project_id,
+                    _generic_led_part(),
+                    timeout=60.0,
+                    expected_revision=int(project.state["revision"]),
+                )
+
+            restored = service._open(project_id)
+            self.assertEqual(restored.state, before_state)
+            self.assertEqual(_tree_bytes(restored.design_root), before_design)
+            receipt_path = next((restored.root / "transactions").glob("*/receipt.json"))
+            receipt = load_json_limited(receipt_path, 1024 * 1024)
+            self.assertEqual(receipt["status"], "failed")
+
+    def test_identical_part_noop_rechecks_revision_under_project_lock(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            provider = cast(IntentProvider, SimpleNamespace(provider_id="test"))
+            service = ApplicationService(Path(temp), provider=provider)
+            view = service.create_empty_project("No-op CAS")
+            project_id = str(view["project"]["id"])
+            view = service.register_kicad_part(
+                project_id,
+                _generic_led_part(),
+                timeout=60.0,
+                expected_revision=int(view["state"]["revision"]),
+            )
+            expected_revision = int(view["state"]["revision"])
+
+            from pcbdraft.services import application as application_module
+
+            real_open_managed = application_module.open_managed_project
+            calls = 0
+
+            def open_and_inject_concurrent_revision(path: Path) -> Any:
+                nonlocal calls
+                managed = real_open_managed(path)
+                calls += 1
+                if calls == 1:
+                    concurrent = service._open(project_id)
+                    concurrent.state["revision"] += 1
+                    atomic_write_json(
+                        concurrent.root / "project.json", concurrent.state
+                    )
+                return managed
+
+            with (
+                patch.object(
+                    application_module,
+                    "open_managed_project",
+                    side_effect=open_and_inject_concurrent_revision,
+                ),
+                self.assertRaisesRegex(
+                    ValidationError,
+                    "changed while part registration was inspected",
+                ),
+            ):
+                service.register_kicad_part(
+                    project_id,
+                    _generic_led_part(),
+                    timeout=60.0,
+                    expected_revision=expected_revision,
+                )
+
     def test_flat_publish_failure_restores_design_and_application_records(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             service, project_id, before = _seed_managed_project(Path(temp))

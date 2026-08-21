@@ -274,7 +274,7 @@ def _canonicalize_board_order(text):
     return "(kicad_pcb\n" + "".join(f"\t{block}\n" for block in ordered) + ")\n"
 
 
-def _canonicalize_board_uuids(path, replacements):
+def _canonicalize_board_uuids(path, replacements, design_id):
     source = Path(path)
     data = source.read_bytes()
     if len(data) > 128 * 1024 * 1024:
@@ -283,6 +283,15 @@ def _canonicalize_board_uuids(path, replacements):
     definition = re.compile(
         r'\((?:uuid|tstamp)\s+"?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})"?\)'
     )
+    point_definition = re.compile(
+        r'(\(point\s+.*?)\(uuid\s+"?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})"?\)',
+        re.DOTALL,
+    )
+    for point_index, match in enumerate(point_definition.finditer(text)):
+        old = match.group(2).lower()
+        replacements.setdefault(
+            old, _stable(design_id, "footprint_point", str(point_index))
+        )
     for old, new in sorted(replacements.items()):
         text = re.sub(
             rf"(?<![0-9a-fA-F]){re.escape(old)}(?![0-9a-fA-F])",
@@ -787,8 +796,11 @@ def build_job(job, output_path):
             field = footprint.GetField(field_name)
             field.SetVisible(False)
             field.SetLayer(pcbnew.F_Fab)
-        _set_footprint_uuids(footprint, design_id, component_id, uuid_replacements)
         board.Add(footprint)
+        # KiCad assigns identifiers to some footprint-owned text fields only
+        # when the footprint joins a board. Canonicalize after that ownership
+        # transition so every serialized UUID is tracked deterministically.
+        _set_footprint_uuids(footprint, design_id, component_id, uuid_replacements)
         footprints[component_id] = footprint
         for pad_index, pad in enumerate(footprint.Pads()):
             pads_by_key[(component_id, str(pad.GetNumber()), pad_index)] = pad
@@ -911,7 +923,7 @@ def build_job(job, output_path):
         saved = pcbnew.SaveBoard(str(temporary), board)
         if saved is False:
             raise ValueError("pcbnew.SaveBoard returned failure")
-        _canonicalize_board_uuids(temporary, uuid_replacements)
+        _canonicalize_board_uuids(temporary, uuid_replacements, design_id)
         auxiliary_project = temporary.with_suffix(".kicad_pro")
         project_target = target.with_suffix(".kicad_pro")
         if project_target.is_symlink():

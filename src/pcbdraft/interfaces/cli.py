@@ -311,7 +311,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             # persistent product repository).
             if args.workspace:
                 os.environ["PCBDRAFT_HOME"] = args.workspace
-            return launch_cli()
+            from pcbdraft.agent.hermes_tools import (
+                get_service,
+                set_current_project_id,
+            )
+
+            if args.project_id:
+                view = get_service().open_project(args.project_id)
+                set_current_project_id(str(view["project"]["id"]))
+            return launch_cli([], permission_mode=args.approval_mode)
         if args.command == "trace":
             return _print_trace(args.lines, args.as_json)
         if args.command == "doctor":

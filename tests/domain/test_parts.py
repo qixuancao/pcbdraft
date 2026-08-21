@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from pcbdraft.core.errors import ValidationError
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.parts import PartGraph
 from tests.support.design_factory import minimal_design_dict
@@ -45,6 +46,51 @@ class TrustedPartGraphTests(unittest.TestCase):
         )
         self.assertIn("microchip.attiny402-ssn", [part.id for part in result])
         self.assertTrue(all(part.trust == "rule_validated" for part in result))
+
+    def test_factual_search_includes_stable_ids_and_catalog_count(self) -> None:
+        matches = self.graph.search("attiny402")
+
+        self.assertGreater(len(self.graph), 0)
+        self.assertTrue(matches)
+        self.assertTrue(all(part.id for part in matches))
+
+    def test_installed_kicad_record_is_strict_and_merge_never_redefines(self) -> None:
+        value = {
+            "id": "kicad.generic-led-5mm-green",
+            "kind": "led",
+            "description": "Green 5 mm LED",
+            "symbol": "Device:LED",
+            "footprint": "LED_THT:LED_D5.0mm",
+            "bom": True,
+            "pins": [
+                {
+                    "number": "1",
+                    "name": "K",
+                    "electrical_type": "passive",
+                    "functions": ["cathode"],
+                    "required": True,
+                    "footprint_pad": "1",
+                },
+                {
+                    "number": "2",
+                    "name": "A",
+                    "electrical_type": "passive",
+                    "functions": ["anode"],
+                    "required": True,
+                    "footprint_pad": "2",
+                },
+            ],
+        }
+        record = PartGraph.installed_kicad_part(value, footprint_sha256="a" * 64)
+        extended = self.graph.merged([record], source="test")
+
+        self.assertEqual(extended.get(record.id), record)
+        self.assertEqual(extended.search("green 5 mm")[0].id, record.id)
+        changed = dict(value)
+        changed["description"] = "Different"
+        collision = PartGraph.installed_kicad_part(changed, footprint_sha256="a" * 64)
+        with self.assertRaisesRegex(ValidationError, "redefine canonical part id"):
+            extended.merged([collision])
 
 
 if __name__ == "__main__":

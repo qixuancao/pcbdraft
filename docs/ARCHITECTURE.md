@@ -84,6 +84,17 @@ closed schema. There is no model-facing macro and no `operation` router field.
 Hermes and MCP descriptors derive from the same immutable specs and share a
 regression-tested schema fingerprint.
 
+Hermes binds each model session to the project selected by the trusted terminal
+boundary. Project enumeration and switching remain human commands rather than
+model tools. Installed symbol/footprint reads are machine-local facts and need no
+project cursor. Canonical part search/description is project-scoped, and explicit
+installed-KiCad part registration stages the catalog, semantic IR, and native
+project together. Tool-execution middleware returns a result for every provider
+call id but dispatches at most one `pcb_*` action from each model response.
+Trusted project changes rotate the existing Hermes session before another model
+request, partitioning the prior project's transcript while retaining the
+persisted provider/model authority.
+
 Every authoritative write maps to exactly one typed semantic/native operation.
 `ApplicationService` stages the new IR and complete KiCad materialization,
 verifies content-hash/native parity, then publishes under the project lock and

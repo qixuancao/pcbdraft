@@ -323,6 +323,121 @@ class PartGraph:
         except KeyError as exc:
             raise ValidationError(f"unknown canonical part id: {part_id}") from exc
 
+    def get_optional(self, part_id: str) -> PartRecord | None:
+        """Return one record when present without weakening strict ``get`` calls."""
+
+        return self._parts.get(part_id)
+
+    def __len__(self) -> int:
+        return len(self._parts)
+
+    def search(self, query: str, *, limit: int = 24) -> list[PartRecord]:
+        """Return bounded factual matches, including project-local records."""
+
+        query = _string(query, "part query", limit=256)
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 64
+        ):
+            raise ValidationError("part result limit must be from 1 to 64")
+        key = re.sub(r"[^a-z0-9]", "", query.casefold())
+        if not key:
+            return []
+
+        def rank(part: PartRecord) -> tuple[int, int, str]:
+            fields = (
+                part.id,
+                part.kind,
+                part.description,
+                part.symbol,
+                part.footprint or "",
+            )
+            normalized = tuple(
+                re.sub(r"[^a-z0-9]", "", value.casefold()) for value in fields
+            )
+            score = (
+                0
+                if normalized[0] == key
+                else 1
+                if any(value == key for value in normalized[1:])
+                else 2
+                if any(value.startswith(key) for value in normalized)
+                else 3
+                if any(key in value for value in normalized)
+                else 99
+            )
+            return score, len(part.id), part.id
+
+        matches = [part for part in self._parts.values() if rank(part)[0] < 99]
+        return sorted(matches, key=rank)[:limit]
+
+    @staticmethod
+    def installed_kicad_part(
+        value: Mapping[str, Any],
+        *,
+        footprint_sha256: str,
+    ) -> PartRecord:
+        """Construct the schema-valid record for an inspected local library pair."""
+
+        item = _strict_mapping(
+            value,
+            "part",
+            required={
+                "id",
+                "kind",
+                "description",
+                "symbol",
+                "footprint",
+                "bom",
+                "pins",
+            },
+            optional=set(),
+        )
+        return PartRecord.from_dict(
+            {
+                "id": item["id"],
+                "manufacturer": "KiCad library generic",
+                "mpn": item["id"],
+                "description": item["description"],
+                "kind": item["kind"],
+                "symbol": item["symbol"],
+                "footprint": item["footprint"],
+                "pins": item["pins"],
+                "ratings": {},
+                "lifecycle": {
+                    "status": "unknown",
+                    "source": "installed_local_kicad_library",
+                },
+                "sourcing": {"status": "not_checked"},
+                "manufacturing": {},
+                "models": {},
+                "bom": item["bom"],
+                "trust": "extracted",
+                "evidence": [
+                    {
+                        "id": "installed_kicad_symbol",
+                        "kind": "symbol_library",
+                        "source": "Installed local KiCad libraries",
+                        "locator": item["symbol"],
+                        "method": "local_library_extract",
+                        "confidence": 1.0,
+                    },
+                    {
+                        "id": "installed_kicad_footprint",
+                        "kind": "footprint_library",
+                        "source": "Installed local KiCad libraries",
+                        "locator": item["footprint"],
+                        "method": "local_library_extract",
+                        "confidence": 1.0,
+                        "sha256": footprint_sha256,
+                    },
+                ],
+                "alternates": [],
+            },
+            "part",
+        )
+
     def merged(
         self,
         parts: Iterable[PartRecord],

@@ -60,6 +60,21 @@ expected_revision)`.
   operations allowed by `read_only` permission mode. Evidence and design writes
   go through `PCBToolGateway`, bind a baseline revision, and dispatch one fixed
   handler.
+- Installed symbol/footprint reads are global machine-local facts. All other
+  model operations bind to the project selected through the trusted human CLI
+  boundary; project listing/opening are not model tools.
+- Symbol search returns bounded installed `Library:Symbol` identifiers without
+  parsing every match. Exact full-ID queries rank first; one explicit symbol
+  description call owns the comparatively expensive pin/detail extraction.
+- A successful trusted `/new`, `/open`, or repository switch rotates to a fresh
+  Hermes conversation before the next model request. `--project` selects the
+  project before the fresh terminal session is constructed. Old project tool
+  text is not submitted through session-boundary memory extraction.
+- Canonical part search/description returns stable project catalog identities.
+  Installed-KiCad registration validates the exact symbol pins, footprint pads,
+  and mapping, then publishes catalog, IR, and native files in one transaction.
+- Hermes execution middleware dispatches at most one `pcb_*` tool from each
+  provider response while returning a protocol result for every call id.
 - IR v1 remains byte/hash compatible during load, inspection, and cloning. The
   first successful typed write promotes a copy to IR v2. IR v2 owns board
   outline, footprint poses, retained route segments, vias, explicit unrouted
@@ -109,7 +124,7 @@ expected_revision)`.
   schema fingerprint, unique external names, and absence of macros/routers.
 - Hermes/permissions: assert only `pcbdraft` is registered; parameterize all
   tools through workspace, review, and read-only modes.
-- Dispatch: parameterize all 56 tools and assert one fixed handler, correct
+- Dispatch: parameterize all 57 tools and assert one fixed handler, correct
   expected revision, stale-call rejection, and legacy replay failure.
 - IR/operations: assert v1 stable reads, first-write v2 migration, bidirectional
   block membership, exact endpoint disconnect, non-cascading removal, and native

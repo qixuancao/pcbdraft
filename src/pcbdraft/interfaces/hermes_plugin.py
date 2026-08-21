@@ -14,17 +14,24 @@ forwards every conversation step to :mod:`pcbdraft.core.debug_trace`:
 
 Hook payloads evolve additively upstream, so every callback declares only the
 keyword arguments it consumes (the Hermes dispatcher signature-inspects
-callbacks and withholds undeclared additive fields).  All callbacks are pure
-observers: they return ``None`` and never influence the agent loop.
+callbacks and withholds undeclared additive fields). The execution middleware
+also ensures a model observes one PCB result before choosing another action.
 """
 
 from __future__ import annotations
 
+import json
+import threading
+from collections import OrderedDict
+from collections.abc import Callable
 from typing import Any
 
 __all__ = ("PLUGIN_NAME", "register")
 
 PLUGIN_NAME = "pcbdraft-debug"
+_MAX_DECISION_KEYS = 2048
+_decision_lock = threading.Lock()
+_pcb_decisions: OrderedDict[tuple[str, str, str], None] = OrderedDict()
 
 
 def _record(event: str, **fields: Any) -> None:
@@ -38,16 +45,73 @@ def register(ctx: Any) -> None:
 
     ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("on_session_end", _on_session_end)
+    ctx.register_hook("on_session_finalize", _on_session_finalize)
+    ctx.register_hook("on_session_reset", _on_session_reset)
     ctx.register_hook("pre_api_request", _on_pre_api_request)
     ctx.register_hook("post_api_request", _on_post_api_request)
     ctx.register_hook("api_request_error", _on_api_request_error)
     ctx.register_hook("pre_tool_call", _on_pre_tool_call)
     ctx.register_hook("post_tool_call", _on_post_tool_call)
     ctx.register_hook("post_llm_call", _on_post_llm_call)
+    ctx.register_middleware("tool_execution", _one_pcb_action_per_decision)
     _record("plugin_loaded", plugin=PLUGIN_NAME)
 
 
+def _clear_session_decisions(session_id: str) -> None:
+    with _decision_lock:
+        for key in tuple(_pcb_decisions):
+            if key[0] == session_id:
+                _pcb_decisions.pop(key, None)
+
+
+def _one_pcb_action_per_decision(
+    tool_name: str,
+    args: dict[str, Any],
+    next_call: Callable[[dict[str, Any]], Any],
+    session_id: str,
+    turn_id: str,
+    api_request_id: str,
+    **_kwargs: Any,
+) -> Any:
+    """Dispatch at most one PCB call from each provider response."""
+
+    if not tool_name.startswith("pcb_"):
+        return next_call(args)
+    key = (str(session_id), str(turn_id), str(api_request_id))
+    with _decision_lock:
+        blocked = key in _pcb_decisions
+        if not blocked:
+            _pcb_decisions[key] = None
+            while len(_pcb_decisions) > _MAX_DECISION_KEYS:
+                _pcb_decisions.popitem(last=False)
+    if not blocked:
+        return next_call(args)
+    payload = {
+        "tool": tool_name,
+        "success": False,
+        "blocked": True,
+        "policy": "one_pcb_action_per_model_decision",
+        "error": (
+            "Only one PCB action is executed from each model decision. "
+            "Observe the prior PCB result before selecting the next action."
+        ),
+    }
+    _record(
+        "tool_policy_blocked",
+        tool_name=tool_name,
+        session_id=session_id,
+        turn_id=turn_id,
+        api_request_id=api_request_id,
+        policy=payload["policy"],
+    )
+    return json.dumps(payload, ensure_ascii=False)
+
+
 def _on_session_start(session_id: str, model: str, platform: str) -> None:
+    from pcbdraft.agent.hermes_tools import reset_session_project_context
+
+    reset_session_project_context(session_id)
+    _clear_session_decisions(session_id)
     _record("session_start", session_id=session_id, model=model, platform=platform)
 
 
@@ -60,6 +124,10 @@ def _on_session_end(
     turn_exit_reason: str,
     model: str,
 ) -> None:
+    from pcbdraft.agent.hermes_tools import reset_session_project_context
+
+    reset_session_project_context(session_id)
+    _clear_session_decisions(session_id)
     _record(
         "session_end",
         session_id=session_id,
@@ -70,6 +138,26 @@ def _on_session_end(
         turn_exit_reason=turn_exit_reason,
         model=model,
     )
+
+
+def _on_session_finalize(session_id: str) -> None:
+    """Clear PCBDraft trackers for a trusted in-process session rotation."""
+
+    from pcbdraft.agent.hermes_tools import reset_session_project_context
+
+    reset_session_project_context(session_id)
+    _clear_session_decisions(session_id)
+    _record("session_finalize", session_id=session_id)
+
+
+def _on_session_reset(session_id: str) -> None:
+    """Ensure a newly rotated Hermes session starts with empty trackers."""
+
+    from pcbdraft.agent.hermes_tools import reset_session_project_context
+
+    reset_session_project_context(session_id)
+    _clear_session_decisions(session_id)
+    _record("session_reset", session_id=session_id)
 
 
 def _on_pre_api_request(

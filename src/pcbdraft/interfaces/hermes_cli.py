@@ -19,11 +19,13 @@ the Hermes ``prompt_toolkit`` REPL.
 from __future__ import annotations
 
 import functools
+import logging
 import sys
 import threading
 from pathlib import Path
 from typing import Any
 
+from pcbdraft.agent.permissions import PermissionMode
 from pcbdraft.agent.persona import write_soul
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.hermes_paths import (
@@ -48,6 +50,8 @@ __all__ = (
     "register_pcb_tools",
 )
 
+_LOGGER = logging.getLogger(__name__)
+
 _PLUGIN_MANIFEST = """\
 name: pcbdraft-debug
 version: "1.0"
@@ -57,6 +61,8 @@ kind: standalone
 provides_hooks:
   - on_session_start
   - on_session_end
+  - on_session_finalize
+  - on_session_reset
   - pre_api_request
   - post_api_request
   - api_request_error
@@ -112,12 +118,12 @@ def _slash_connection_options(raw_args: str) -> ConnectionOptions:
     )
 
 
-def register_pcb_tools() -> None:
+def register_pcb_tools(*, permission_mode: PermissionMode = "workspace") -> None:
     """Register the existing PCBDraft PCB tools into the Hermes registry."""
 
     from pcbdraft.agent.hermes_tools import register_all_pcb_tools
 
-    register_all_pcb_tools()
+    register_all_pcb_tools(permission_mode=permission_mode)
 
 
 def install_debug_plugin() -> Path:
@@ -146,7 +152,7 @@ def install_debug_plugin() -> Path:
     return plugin_dir
 
 
-def activate() -> None:
+def activate(*, permission_mode: PermissionMode = "workspace") -> None:
     """Prepare the vendored Hermes runtime for one PCBDraft process.
 
     Safe to call repeatedly: vendor-path insertion, config and persona writes,
@@ -164,7 +170,7 @@ def activate() -> None:
     # Prune the vendored command registry to the PCBDraft surface before any
     # help/autocomplete consumer is built (vendor files stay untouched).
     apply_command_surface()
-    register_pcb_tools()
+    register_pcb_tools(permission_mode=permission_mode)
     install_debug_plugin()
     # Trigger Hermes built-in tool discovery (imports tools/*.py) so the
     # agent's schema includes both Hermes tools and the PCB tools.
@@ -192,6 +198,35 @@ def _apply_process_command_patch() -> None:
         return
     original = target.process_command
 
+    def _rotate_project_conversation(cli: Any) -> None:
+        """Start a fresh Hermes conversation after a trusted project boundary."""
+
+        rotate = getattr(cli, "new_session", None)
+        if not callable(rotate):
+            # Lightweight adapter tests may call the patched method on a stub.
+            return
+        prior_history = getattr(cli, "conversation_history", None)
+        if isinstance(prior_history, list):
+            agent = getattr(cli, "agent", None)
+            flush = getattr(agent, "_flush_messages_to_session_db", None)
+            if callable(flush) and prior_history:
+                try:
+                    flush(prior_history, conversation_history=prior_history)
+                except Exception:
+                    _LOGGER.debug(
+                        "Hermes transcript flush failed before project rotation",
+                        exc_info=True,
+                    )
+            # Do not feed project A through session-boundary memory extraction
+            # where it could re-enter project B's next request.
+            cli.conversation_history = []
+        try:
+            rotate(silent=True)
+        except BaseException:
+            if isinstance(prior_history, list):
+                cli.conversation_history = prior_history
+            raise
+
     @functools.wraps(original)
     def _pcbdraft_process_command(self: Any, command: str) -> bool:
         tokens = command.strip().split(None, 1)
@@ -216,6 +251,8 @@ def _apply_process_command_patch() -> None:
         except PCBDraftError as exc:
             hermes_cli_module._cprint(f"\033[1;31m✗ {exc}{hermes_cli_module._RST}")
             return True
+        if (base in {"new", "open"} and raw_args) or (base == "project" and raw_args):
+            _rotate_project_conversation(self)
         if result:
             hermes_cli_module._cprint(result)
         return True
@@ -321,7 +358,11 @@ def _apply_model_persistence_patch() -> None:
     model_switch.resolve_persist_behavior = _persist_every_switch
 
 
-def launch_cli(argv: list[str] | None = None) -> int:
+def launch_cli(
+    argv: list[str] | None = None,
+    *,
+    permission_mode: PermissionMode = "workspace",
+) -> int:
     """Launch the Hermes interactive terminal (prompt_toolkit REPL) as PCBDraft.
 
     ``argv`` excludes the program name and defaults to the current process
@@ -331,7 +372,7 @@ def launch_cli(argv: list[str] | None = None) -> int:
     # A prior failed/aborted invocation in this process must never make an
     # otherwise normal terminal exit look like a new wizard request.
     _take_deferred_connection()
-    activate()
+    activate(permission_mode=permission_mode)
     status = connection_status()
     if not status.usable:
         if not sys.stdin.isatty():

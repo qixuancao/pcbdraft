@@ -43,7 +43,7 @@ from pcbdraft.domain.component_qualification import (
     COMPONENT_QUALIFICATION_SCHEMA,
     qualify_components,
 )
-from pcbdraft.domain.ir import BoardSpec, Design, Scope
+from pcbdraft.domain.ir import BoardSpec, Design, Scope, canonical_json_bytes
 from pcbdraft.domain.operations import (
     ChangeSet,
     apply_change_set,
@@ -634,6 +634,15 @@ class ApplicationService:
             "describe_footprint",
         }:
             return self._inspect_library_tool(project_id, tool_name, arguments)
+        if tool_name in {"search_parts", "describe_part"}:
+            return self._inspect_part_tool(project_id, tool_name, arguments)
+        if tool_name == "register_kicad_part":
+            return self.register_kicad_part(
+                project_id,
+                arguments["value"],
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
         if tool_name in {
             "check_semantics",
             "check_connectivity",
@@ -810,6 +819,15 @@ class ApplicationService:
     def _inspect_library_tool(
         self, project_id: str, tool_name: str, arguments: dict[str, Any]
     ) -> dict[str, Any]:
+        facts = self.inspect_installed_library(tool_name, arguments)
+        return self._with_tool_result(self.open_project(project_id), facts)
+
+    @staticmethod
+    def inspect_installed_library(
+        tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Read installed KiCad facts without reading or selecting a project."""
+
         if tool_name in {"search_symbols", "describe_symbol"}:
             from pcbdraft.agent.part_resolver import LocalKiCadPartResolver
 
@@ -817,10 +835,9 @@ class ApplicationService:
             if tool_name == "search_symbols":
                 facts: dict[str, Any] = {
                     "query": arguments["query"],
-                    "symbols": [
-                        item.to_dict()
-                        for item in resolver.find(str(arguments["query"]), limit=24)
-                    ],
+                    "symbols": list(
+                        resolver.find_ids(str(arguments["query"]), limit=24)
+                    ),
                 }
             else:
                 facts = resolver.describe(str(arguments["symbol"])).to_dict()
@@ -841,7 +858,317 @@ class ApplicationService:
                 if tool_name == "search_footprints"
                 else footprint_resolver.describe(str(arguments["footprint"])).to_dict()
             )
-        return self._with_tool_result(self.open_project(project_id), facts)
+        return facts
+
+    def _inspect_part_tool(
+        self, project_id: str, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
+        project = self._open(project_id)
+        if not project.design_root.is_dir() or project.design_root.is_symlink():
+            raise ValidationError("project has no synchronized part catalog")
+        managed = open_managed_project(project.design_root)
+        managed.assert_synchronized()
+        if tool_name == "search_parts":
+            matches = managed.graph.search(str(arguments["query"]), limit=24)
+            facts: dict[str, Any] = {
+                "query": arguments["query"],
+                "available_count": len(managed.graph),
+                "matched_count": len(matches),
+                "parts": [
+                    {
+                        "id": part.id,
+                        "kind": part.kind,
+                        "description": part.description,
+                        "symbol": part.symbol,
+                        "footprint": part.footprint,
+                        "trust": part.trust,
+                    }
+                    for part in matches
+                ],
+            }
+        else:
+            part = managed.graph.get(str(arguments["part_id"]))
+            facts = {
+                "available_count": len(managed.graph),
+                "part": part.to_dict(),
+            }
+        facts["project_id"] = project_id
+        facts["revision"] = project.state["revision"]
+        return self._with_tool_result(self._public_project(project), facts)
+
+    def register_kicad_part(
+        self,
+        project_id: str,
+        value: dict[str, Any],
+        *,
+        timeout: float,
+        expected_revision: int,
+    ) -> dict[str, Any]:
+        """Atomically publish one inspected local KiCad part contract."""
+
+        project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="register_kicad_part"
+        )
+        if not project.design_root.is_dir() or project.design_root.is_symlink():
+            raise ValidationError("project has no synchronized design to modify")
+        authoritative = open_managed_project(project.design_root)
+        authoritative.assert_synchronized()
+        before_catalog_hash = hashlib.sha256(
+            canonical_json_bytes(authoritative.graph.to_dict())
+        ).hexdigest()
+        transaction_id = new_run_id()
+        transaction = make_directory(project.root / "transactions" / transaction_id)
+        staged = transaction / "staged"
+        before = transaction / "before"
+        receipt_path = transaction / "receipt.json"
+        receipt: dict[str, Any] = {
+            "schema": "pcbdraft-kicad-part-registration-receipt",
+            "version": 1,
+            "status": "preparing",
+            "operation": "register_kicad_part",
+            "created_at": utc_timestamp(),
+            "baseline_revision": expected_revision,
+            "before_hash": authoritative.design.content_hash(),
+            "before_catalog_hash": before_catalog_hash,
+            "part_id": value.get("id"),
+        }
+        atomic_write_json(receipt_path, receipt)
+        try:
+            from pcbdraft.agent.footprint_resolver import LocalKiCadFootprintResolver
+            from pcbdraft.agent.part_resolver import LocalKiCadPartResolver
+
+            symbol = LocalKiCadPartResolver().describe(str(value.get("symbol", "")))
+            footprint = LocalKiCadFootprintResolver().describe(
+                str(value.get("footprint", ""))
+            )
+            pins = value.get("pins")
+            if not isinstance(pins, list):
+                raise ValidationError("part pins must be an array")
+            installed_pins = {item["number"]: item for item in symbol.pins}
+            supplied_pins = {
+                str(item.get("number")): item for item in pins if isinstance(item, dict)
+            }
+            if set(supplied_pins) != set(installed_pins):
+                raise ValidationError(
+                    "part pins must exactly cover the installed symbol pin numbers"
+                )
+            available_pads = set(footprint.pad_numbers)
+            for number, installed in installed_pins.items():
+                supplied = supplied_pins[number]
+                if supplied.get("name") != installed["name"]:
+                    raise ValidationError(
+                        f"part pin {number} name differs from the installed symbol"
+                    )
+                if supplied.get("electrical_type") != installed["electrical_type"]:
+                    raise ValidationError(
+                        f"part pin {number} electrical type differs from the installed symbol"
+                    )
+                if supplied.get("footprint_pad") not in available_pads:
+                    raise ValidationError(
+                        f"part pin {number} maps to a missing footprint pad"
+                    )
+            part = PartGraph.installed_kicad_part(
+                value, footprint_sha256=footprint.sha256
+            )
+            existing = authoritative.graph.get_optional(part.id)
+            if existing is not None:
+                if existing.to_dict() != part.to_dict():
+                    raise ValidationError(
+                        f"part id already exists with different facts: {part.id}"
+                    )
+                with ResourceLock(project.root, self.locks_root):
+                    current = self._open(project_id)
+                    if current.state["revision"] != expected_revision:
+                        raise ValidationError(
+                            "project changed while part registration was inspected"
+                        )
+                    current_design = open_managed_project(current.design_root)
+                    current_design.assert_synchronized()
+                    current_catalog_hash = hashlib.sha256(
+                        canonical_json_bytes(current_design.graph.to_dict())
+                    ).hexdigest()
+                    if current_design.design.content_hash() != receipt["before_hash"]:
+                        raise ValidationError(
+                            "authoritative design changed before part no-op"
+                        )
+                    if current_catalog_hash != receipt["before_catalog_hash"]:
+                        raise ValidationError(
+                            "authoritative part catalog changed before part no-op"
+                        )
+                receipt.update(
+                    {
+                        "status": "noop",
+                        "completed_at": utc_timestamp(),
+                        "after_hash": authoritative.design.content_hash(),
+                        "after_catalog_hash": before_catalog_hash,
+                    }
+                )
+                atomic_write_json(receipt_path, receipt)
+                return self._with_tool_result(
+                    self.open_project(project_id),
+                    {
+                        "operation": "register_kicad_part",
+                        "transaction_id": transaction_id,
+                        "project_id": project_id,
+                        "part": part.to_dict(),
+                        "changed": False,
+                        "catalog_count": len(authoritative.graph),
+                    },
+                )
+            graph = authoritative.graph.merged([part], source=f"project:{project_id}")
+            document = authoritative.design.to_dict()
+            document["metadata"]["assurance"] = "provisional"
+            candidate = Design.from_dict(document)
+            after_catalog_hash = hashlib.sha256(
+                canonical_json_bytes(graph.to_dict())
+            ).hexdigest()
+            receipt.update(
+                {
+                    "after_hash": candidate.content_hash(),
+                    "after_catalog_hash": after_catalog_hash,
+                    "symbol": symbol.to_dict(),
+                    "footprint": footprint.to_dict(),
+                }
+            )
+            atomic_write_json(receipt_path, receipt)
+            request = load_generation_request(authoritative.requirements_path)
+            materialize_managed_design(
+                request,
+                candidate,
+                staged,
+                graph=graph,
+                plan=authoritative.plan,
+                retain_failed_attempt=transaction / "failed-native",
+                lock_timeout=min(10.0, timeout),
+                auto_place=False,
+                route_net_ids=frozenset(),
+                allow_incomplete=True,
+            )
+            staged_project = open_managed_project(staged)
+            staged_project.assert_synchronized()
+            if staged_project.design.content_hash() != candidate.content_hash():
+                raise ValidationError("staged semantic design hash changed")
+            if (
+                hashlib.sha256(
+                    canonical_json_bytes(staged_project.graph.to_dict())
+                ).hexdigest()
+                != after_catalog_hash
+            ):
+                raise ValidationError("staged part catalog hash changed")
+        except BaseException as exc:
+            receipt["status"] = "failed"
+            receipt["failed_at"] = utc_timestamp()
+            receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+            atomic_write_json(receipt_path, receipt)
+            raise
+
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            original_state = copy.deepcopy(current.state)
+            original_conversation = copy.deepcopy(current.conversation)
+            moved_before = False
+            event_path: Path | None = None
+            try:
+                if current.state["revision"] != expected_revision:
+                    raise ValidationError(
+                        "project changed while part registration was staged"
+                    )
+                current_design = open_managed_project(current.design_root)
+                current_design.assert_synchronized()
+                current_catalog_hash = hashlib.sha256(
+                    canonical_json_bytes(current_design.graph.to_dict())
+                ).hexdigest()
+                if current_design.design.content_hash() != receipt["before_hash"]:
+                    raise ValidationError(
+                        "authoritative design changed before part publication"
+                    )
+                if current_catalog_hash != receipt["before_catalog_hash"]:
+                    raise ValidationError(
+                        "authoritative part catalog changed before publication"
+                    )
+                os.replace(current.design_root, before)
+                moved_before = True
+                os.replace(staged, current.design_root)
+                published = open_managed_project(current.design_root)
+                published.assert_synchronized()
+                receipt.update(
+                    {
+                        "status": "applied",
+                        "applied_at": utc_timestamp(),
+                        "manifest_hashes": published.manifest["hashes"],
+                    }
+                )
+                atomic_write_json(receipt_path, receipt)
+                current.state["status"] = "generated"
+                current.state["revision"] += 1
+                current.state["design_revision"] += 1
+                current.state["updated_at"] = utc_timestamp()
+                current.state["last_validation"] = None
+                current.state["last_preview"] = None
+                current.state["last_release"] = None
+                current.state["last_transaction"] = transaction_id
+                event_path = (
+                    current.root
+                    / "events"
+                    / f"{current.state['event_sequence'] + 1:08d}.json"
+                )
+                self._event(
+                    current.state,
+                    current.root,
+                    "pcb.kicad_part_registered",
+                    f"Registered installed KiCad part {part.id}",
+                )
+                self._write_records(current.root, current.state, current.conversation)
+            except BaseException as exc:
+                rollback_failures: list[BaseException] = []
+                if moved_before:
+                    try:
+                        failed_published = transaction / "failed-published"
+                        if current.design_root.exists():
+                            os.replace(current.design_root, failed_published)
+                        if before.exists():
+                            os.replace(before, current.design_root)
+                    except BaseException as rollback_exc:  # noqa: BLE001 - complete rollback audit
+                        rollback_failures.append(rollback_exc)
+                try:
+                    atomic_write_json(
+                        current.root / "conversation.json", original_conversation
+                    )
+                    atomic_write_json(current.root / "project.json", original_state)
+                    if event_path is not None and event_path.is_file():
+                        event_path.unlink()
+                except BaseException as rollback_exc:  # noqa: BLE001 - complete rollback audit
+                    rollback_failures.append(rollback_exc)
+                receipt["status"] = "failed"
+                receipt["failed_at"] = utc_timestamp()
+                receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+                try:
+                    atomic_write_json(receipt_path, receipt)
+                except PCBDraftError:
+                    pass
+                if rollback_failures:
+                    raise PCBDraftError(
+                        "part publication failed and rollback was incomplete"
+                    ) from exc
+                raise
+        return self._with_tool_result(
+            self.open_project(project_id),
+            {
+                "operation": "register_kicad_part",
+                "transaction_id": transaction_id,
+                "project_id": project_id,
+                "part": part.to_dict(),
+                "symbol": symbol.to_dict(),
+                "footprint": footprint.to_dict(),
+                "changed": True,
+                "catalog_count": len(graph),
+                "before_catalog_hash": before_catalog_hash,
+                "after_catalog_hash": after_catalog_hash,
+                "revision": current.state["revision"],
+                "design_revision": current.state["design_revision"],
+            },
+        )
 
     def run_pcb_check(
         self,
@@ -1370,6 +1697,7 @@ class ApplicationService:
             value = copy.deepcopy(arguments["value"])
             if tool_name == "add_block":
                 value["components"] = []
+                value["provenance"] = []
             elif tool_name == "add_net":
                 value["endpoints"] = []
             args = {"value": value}
@@ -1425,6 +1753,8 @@ class ApplicationService:
                     value["params"] = cls._parameter_mapping(
                         value["params"], f"{collection}.params"
                     )
+                if collection == "constraint":
+                    value["provenance"] = []
                 entry_id = str(value["id"])
                 exists = (
                     any(item.id == entry_id for item in design.power_domains)

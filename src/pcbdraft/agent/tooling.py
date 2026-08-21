@@ -1042,7 +1042,6 @@ _BLOCK_PROPERTIES: dict[str, Any] = {
     "name": _TEXT_SCHEMA,
     "version": _TEXT_SCHEMA,
     "intent": _TEXT_SCHEMA,
-    "provenance": {"type": "array", "items": _TEXT_SCHEMA},
 }
 _COMPONENT_PROPERTIES: dict[str, Any] = {
     "id": _TEXT_SCHEMA,
@@ -1087,7 +1086,39 @@ _CONSTRAINT_PROPERTIES: dict[str, Any] = {
         "enum": ["advisory", "required", "release_blocking"],
     },
     "rationale": _TEXT_SCHEMA,
-    "provenance": {"type": "array", "items": _TEXT_SCHEMA},
+}
+_PART_PIN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "number": _TEXT_SCHEMA,
+        "name": {"type": "string"},
+        "electrical_type": _TEXT_SCHEMA,
+        "functions": {"type": "array", "items": _TEXT_SCHEMA},
+        "required": {"type": "boolean"},
+        "footprint_pad": _TEXT_SCHEMA,
+    },
+    "required": [
+        "number",
+        "name",
+        "electrical_type",
+        "functions",
+        "required",
+        "footprint_pad",
+    ],
+    "additionalProperties": False,
+}
+_KICAD_PART_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "kind": _TEXT_SCHEMA,
+    "description": _TEXT_SCHEMA,
+    "symbol": _TEXT_SCHEMA,
+    "footprint": _TEXT_SCHEMA,
+    "bom": {"type": "boolean"},
+    "pins": {
+        "type": "array",
+        "minItems": 1,
+        "items": _PART_PIN_SCHEMA,
+    },
 }
 _COMPONENT_CHANGE_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -1130,18 +1161,12 @@ _BOARD_RULE_CHANGE_SCHEMA: dict[str, Any] = {
 
 
 PCB_TOOL_SPECS = (
-    _flat_spec("list_projects", "List local PCB projects"),
     _flat_spec(
         "create_project",
         "Create an empty synchronized semantic and KiCad project",
         effect="authoritative_write",
         risk="medium",
         arguments=(_ID("name", "Human-readable project name"),),
-    ),
-    _flat_spec(
-        "open_project",
-        "Open a local PCB project and select it as the current project",
-        arguments=(_ID("project_id", "Local project identity"),),
     ),
     _flat_spec(
         "inspect_project", "Inspect project identity, status, hashes, and revision"
@@ -1181,6 +1206,31 @@ PCB_TOOL_SPECS = (
         "describe_footprint",
         "Describe one installed local KiCad footprint",
         arguments=(_ID("footprint", "KiCad Library:Footprint identity"),),
+    ),
+    _flat_spec(
+        "search_parts",
+        "Search canonical and project-local parts in the current project",
+        arguments=(
+            _ID("query", "Part id, kind, description, symbol, or footprint query"),
+        ),
+    ),
+    _flat_spec(
+        "describe_part",
+        "Describe one canonical or project-local part contract",
+        arguments=(_ID("part_id", "Stable canonical part identity"),),
+    ),
+    _flat_spec(
+        "register_kicad_part",
+        "Register one project-local part from installed KiCad symbol and footprint facts",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _object_argument(
+                "value",
+                "Installed KiCad part contract",
+                _KICAD_PART_PROPERTIES,
+            ),
+        ),
     ),
     _flat_spec(
         "add_block",

@@ -110,33 +110,49 @@ class LocalKiCadPartResolver:
     def _symbol_index(self) -> tuple[str, ...]:
         return _installed_symbol_index(str(self.symbol_root))
 
-    def find(self, query: str, *, limit: int = 12) -> tuple[SymbolCandidate, ...]:
+    def find_ids(self, query: str, *, limit: int = 12) -> tuple[str, ...]:
+        """Return bounded installed symbol identifiers without parsing symbols."""
+
         query = _string(query, "symbol query", limit=256)
-        if limit < 1 or limit > 64:
+        if (
+            isinstance(limit, bool)
+            or not isinstance(limit, int)
+            or not 1 <= limit <= 64
+        ):
             raise ValidationError("symbol candidate limit must be from 1 to 64")
         key = _normal_key(query)
         if not key:
             return ()
+        exact = query.casefold()
 
         def rank(symbol: str) -> tuple[int, int, str]:
             library, name = symbol.split(":", 1)
+            symbol_key = _normal_key(symbol)
             name_key = _normal_key(name)
             library_key = _normal_key(library)
-            if name_key == key:
-                score = 0
-            elif name_key.startswith(key):
-                score = 1
-            elif key in name_key:
-                score = 2
-            elif key in library_key:
-                score = 3
-            else:
-                score = 99
-            return (score, len(name_key), symbol)
+            score = (
+                0
+                if symbol.casefold() == exact
+                else 1
+                if symbol_key == key or name_key == key
+                else 2
+                if name_key.startswith(key)
+                else 3
+                if key in name_key or key in symbol_key
+                else 4
+                if key in library_key
+                else 99
+            )
+            return score, len(name_key), symbol
 
         matches = [symbol for symbol in self._symbol_index if rank(symbol)[0] < 99]
+        return tuple(sorted(matches, key=rank)[:limit])
+
+    def find(self, query: str, *, limit: int = 12) -> tuple[SymbolCandidate, ...]:
+        """Return fully described candidates for internal planning callers."""
+
         return tuple(
-            self.describe(symbol) for symbol in sorted(matches, key=rank)[:limit]
+            self.describe(symbol) for symbol in self.find_ids(query, limit=limit)
         )
 
     def describe(self, symbol: str) -> SymbolCandidate:

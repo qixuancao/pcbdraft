@@ -144,13 +144,15 @@ def generate_schematic(
     component_uuids: dict[str, str] = {}
     wrappers: dict[str, object] = {}
     try:
-        for component in sorted(design.components, key=lambda entry: entry.reference):
+        for index, component in enumerate(
+            sorted(design.components, key=lambda entry: entry.reference)
+        ):
             part = resolved_graph.get(component.part_id)
             component_uuid = stable_kicad_uuid(
                 design.design_id, "component", component.id
             )
             component_uuids[component.id] = component_uuid
-            x_mm, y_mm = _schematic_position(component)
+            x_mm, y_mm = _schematic_position(component, index=index)
             wrapper = schematic.components.add(
                 part.symbol,
                 reference=component.reference,
@@ -299,10 +301,13 @@ def _repair_malformed_private_library_properties(path: Path) -> None:
         path.write_text("".join(result), encoding="utf-8", newline="")
 
 
-def _schematic_position(component: Component) -> tuple[float, float]:
+def _schematic_position(component: Component, *, index: int) -> tuple[float, float]:
     placement = component.placement
     if placement is None:
-        raise ValidationError(f"component {component.id} has no placement seed")
+        # Schematic sheet coordinates are presentation-only and do not establish
+        # a semantic/PCB footprint pose. Keep unplaced components readable while
+        # the model remains responsible for an explicit placement tool call.
+        return 25.4 + (index % 5) * 30.48, 25.4 + (index // 5) * 25.4
     # Expand physical board coordinates into a readable A4 schematic while retaining
     # semantic grouping.  The library snaps these values to KiCad's 1.27 mm grid.
     return 20 + placement.x_mm * 2.54, 20 + placement.y_mm * 2.54

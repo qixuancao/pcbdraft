@@ -5,6 +5,14 @@ for the CLI/API package; individual on-disk schemas are independently versioned.
 
 ## Unreleased
 
+- Bound Hermes PCB sessions to the trusted current project, removed model-facing
+  project enumeration/switching, made installed-library reads global, and added
+  canonical part search/description plus atomic installed-KiCad part registration.
+  Trusted project changes now rotate to a fresh Hermes conversation before the
+  next model request so prior-project tool text cannot leak across the boundary.
+  Hermes now dispatches at most one PCB action per model response. Flat add tools
+  derive internal provenance, legacy power sources match physical component/pin
+  identity, and unplaced stock footprints materialize without inventing an IR pose.
 - Replaced model-facing PCB macros and second-level domain routers with one
   canonical flat toolbox of concrete project, inspection, library, semantic,
   native-board, check, render, and export operations. Hermes exposes only the

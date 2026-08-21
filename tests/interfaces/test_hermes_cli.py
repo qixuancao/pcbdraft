@@ -47,8 +47,8 @@ class FakeService:
         self.views: dict[str, dict[str, Any]] = {}
         self.calls: list[tuple[Any, ...]] = []
 
-    def create_draft(self, name: str) -> dict[str, Any]:
-        self.calls.append(("create_draft", name))
+    def create_empty_project(self, name: str) -> dict[str, Any]:
+        self.calls.append(("create_empty_project", name))
         project_id = f"{name}-abcd1234"
         self.views[project_id] = {
             "project": {"id": project_id, "name": name, "status": "draft"},
@@ -131,7 +131,9 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertIn("sensor board-abcd1234", result)
         self.assertIn("next step", result)
         self.assertEqual(get_current_project_id(), "sensor board-abcd1234")
-        self.assertEqual(self.service.calls[0], ("create_draft", "sensor board"))
+        self.assertEqual(
+            self.service.calls[0], ("create_empty_project", "sensor board")
+        )
 
     def test_bare_new_shows_usage_and_creates_nothing(self) -> None:
         result = HANDLERS["new"]("  ")
@@ -208,7 +210,7 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertEqual(
             [call[0] for call in self.service.calls],
             [
-                "create_draft",
+                "create_empty_project",
                 "confirm_project",
                 "discard_modification",
                 "build_release",
@@ -267,6 +269,84 @@ class SlashHandlerTests(unittest.TestCase):
         rendered = "\n".join(str(call.args[0]) for call in mocked_print.call_args_list)
         self.assertIn("✗", rendered)
         self.assertIn("project not found", rendered)
+
+    def test_trusted_project_commands_rotate_the_actual_hermes_conversation(
+        self,
+    ) -> None:
+        install_vendor_path()
+        _apply_process_command_patch()
+        import cli as hermes_cli_module
+
+        existing = self.service.create_empty_project("existing")
+        existing_id = str(existing["project"]["id"])
+
+        def cli_with_old_project_history() -> Any:
+            cli = hermes_cli_module.HermesCLI.__new__(hermes_cli_module.HermesCLI)
+            cli.session_id = "old-project-session"
+            cli.agent = None
+            cli._session_db = None
+            cli.conversation_history = [
+                {"role": "tool", "content": "project-a pd_3v3 failed"}
+            ]
+            return cli
+
+        commands = (
+            "/new isolated board",
+            f"/open {existing_id}",
+            f"/project {self.root / 'partitioned-repository'}",
+        )
+        for command in commands:
+            with self.subTest(command=command):
+                cli = cli_with_old_project_history()
+                with (
+                    patch.object(
+                        hermes_cli_module,
+                        "CLI_CONFIG",
+                        {"agent": {}, "model": {}},
+                    ),
+                    patch.object(hermes_cli_module, "_cprint"),
+                ):
+                    continue_loop = hermes_cli_module.HermesCLI.process_command(
+                        cli, command
+                    )
+
+                self.assertTrue(continue_loop)
+                self.assertNotEqual(cli.session_id, "old-project-session")
+                self.assertEqual(cli.conversation_history, [])
+
+    def test_failed_project_open_keeps_the_existing_conversation(self) -> None:
+        install_vendor_path()
+        _apply_process_command_patch()
+        import cli as hermes_cli_module
+
+        cli = hermes_cli_module.HermesCLI.__new__(hermes_cli_module.HermesCLI)
+        cli.session_id = "current-session"
+        cli.agent = None
+        cli._session_db = None
+        old_history = [{"role": "user", "content": "keep this context"}]
+        cli.conversation_history = old_history
+
+        with patch.object(hermes_cli_module, "_cprint"):
+            continue_loop = hermes_cli_module.HermesCLI.process_command(
+                cli, "/open missing-project"
+            )
+
+        self.assertTrue(continue_loop)
+        self.assertEqual(cli.session_id, "current-session")
+        self.assertIs(cli.conversation_history, old_history)
+
+    def test_project_argument_selects_before_a_fresh_terminal_launch(self) -> None:
+        from pcbdraft.interfaces.cli import main
+
+        existing = self.service.create_empty_project("startup project")
+        project_id = str(existing["project"]["id"])
+
+        with patch("pcbdraft.interfaces.cli.launch_cli", return_value=0) as launch:
+            result = main(["--project", project_id])
+
+        self.assertEqual(result, 0)
+        self.assertEqual(get_current_project_id(), project_id)
+        launch.assert_called_once_with([], permission_mode="workspace")
 
     def test_repl_connect_defers_wizard_until_after_terminal_exit(self) -> None:
         install_vendor_path()

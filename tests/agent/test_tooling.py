@@ -214,11 +214,14 @@ class PCBToolingTests(unittest.TestCase):
     def test_registry_is_closed_and_declares_effect_and_risk(self) -> None:
         specs = {spec.name: spec for spec in DEFAULT_PCB_TOOL_REGISTRY.specs}
 
-        self.assertEqual(len(specs), 56)
+        self.assertEqual(len(specs), 57)
         self.assertTrue(
             {
-                "list_projects",
+                "create_project",
                 "inspect_design",
+                "search_parts",
+                "describe_part",
+                "register_kicad_part",
                 "add_component",
                 "set_board_outline",
                 "route_net",
@@ -228,6 +231,7 @@ class PCBToolingTests(unittest.TestCase):
             }
             <= set(specs)
         )
+        self.assertFalse({"list_projects", "open_project"} & set(specs))
         self.assertFalse(
             {
                 "plan_request",
@@ -243,7 +247,7 @@ class PCBToolingTests(unittest.TestCase):
         self.assertEqual(specs["set_board_outline"].risk, "high")
         self.assertEqual(
             DEFAULT_PCB_TOOL_REGISTRY.schema_fingerprint(),
-            "a2d579eb8ff79137b2ad8418e347a9af1475e45b215fcc1d59127b80c4391dfd",
+            "34f249bc137275e4846aa47f4e805f9fc28ffdc20e5596d1e01c620cbc8fe372",
         )
         self.assertTrue(
             all(
@@ -263,6 +267,14 @@ class PCBToolingTests(unittest.TestCase):
         self.assertNotIn(
             "endpoints",
             specs["add_net"].input_schema["properties"]["value"]["properties"],
+        )
+        self.assertNotIn(
+            "provenance",
+            specs["add_block"].input_schema["properties"]["value"]["properties"],
+        )
+        self.assertNotIn(
+            "provenance",
+            specs["add_constraint"].input_schema["properties"]["value"]["properties"],
         )
         outline = specs["set_board_outline"].input_schema["properties"]
         self.assertEqual(outline["width_mm"]["type"], "number")
@@ -349,7 +361,7 @@ class PCBToolingTests(unittest.TestCase):
         tools = {item["name"]: item for item in DEFAULT_PCB_TOOL_REGISTRY.mcp_tools()}
 
         self.assertEqual(
-            tools["pcb_list_projects"]["annotations"],
+            tools["pcb_inspect_project"]["annotations"],
             {
                 "readOnlyHint": True,
                 "destructiveHint": False,
@@ -373,7 +385,7 @@ class PCBToolingTests(unittest.TestCase):
         self.assertFalse(tools["pcb_run_drc"]["annotations"]["openWorldHint"])
 
     def test_tool_specs_reject_invalid_or_hidden_authority_metadata(self) -> None:
-        plan = DEFAULT_PCB_TOOL_REGISTRY.resolve("list_projects")
+        plan = DEFAULT_PCB_TOOL_REGISTRY.resolve("inspect_project")
         apply = DEFAULT_PCB_TOOL_REGISTRY.resolve("set_board_outline")
 
         with self.assertRaisesRegex(ValueError, "invalid effect"):

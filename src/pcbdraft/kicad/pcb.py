@@ -240,6 +240,7 @@ def generate_pcb(
             board_components,
             resolved_graph,
             system_python=system_python,
+            allow_unplaced=not auto_place,
         )
         assert_supported_kicad_version(kicad_version)
         if auto_place:
@@ -367,7 +368,15 @@ def inspect_footprints(
     graph: PartGraph,
     *,
     system_python: str | Path | None = None,
+    allow_unplaced: bool = False,
 ) -> tuple[dict[str, FootprintInspection], str]:
+    def pose(component: Component) -> tuple[float, str]:
+        if component.placement is None:
+            if allow_unplaced:
+                return 0.0, "front"
+            raise ValidationError(f"component {component.id} has no placement seed")
+        return component.placement.rotation_deg, component.placement.side
+
     job = {
         "schema": "pcbdraft-pcbnew-job",
         "version": 1,
@@ -378,8 +387,8 @@ def inspect_footprints(
             {
                 "id": component.id,
                 "footprint": graph.get(component.part_id).footprint,
-                "rotation_deg": _placement(component).rotation_deg,
-                "side": _placement(component).side,
+                "rotation_deg": pose(component)[0],
+                "side": pose(component)[1],
             }
             for component in sorted(components, key=lambda entry: entry.id)
         ],

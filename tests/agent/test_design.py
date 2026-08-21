@@ -489,6 +489,14 @@ class GenericAgentDesignTests(unittest.TestCase):
             plan.canonical_bytes(),
         )
 
+    def test_power_domain_source_role_is_metadata_not_physical_identity(self) -> None:
+        source = indicator_plan_v2_dict()
+        source["power_domains"][0]["source"]["role"] = "vcc"
+
+        plan = CircuitPlan.from_dict(source)
+
+        self.assertEqual(plan.power_domains[0].source.role, "vcc")
+
     def test_v2_plan_rejects_incomplete_block_coverage(self) -> None:
         source = indicator_plan_v2_dict()
         source["blocks"][1]["components"].remove("input")

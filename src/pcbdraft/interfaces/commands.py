@@ -67,13 +67,13 @@ def handle_new(raw_args: str) -> str:
     if not name:
         return "Usage: /new <name> — create a new PCB project in the repository"
     service = get_service()
-    view = service.create_draft(name)
+    view = service.create_empty_project(name)
     project = view["project"]
     set_current_project_id(str(project["id"]))
     return (
         f'✓ Created PCB project "{project["name"]}" ({project["id"]})\n'
         f"  location: {service.projects_root / str(project['id'])}\n"
-        "  next step: describe the board you want (requirements, parts, size)."
+        "  next step: describe the board you want."
     )
 
 

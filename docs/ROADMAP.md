@@ -24,6 +24,9 @@ tool call. IR v2 retains native outline, footprint pose, route, unroute, and via
 intent; existing IR v1 projects remain stable on read and migrate on their first
 successful atomic write. General Hermes shell/web tools, phase-sized PCB macros,
 and second-level domain routers are not part of the PCB model surface.
+Each Hermes session is bound to the trusted current project. Installed-library
+facts are globally readable, while project catalogs support factual part search,
+description, and atomic registration of an installed KiCad symbol/footprint pair.
 
 Release acceptance currently includes three materially different small boards:
 
