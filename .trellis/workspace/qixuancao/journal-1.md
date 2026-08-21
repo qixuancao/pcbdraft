@@ -70,3 +70,24 @@ Added session-bound project authority, one-call PCB middleware, installed KiCad 
 ### Status
 
 [OK] **Completed**
+
+
+## Session 4: Improve cross-platform one-command installation
+
+**Date**: 2026-08-21
+**Task**: Improve cross-platform one-command installation
+**Branch**: `main`
+
+### Summary
+
+Unified Linux/macOS and Windows installers around non-mutating preflight, immutable provenance, idempotent KiCad and stock-library repair, visible setup/doctor verification, one-line docs, focused contract CI, and disposable Ubuntu 24.04/26.04 rootless Docker acceptance.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a9d0541` | (see git log) |
+
+### Status
+
+[OK] **Completed**
