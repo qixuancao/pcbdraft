@@ -91,3 +91,25 @@ Unified Linux/macOS and Windows installers around non-mutating preflight, immuta
 ### Status
 
 [OK] **Completed**
+
+
+## Session 5: Complete BoardBench AI pilot and close partial task
+
+**Date**: 2026-08-23
+**Task**: Complete BoardBench AI pilot and close partial task
+**Branch**: `main`
+
+### Summary
+
+Implemented and verified the end-to-end BoardBench evidence workflow; retained a 60-run gpt-5.6-luna AI-reviewed pilot with 59 completed and 1 timed out, 60 automatic scores, an unsealed report, and separate Codex reviews. Closed the task factually as partial because independent human engineering review, corrections, five-board manufacturing/bring-up, sealing, and publication remain unavailable.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d8c517f` | (see git log) |
+| `b99c116` | (see git log) |
+
+### Status
+
+[OK] **Completed**
