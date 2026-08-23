@@ -1,0 +1,39 @@
+{
+  "id": "end-to-end-boardbench",
+  "name": "end-to-end-boardbench",
+  "title": "建立端到端 BoardBench",
+  "description": "Build and publish a sealed 20-case, 60-run natural-language BoardBench baseline with engineering review and five-category physical bring-up evidence.",
+  "status": "completed",
+  "dev_type": "feature",
+  "scope": "backend",
+  "package": null,
+  "priority": "P1",
+  "creator": "qixuancao",
+  "assignee": "qixuancao",
+  "createdAt": "2026-08-21",
+  "completedAt": "2026-08-23",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/pcbdraft/verification/",
+    "src/pcbdraft/interfaces/hermes_cli.py",
+    "src/pcbdraft/interfaces/hermes_plugin.py",
+    "src/pcbdraft/data/benchmark/",
+    "scripts/release-check.sh",
+    "docs/DEVELOPMENT.md",
+    "README.md"
+  ],
+  "notes": "",
+  "meta": {
+    "closure_outcome": "ai_pilot_completed_formal_boardbench_v1_incomplete",
+    "closure_reason": "no_independent_human_engineer_or_physical_evidence",
+    "sealed_baseline": "false",
+    "user_requested_close": "2026-08-23"
+  }
+}
