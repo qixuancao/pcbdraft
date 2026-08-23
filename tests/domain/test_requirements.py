@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from pcbdraft.core.errors import ValidationError
@@ -79,6 +80,23 @@ class RequirementsCompilerTests(unittest.TestCase):
             if endpoint.component == "updi_j2"
         )
         self.assertEqual(sense.role, "voltage_sense")
+        sensor = next(
+            component for component in first.components if component.id == "sensor_u2"
+        )
+        self.assertEqual(sensor.part_id, "ti.tmp102aidrlr")
+        historical = replace(
+            first,
+            components=tuple(
+                replace(component, part_id="ti.tmp102bdrlr")
+                if component.id == "sensor_u2"
+                else component
+                for component in first.components
+            ),
+        )
+        self.assertNotIn(
+            "part.unknown",
+            {issue.code for issue in self.graph.validate_design(historical)},
+        )
 
     def test_every_rule_validated_block_declares_parts_evidence_and_tests(self) -> None:
         repository = Path(__file__).resolve().parents[2]

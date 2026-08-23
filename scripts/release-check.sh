@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local release acceptance: tests, packages, clean install, and TUI E2E.
+# Full local release acceptance: tests, packages, clean install, and Hermes E2E.
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -26,7 +26,7 @@ fi
 uv run python -m zipfile -t "$WHEEL"
 tar -tzf "$SDIST" >/dev/null
 uv run python -c \
-    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/constraints/build.txt", "/constraints/runtime.txt", "/scripts/tui-e2e.py", "/src/pcbdraft/interfaces/tui/styles.tcss"); assert all(any(name.endswith(item) for name in names) for item in required)' \
+    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/constraints/build.txt", "/constraints/runtime.txt", "/scripts/hermes-e2e.py", "/scripts/fake_openai_provider.py"); assert all(any(name.endswith(item) for name in names) for item in required)' \
     "$SDIST"
 
 uv venv --python 3.11 "$CHECK_ROOT/venv"
@@ -37,11 +37,10 @@ uv pip install \
 "$CHECK_ROOT/venv/bin/pcbdraft" --version
 "$CHECK_ROOT/venv/bin/python" -c \
     'from pcbdraft.verification.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
-"$CHECK_ROOT/venv/bin/python" -c \
-    'from importlib.resources import files; assert files("pcbdraft").joinpath("interfaces", "tui", "styles.tcss").is_file()'
 
-uv run python scripts/tui-e2e.py \
-    --executable "$CHECK_ROOT/venv/bin/pcbdraft" \
-    --output "$CHECK_ROOT/tui-e2e"
+uv run python scripts/hermes-e2e.py \
+    --python "$CHECK_ROOT/venv/bin/python" \
+    --require-installed \
+    --output "$CHECK_ROOT/hermes-e2e"
 
-printf 'release check passed: wheel, sdist, clean install, and TUI E2E\n'
+printf 'release check passed: wheel, sdist, clean install, and Hermes/KiCad E2E\n'

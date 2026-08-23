@@ -19,8 +19,8 @@ Before each push:
 4. Open a draft pull request early, then push corrections to the same branch and
    PR rather than opening a new PR for every failure.
 
-Do not routinely run `scripts/test.sh`, `scripts/benchmark.sh`, or
-`scripts/release-check.sh` locally before every push. The PR CI must run the full
+Do not routinely run `scripts/test.sh`, the full deterministic benchmark suite,
+or `scripts/release-check.sh` locally before every push. The PR CI must run the full
 Python matrix, lint and type checks, dependency audits, package/install checks,
 KiCad acceptance tests, end-to-end tests, benchmarks, and release reproducibility
 checks. A PR must not be marked ready or merged while a required check is pending

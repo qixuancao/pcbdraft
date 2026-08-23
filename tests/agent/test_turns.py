@@ -544,9 +544,7 @@ class AgentTurnStoreTests(unittest.TestCase):
         with_reply = self.store.append_assistant_text(
             running.turn_id, "I can help with that board."
         )
-        self.assertEqual(
-            with_reply.assistant_texts, ("I can help with that board.",)
-        )
+        self.assertEqual(with_reply.assistant_texts, ("I can help with that board.",))
         self.assertEqual(with_reply.record_revision, running.record_revision + 1)
 
         second = self.store.append_assistant_text(running.turn_id, "Next reply.")
@@ -565,9 +563,7 @@ class AgentTurnStoreTests(unittest.TestCase):
             self.store.update(running.turn_id, TurnStatus.COMPLETED)
             self.store.append_assistant_text(running.turn_id, "Too late.")
         with self.assertRaisesRegex(ValidationError, "assistant reply text"):
-            self.store.append_assistant_text(
-                running.turn_id, "x" * (16 * 1024 + 1)
-            )
+            self.store.append_assistant_text(running.turn_id, "x" * (16 * 1024 + 1))
 
     def test_illegal_transition_and_stale_record_revision_are_rejected(self) -> None:
         queued = self.store.begin(

@@ -21,10 +21,10 @@ pcbdraft/
 │   ├── kicad/          native KiCad adapters and geometry algorithms
 │   ├── model/          model configuration, transport, and provider adapters
 │   ├── services/       application use cases and transactional orchestration
-│   ├── verification/   evidence, gates, validation, review, benchmark, and release
+│   ├── verification/   evidence, gates, validation, BoardBench, benchmark, and release
 │   └── data/           immutable bundled catalogs and benchmark corpus
 ├── tests/              responsibility-mirrored unit and integration tests
-├── scripts/            stable development, cleanup, E2E, benchmark, and release entrypoints
+├── scripts/            stable development, cleanup, E2E, BoardBench, and release entrypoints
 └── docs/               architecture, API, development, and roadmap documentation
 ```
 

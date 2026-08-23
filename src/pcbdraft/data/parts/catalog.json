@@ -23,7 +23,7 @@
         {"number": "7", "name": "PA3", "electrical_type": "bidirectional", "functions": ["gpio", "spi_sck"], "required": false, "footprint_pad": "7"},
         {"number": "8", "name": "GND", "electrical_type": "power_in", "functions": ["ground"], "required": true, "footprint_pad": "8"}
       ],
-      "ratings": {"supply_voltage_v": {"min": 1.8, "max": 5.5}, "absolute_max_voltage_v": 6.0, "operating_temperature_c": {"min": -40, "max": 125}},
+      "ratings": {"supply_voltage_v": {"min": 1.8, "max": 5.5}, "absolute_max_voltage_v": 6.0, "operating_temperature_c": {"min": -40, "max": 105}},
       "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.microchip.com/en-us/product/attiny402"},
       "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
       "manufacturing": {"package": "SOIC-8", "assembly": "reflow_or_hand", "pitch_mm": 1.27, "courtyard_required": true, "rohs_evidence": "source_required"},
@@ -31,15 +31,15 @@
       "bom": true,
       "trust": "rule_validated",
       "evidence": [
-        {"id": "datasheet", "kind": "datasheet", "source": "Microchip", "locator": "https://ww1.microchip.com/downloads/aemDocuments/documents/MCU08/ProductDocuments/DataSheets/ATtiny202-402-DataSheet-DS40002318A.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.9},
+        {"id": "datasheet", "kind": "datasheet", "source": "Microchip", "locator": "https://ww1.microchip.com/downloads/aemDocuments/documents/MCU08/ProductDocuments/DataSheets/ATtiny202-204-402-404-406-DataSheet-DS40002318A.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.9},
         {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "/usr/share/kicad/symbols/MCU_Microchip_ATtiny.kicad_sym + /usr/share/kicad/footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.95}
       ],
       "alternates": []
     },
     {
-      "id": "ti.tmp102bdrlr",
+      "id": "ti.tmp102aidrlr",
       "manufacturer": "Texas Instruments",
-      "mpn": "TMP102BDRLR",
+      "mpn": "TMP102AIDRLR",
       "description": "Low-power digital temperature sensor with I2C/SMBus interface, SOT-563",
       "kind": "temperature_sensor",
       "symbol": "Sensor_Temperature:TMP102xxDRL",
@@ -53,14 +53,14 @@
         {"number": "6", "name": "SDA", "electrical_type": "bidirectional", "functions": ["i2c_sda"], "required": true, "footprint_pad": "6"}
       ],
       "ratings": {"supply_voltage_v": {"min": 1.4, "max": 3.6}, "absolute_max_voltage_v": 4.0, "operating_temperature_c": {"min": -40, "max": 125}},
-      "lifecycle": {"status": "active", "as_of": "2026-08-12", "source": "https://www.ti.com/product/TMP102"},
+      "lifecycle": {"status": "active", "as_of": "2026-08-22", "source": "https://www.ti.com/product/TMP102/part-details/TMP102AIDRLR"},
       "sourcing": {"authorized_sources": ["manufacturer"], "stock_status": "not_checked", "price_status": "not_checked"},
       "manufacturing": {"package": "SOT-563", "assembly": "reflow", "pitch_mm": 0.5, "minimum_pad_gap_mm": 0.15, "courtyard_required": true, "rohs_evidence": "source_required"},
       "models": {"spice": null, "ibis": null, "model_3d": "${KICAD10_3DMODEL_DIR}/Package_TO_SOT_SMD.3dshapes/SOT-563.wrl"},
       "bom": true,
       "trust": "rule_validated",
       "evidence": [
-        {"id": "datasheet", "kind": "datasheet", "source": "Texas Instruments", "locator": "https://www.ti.com/lit/ds/symlink/tmp102.pdf", "acquired_at": "2026-08-12", "method": "maintainer_curated", "confidence": 0.9},
+        {"id": "datasheet", "kind": "datasheet", "source": "Texas Instruments", "locator": "https://www.ti.com/lit/ds/symlink/tmp102.pdf", "acquired_at": "2026-08-22", "method": "maintainer_curated", "confidence": 0.9},
         {"id": "kicad_mapping", "kind": "pin_mapping", "source": "KiCad 10 official libraries", "locator": "/usr/share/kicad/symbols/Sensor_Temperature.kicad_sym + /usr/share/kicad/footprints/Package_TO_SOT_SMD.pretty/SOT-563.kicad_mod", "acquired_at": "2026-08-12", "method": "library_verified", "confidence": 0.95}
       ],
       "alternates": []

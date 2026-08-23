@@ -7,6 +7,7 @@ import argparse
 import json
 import signal
 import threading
+import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,133 @@ from typing import Any, ClassVar
 
 E2E_API_KEY = "pcbdraft-local-e2e-key"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
+
+_HERMES_AGENT_STEPS: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("pcb_create_project", {"name": "Hermes KiCad release smoke"}),
+    (
+        "pcb_add_block",
+        {
+            "value": {
+                "id": "power_entry",
+                "kind": "power_entry",
+                "name": "Power entry",
+                "version": "1",
+                "intent": "Receive the two-wire smoke-test supply.",
+            }
+        },
+    ),
+    (
+        "pcb_add_component",
+        {
+            "value": {
+                "id": "input",
+                "reference": "J1",
+                "part_id": "samtec.tsw-102-07-g-s",
+                "value": "POWER",
+                "block_id": "power_entry",
+            }
+        },
+    ),
+    (
+        "pcb_add_component",
+        {
+            "value": {
+                "id": "bypass",
+                "reference": "C1",
+                "part_id": "murata.grm188r71c104ka01d",
+                "value": "100n",
+                "block_id": "power_entry",
+            }
+        },
+    ),
+    (
+        "pcb_add_net",
+        {
+            "value": {
+                "id": "v3v3",
+                "name": "3V3",
+                "net_class": "power",
+                "power_domain": None,
+                "interface": None,
+                "intent": "External regulated smoke-test supply.",
+            }
+        },
+    ),
+    (
+        "pcb_connect_pin",
+        {
+            "net_id": "v3v3",
+            "component_id": "input",
+            "pin": "1",
+            "role": "source",
+        },
+    ),
+    (
+        "pcb_connect_pin",
+        {
+            "net_id": "v3v3",
+            "component_id": "bypass",
+            "pin": "1",
+            "role": "load",
+        },
+    ),
+    (
+        "pcb_connect_pin",
+        {
+            "net_id": "gnd",
+            "component_id": "bypass",
+            "pin": "2",
+            "role": "return",
+        },
+    ),
+    (
+        "pcb_connect_pin",
+        {
+            "net_id": "gnd",
+            "component_id": "input",
+            "pin": "2",
+            "role": "return",
+        },
+    ),
+    ("pcb_set_board_outline", {"width_mm": 30.0, "height_mm": 20.0}),
+    (
+        "pcb_place_footprint",
+        {
+            "component_id": "input",
+            "x_mm": 10.0,
+            "y_mm": 10.0,
+            "rotation_deg": 0.0,
+            "side": "front",
+        },
+    ),
+    (
+        "pcb_place_footprint",
+        {
+            "component_id": "bypass",
+            "x_mm": 15.0,
+            "y_mm": 10.0,
+            "rotation_deg": 0.0,
+            "side": "front",
+        },
+    ),
+    ("pcb_route_net", {"net_id": "v3v3"}),
+    ("pcb_route_net", {"net_id": "gnd"}),
+    (
+        "pcb_add_via",
+        {
+            "via_id": "gnd_stitch_1",
+            "net_id": "gnd",
+            "x_mm": 13.0,
+            "y_mm": 10.9,
+            "diameter_mm": 0.6,
+            "drill_mm": 0.3,
+            "from_layer": 0,
+            "to_layer": 1,
+        },
+    ),
+    ("pcb_run_erc", {}),
+    ("pcb_run_drc", {}),
+)
 
 
 def _json_after(prompt: str, marker: str) -> Any:
@@ -315,6 +443,100 @@ def _patch(prompt: str) -> dict[str, Any]:
     }
 
 
+def _hermes_agent_message(body: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Return one deterministic decision for the current Hermes conversation."""
+
+    messages = body.get("messages")
+    tools = body.get("tools")
+    if not isinstance(messages, list) or not isinstance(tools, list):
+        raise TypeError("Hermes agent request must contain messages and tools")
+    available = {
+        str(function.get("name"))
+        for item in tools
+        if isinstance(item, dict)
+        and isinstance((function := item.get("function")), dict)
+    }
+    required = {name for name, _arguments in _HERMES_AGENT_STEPS}
+    if not required <= available:
+        raise ValueError(
+            "Hermes request omitted PCBDraft tools: "
+            + ", ".join(sorted(required - available))
+        )
+
+    prior_calls: list[str] = []
+    failed_result = False
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list):
+            for call in tool_calls:
+                if not isinstance(call, dict):
+                    continue
+                function = call.get("function")
+                if isinstance(function, dict) and isinstance(function.get("name"), str):
+                    prior_calls.append(function["name"])
+        if message.get("role") != "tool":
+            continue
+        content = message.get("content")
+        if not isinstance(content, str):
+            continue
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(result, dict) and result.get("success") is False:
+            failed_result = True
+
+    expected_prefix = [name for name, _arguments in _HERMES_AGENT_STEPS]
+    if prior_calls != expected_prefix[: len(prior_calls)]:
+        raise ValueError("Hermes agent replay contains an unexpected PCB tool sequence")
+    if failed_result:
+        return (
+            {
+                "role": "assistant",
+                "content": (
+                    "The Hermes/KiCad smoke stopped because a PCB tool reported "
+                    "failure; the board is incomplete and is not production ready."
+                ),
+            },
+            "stop",
+        )
+    if len(prior_calls) < len(_HERMES_AGENT_STEPS):
+        name, arguments = _HERMES_AGENT_STEPS[len(prior_calls)]
+        return (
+            {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"call-pcbdraft-{len(prior_calls) + 1}",
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": json.dumps(
+                                arguments,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            ),
+                        },
+                    }
+                ],
+            },
+            "tool_calls",
+        )
+    return (
+        {
+            "role": "assistant",
+            "content": (
+                "Hermes/KiCad smoke completed with retained ERC and DRC evidence. "
+                "These checks do not establish production readiness."
+            ),
+        },
+        "stop",
+    )
+
+
 class _ProviderServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
@@ -363,33 +585,51 @@ class _ProviderHandler(BaseHTTPRequestHandler):
             if length < 1 or length > MAX_REQUEST_BYTES:
                 raise ValueError("invalid request length")
             body = json.loads(self.rfile.read(length))
-            schema_name = body["response_format"]["json_schema"]["name"]
-            if schema_name not in self._SCHEMAS:
-                raise ValueError("unexpected response schema")
-            prompt = body["messages"][0]["content"]
-            if schema_name == "pcbdraft_intent":
-                content = _intent(prompt)
-            elif schema_name == "pcbdraft_review":
-                content = _review()
-            elif schema_name == "pcbdraft_patch":
-                content = _patch(prompt)
+            response_format = body.get("response_format")
+            if isinstance(response_format, dict):
+                schema_name = response_format["json_schema"]["name"]
+                if schema_name not in self._SCHEMAS:
+                    raise ValueError("unexpected response schema")
+                prompt = body["messages"][0]["content"]
+                if schema_name == "pcbdraft_intent":
+                    content = _intent(prompt)
+                elif schema_name == "pcbdraft_review":
+                    content = _review()
+                elif schema_name == "pcbdraft_patch":
+                    content = _patch(prompt)
+                else:
+                    content = _plan(
+                        prompt, repaired=schema_name == "pcbdraft_repair_plan"
+                    )
+                message = {"role": "assistant", "content": json.dumps(content)}
+                finish_reason = "stop"
             else:
-                content = _plan(prompt, repaired=schema_name == "pcbdraft_repair_plan")
+                message, finish_reason = _hermes_agent_message(body)
             self.server.request_count += 1
-            self._write(
-                HTTPStatus.OK,
-                {
-                    "id": f"e2e-{self.server.request_count}",
-                    "choices": [
-                        {
-                            "message": {
-                                "role": "assistant",
-                                "content": json.dumps(content),
-                            }
-                        }
-                    ],
+            prompt_tokens = max(1, len(json.dumps(body.get("messages", []))) // 4)
+            completion_tokens = max(1, len(json.dumps(message)) // 4)
+            response = {
+                "id": f"e2e-{self.server.request_count}",
+                "object": "chat.completion",
+                "created": int(time.time()),
+                "model": str(body.get("model") or "pcbdraft-e2e-model"),
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": message,
+                        "finish_reason": finish_reason,
+                    }
+                ],
+                "usage": {
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": prompt_tokens + completion_tokens,
                 },
-            )
+            }
+            if body.get("stream") is True:
+                self._write_stream(response)
+            else:
+                self._write(HTTPStatus.OK, response)
         except LookupError:
             self._write(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -399,6 +639,43 @@ class _ProviderHandler(BaseHTTPRequestHandler):
         payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _write_stream(self, value: dict[str, Any]) -> None:
+        choice = value["choices"][0]
+        delta = dict(choice["message"])
+        tool_calls = delta.get("tool_calls")
+        if isinstance(tool_calls, list):
+            delta["tool_calls"] = [
+                {"index": index, **call}
+                for index, call in enumerate(tool_calls)
+                if isinstance(call, dict)
+            ]
+        chunk = {
+            "id": value["id"],
+            "object": "chat.completion.chunk",
+            "created": value["created"],
+            "model": value["model"],
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": delta,
+                    "finish_reason": choice["finish_reason"],
+                }
+            ],
+            "usage": value["usage"],
+        }
+        payload = (
+            "data: "
+            + json.dumps(chunk, sort_keys=True, separators=(",", ":"))
+            + "\n\ndata: [DONE]\n\n"
+        ).encode()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
         self.send_header("Content-Length", str(len(payload)))
         self.send_header("Connection", "close")
         self.end_headers()

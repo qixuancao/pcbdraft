@@ -75,6 +75,12 @@ input without becoming a second business-logic layer. See
 [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) for placement rules and the
 compatibility policy for historical module paths.
 
+BoardBench follows the same boundary: a thin repository script invokes the
+verification-owned runner, evaluator, evidence importers, correction diff, and
+report/seal APIs. It never becomes a second generator or exposes reference
+contracts as model tools. Its source-hashed evidence lifecycle and physical-test
+limits are documented in [`BOARDBENCH.md`](BOARDBENCH.md).
+
 ## Flat tool protocol
 
 The model sees one layer of concrete `pcb_*` operations exported from the

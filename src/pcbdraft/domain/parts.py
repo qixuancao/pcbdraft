@@ -25,6 +25,11 @@ from pcbdraft.kicad.runtime import kicad_data_directory
 
 PART_CATALOG_SCHEMA = "pcbdraft-part-catalog"
 PART_CATALOG_VERSION = 1
+# Compatibility redirects are historical PCBDraft identity corrections, not
+# claims that the old strings are manufacturer-approved orderable aliases.
+_LEGACY_PART_ID_REDIRECTS = {
+    "ti.tmp102bdrlr": "ti.tmp102aidrlr",
+}
 PART_CATALOG_LIMIT = 32 * 1024 * 1024
 LIBRARY_FILE_LIMIT = 128 * 1024 * 1024
 TRUST_STATES = {
@@ -318,15 +323,21 @@ class PartGraph:
         return cls.load(data_path("parts", "catalog.json"))
 
     def get(self, part_id: str) -> PartRecord:
-        try:
-            return self._parts[part_id]
-        except KeyError as exc:
-            raise ValidationError(f"unknown canonical part id: {part_id}") from exc
+        part = self.get_optional(part_id)
+        if part is None:
+            raise ValidationError(f"unknown canonical part id: {part_id}")
+        return part
 
     def get_optional(self, part_id: str) -> PartRecord | None:
-        """Return one record when present without weakening strict ``get`` calls."""
+        """Return an exact record or a documented legacy identity correction."""
 
-        return self._parts.get(part_id)
+        part = self._parts.get(part_id)
+        if part is not None:
+            return part
+        redirected = _LEGACY_PART_ID_REDIRECTS.get(part_id)
+        if redirected is None:
+            return None
+        return self._parts.get(redirected)
 
     def __len__(self) -> int:
         return len(self._parts)
@@ -453,6 +464,10 @@ class PartGraph:
 
         records = dict(self._parts)
         for part in parts:
+            if part.id in _LEGACY_PART_ID_REDIRECTS:
+                raise ValidationError(
+                    f"part catalog merge cannot register retired legacy part id: {part.id}"
+                )
             existing = records.get(part.id)
             if existing is not None and existing.to_dict() != part.to_dict():
                 raise ValidationError(
@@ -483,12 +498,13 @@ class PartGraph:
                 raise ValidationError(
                     f"component {component.id} has an invalid footprint override"
                 )
-            prior = selected.get(component.part_id)
+            resolved_part_id = self.get(component.part_id).id
+            prior = selected.get(resolved_part_id)
             if prior is not None and prior != footprint:
                 raise ValidationError(
                     "components sharing one part id cannot select different footprints"
                 )
-            selected[component.part_id] = footprint
+            selected[resolved_part_id] = footprint
         if not selected:
             return self
         records = [
@@ -599,7 +615,7 @@ class PartGraph:
         }
         domains = {domain.id: domain for domain in design.power_domains}
         for index, component in enumerate(design.components):
-            part = self._parts.get(component.part_id)
+            part = self.get_optional(component.part_id)
             if part is None:
                 issues.append(
                     IRIssue(
@@ -708,7 +724,7 @@ class PartGraph:
                 endpoint_component = components.get(endpoint.component)
                 if endpoint_component is None:
                     continue
-                endpoint_part = self._parts.get(endpoint_component.part_id)
+                endpoint_part = self.get_optional(endpoint_component.part_id)
                 if endpoint_part is None:
                     continue
                 endpoint_pin = endpoint_part.pin(endpoint.pin)

@@ -21,14 +21,23 @@ not overwrite a valid user configuration.
 ## Verification
 
     scripts/test.sh
-    scripts/benchmark.sh
-    scripts/smoke.sh
+    uv run python -m unittest -v tests.verification.test_benchmark
+    uv run python scripts/boardbench.py --help
     scripts/python-matrix.sh
     scripts/release-check.sh
+
+BoardBench is the natural-language, real-model campaign workflow; it is separate
+from the deterministic fault-injection benchmark above. See
+[`BOARDBENCH.md`](BOARDBENCH.md) for its explicit-path operator lifecycle,
+holdout boundary, evidence counting, and physical-test limits.
 
 `scripts/clean.sh` removes only repository-local `build/`, `dist/`, and
 `src/pcbdraft.egg-info/` products. Release checks call it before and after
 packaging so a stale package from an earlier source layout cannot enter a wheel.
+The release check also clean-installs that wheel, verifies the bundled 90-case
+deterministic corpus, and runs a local fake-provider Hermes one-shot through the
+current flat PCB tools and real KiCad ERC/DRC. Its retained fixture is release
+smoke evidence, not a real-model benchmark result or production attestation.
 The normal test command also enforces security/bugbear lint rules, the current
 complexity ceiling, a typed trust-boundary module set, and at least 70% branch
 coverage. CI verifies that `constraints/runtime.txt` is an exact `uv.lock` export

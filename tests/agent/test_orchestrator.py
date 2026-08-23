@@ -232,9 +232,7 @@ class AgentOrchestratorTests(unittest.TestCase):
 
         self.assertEqual(result["project"]["status"], "draft")
         self.assertIs(stored.status, TurnStatus.COMPLETED)
-        self.assertEqual(
-            stored.stop_reason, "the PCB agent answered conversationally"
-        )
+        self.assertEqual(stored.stop_reason, "the PCB agent answered conversationally")
         self.assertEqual(
             stored.assistant_texts,
             ("I can help. Describe the board you want to build.",),

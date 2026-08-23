@@ -1740,14 +1740,26 @@ class PCBToolRegistry:
         )
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
-    def _handler(self, name: str) -> ToolHandler:
-        """Resolve internal dispatch; call producers receive specs, not handlers."""
+    def _handler(
+        self, name: str, *, allow_legacy_internal: bool = False
+    ) -> ToolHandler:
+        """Resolve dispatch without exporting historical macro operations.
+
+        The legacy handlers support only the retained in-process compatibility
+        runtime.  Ordinary executors remain fail-closed, so Hermes and MCP see
+        and execute only the canonical flat tool surface.
+        """
 
         spec = self.resolve(name)
         if spec.name in self._legacy_specs:
-            raise ValidationError(
-                f"legacy PCB tool {spec.external_name} is audit-only and cannot be replayed"
-            )
+            if not allow_legacy_internal:
+                raise ValidationError(
+                    f"legacy PCB tool {spec.external_name} is audit-only and cannot be replayed"
+                )
+            handler = _LEGACY_TOOL_HANDLERS.get(spec.name)
+            if handler is None:
+                raise ValidationError(f"legacy PCB tool {name} has no local handler")
+            return handler
         handler = _TOOL_HANDLERS.get(spec.name)
         if handler is None:
             raise ValidationError(f"PCB tool {name} has no local handler")
@@ -1799,9 +1811,11 @@ class PCBToolExecutor:
         service: PCBToolServicePort,
         *,
         registry: PCBToolRegistry = DEFAULT_PCB_TOOL_REGISTRY,
+        allow_legacy_internal: bool = False,
     ) -> None:
         self.service = service
         self.registry = registry
+        self.allow_legacy_internal = allow_legacy_internal
 
     def snapshot(self, project_id: str) -> dict[str, Any]:
         """Load the authoritative public view used for a call baseline."""
@@ -1831,6 +1845,12 @@ class PCBToolExecutor:
         ):
             raise ValidationError("PCB tool timeout must be in (0, 1800] seconds")
         spec = self.registry.resolve(call.name)
+        if (
+            self.allow_legacy_internal
+            and spec.name in self.registry._legacy_specs
+            and call.source == "mcp"
+        ):
+            raise ValidationError("MCP cannot dispatch a legacy PCB tool")
         arguments, arguments_hash = self.registry.bind_arguments(
             call.name, call.arguments
         )
@@ -1859,7 +1879,9 @@ class PCBToolExecutor:
             raise ValidationError(
                 f"PCB tool {call.name} is not allowed while project status is {status}"
             )
-        view = self.registry._handler(call.name)(
+        view = self.registry._handler(
+            call.name, allow_legacy_internal=self.allow_legacy_internal
+        )(
             self.service,
             call.project_id,
             arguments,

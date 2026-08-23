@@ -156,18 +156,14 @@ def preview_kicad_import(
         operations.append(
             {
                 "id": f"import_pose_{index:03d}",
-                "op": "update_component",
+                "op": "place_footprint",
                 "args": {
                     "component_id": component.id,
-                    "changes": {
-                        "placement": {
-                            "x_mm": change["after"]["x_mm"],
-                            "y_mm": change["after"]["y_mm"],
-                            "rotation_deg": change["after"]["rotation_deg"],
-                            "side": change["after"]["side"],
-                            "fixed": True,
-                        }
-                    },
+                    "x_mm": change["after"]["x_mm"],
+                    "y_mm": change["after"]["y_mm"],
+                    "rotation_deg": change["after"]["rotation_deg"],
+                    "side": change["after"]["side"],
+                    "fixed": True,
                 },
                 "expected": {"placement": component.placement.to_dict()},
                 "reason": "Import a reviewed native KiCad footprint placement into semantic IR.",

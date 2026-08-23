@@ -54,6 +54,74 @@ class TrustedPartGraphTests(unittest.TestCase):
         self.assertTrue(matches)
         self.assertTrue(all(part.id for part in matches))
 
+    def test_attiny402_ssn_grade_does_not_inherit_ssf_temperature(self) -> None:
+        part = self.graph.get("microchip.attiny402-ssn")
+
+        self.assertEqual(part.mpn, "ATtiny402-SSN")
+        self.assertEqual(part.ratings["supply_voltage_v"], {"min": 1.8, "max": 5.5})
+        self.assertEqual(
+            part.ratings["operating_temperature_c"], {"min": -40, "max": 105}
+        )
+        datasheet = next(item for item in part.evidence if item.id == "datasheet")
+        self.assertEqual(
+            datasheet.locator,
+            "https://ww1.microchip.com/downloads/aemDocuments/documents/MCU08/"
+            "ProductDocuments/DataSheets/"
+            "ATtiny202-204-402-404-406-DataSheet-DS40002318A.pdf",
+        )
+
+    def test_tmp102_uses_verified_orderable_identity_with_legacy_redirect(self) -> None:
+        canonical = self.graph.get("ti.tmp102aidrlr")
+
+        self.assertEqual(canonical.mpn, "TMP102AIDRLR")
+        self.assertEqual(canonical.symbol, "Sensor_Temperature:TMP102xxDRL")
+        self.assertEqual(canonical.footprint, "Package_TO_SOT_SMD:SOT-563")
+        self.assertEqual(
+            {pin.number: pin.name for pin in canonical.pins},
+            {"1": "SCL", "2": "GND", "3": "ALERT", "4": "ADD0", "5": "V+", "6": "SDA"},
+        )
+        self.assertEqual(
+            canonical.ratings["supply_voltage_v"], {"min": 1.4, "max": 3.6}
+        )
+        self.assertEqual(canonical.ratings["absolute_max_voltage_v"], 4.0)
+        resolution = self.graph.resolve_libraries(canonical)
+        self.assertTrue(resolution["symbol"].available, resolution["symbol"].reason)
+        self.assertTrue(
+            resolution["footprint"].available, resolution["footprint"].reason
+        )
+        self.assertEqual(self.graph.get("ti.tmp102bdrlr"), canonical)
+        self.assertNotIn(
+            "ti.tmp102bdrlr",
+            {part.id for part in self.graph.find(kind="temperature_sensor")},
+        )
+        self.assertEqual(self.graph.search("TMP102AIDRLR")[0], canonical)
+        self.assertEqual(self.graph.search("TMP102BDRLR"), [])
+
+        legacy_registration = PartGraph.installed_kicad_part(
+            {
+                "id": "ti.tmp102bdrlr",
+                "kind": "temperature_sensor",
+                "description": "Retired historical identity",
+                "symbol": "Sensor_Temperature:TMP102xxDRL",
+                "footprint": "Package_TO_SOT_SMD:SOT-563",
+                "bom": True,
+                "pins": [
+                    {
+                        "number": pin.number,
+                        "name": pin.name,
+                        "electrical_type": pin.electrical_type,
+                        "functions": list(pin.functions),
+                        "required": pin.required,
+                        "footprint_pad": pin.footprint_pad,
+                    }
+                    for pin in canonical.pins
+                ],
+            },
+            footprint_sha256="a" * 64,
+        )
+        with self.assertRaisesRegex(ValidationError, "retired legacy part id"):
+            self.graph.merged([legacy_registration])
+
     def test_installed_kicad_record_is_strict_and_merge_never_redefines(self) -> None:
         value = {
             "id": "kicad.generic-led-5mm-green",

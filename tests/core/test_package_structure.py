@@ -127,11 +127,9 @@ class PackageStructureTests(unittest.TestCase):
                     violations.append(f"{path.relative_to(package_root)}:{node.lineno}")
         self.assertEqual(violations, [])
 
-    def test_provider_catalog_uses_low_level_contracts_not_model_transport(
-        self,
-    ) -> None:
+    def test_provider_profiles_do_not_depend_on_model_transport(self) -> None:
         package_root = Path(pcbdraft.__file__).resolve().parent
-        config_path = package_root / "model" / "config.py"
+        profiles_path = package_root / "model" / "profiles.py"
         contracts_path = package_root / "model" / "contracts.py"
 
         def imported_modules(path: Path) -> set[str]:
@@ -142,12 +140,11 @@ class PackageStructureTests(unittest.TestCase):
                 if isinstance(node, ast.ImportFrom) and node.module
             }
 
-        config_imports = imported_modules(config_path)
+        profile_imports = imported_modules(profiles_path)
         contracts_imports = imported_modules(contracts_path)
-        self.assertIn("pcbdraft.model.contracts", config_imports)
-        self.assertNotIn("pcbdraft.model.api", config_imports)
+        self.assertNotIn("pcbdraft.model.api", profile_imports)
         self.assertNotIn("pcbdraft.model.api", contracts_imports)
-        self.assertNotIn("pcbdraft.model.config", contracts_imports)
+        self.assertNotIn("pcbdraft.model.profiles", contracts_imports)
 
     def test_canonical_package_import_graph_is_acyclic(self) -> None:
         """Prevent module cycles from re-coupling UI, services, and adapters."""
@@ -222,6 +219,7 @@ class PackageStructureTests(unittest.TestCase):
             {path.name for path in interfaces.glob("*.py")},
             {
                 "__init__.py",
+                "boardbench_worker.py",
                 "cli.py",
                 "commands.py",
                 "hermes_cli.py",

@@ -1572,7 +1572,7 @@ def _function_acceptance(
             "MCU power, ground, I2C, UPDI, and status GPIO contracts are connected.",
         ),
         "temperature_sensor": (
-            "TMP102B supply, address strap, I2C, pull-up, and decoupling rules pass.",
+            "TMP102A supply, address strap, I2C, pull-up, and decoupling rules pass.",
         ),
         "environmental_sensor": (
             "BME280 supply, four-wire SPI, chip-select bias, and decoupling rules pass.",

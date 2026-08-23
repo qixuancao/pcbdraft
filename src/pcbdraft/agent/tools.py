@@ -141,7 +141,7 @@ def run_design_turn(
     authority.
     """
 
-    executor = PCBToolExecutor(service)
+    executor = PCBToolExecutor(service, allow_legacy_internal=True)
     gateway = PCBToolGateway(executor, permissions or PermissionBroker("workspace"))
     policy = DeterministicRuntimePolicy(project_id)
     view = _initial_view(service, executor, project_id)

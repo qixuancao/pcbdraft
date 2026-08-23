@@ -417,8 +417,8 @@ def _tmp102_sensor(definition: BlockDefinition) -> BlockInstance:
         _component(
             "sensor_u2",
             "U2",
-            "ti.tmp102bdrlr",
-            "TMP102B",
+            "ti.tmp102aidrlr",
+            "TMP102AIDRLR",
             definition.id,
             (31, 15),
             attributes={"allow_unconnected_pins": ["3"]},

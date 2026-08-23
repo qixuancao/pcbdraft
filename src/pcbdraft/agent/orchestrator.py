@@ -77,7 +77,11 @@ class AgentOrchestrator:
 
             producer = ConfiguredPCBCallProducer(service, registry=registry)
         self.producer = producer
-        self.executor = PCBToolExecutor(service, registry=registry)
+        self.executor = PCBToolExecutor(
+            service,
+            registry=registry,
+            allow_legacy_internal=True,
+        )
 
     def store(self, project_id: str, *, lock_timeout: float = 10.0) -> AgentTurnStore:
         """Return the project-scoped durable turn store."""

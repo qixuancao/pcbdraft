@@ -450,11 +450,18 @@ def _repair(
         introduced = sorted(
             {finding.code for finding in after} - {finding.code for finding in before}
         )
-        success = repaired.canonical_bytes() == base.canonical_bytes() and not after
+        exact_fixture_restore = repaired.canonical_bytes() == base.canonical_bytes()
+        # Placement repairs now use the canonical place_footprint operation,
+        # which also normalizes native-intent pose evidence and increments its
+        # geometry revision.  That bookkeeping can make the repaired document
+        # intentionally differ byte-for-byte from the older clean fixture even
+        # though the injected fault is gone and no rule regression remains.
+        success = not after
         return {
             "eligible": True,
             "attempted": True,
             "success": success,
+            "exact_fixture_restore": exact_fixture_restore,
             "introduced_regressions": introduced,
             "change_set_hash": change_set.content_hash(),
             "repaired_design_hash": repaired.content_hash(),
@@ -486,12 +493,23 @@ def _repair_change_set(case: CorpusCase, base: Design, faulty: Design) -> Change
             "op": "connect",
             "args": {"net_id": base_net.id, "endpoint": endpoint.to_dict()},
         }
-    elif op in {"component_part", "component_placement", "component_reference"}:
+    elif op == "component_placement":
+        component_id = injection["component_id"]
+        component = next(item for item in base.components if item.id == component_id)
+        placement = component.placement
+        if placement is None:
+            raise ValidationError(
+                f"benchmark placement repair has no baseline pose: {case.id}"
+            )
+        operation = {
+            "op": "place_footprint",
+            "args": {"component_id": component_id, **placement.to_dict()},
+        }
+    elif op in {"component_part", "component_reference"}:
         component_id = injection["component_id"]
         component = next(item for item in base.components if item.id == component_id)
         field = {
             "component_part": "part_id",
-            "component_placement": "placement",
             "component_reference": "reference",
         }[op]
         value = component.to_dict()[field]
