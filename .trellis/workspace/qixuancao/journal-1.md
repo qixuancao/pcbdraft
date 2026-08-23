@@ -113,3 +113,24 @@ Implemented and verified the end-to-end BoardBench evidence workflow; retained a
 ### Status
 
 [OK] **Completed**
+
+
+## Session 6: Localize BoardBench evaluation artifacts
+
+**Date**: 2026-08-23
+**Task**: Localize BoardBench evaluation artifacts
+**Branch**: `main`
+
+### Summary
+
+Copied existing BoardBench campaigns, private inputs, and reports into the ignored artifacts/boardbench-local/ tree. Source inventories matched, JSON samples parsed, and no evaluation artifact was staged or pushed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `none` | (see git log) |
+
+### Status
+
+[OK] **Completed**
