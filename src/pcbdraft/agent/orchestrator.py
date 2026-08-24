@@ -42,6 +42,7 @@ from pcbdraft.agent.turns import (
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import new_run_id
+from pcbdraft.services.progress import ProcessStatus
 
 __all__ = (
     "DEFAULT_THREAD_ID",
@@ -178,6 +179,70 @@ class AgentOrchestrator:
         )
 
     def run_turn(
+        self,
+        project_id: str,
+        turn_id: str,
+        *,
+        timeout: float,
+        cancellation_requested: Callable[[], bool],
+    ) -> dict[str, Any]:
+        """Run a durable turn and separately persist its PCB product outcome."""
+
+        try:
+            view = self._run_turn(
+                project_id,
+                turn_id,
+                timeout=timeout,
+                cancellation_requested=cancellation_requested,
+            )
+        except BaseException as exc:
+            text = sanitize_user_text(str(exc)).lower()
+            timed_out = "timeout" in text or "timed out" in text
+            expected_failure = isinstance(exc, PCBDraftError)
+            try:
+                failed_record = self.store(project_id).load(turn_id)
+            except PCBDraftError:
+                failed_record = None
+            reason = (
+                "timed_out"
+                if timed_out
+                else self._turn_termination_reason(failed_record)
+                if expected_failure and failed_record is not None
+                else "tool_failure"
+                if expected_failure
+                else "crashed"
+            )
+            self._record_product_terminal(
+                project_id,
+                turn_id,
+                ProcessStatus.TIMED_OUT
+                if timed_out
+                else ProcessStatus.EXITED
+                if expected_failure
+                else ProcessStatus.CRASHED,
+                reason,
+                suppress_failure=True,
+            )
+            raise
+        record = self.store(project_id).load(turn_id)
+        if record.status is TurnStatus.COMPLETED:
+            self._record_product_terminal(
+                project_id, turn_id, ProcessStatus.EXITED, None
+            )
+        elif record.status is TurnStatus.CANCELLED:
+            self._record_product_terminal(
+                project_id, turn_id, ProcessStatus.CANCELLED, "cancelled"
+            )
+        elif record.status in {TurnStatus.FAILED, TurnStatus.INTERRUPTED}:
+            self._record_product_terminal(
+                project_id,
+                turn_id,
+                ProcessStatus.EXITED,
+                self._turn_termination_reason(record),
+            )
+        return view
+
+    def _run_turn(
         self,
         project_id: str,
         turn_id: str,
@@ -367,6 +432,49 @@ class AgentOrchestrator:
             error=error,
         )
         raise PCBDraftError(error)
+
+    def _record_product_terminal(
+        self,
+        project_id: str,
+        turn_id: str,
+        process_status: ProcessStatus,
+        termination_reason: str | None,
+        *,
+        suppress_failure: bool = False,
+    ) -> None:
+        recorder = getattr(self.service, "record_product_session_terminal", None)
+        if not callable(recorder):
+            return
+        try:
+            record = self.store(project_id).load(turn_id)
+            recorder(
+                project_id,
+                # A retry resumes the same durable turn but is a new product
+                # execution boundary. Bind the terminal receipt to the exact
+                # durable record state so a recoverable failed invocation does
+                # not make a later successful retry collide with an immutable
+                # receipt for the earlier attempt.
+                session_id=f"durable-{record.thread_id}-r{record.record_revision}",
+                turn_id=turn_id,
+                process_status=process_status,
+                termination_reason=termination_reason,
+            )
+        except BaseException:
+            if not suppress_failure:
+                raise
+
+    @staticmethod
+    def _turn_termination_reason(record: TurnRecord) -> str:
+        """Map a durable turn stop to PCB task semantics, not process health."""
+
+        stop_reason = (record.stop_reason or "").lower()
+        if "bounded tool-call limit" in stop_reason:
+            return "budget_exhausted:pcb_tool_calls"
+        if "no progress" in stop_reason:
+            return "no_progress"
+        if "strategy" in stop_reason or "human intervention" in stop_reason:
+            return "human_intervention_required"
+        return "tool_failure"
 
     def resolve_pending_approval(
         self,

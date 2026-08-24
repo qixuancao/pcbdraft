@@ -43,8 +43,15 @@ from pcbdraft.verification.boardbench import (
     build_inventory,
     load_campaign,
     load_run,
-    store_run,
     write_artifact,
+)
+from pcbdraft.verification.boardbench_v2 import (
+    load_run_v2,
+    planned_run_v2,
+    start_run_v2,
+    store_run_v2,
+    terminal_run_v2,
+    validate_campaign_denominator,
 )
 
 DEFAULT_WALL_TIMEOUT_SECONDS = 3600.0
@@ -200,19 +207,10 @@ def _secret_free_configuration(
 
 
 def _effective_tool_call_budget(configuration: Mapping[str, object]) -> int:
-    agent_configuration = configuration.get("agent")
-    agent = agent_configuration if isinstance(agent_configuration, dict) else {}
-    budget_value = agent.get("max_turns", configuration.get("max_turns"))
-    tool_call_budget = (
-        DEFAULT_TOOL_CALL_BUDGET if budget_value is None else budget_value
-    )
-    if (
-        isinstance(tool_call_budget, bool)
-        or not isinstance(tool_call_budget, int)
-        or not 1 <= tool_call_budget <= 100_000
-    ):
-        raise ValidationError("Hermes agent.max_turns is invalid for BoardBench")
-    return tool_call_budget
+    """Return the fixed PCB-tool budget, never Hermes' model-turn limit."""
+
+    del configuration
+    return DEFAULT_TOOL_CALL_BUDGET
 
 
 def _update_digest_frame(digest: _DigestWriter, label: bytes, payload: bytes) -> None:
@@ -421,6 +419,9 @@ def plan_campaign(
 ) -> BoardBenchCampaign:
     """Freeze a deterministic 20-by-3 campaign against one default model."""
 
+    if environment.tool_call_budget != DEFAULT_TOOL_CALL_BUDGET:
+        raise ValidationError("BoardBench PCB tool-call budget must be fixed at 500")
+
     plans = tuple(
         CampaignRunPlan(
             case_id=case.id,
@@ -564,7 +565,7 @@ def initialize_run_receipts(
             continue
         if any(run_root.iterdir()):
             raise ValidationError("unrecorded BoardBench run evidence already exists")
-        store_run(receipt_path, expected)
+        store_run_v2(receipt_path, planned_run_v2(expected, campaign))
         receipts.append(expected)
     return tuple(receipts)
 
@@ -621,10 +622,14 @@ def _trace_summary(trace_root: Path) -> _TraceSummary:
                 continue
             try:
                 event = json.loads(line)
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, RecursionError):
                 malformed = True
                 continue
-            if not isinstance(event, dict) or not isinstance(event.get("seq"), int):
+            if (
+                not isinstance(event, dict)
+                or isinstance(event.get("seq"), bool)
+                or not isinstance(event.get("seq"), int)
+            ):
                 malformed = True
                 continue
             sequences.append(int(event["seq"]))
@@ -697,32 +702,38 @@ def _retained_project_count(repository: Path) -> int:
 
 
 def _terminal_receipt(
+    campaign: BoardBenchCampaign,
     receipt: BoardBenchRun,
     artifacts: Path,
     *,
     status: str,
     reason: str,
     final_response: str | None,
+    result: process.CommandResult | None = None,
 ) -> BoardBenchRun:
     privatize_tree(artifacts)
-    terminal = BoardBenchRun(
-        campaign_id=receipt.campaign_id,
-        run_id=receipt.run_id,
-        case_id=receipt.case_id,
-        repetition=receipt.repetition,
-        prompt_sha256=receipt.prompt_sha256,
-        status=status,
-        started_at=receipt.started_at,
+    terminal = terminal_run_v2(
+        receipt,
+        campaign,
+        artifacts,
         completed_at=utc_timestamp(),
-        termination_reason=reason,
+        fallback_status=status,
+        fallback_reason=reason,
         final_response=final_response,
+        duration_seconds=result.duration_seconds if result is not None else None,
+        worker_exit_code=result.returncode if result is not None else None,
         inventory=build_inventory(artifacts),
     )
-    store_run(artifacts.parent / RUN_RECEIPT_NAME, terminal)
-    return terminal
+    store_run_v2(artifacts.parent / RUN_RECEIPT_NAME, terminal)
+    return terminal.to_legacy()
 
 
-def _recover_running(receipt: BoardBenchRun, run_root: Path) -> BoardBenchRun:
+def _recover_running(
+    campaign: BoardBenchCampaign, receipt: BoardBenchRun, run_root: Path
+) -> BoardBenchRun:
+    # Historical v1 receipts are compatibility-read-only.  Reject before
+    # creating recovery evidence anywhere in their run directory.
+    load_run_v2(run_root / RUN_RECEIPT_NAME)
     artifacts = make_directory(run_root / ARTIFACTS_DIRECTORY)
     _failure_artifact(
         artifacts,
@@ -731,6 +742,7 @@ def _recover_running(receipt: BoardBenchRun, run_root: Path) -> BoardBenchRun:
         result=None,
     )
     return _terminal_receipt(
+        campaign,
         receipt,
         artifacts,
         status="interrupted",
@@ -775,7 +787,11 @@ def _execute_planned(
         final_response=None,
         inventory=(),
     )
-    store_run(run_root / RUN_RECEIPT_NAME, running)
+    current_v2 = load_run_v2(run_root / RUN_RECEIPT_NAME)
+    store_run_v2(
+        run_root / RUN_RECEIPT_NAME,
+        start_run_v2(current_v2, running.started_at or utc_timestamp()),
+    )
     artifacts = make_directory(run_root / ARTIFACTS_DIRECTORY)
     request_path = artifacts / "request.json"
     atomic_write_json(
@@ -804,6 +820,7 @@ def _execute_planned(
             result=None,
         )
         return _terminal_receipt(
+            campaign,
             running,
             artifacts,
             status="failed",
@@ -818,6 +835,7 @@ def _execute_planned(
             result=None,
         )
         return _terminal_receipt(
+            campaign,
             running,
             artifacts,
             status="configuration_drift",
@@ -839,6 +857,8 @@ def _execute_planned(
         str(trace_path),
         "--usage",
         str(usage_path),
+        "--pcb-tool-call-limit",
+        str(campaign.tool_call_budget),
     ]
     result: process.CommandResult | None = None
     interrupted = False
@@ -954,11 +974,13 @@ def _execute_planned(
     if status != "completed":
         _failure_artifact(artifacts, status=status, reason=reason, result=result)
     terminal = _terminal_receipt(
+        campaign,
         running,
         artifacts,
         status=status,
         reason=reason,
         final_response=final_response,
+        result=result,
     )
     if interrupted:
         raise KeyboardInterrupt
@@ -1055,7 +1077,7 @@ def run_campaign(
             results.append(receipt)
             continue
         if receipt.status == "running":
-            results.append(_recover_running(receipt, run_root))
+            results.append(_recover_running(campaign, receipt, run_root))
             continue
         results.append(
             _execute_planned(
@@ -1071,4 +1093,5 @@ def run_campaign(
                 fixture_label=fixture_label,
             )
         )
+    validate_campaign_denominator(campaign, results)
     return tuple(results)

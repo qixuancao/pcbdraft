@@ -1,0 +1,7 @@
+{"file":".trellis/spec/backend/flat-pcb-toolbox.md","reason":"检查实现没有复制工具注册表、绕过 managed project 或削弱 closed-toolbox 边界。"}
+{"file":".trellis/spec/backend/boardbench-contract.md","reason":"检查旧 evidence 不可变、run 分母、真实模型入口和版本化报告。"}
+{"file":".trellis/spec/backend/error-handling.md","reason":"检查 postcondition、发布和回滚失败均 fail closed 且错误可聚合。"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"检查针对性测试、lint/type-check 范围和回归质量。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 IR、原生 KiCad、Agent receipt、runner 与 evaluator 的端到端数据流。"}
+{"file":".trellis/tasks/archive/2026-08/08-21-end-to-end-boardbench/research/current-state.md","reason":"对照当前代码能力与已知缺口，防止把已有 staging/rollback 重复实现。"}
+{"file":".trellis/tasks/archive/2026-08/08-21-end-to-end-boardbench/verification.md","reason":"以既有 60-run 证据核对指标、风险和事实性结论。"}

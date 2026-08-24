@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import statistics
 import sys
 import types
 import unittest
@@ -10,7 +12,9 @@ from pcbdraft.agent.hermes_tools import (
     _execute_tool,
     _handler,
     _set_service,
+    model_tool_projection,
     register_all_pcb_tools,
+    reset_session_project_context,
     set_current_project_id,
 )
 from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY
@@ -25,7 +29,11 @@ def _view(project_id: str) -> dict[str, Any]:
             "status": "generated",
             "design_revision": 1,
         },
-        "state": {"revision": 1},
+        "state": {"revision": 1, "design_revision": 1},
+        "design": {
+            "root": f"/tmp/private/{project_id}/design",
+            "files": {"board": f"/tmp/private/{project_id}/board.kicad_pcb"},
+        },
         "artifacts": {},
         "conversation": {},
         "events": [],
@@ -36,6 +44,19 @@ class FakePCBService:
     def __init__(self) -> None:
         self.created = 0
         self.calls: list[tuple[Any, ...]] = []
+        self.stage = "routing"
+        self.next_tool_result: dict[str, Any] | None = None
+
+    def inspect_engineering_stage(self, project_id: str) -> dict[str, Any]:
+        return {
+            "project_id": project_id,
+            "live_revision": 1,
+            "design_revision": 1,
+            "evidence_source": "validation-run:none",
+            "stage": self.stage,
+            "release_gate_passed": self.stage == "release_gate",
+            "blockers": [],
+        }
 
     def inspect_installed_library(
         self, tool_name: str, arguments: dict[str, Any]
@@ -62,7 +83,10 @@ class FakePCBService:
         expected_revision: int,
     ) -> dict[str, Any]:
         self.calls.append(("execute", project_id, tool_name, arguments))
-        return _view(project_id)
+        view = _view(project_id)
+        if self.next_tool_result is not None:
+            view["tool_result"] = self.next_tool_result
+        return view
 
 
 class HermesToolRegistrationTests(unittest.TestCase):
@@ -149,6 +173,305 @@ class HermesToolRegistrationTests(unittest.TestCase):
         set_current_project_id("trusted-project-a")
         switched = _execute_tool(inspect, {}, session_id="session-b")
         self.assertEqual(switched["project_id"], "trusted-project-a")
+
+    def test_first_binding_details_are_isolated_per_session_and_project(self) -> None:
+        service = FakePCBService()
+        _set_service(service)
+        set_current_project_id("trusted-project-a")
+        inspect = DEFAULT_PCB_TOOL_REGISTRY.resolve("inspect_project")
+
+        first_a = _execute_tool(inspect, {}, session_id="session-a")
+        repeated_a = _execute_tool(inspect, {}, session_id="session-a")
+        first_b = _execute_tool(inspect, {}, session_id="session-b")
+        self.assertIn("binding", first_a)
+        self.assertNotIn("binding", repeated_a)
+        self.assertIn("binding", first_b)
+
+        reset_session_project_context("session-a")
+        rebound_a = _execute_tool(inspect, {}, session_id="session-a")
+        self.assertIn("binding", rebound_a)
+
+        set_current_project_id("trusted-project-b")
+        switched_a = _execute_tool(inspect, {}, session_id="session-a")
+        encoded = json.dumps(switched_a, ensure_ascii=False)
+        self.assertIn("binding", switched_a)
+        self.assertEqual(switched_a["project_id"], "trusted-project-b")
+        self.assertNotIn("trusted-project-a", encoded)
+
+    def test_normal_write_receipts_are_compact_and_binding_paths_do_not_repeat(
+        self,
+    ) -> None:
+        service = FakePCBService()
+        service.next_tool_result = {
+            "operation": "route_net",
+            "transaction_id": "20260823T120000Z-1234abcd",
+            "changed": {"routes_added": 1, "components_changed": 0},
+            "consistency_passed": True,
+            "postconditions": [
+                {"name": "native_consistency", "passed": True},
+                {"name": "native_endpoint_connectivity", "passed": True},
+            ],
+            "progress_before": {"raw": "x" * 4_000},
+            "progress_delta": {
+                "classification": "improved",
+                "decisive_metric": "unresolved_connection_count",
+                "metrics": [
+                    {
+                        "name": "unresolved_connection_count",
+                        "delta": -1,
+                        "before": {"value": 2},
+                        "after": {"value": 1},
+                    }
+                ],
+            },
+            "convergence": {"allowed": True, "action": "continue", "reason": None},
+            "files": {"board": "/tmp/private/should-not-repeat.kicad_pcb"},
+            "events": [{"message": "do not repeat"}],
+        }
+        _set_service(service)
+        set_current_project_id("trusted-project-a")
+        route = DEFAULT_PCB_TOOL_REGISTRY.resolve("route_net")
+
+        summaries = [
+            _execute_tool(
+                route,
+                {"net_id": "net_scl"},
+                session_id="session-compact",
+            )
+            for _index in range(5)
+        ]
+
+        encoded = [
+            json.dumps(item, ensure_ascii=False, separators=(",", ":"))
+            for item in summaries
+        ]
+        self.assertLessEqual(
+            statistics.median(len(item.encode()) for item in encoded), 1_024
+        )
+        self.assertIn("binding", summaries[0])
+        self.assertNotIn("binding", summaries[1])
+        for item in encoded[1:]:
+            self.assertNotIn("/tmp/private", item)
+            self.assertNotIn('"files"', item)
+            self.assertNotIn('"events"', item)
+            self.assertNotIn("progress_before", item)
+        self.assertEqual(summaries[-1]["stage"], "routing")
+        self.assertEqual(
+            summaries[-1]["artifact_id"],
+            "transaction:20260823T120000Z-1234abcd",
+        )
+
+    def test_representative_model_receipts_stay_below_the_normal_byte_target(
+        self,
+    ) -> None:
+        service = FakePCBService()
+        _set_service(service)
+        set_current_project_id("trusted-project-a")
+        permission = patch("pcbdraft.agent.hermes_tools._permission_mode", "workspace")
+        permission.start()
+        self.addCleanup(permission.stop)
+        session_id = "session-representative-receipts"
+        cases = (
+            (
+                "route_net",
+                {"net_id": "net_scl"},
+                {
+                    "operation": "route_net",
+                    "transaction_id": "20260823T120000Z-1234abcd",
+                    "changed": {"routes_added": 1},
+                    "consistency_passed": True,
+                    "postconditions": [],
+                    "progress_delta": {
+                        "classification": "improved",
+                        "decisive_metric": "unresolved_connection_count",
+                        "metrics": [
+                            {
+                                "name": "unresolved_connection_count",
+                                "delta": -1,
+                            }
+                        ],
+                    },
+                },
+            ),
+            (
+                "connect_group",
+                {
+                    "connections": {
+                        "entries": [
+                            {
+                                "net_id": "net_scl",
+                                "component_id": "sensor",
+                                "pin": "1",
+                                "role": "signal",
+                            }
+                        ]
+                    }
+                },
+                {
+                    "operation": "connect_group",
+                    "transaction_id": "20260823T120001Z-1234abcd",
+                    "changed": {"connections_added": 1},
+                    "consistency_passed": True,
+                    "postconditions": [],
+                },
+            ),
+            (
+                "inspect_project",
+                {},
+                {"inspection": "project"},
+            ),
+            (
+                "inspect_transaction",
+                {"artifact_id": "transaction:20260823T120000Z-1234abcd"},
+                {
+                    "artifact_id": "transaction:20260823T120000Z-1234abcd",
+                    "detail": {
+                        "status": "failed",
+                        "operation": "route_net",
+                        "error_code": "native_connectivity_failed",
+                    },
+                },
+            ),
+            (
+                "run_drc",
+                {},
+                {
+                    "operation": "run_drc",
+                    "state": "failed",
+                    "outcome": "fail",
+                    "production_ready": False,
+                },
+            ),
+        )
+        encoded: list[str] = []
+        for name, arguments, tool_result in cases:
+            service.next_tool_result = tool_result
+            summary = _execute_tool(
+                DEFAULT_PCB_TOOL_REGISTRY.resolve(name),
+                arguments,
+                session_id=session_id,
+            )
+            encoded.append(
+                json.dumps(summary, ensure_ascii=False, separators=(",", ":"))
+            )
+
+        failure = PCBDraftError("/tmp/private/raw-diagnostic " + "x" * 4_000)
+        failure.error_code = "native_connectivity_failed"  # type: ignore[attr-defined]
+        failure.transaction_id = (  # type: ignore[attr-defined]
+            "20260823T120002Z-1234abcd"
+        )
+        with patch.object(service, "execute_pcb_tool", side_effect=failure):
+            encoded.append(
+                _handler(DEFAULT_PCB_TOOL_REGISTRY.resolve("route_net"))(
+                    {"net_id": "net_scl"}, session_id=session_id
+                )
+            )
+
+        sizes = [len(item.encode("utf-8")) for item in encoded]
+        self.assertLessEqual(statistics.median(sizes), 1_024)
+        self.assertLessEqual(max(sizes), 1_024)
+        for item in encoded[1:]:
+            self.assertNotIn("/tmp/private", item)
+            self.assertNotIn('"files"', item)
+            self.assertNotIn('"events"', item)
+            self.assertNotIn('"snapshot"', item)
+
+    def test_stage_cache_is_bound_to_revisions_and_evidence_source(self) -> None:
+        class RevisingService(FakePCBService):
+            def __init__(self) -> None:
+                super().__init__()
+                self.live_revision = 3
+                self.design_revision = 2
+                self.stage_calls = 0
+                self.evidence_source = "validation-run:none"
+
+            def open_project(self, project_id: str) -> dict[str, Any]:
+                view = _view(project_id)
+                view["state"]["revision"] = self.live_revision
+                view["state"]["design_revision"] = self.design_revision
+                view["project"]["design_revision"] = self.design_revision
+                return view
+
+            def inspect_engineering_stage(self, project_id: str) -> dict[str, Any]:
+                self.stage_calls += 1
+                return {
+                    "project_id": project_id,
+                    "live_revision": self.live_revision,
+                    "design_revision": self.design_revision,
+                    "evidence_source": self.evidence_source,
+                    "stage": self.stage,
+                    "release_gate_passed": False,
+                    "blockers": [],
+                }
+
+        service = RevisingService()
+        _set_service(service)
+        set_current_project_id("trusted-project-a")
+
+        first = model_tool_projection("session-revision")
+        repeated = model_tool_projection("session-revision")
+        self.assertEqual(first.stage, "routing")
+        self.assertEqual(repeated.stage, "routing")
+        self.assertEqual(service.stage_calls, 2)
+
+        service.evidence_source = "validation-run:20260823T120000Z-1234abcd"
+        service.stage = "erc_drc"
+        evidence_source_changed = model_tool_projection("session-revision")
+        self.assertEqual(evidence_source_changed.stage, "erc_drc")
+        self.assertEqual(service.stage_calls, 3)
+
+        service.live_revision += 1
+        service.stage = "native_connectivity_confirmed"
+        evidence_changed = model_tool_projection("session-revision")
+        self.assertEqual(evidence_changed.stage, "native_connectivity_confirmed")
+        self.assertEqual(service.stage_calls, 4)
+
+        service.design_revision += 1
+        service.stage = "placement"
+        design_changed = model_tool_projection("session-revision")
+        self.assertEqual(design_changed.stage, "placement")
+        self.assertEqual(service.stage_calls, 5)
+
+        service.evidence_source = "validation-run:20260823T120001Z-1234abcd"
+        service.stage = "release_gate"
+        release = model_tool_projection("session-revision")
+        self.assertEqual(release.stage, "release_gate")
+        self.assertIn("export_gerbers", {spec.name for spec in release.specs})
+
+        service.evidence_source = "validation-run:20260823T120002Z-1234abcd"
+        service.stage = "routing"
+        no_longer_release = model_tool_projection("session-revision")
+        self.assertEqual(no_longer_release.stage, "routing")
+        self.assertNotIn(
+            "export_gerbers", {spec.name for spec in no_longer_release.specs}
+        )
+
+    def test_failed_write_exposes_only_its_opaque_transaction_identity(self) -> None:
+        service = FakePCBService()
+        failure = PCBDraftError("native connectivity remains unresolved")
+        failure.error_code = "native_connectivity_failed"  # type: ignore[attr-defined]
+        failure.transaction_id = (  # type: ignore[attr-defined]
+            "20260823T120000Z-1234abcd"
+        )
+        _set_service(service)
+        set_current_project_id("trusted-project-a")
+        route = DEFAULT_PCB_TOOL_REGISTRY.resolve("route_net")
+
+        with patch.object(service, "execute_pcb_tool", side_effect=failure):
+            result = json.loads(
+                _handler(route)(
+                    {"net_id": "net_scl"},
+                    session_id="session-failed-receipt",
+                )
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error_code"], "native_connectivity_failed")
+        self.assertEqual(
+            result["artifact_id"],
+            "transaction:20260823T120000Z-1234abcd",
+        )
+        self.assertNotIn("/", result["artifact_id"])
 
 
 if __name__ == "__main__":

@@ -115,12 +115,25 @@ def _load_job(path):
     _strict(
         job,
         {"schema", "version", "mode", "design_id"},
-        {"components", "board", "nets", "segments", "vias", "title", "board_path"},
+        {
+            "components",
+            "board",
+            "nets",
+            "segments",
+            "vias",
+            "title",
+            "board_path",
+            "include_connectivity",
+        },
     )
     if job["schema"] != "pcbdraft-pcbnew-job" or job["version"] != 1:
         raise ValueError("unsupported pcbnew worker job")
     if job["mode"] not in {"inspect", "inspect_board", "build"}:
         raise ValueError("unsupported pcbnew worker mode")
+    if "include_connectivity" in job and not isinstance(
+        job["include_connectivity"], bool
+    ):
+        raise TypeError("include_connectivity must be boolean")
     _text(job["design_id"], "design_id", 128)
     return job
 
@@ -324,6 +337,11 @@ def inspect_job(job):
     if isinstance(layers, bool) or not isinstance(layers, int):
         raise TypeError("board.layers must be an integer")
     actual_layers = _actual_layers(layers)
+    # KiCad 10 requires a board-owned footprint before ``Flip`` can resolve
+    # its copper-layer enum.  Flipping a detached library footprint aborts the
+    # worker process instead of raising a catchable Python exception.
+    probe_board = pcbnew.BOARD()
+    probe_board.SetCopperLayerCount(layers)
     output = []
     ids = set()
     for component in components:
@@ -335,11 +353,12 @@ def inspect_job(job):
         rotation = _number(entry["rotation_deg"], "rotation_deg") % 360
         footprint = _load_footprint(entry["footprint"])
         footprint.SetPosition(pcbnew.VECTOR2I(0, 0))
-        footprint.SetOrientationDegrees(rotation)
+        probe_board.Add(footprint)
         if entry["side"] not in {"front", "back"}:
             raise ValueError("component.side must be front or back")
         if entry["side"] == "back":
             footprint.Flip(footprint.GetPosition(), False)
+        footprint.SetOrientationDegrees(rotation)
         bbox = footprint.GetBoundingBox(False, False)
         pads = []
         for index, pad in enumerate(footprint.Pads()):
@@ -393,6 +412,19 @@ def inspect_board_job(job):
     board = pcbnew.LoadBoard(str(path))
     if board is None:
         raise ValueError("pcbnew could not load the board")
+    actual_layers = _actual_layers(board.GetCopperLayerCount())
+    logical_layer = {layer: index for index, layer in enumerate(actual_layers)}
+    include_connectivity = bool(job.get("include_connectivity", False))
+    connectivity = _inspect_board_connectivity(board) if include_connectivity else None
+    connectivity_by_pad = (
+        {
+            (pad["reference"], pad["number"]): component["id"]
+            for component in connectivity["components"]
+            for pad in component["pads"]
+        }
+        if connectivity is not None
+        else {}
+    )
     components = []
     for footprint in board.GetFootprints():
         properties = {
@@ -401,13 +433,32 @@ def inspect_board_job(job):
             if field.GetName()
             not in {"Reference", "Value", "Datasheet", "Description", "KiLib_Generator"}
         }
-        pads = sorted(
-            (
-                {"number": str(pad.GetNumber()), "net": str(pad.GetNetname())}
-                for pad in footprint.Pads()
-            ),
-            key=lambda item: item["number"],
-        )
+        pads = []
+        for pad in footprint.Pads():
+            number = str(pad.GetNumber())
+            pad_row: dict[str, object] = {
+                "number": number,
+                "net": str(pad.GetNetname()),
+            }
+            if include_connectivity:
+                position = pad.GetPosition()
+                pad_row.update(
+                    {
+                        "x_mm": _mm(position.x),
+                        "y_mm": _mm(position.y),
+                        "layers": [
+                            str(board.GetLayerName(layer))
+                            for layer in actual_layers
+                            if pad.IsOnLayer(layer)
+                        ],
+                        "no_connect": bool(pad.IsNoConnectPad()),
+                        "connectivity_component": connectivity_by_pad[
+                            (str(footprint.GetReference()), number)
+                        ],
+                    }
+                )
+            pads.append(pad_row)
+        pads.sort(key=lambda item: str(item["number"]))
         components.append(
             {
                 "reference": str(footprint.GetReference()),
@@ -427,6 +478,8 @@ def inspect_board_job(job):
     tracks = []
     for item in board.Tracks():
         if isinstance(item, pcbnew.PCB_VIA):
+            start_layer = item.TopLayer()
+            stop_layer = item.BottomLayer()
             tracks.append(
                 {
                     "kind": "via",
@@ -435,6 +488,8 @@ def inspect_board_job(job):
                     "y_mm": _mm(item.GetPosition().y),
                     "width_mm": _mm(item.GetWidth()),
                     "drill_mm": _mm(item.GetDrillValue()),
+                    "from_layer": logical_layer[start_layer],
+                    "to_layer": logical_layer[stop_layer],
                 }
             )
         elif isinstance(item, pcbnew.PCB_TRACK):
@@ -448,6 +503,7 @@ def inspect_board_job(job):
                     "y2_mm": _mm(item.GetEnd().y),
                     "width_mm": _mm(item.GetWidth()),
                     "layer": str(board.GetLayerName(item.GetLayer())),
+                    "layer_index": logical_layer[item.GetLayer()],
                 }
             )
         else:
@@ -472,15 +528,39 @@ def inspect_board_job(job):
                 ),
             }
         )
+    outline = []
+    for drawing in board.GetDrawings():
+        if drawing.GetLayer() != pcbnew.Edge_Cuts:
+            continue
+        if (
+            not isinstance(drawing, pcbnew.PCB_SHAPE)
+            or drawing.GetShape() != pcbnew.SHAPE_T_SEGMENT
+        ):
+            raise TypeError("board contains an unsupported Edge.Cuts object")
+        outline.append(
+            {
+                "x1_mm": _mm(drawing.GetStart().x),
+                "y1_mm": _mm(drawing.GetStart().y),
+                "x2_mm": _mm(drawing.GetEnd().x),
+                "y2_mm": _mm(drawing.GetEnd().y),
+            }
+        )
     settings = board.GetDesignSettings()
-    return {
+    nets = sorted(
+        name
+        for raw_name, _item in board.GetNetInfo().NetsByName().items()
+        if (name := str(raw_name))
+    )
+    result = {
         "schema": "pcbdraft-pcbnew-result",
         "version": 1,
         "mode": "inspect_board",
         "kicad_version": pcbnew.GetBuildVersion(),
         "components": sorted(components, key=lambda item: item["reference"]),
+        "nets": nets,
         "tracks": sorted(tracks, key=lambda item: json.dumps(item, sort_keys=True)),
         "zones": sorted(zones, key=lambda item: json.dumps(item, sort_keys=True)),
+        "outline": sorted(outline, key=lambda item: json.dumps(item, sort_keys=True)),
         "board": {
             "layers": board.GetCopperLayerCount(),
             "thickness_mm": _mm(settings.GetBoardThickness()),
@@ -489,6 +569,86 @@ def inspect_board_job(job):
             "min_drill_mm": _mm(settings.m_MinThroughDrill),
             "edge_clearance_mm": _mm(settings.m_CopperEdgeClearance),
         },
+    }
+    if connectivity is not None:
+        result["connectivity"] = connectivity
+    return result
+
+
+class _ConnectivitySets:
+    def __init__(self):
+        self.parents = {}
+
+    def add(self, item):
+        self.parents.setdefault(item, item)
+
+    def find(self, item):
+        parent = self.parents[item]
+        while parent != self.parents[parent]:
+            parent = self.parents[parent]
+        while item != parent:
+            previous = self.parents[item]
+            self.parents[item] = parent
+            item = previous
+        return parent
+
+    def union(self, first, second):
+        first_root = self.find(first)
+        second_root = self.find(second)
+        if first_root != second_root:
+            self.parents[max(first_root, second_root)] = min(first_root, second_root)
+
+
+def _pad_endpoint(pad):
+    footprint = pad.GetParentFootprint()
+    if footprint is None:
+        raise ValueError("board pad has no parent footprint")
+    return str(footprint.GetReference()), str(pad.GetNumber())
+
+
+def _inspect_board_connectivity(board):
+    """Return deterministic logical-pad copper connectivity from pcbnew."""
+
+    board.BuildConnectivity()
+    native = board.GetConnectivity()
+    sets = _ConnectivitySets()
+    pads = []
+    for footprint in board.GetFootprints():
+        for pad in footprint.Pads():
+            endpoint = _pad_endpoint(pad)
+            sets.add(endpoint)
+            pads.append(pad)
+    for pad in pads:
+        source = _pad_endpoint(pad)
+        # KiCad owns the connectivity graph.  GetConnectedItems() returns the
+        # native transitive copper component; retain its pads rather than
+        # recreating connectivity from IR net names or track geometry.
+        for connected in native.GetConnectedItems(pad):
+            if isinstance(connected, pcbnew.PAD):
+                target = _pad_endpoint(connected)
+                sets.add(target)
+                sets.union(source, target)
+
+    endpoints_by_root: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for endpoint in sorted(sets.parents):
+        endpoints_by_root.setdefault(sets.find(endpoint), []).append(endpoint)
+    rows = sorted(tuple(sorted(endpoints)) for endpoints in endpoints_by_root.values())
+    return {
+        "schema": "pcbdraft-pcb-connectivity",
+        "version": 1,
+        "status": "evaluated",
+        "unconnected_count": int(native.GetUnconnectedCount(False)),
+        "components": [
+            {
+                "id": f"pcb-connectivity-{index:04d}",
+                "pads": [
+                    {"reference": reference, "number": number}
+                    for reference, number in endpoints
+                ],
+            }
+            for index, endpoints in enumerate(rows, start=1)
+        ],
+        "drc": {"status": "not_evaluated", "items": []},
     }
 
 
@@ -768,13 +928,19 @@ def build_job(job, output_path):
                 _number(component["y_mm"], "component.y_mm"),
             )
         )
-        footprint.SetOrientationDegrees(
-            _number(component["rotation_deg"], "component.rotation_deg") % 360
-        )
+        # As in inspection, KiCad needs board ownership before a footprint can
+        # be flipped safely.  Add it before applying the semantic side/angle;
+        # all remaining field and UUID updates are valid on a board child.
+        board.Add(footprint)
+        rotation = _number(component["rotation_deg"], "component.rotation_deg") % 360
         if component["side"] not in {"front", "back"}:
             raise ValueError("component.side must be front or back")
         if component["side"] == "back":
             footprint.Flip(footprint.GetPosition(), False)
+        # Flip changes KiCad's orientation representation. Apply the semantic
+        # rotation after the side transition so native reinspection observes
+        # exactly the requested pose on either side.
+        footprint.SetOrientationDegrees(rotation)
         footprint.SetPath(
             pcbnew.KIID_PATH(_text(component["schematic_uuid"], "schematic_uuid", 36))
         )
@@ -796,7 +962,6 @@ def build_job(job, output_path):
             field = footprint.GetField(field_name)
             field.SetVisible(False)
             field.SetLayer(pcbnew.F_Fab)
-        board.Add(footprint)
         # KiCad assigns identifiers to some footprint-owned text fields only
         # when the footprint joins a board. Canonicalize after that ownership
         # transition so every serialized UUID is tracked deterministically.
@@ -878,8 +1043,29 @@ def build_job(job, output_path):
         _set_uuid(track, _stable(design_id, "track", str(index)), uuid_replacements)
         board.Add(track)
     for index, entry in enumerate(vias):
-        via_data = _strict(entry, {"net", "x_mm", "y_mm", "diameter_mm", "drill_mm"})
+        via_data = _strict(
+            entry,
+            {
+                "net",
+                "x_mm",
+                "y_mm",
+                "diameter_mm",
+                "drill_mm",
+                "from_layer",
+                "to_layer",
+            },
+        )
         name = _text(via_data["net"], "via.net", 128)
+        start_layer = via_data["from_layer"]
+        stop_layer = via_data["to_layer"]
+        if (
+            isinstance(start_layer, bool)
+            or not isinstance(start_layer, int)
+            or isinstance(stop_layer, bool)
+            or not isinstance(stop_layer, int)
+            or not 0 <= start_layer < stop_layer < layers
+        ):
+            raise ValueError("via references an invalid logical layer pair")
         via = pcbnew.PCB_VIA(board)
         via.SetPosition(
             pcbnew.VECTOR2I_MM(
@@ -895,8 +1081,14 @@ def build_job(job, output_path):
         via.SetDrill(
             pcbnew.FromMM(_number(via_data["drill_mm"], "via.drill_mm", positive=True))
         )
-        via.SetViaType(pcbnew.VIATYPE_THROUGH)
-        via.SetLayerPair(pcbnew.F_Cu, pcbnew.B_Cu)
+        via.SetViaType(
+            pcbnew.VIATYPE_THROUGH
+            if (start_layer, stop_layer) == (0, layers - 1)
+            else pcbnew.VIATYPE_BLIND
+            if start_layer == 0 or stop_layer == layers - 1
+            else pcbnew.VIATYPE_BURIED
+        )
+        via.SetLayerPair(actual_layers[start_layer], actual_layers[stop_layer])
         via.SetNet(net_items[name])
         _set_uuid(via, _stable(design_id, "via", str(index)), uuid_replacements)
         board.Add(via)

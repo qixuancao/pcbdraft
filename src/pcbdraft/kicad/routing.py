@@ -22,6 +22,19 @@ MAX_PADS = 2_000
 MAX_NETS = 1_000
 MAX_EXPANSIONS_PER_BRANCH = 750_000
 MAX_TOTAL_EXPANSIONS = 2_000_000
+ROUTING_FAILURE_CODES = frozenset(
+    {
+        "invalid_seed",
+        "zero_length_seed",
+        "pad_escape_blocked",
+        "no_legal_channel",
+        "congestion_exhausted",
+        "search_budget_exhausted",
+        "native_commit_failed",
+        "native_connectivity_failed",
+        "unintended_net_merge",
+    }
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -84,6 +97,93 @@ class RouteVia:
     to_layer: int
 
 
+@dataclass(frozen=True, order=True)
+class RoutingFailure:
+    """Bounded, machine-readable reason why one route could not be completed."""
+
+    code: str
+    net: str
+    endpoints: tuple[str, ...] = ()
+    expanded_nodes: int = 0
+    blocking_summary: str = ""
+    recommendations: tuple[str, ...] = ()
+    blocking_region: tuple[float, float, float, float] | None = None
+    nearest_obstacle_class: str | None = None
+    state_revision: int = 0
+    state_context: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.code not in ROUTING_FAILURE_CODES:
+            raise ValidationError(f"unsupported routing failure code: {self.code}")
+        if not self.net:
+            raise ValidationError("routing failure requires a non-empty net")
+        if self.expanded_nodes < 0:
+            raise ValidationError("routing failure expanded_nodes must be non-negative")
+        if isinstance(self.state_revision, bool) or self.state_revision < 0:
+            raise ValidationError("routing failure state_revision must be non-negative")
+        if self.blocking_region is not None and (
+            len(self.blocking_region) != 4
+            or not all(math.isfinite(item) for item in self.blocking_region)
+            or self.blocking_region[0] > self.blocking_region[2]
+            or self.blocking_region[1] > self.blocking_region[3]
+        ):
+            raise ValidationError("routing failure blocking_region is invalid")
+        if self.nearest_obstacle_class is not None and (
+            not self.nearest_obstacle_class
+            or len(self.nearest_obstacle_class.encode("utf-8")) > 64
+        ):
+            raise ValidationError(
+                "routing failure nearest_obstacle_class must be bounded"
+            )
+        if any(
+            not item or len(item.encode("utf-8")) > 512 for item in self.state_context
+        ):
+            raise ValidationError("routing failure state_context must be bounded")
+
+    @property
+    def retry_key(self) -> str:
+        endpoints = ",".join(self.endpoints) or "unknown"
+        values = (
+            self.code,
+            self.net,
+            endpoints,
+            f"revision={self.state_revision}",
+            *self.state_context,
+        )
+        return "|".join(item.replace("|", "%7C") for item in values)
+
+    @property
+    def diagnostic(self) -> str:
+        endpoint = self.endpoints[-1] if self.endpoints else "unknown endpoint"
+        detail = f"; {self.blocking_summary}" if self.blocking_summary else ""
+        return f"{self.net}: could not connect pad {endpoint}; {self.code}{detail}"
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "net": self.net,
+            "endpoints": list(self.endpoints),
+            "expanded_nodes": self.expanded_nodes,
+            "blocking_summary": self.blocking_summary,
+            "blocking_region": (
+                list(self.blocking_region) if self.blocking_region is not None else None
+            ),
+            "nearest_obstacle_class": self.nearest_obstacle_class,
+            "state_revision": self.state_revision,
+            "state_context": list(self.state_context),
+            "retry_key": self.retry_key,
+            "recommendations": list(self.recommendations),
+        }
+
+
+class RoutingFailureError(ValidationError):
+    """Expected route rejection carrying a stable structured failure."""
+
+    def __init__(self, failure: RoutingFailure) -> None:
+        super().__init__(failure.diagnostic)
+        self.failure = failure
+
+
 @dataclass(frozen=True)
 class RoutingResult:
     segments: tuple[RouteSegment, ...]
@@ -92,6 +192,7 @@ class RoutingResult:
     state: str
     expanded_nodes: int
     diagnostics: tuple[str, ...]
+    failures: tuple[RoutingFailure, ...] = ()
 
 
 GridState = tuple[int, int, int]  # x, y, logical copper layer
@@ -175,6 +276,7 @@ class GridRouter:
         self._max_occupied_radius = max(min_track_mm / 2, self.via_diameter_mm / 2)
         self.expanded_nodes = 0
         self._remaining_expansions: int | None = None
+        self._seed_obstructions: dict[str, list[str]] = {}
 
     def route(
         self,
@@ -186,7 +288,17 @@ class GridRouter:
         seed_segments: Iterable[RouteSegment] = (),
         obstacle_segments: Iterable[RouteSegment] = (),
         obstacle_vias: Iterable[RouteVia] = (),
+        state_revision: int = 0,
     ) -> RoutingResult:
+        if (
+            isinstance(state_revision, bool)
+            or not isinstance(state_revision, int)
+            or state_revision < 0
+        ):
+            raise ValidationError(
+                "routing state_revision must be a non-negative integer"
+            )
+        self._state_revision = state_revision
         pads_tuple = tuple(sorted(pads))
         if len(pads_tuple) > MAX_PADS:
             raise ValidationError(f"router supports at most {MAX_PADS} pads")
@@ -221,13 +333,17 @@ class GridRouter:
         self._max_occupied_radius = max(
             self._max_track_width / 2, self.via_diameter_mm / 2
         )
-        self._initialize_obstacles(pads_tuple, tuple(sorted(keepouts)))
+        keepouts_tuple = tuple(sorted(keepouts))
+        self._initialize_obstacles(pads_tuple, keepouts_tuple)
         self._seed_terminals = {}
         self.expanded_nodes = 0
         self._remaining_expansions = self.max_total_expansions
+        self._seed_obstructions = {}
         diagnostics: list[str] = []
 
-        for segment in sorted(obstacle_segments):
+        obstacle_segments_tuple = tuple(sorted(obstacle_segments))
+        obstacle_vias_tuple = tuple(sorted(obstacle_vias))
+        for segment in obstacle_segments_tuple:
             if (
                 segment.layer < 0
                 or segment.layer >= self.layer_count
@@ -241,7 +357,7 @@ class GridRouter:
                 self._segment_path(segment),
                 segment.width_mm,
             )
-        for via in sorted(obstacle_vias):
+        for via in obstacle_vias_tuple:
             if (
                 via.from_layer < 0
                 or via.to_layer >= self.layer_count
@@ -261,27 +377,38 @@ class GridRouter:
 
         seeds = tuple(sorted(seed_segments))
         accepted_seeds: list[RouteSegment] = []
-        for segment in seeds:
-            if segment.net not in net_names:
-                raise ValidationError(
-                    f"seed segment references unknown net: {segment.net}"
+        for raw_segment in seeds:
+            if raw_segment.net not in net_names:
+                raise RoutingFailureError(
+                    self._seed_failure(
+                        "invalid_seed",
+                        raw_segment,
+                        "seed references an unknown net",
+                    )
                 )
             if (
-                segment.layer < 0
-                or segment.layer >= self.layer_count
+                raw_segment.layer < 0
+                or raw_segment.layer >= self.layer_count
                 or not all(
                     math.isfinite(value)
                     for value in (
-                        segment.x1_mm,
-                        segment.y1_mm,
-                        segment.x2_mm,
-                        segment.y2_mm,
-                        segment.width_mm,
+                        raw_segment.x1_mm,
+                        raw_segment.y1_mm,
+                        raw_segment.x2_mm,
+                        raw_segment.y2_mm,
+                        raw_segment.width_mm,
                     )
                 )
-                or segment.width_mm < self.min_track_mm
+                or raw_segment.width_mm < self.min_track_mm
             ):
-                raise ValidationError("seed segment violates layer or width bounds")
+                raise RoutingFailureError(
+                    self._seed_failure(
+                        "invalid_seed",
+                        raw_segment,
+                        "seed violates layer, width, or finite-coordinate bounds",
+                    )
+                )
+            segment = self._normalize_seed_segment(raw_segment)
             path = self._segment_path(segment)
             pad_anchor = (segment.net, path[0][0], path[0][1], path[0][2])
             if not any(
@@ -290,25 +417,37 @@ class GridRouter:
                 and self._point(pad.x_mm, pad.y_mm) == path[0][:2]
                 for pad in pads_tuple
             ):
-                raise ValidationError(
-                    f"seed segment is not anchored to a routing pad: {segment.net}"
+                raise RoutingFailureError(
+                    self._seed_failure(
+                        "invalid_seed",
+                        segment,
+                        "seed is not anchored to a routing pad",
+                    )
                 )
             if pad_anchor in self._seed_terminals:
-                raise ValidationError(
-                    f"routing pad has multiple seed segments: {segment.net}"
+                raise RoutingFailureError(
+                    self._seed_failure(
+                        "invalid_seed",
+                        segment,
+                        "routing pad has multiple seed segments",
+                    )
                 )
             terminal = (self._mm(path[-1][0]), self._mm(path[-1][1]))
-            materialized_seed = [segment]
-            if (segment.x2_mm, segment.y2_mm) != terminal:
+            # Keep the supplied exact escape geometry.  For a non-zero escape
+            # that collapses to one grid cell, normalization only chooses the
+            # adjacent routing terminal; it must not replace the physical
+            # segment with a different full-grid direction.
+            materialized_seed = [raw_segment]
+            if (raw_segment.x2_mm, raw_segment.y2_mm) != terminal:
                 materialized_seed.append(
                     RouteSegment(
-                        net=segment.net,
-                        layer=segment.layer,
-                        x1_mm=segment.x2_mm,
-                        y1_mm=segment.y2_mm,
+                        net=raw_segment.net,
+                        layer=raw_segment.layer,
+                        x1_mm=raw_segment.x2_mm,
+                        y1_mm=raw_segment.y2_mm,
                         x2_mm=terminal[0],
                         y2_mm=terminal[1],
-                        width_mm=segment.width_mm,
+                        width_mm=raw_segment.width_mm,
                     )
                 )
             obstruction = next(
@@ -319,8 +458,9 @@ class GridRouter:
                         reason := self._seed_obstruction(
                             piece,
                             pads_tuple,
-                            tuple(sorted(keepouts)),
-                            tuple(accepted_seeds),
+                            keepouts_tuple,
+                            (*obstacle_segments_tuple, *accepted_seeds),
+                            obstacle_vias_tuple,
                         )
                     )
                     is not None
@@ -328,6 +468,7 @@ class GridRouter:
                 None,
             )
             if obstruction is not None:
+                self._seed_obstructions.setdefault(segment.net, []).append(obstruction)
                 diagnostics.append(
                     f"{segment.net}: omitted obstructed optional fine-pitch escape "
                     f"({obstruction}) and routed from the pad"
@@ -359,16 +500,22 @@ class GridRouter:
         all_segments: list[RouteSegment] = accepted_seeds
         all_vias: list[RouteVia] = []
         unrouted: list[str] = []
-        for net in order:
+        failures: list[RoutingFailure] = []
+        for route_index, net in enumerate(order):
             width = widths_dict[net]
             segments, vias, errors = self._route_net(
-                net, tuple(sorted(by_net[net])), width
+                net,
+                tuple(sorted(by_net[net])),
+                width,
+                route_order=tuple(order),
+                route_index=route_index,
             )
             all_segments.extend(segments)
             all_vias.extend(vias)
             if errors:
                 unrouted.append(net)
-                diagnostics.extend(errors)
+                failures.extend(errors)
+                diagnostics.extend(error.diagnostic for error in errors)
 
         final_segments = tuple(sorted(set(all_segments)))
         final_vias = tuple(sorted(set(all_vias)))
@@ -379,6 +526,85 @@ class GridRouter:
             state="heuristic" if unrouted else "completed",
             expanded_nodes=self.expanded_nodes,
             diagnostics=tuple(sorted(diagnostics)),
+            failures=tuple(sorted(failures)),
+        )
+
+    def _normalize_seed_segment(self, segment: RouteSegment) -> RouteSegment:
+        """Move a sub-grid non-zero seed to one adjacent cell when that is safe.
+
+        Exact geometry checks still decide whether the normalized escape may be
+        retained. An actually zero-length input has no direction to recover and
+        therefore fails with a stable typed code.
+        """
+
+        start = self._point(segment.x1_mm, segment.y1_mm)
+        end = self._point(segment.x2_mm, segment.y2_mm)
+        if start != end:
+            return segment
+        delta_x = segment.x2_mm - segment.x1_mm
+        delta_y = segment.y2_mm - segment.y1_mm
+        if math.hypot(delta_x, delta_y) <= 1e-12:
+            raise RoutingFailureError(
+                self._seed_failure(
+                    "zero_length_seed",
+                    segment,
+                    "seed has no recoverable direction",
+                )
+            )
+        if abs(delta_x) >= abs(delta_y):
+            end = (start[0] + (1 if delta_x > 0 else -1), start[1])
+        else:
+            end = (start[0], start[1] + (1 if delta_y > 0 else -1))
+        if not (0 <= end[0] < self.width_cells and 0 <= end[1] < self.height_cells):
+            raise RoutingFailureError(
+                self._seed_failure(
+                    "zero_length_seed",
+                    segment,
+                    "sub-grid seed cannot be normalized inside the board",
+                )
+            )
+        return RouteSegment(
+            net=segment.net,
+            layer=segment.layer,
+            x1_mm=segment.x1_mm,
+            y1_mm=segment.y1_mm,
+            x2_mm=self._mm(end[0]),
+            y2_mm=self._mm(end[1]),
+            width_mm=segment.width_mm,
+        )
+
+    def _seed_failure(
+        self, code: str, segment: RouteSegment, summary: str
+    ) -> RoutingFailure:
+        coordinates = (
+            segment.x1_mm,
+            segment.y1_mm,
+            segment.x2_mm,
+            segment.y2_mm,
+        )
+        blocking_region = (
+            (
+                min(segment.x1_mm, segment.x2_mm),
+                min(segment.y1_mm, segment.y2_mm),
+                max(segment.x1_mm, segment.x2_mm),
+                max(segment.y1_mm, segment.y2_mm),
+            )
+            if all(math.isfinite(item) for item in coordinates)
+            else None
+        )
+        return RoutingFailure(
+            code=code,
+            net=segment.net or "unknown",
+            endpoints=(
+                f"{segment.x1_mm:.6g},{segment.y1_mm:.6g}",
+                f"{segment.x2_mm:.6g},{segment.y2_mm:.6g}",
+            ),
+            blocking_summary=summary,
+            recommendations=("inspect_pad_escape",),
+            blocking_region=blocking_region,
+            nearest_obstacle_class="unknown",
+            state_revision=self._state_revision,
+            state_context=(f"layer={segment.layer}",),
         )
 
     def _seed_obstruction(
@@ -386,7 +612,8 @@ class GridRouter:
         segment: RouteSegment,
         pads: tuple[RoutingPad, ...],
         keepouts: tuple[RoutingKeepout, ...],
-        accepted: tuple[RouteSegment, ...],
+        copper: tuple[RouteSegment, ...],
+        vias: tuple[RouteVia, ...],
     ) -> str | None:
         """Check a short escape against exact geometry, before raster reservation.
 
@@ -439,7 +666,7 @@ class GridRouter:
             )
             if gap + 1e-9 < required:
                 return f"keepout {keepout.id}"
-        for other in accepted:
+        for other in copper:
             if other.layer != segment.layer or other.net == segment.net:
                 continue
             gap = _segment_segment_distance(
@@ -451,6 +678,17 @@ class GridRouter:
             required_between = radius + other.width_mm / 2 + self.clearance_mm
             if gap + 1e-9 < required_between:
                 return f"escape for net {other.net}"
+        for via in vias:
+            if (
+                segment.layer < via.from_layer
+                or segment.layer > via.to_layer
+                or via.net == segment.net
+            ):
+                continue
+            gap = _point_segment_distance((via.x_mm, via.y_mm), line[0], line[1])
+            required_between = radius + via.diameter_mm / 2 + self.clearance_mm
+            if gap + 1e-9 < required_between:
+                return f"via for net {via.net}"
         return None
 
     def _initialize_obstacles(
@@ -510,8 +748,14 @@ class GridRouter:
                         self._keepout_cells[layer].add((x_cell, y_cell))
 
     def _route_net(
-        self, net: str, pads: tuple[RoutingPad, ...], width: float
-    ) -> tuple[list[RouteSegment], list[RouteVia], list[str]]:
+        self,
+        net: str,
+        pads: tuple[RoutingPad, ...],
+        width: float,
+        *,
+        route_order: tuple[str, ...],
+        route_index: int,
+    ) -> tuple[list[RouteSegment], list[RouteVia], list[RoutingFailure]]:
         ordered_pads = tuple(
             sorted(
                 pads,
@@ -529,19 +773,62 @@ class GridRouter:
         pending = list(ordered_pads[1:])
         segments: list[RouteSegment] = []
         vias: list[RouteVia] = []
-        diagnostics: list[str] = []
+        failures: list[RoutingFailure] = []
         while pending:
             pending.sort(key=lambda pad: (self._pad_tree_distance(pad, tree), pad.id))
             pad = pending.pop(0)
             starts = self._pad_terminal_states(pad)
-            path = self._a_star(net, starts, tree, width)
+            before_expansions = self.expanded_nodes
+            path, failure_kind = self._a_star(net, starts, tree, width)
             if path is None:
-                budget = (
-                    " after the total routing expansion budget was exhausted"
-                    if self._remaining_expansions == 0
-                    else " within bounded A* search"
+                code = (
+                    "search_budget_exhausted"
+                    if failure_kind
+                    in {
+                        "branch_search_budget_exhausted",
+                        "total_search_budget_exhausted",
+                    }
+                    else failure_kind or "no_legal_channel"
                 )
-                diagnostics.append(f"{net}: could not connect pad {pad.id}{budget}")
+                known_seed_obstructions = self._seed_obstructions.get(net, [])
+                if code == "no_legal_channel" and known_seed_obstructions:
+                    code = "pad_escape_blocked"
+                summary_kind = (
+                    failure_kind
+                    if failure_kind
+                    in {
+                        "branch_search_budget_exhausted",
+                        "total_search_budget_exhausted",
+                    }
+                    else code
+                )
+                summary = self._failure_summary(summary_kind, known_seed_obstructions)
+                failures.append(
+                    RoutingFailure(
+                        code=code,
+                        net=net,
+                        endpoints=(first.id, pad.id),
+                        expanded_nodes=self.expanded_nodes - before_expansions,
+                        blocking_summary=summary,
+                        recommendations=self._failure_recommendations(code),
+                        blocking_region=(
+                            round(pad.x_mm - pad.width_mm / 2, 9),
+                            round(pad.y_mm - pad.height_mm / 2, 9),
+                            round(pad.x_mm + pad.width_mm / 2, 9),
+                            round(pad.y_mm + pad.height_mm / 2, 9),
+                        ),
+                        nearest_obstacle_class=self._nearest_obstacle_class(
+                            code, known_seed_obstructions
+                        ),
+                        state_revision=self._state_revision,
+                        state_context=self._failure_state_context(
+                            first,
+                            pad,
+                            route_order=route_order,
+                            route_index=route_index,
+                        ),
+                    )
+                )
                 continue
             new_segments, new_vias = self._materialize(net, path, width)
             segments.extend(new_segments)
@@ -557,7 +844,77 @@ class GridRouter:
                     tree.update(
                         (x_cell, y_cell, layer) for layer in range(self.layer_count)
                     )
-        return segments, vias, diagnostics
+        return segments, vias, failures
+
+    def _failure_state_context(
+        self,
+        first: RoutingPad,
+        target: RoutingPad,
+        *,
+        route_order: tuple[str, ...],
+        route_index: int,
+    ) -> tuple[str, ...]:
+        previous = route_order[route_index - 1] if route_index else "none"
+        following = (
+            route_order[route_index + 1]
+            if route_index + 1 < len(route_order)
+            else "none"
+        )
+        return (
+            (
+                "placement="
+                f"{first.id}@{first.x_mm:.9g},{first.y_mm:.9g};"
+                f"{target.id}@{target.x_mm:.9g},{target.y_mm:.9g}"
+            ),
+            (
+                "layers="
+                f"board:{self.layer_count};{first.id}:{','.join(map(str, first.layers))};"
+                f"{target.id}:{','.join(map(str, target.layers))}"
+            ),
+            f"order={route_index}/{len(route_order)};prev:{previous};next:{following}",
+        )
+
+    @staticmethod
+    def _nearest_obstacle_class(code: str, seed_obstructions: list[str]) -> str:
+        if code == "congestion_exhausted":
+            return "copper"
+        if code != "pad_escape_blocked" or not seed_obstructions:
+            return "unknown"
+        first = seed_obstructions[0]
+        if first.startswith("foreign pad"):
+            return "pad"
+        if first.startswith("keepout"):
+            return "keepout"
+        if first.startswith("board-edge"):
+            return "board_edge"
+        if first.startswith(("escape for net", "via for net")):
+            return "copper"
+        return "unknown"
+
+    @staticmethod
+    def _failure_summary(code: str, seed_obstructions: list[str]) -> str:
+        if code == "pad_escape_blocked":
+            detail = ", ".join(sorted(set(seed_obstructions))[:3])
+            return f"pad escape is blocked{': ' + detail if detail else ''}"
+        if code == "total_search_budget_exhausted":
+            return (
+                "total routing expansion budget was exhausted within bounded A* search"
+            )
+        if code in {"branch_search_budget_exhausted", "search_budget_exhausted"}:
+            return "per-branch routing expansion budget was exhausted"
+        if code == "congestion_exhausted":
+            return "foreign retained or routed copper occupies the search grid"
+        return "bounded search found no legal channel"
+
+    @staticmethod
+    def _failure_recommendations(code: str) -> tuple[str, ...]:
+        if code == "pad_escape_blocked":
+            return ("inspect_pad_escape", "reposition_component")
+        if code == "search_budget_exhausted":
+            return ("change_net_order", "reposition_component")
+        if code == "congestion_exhausted":
+            return ("change_net_order", "change_layer", "reposition_component")
+        return ("change_layer", "reposition_component")
 
     def _pad_tree_distance(self, pad: RoutingPad, tree: set[GridState]) -> int:
         return min(
@@ -581,9 +938,9 @@ class GridRouter:
         starts: tuple[GridState, ...],
         goals: set[GridState],
         width: float,
-    ) -> list[GridState] | None:
+    ) -> tuple[list[GridState] | None, str | None]:
         if any(start in goals for start in starts):
-            return [next(start for start in starts if start in goals)]
+            return [next(start for start in starts if start in goals)], None
         goal_xy = tuple(sorted({(x, y) for x, y, _layer in goals}))
 
         def heuristic(state: GridState) -> int:
@@ -595,8 +952,11 @@ class GridRouter:
         came_from: dict[GridState, GridState] = {}
         serial = itertools.count()
         for state in sorted(starts, key=lambda item: (item[2], item[1], item[0])):
-            if self._blocked(
-                state, net, self._effective_width(net, state, width), via=False
+            if (
+                self._block_reason(
+                    state, net, self._effective_width(net, state, width), via=False
+                )
+                is not None
             ):
                 continue
             costs[state] = 0
@@ -604,10 +964,15 @@ class GridRouter:
             heapq.heappush(
                 heap, (heuristic(state), 0, layer, y_cell, x_cell, next(serial))
             )
+        if not heap:
+            return None, "pad_escape_blocked"
         expanded = 0
         branch_budget = self.max_expansions
+        total_limited = False
         if self._remaining_expansions is not None:
+            total_limited = self._remaining_expansions <= branch_budget
             branch_budget = min(branch_budget, self._remaining_expansions)
+        blocked_reasons: set[str] = set()
         while heap and expanded < branch_budget:
             _priority, cost, layer, y_cell, x_cell, _serial = heapq.heappop(heap)
             state = (x_cell, y_cell, layer)
@@ -616,7 +981,7 @@ class GridRouter:
             expanded += 1
             if state in goals:
                 self._record_expansions(expanded)
-                return self._reconstruct(came_from, state)
+                return self._reconstruct(came_from, state), None
             neighbors: list[tuple[GridState, int, bool]] = [
                 ((x_cell - 1, y_cell, layer), 1, False),
                 ((x_cell, y_cell - 1, layer), 1, False),
@@ -632,7 +997,11 @@ class GridRouter:
                 candidate_width = (
                     width if is_via else self._effective_width(net, neighbor, width)
                 )
-                if self._blocked(neighbor, net, candidate_width, via=is_via):
+                blocked_reason = self._block_reason(
+                    neighbor, net, candidate_width, via=is_via
+                )
+                if blocked_reason is not None:
+                    blocked_reasons.add(blocked_reason)
                     continue
                 if not is_via and any(
                     owner == net
@@ -659,14 +1028,29 @@ class GridRouter:
                     ),
                 )
         self._record_expansions(expanded)
-        return None
+        if expanded >= branch_budget and heap:
+            return (
+                None,
+                "total_search_budget_exhausted"
+                if total_limited
+                else "branch_search_budget_exhausted",
+            )
+        if "foreign_copper" in blocked_reasons and not blocked_reasons & {
+            "foreign_pad",
+            "keepout",
+            "via_on_pad",
+        }:
+            return None, "congestion_exhausted"
+        return None, "no_legal_channel"
 
     def _record_expansions(self, count: int) -> None:
         self.expanded_nodes += count
         if self._remaining_expansions is not None:
             self._remaining_expansions -= count
 
-    def _blocked(self, state: GridState, net: str, width: float, *, via: bool) -> bool:
+    def _block_reason(
+        self, state: GridState, net: str, width: float, *, via: bool
+    ) -> str | None:
         x_cell, y_cell, layer = state
         radius = (
             self.via_diameter_mm / 2 if via else width / 2
@@ -678,16 +1062,16 @@ class GridRouter:
             or x_cell >= self.width_cells - margin_cells
             or y_cell >= self.height_cells - margin_cells
         ):
-            return True
+            return "edge"
         layers = range(self.layer_count) if via else (layer,)
         pad_cells = self._pad_cells_for_width(self.via_diameter_mm if via else width)
         for check_layer in layers:
             cell = (x_cell, y_cell)
             if cell in self._keepout_cells[check_layer]:
-                return True
+                return "keepout"
             pad_nets = pad_cells[check_layer].get(cell, set())
             if pad_nets - {net}:
-                return True
+                return "foreign_pad"
             if self._occupied_conflict(
                 check_layer,
                 x_cell,
@@ -695,10 +1079,10 @@ class GridRouter:
                 net,
                 self.via_diameter_mm / 2 if via else width / 2,
             ):
-                return True
+                return "foreign_copper"
             if via and self._raw_pad_cells[check_layer].get(cell):
-                return True
-        return False
+                return "via_on_pad"
+        return None
 
     def _effective_width(
         self, net: str, state: GridState, nominal_width: float

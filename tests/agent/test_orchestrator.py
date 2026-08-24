@@ -24,6 +24,7 @@ from pcbdraft.agent.turns import (
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.services.jobs import JobRunner
+from pcbdraft.services.progress import ProcessStatus
 
 
 def _view(*, status: str = "draft", revision: int = 0) -> dict[str, Any]:
@@ -64,6 +65,7 @@ class OrchestratorService:
         self.view = _view()
         self.conversation = self.view["conversation"]
         self.calls: list[str] = []
+        self.product_receipts: list[dict[str, Any]] = []
         self.fail_validation_once = False
 
     def list_projects(self) -> list[dict[str, Any]]:
@@ -98,6 +100,15 @@ class OrchestratorService:
         if project_id != "board":
             raise AssertionError("unexpected project")
         return self.view
+
+    def record_product_session_terminal(
+        self,
+        project_id: str,
+        **values: Any,
+    ) -> dict[str, Any]:
+        receipt = {"project_id": project_id, **values}
+        self.product_receipts.append(receipt)
+        return receipt
 
     def send_message(
         self, project_id: str, message: str, *, timeout: float
@@ -199,7 +210,49 @@ class ConversationalProducer:
         return self.fallback.next_call(record, view, timeout=timeout)
 
 
+class FailOnceConversationalProducer(ConversationalProducer):
+    """Raise before dispatch once, then complete the resumed durable turn."""
+
+    def __init__(self, service: Any) -> None:
+        super().__init__(service, reply="Recovered reply.", proposal=None)
+        self.failed = False
+
+    def conversation_step(
+        self,
+        record: Any,
+        view: dict[str, Any],
+        *,
+        timeout: float,
+    ) -> ConversationStep | None:
+        if not self.failed:
+            self.failed = True
+            raise PCBDraftError("temporary provider failure")
+        return super().conversation_step(record, view, timeout=timeout)
+
+
 class AgentOrchestratorTests(unittest.TestCase):
+    def test_durable_orchestrator_keeps_legacy_repair_publication_reachable(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = OrchestratorService(Path(temporary))
+            agent = AgentOrchestrator(service)  # type: ignore[arg-type]
+
+            self.assertTrue(agent.executor.allow_legacy_internal)
+            for operation in (
+                "repair_candidate",
+                "apply_candidate",
+                "undo_last_change",
+            ):
+                with self.subTest(operation=operation):
+                    handler = agent.registry._handler(
+                        operation,
+                        allow_legacy_internal=agent.executor.allow_legacy_internal,
+                    )
+                    self.assertTrue(callable(handler))
+                    with self.assertRaisesRegex(ValidationError, "audit-only"):
+                        agent.registry._handler(operation)
+
     @staticmethod
     def _wait_job(runner: JobRunner, project_id: str, job_id: str) -> dict[str, Any]:
         job: dict[str, Any] = {}
@@ -243,6 +296,10 @@ class AgentOrchestratorTests(unittest.TestCase):
         self.assertEqual(messages[0]["kind"], "reply")
         self.assertEqual(messages[0]["data"]["turn_id"], turn.turn_id)
         self.assertEqual(messages[0]["data"]["index"], 0)
+        self.assertEqual(len(service.product_receipts), 1)
+        self.assertEqual(
+            service.product_receipts[0]["process_status"], ProcessStatus.EXITED
+        )
 
     def test_conversational_reply_with_intent_runs_deterministic_followup(
         self,
@@ -313,6 +370,58 @@ class AgentOrchestratorTests(unittest.TestCase):
         messages = service.view["conversation"]["messages"]
         self.assertEqual(len(messages), 1)
         self.assertEqual(messages[0]["kind"], "reply")
+
+    def test_retried_turn_uses_a_fresh_product_session_receipt(self) -> None:
+        class ImmutableTerminalService(OrchestratorService):
+            def record_product_session_terminal(
+                self,
+                project_id: str,
+                **values: Any,
+            ) -> dict[str, Any]:
+                identity = (values["session_id"], values["turn_id"])
+                for existing in self.product_receipts:
+                    existing_identity = (
+                        existing["session_id"],
+                        existing["turn_id"],
+                    )
+                    if existing_identity == identity and existing != {
+                        "project_id": project_id,
+                        **values,
+                    }:
+                        raise ValidationError("product receipt facts conflict")
+                return super().record_product_session_terminal(project_id, **values)
+
+        with tempfile.TemporaryDirectory() as temporary:
+            service = ImmutableTerminalService(Path(temporary))
+            agent = AgentOrchestrator(
+                service,  # type: ignore[arg-type]
+                producer=FailOnceConversationalProducer(service),
+            )
+            turn = agent.start_turn("board", "hello")
+            with self.assertRaisesRegex(PCBDraftError, "temporary provider failure"):
+                agent.run_turn(
+                    "board",
+                    turn.turn_id,
+                    timeout=5,
+                    cancellation_requested=lambda: False,
+                )
+
+            result = agent.run_turn(
+                "board",
+                turn.turn_id,
+                timeout=5,
+                cancellation_requested=lambda: False,
+            )
+
+        self.assertEqual(result["project"]["status"], "draft")
+        self.assertEqual(len(service.product_receipts), 2)
+        self.assertNotEqual(
+            service.product_receipts[0]["session_id"],
+            service.product_receipts[1]["session_id"],
+        )
+        self.assertEqual(
+            {item["turn_id"] for item in service.product_receipts}, {turn.turn_id}
+        )
 
     def test_turn_persists_each_call_before_completing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -662,6 +771,12 @@ class AgentOrchestratorTests(unittest.TestCase):
                 ToolRunStatus.INTERRUPTED,
             )
             self.assertIsNotNone(failed.tool_runs[-1].dispatch_started_at)
+            self.assertEqual(
+                service.product_receipts[-1]["process_status"], ProcessStatus.EXITED
+            )
+            self.assertEqual(
+                service.product_receipts[-1]["termination_reason"], "tool_failure"
+            )
 
             with self.assertRaisesRegex(PCBDraftError, "submit a new turn"):
                 agent.run_turn(
@@ -695,6 +810,12 @@ class AgentOrchestratorTests(unittest.TestCase):
                     timeout=12.0,
                     cancellation_requested=lambda: False,
                 )
+            self.assertEqual(
+                service.product_receipts[-1]["process_status"], ProcessStatus.CRASHED
+            )
+            self.assertEqual(
+                service.product_receipts[-1]["termination_reason"], "crashed"
+            )
             agent.executor.execute = execute  # type: ignore[method-assign]
 
             with self.assertRaisesRegex(PCBDraftError, "was not replayed"):

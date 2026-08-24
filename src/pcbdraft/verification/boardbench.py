@@ -4572,6 +4572,12 @@ def load_artifact(path: str | Path) -> BoardBenchArtifact:
     """Load one recognized BoardBench artifact through a bounded strict reader."""
     document = _load_document(path)
     schema = document.get("schema")
+    if schema == "pcbdraft-boardbench-run-v2":
+        # New runs are stored only as v2.  Legacy consumers receive an explicit
+        # in-memory projection; the v2 artifact itself is never rewritten.
+        from pcbdraft.verification.boardbench_v2 import BoardBenchRunV2
+
+        return BoardBenchRunV2.from_dict(document).to_legacy()
     if not isinstance(schema, str) or schema not in _ARTIFACT_SCHEMAS:
         raise ValidationError("unknown BoardBench artifact schema")
     artifact_type = _ARTIFACT_TYPES[schema]
@@ -4597,7 +4603,10 @@ def load_campaign(path: str | Path) -> BoardBenchCampaign:
 
 
 def load_run(path: str | Path) -> BoardBenchRun:
-    return _load_expected(path, BoardBenchRun)
+    artifact = load_artifact(path)
+    if not isinstance(artifact, BoardBenchRun):
+        raise ValidationError(f"expected {BoardBenchRun.schema} artifact")
+    return artifact
 
 
 def load_score(path: str | Path) -> BoardBenchScore:
@@ -4696,7 +4705,11 @@ def write_artifact(path: str | Path, artifact: BoardBenchArtifact) -> Path:
 
 
 def store_run(path: str | Path, run: BoardBenchRun) -> Path:
-    """Persist a run transition while making every terminal receipt immutable."""
+    """Legacy-only fixture/import writer; existing v1 receipts are read-only.
+
+    New product runs use ``store_run_v2``.  The sole existing-v2 compatibility
+    transition accepted here is planned-to-running for older in-memory callers.
+    """
     target, parent_identity = _prepare_artifact_target(path)
     lock_parent = _artifact_lock_parent(target)
     _reject_symlink_components(lock_parent)
@@ -4704,29 +4717,43 @@ def store_run(path: str | Path, run: BoardBenchRun) -> Path:
         _verify_artifact_parent(target, parent_identity)
         exists = target.exists() or target.is_symlink()
         if exists:
-            previous = load_run(target)
-            if previous.terminal:
-                raise ValidationError("terminal BoardBench run is immutable")
-            if (
-                previous.campaign_id,
-                previous.run_id,
-                previous.case_id,
-                previous.repetition,
-                previous.prompt_sha256,
-            ) != (
-                run.campaign_id,
-                run.run_id,
-                run.case_id,
-                run.repetition,
-                run.prompt_sha256,
-            ):
-                raise ValidationError("run transition changes its immutable identity")
-            transitions = {
-                "planned": {"running"},
-                "running": TERMINAL_RUN_STATUSES,
-            }
-            if run.status not in transitions[previous.status]:
-                raise ValidationError("invalid BoardBench run status transition")
+            document = _load_document(target)
+            if document.get("schema") == "pcbdraft-boardbench-run-v2":
+                # Compatibility-only transition used by legacy callers that
+                # mark a newly planned v2 run as running.  Terminal v2 facts
+                # require the authoritative runner normalizer, not inference
+                # from a v1-shaped object.
+                from pcbdraft.verification.boardbench_v2 import (
+                    BoardBenchRunV2,
+                    start_run_v2,
+                )
+
+                current_v2 = BoardBenchRunV2.from_dict(document)
+                if (
+                    run.campaign_id,
+                    run.run_id,
+                    run.case_id,
+                    run.repetition,
+                    run.prompt_sha256,
+                ) != (
+                    current_v2.campaign_id,
+                    current_v2.run_id,
+                    current_v2.case_id,
+                    current_v2.repetition,
+                    current_v2.prompt_sha256,
+                ):
+                    raise ValidationError(
+                        "run v2 transition changes its immutable identity"
+                    )
+                if run.status != "running" or run.started_at is None:
+                    raise ValidationError(
+                        "terminal BoardBench run v2 needs authoritative outcome evidence"
+                    )
+                next_v2 = start_run_v2(current_v2, run.started_at)
+                atomic_write_json(target, next_v2.to_dict(), mode=0o600)
+                _verify_artifact_parent(target, parent_identity)
+                return target
+            raise ValidationError("legacy BoardBench v1 run is read-only")
         result = _write_artifact_under_lock(target, run, overwrite=exists)
         _verify_artifact_parent(target, parent_identity)
         return result

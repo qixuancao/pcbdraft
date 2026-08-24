@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -64,6 +67,8 @@ class BoardBenchWorkerTests(unittest.TestCase):
             str(self.trace),
             "--usage",
             str(self.usage),
+            "--pcb-tool-call-limit",
+            "500",
         ]
 
     def test_closed_request_rejects_reference_or_circuit_plan_fields(self) -> None:
@@ -94,6 +99,13 @@ class BoardBenchWorkerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValidationError, "valid natural-language"):
             parse_request(self._argv())
 
+    def test_request_rejects_invalid_pcb_tool_call_limit(self) -> None:
+        self._write_request()
+        argv = self._argv()
+        argv[-1] = "0"
+        with self.assertRaisesRegex(ValidationError, "tool-call limit"):
+            parse_request(argv)
+
     def test_sets_local_environment_before_loading_runtime_and_sends_only_prompt(
         self,
     ) -> None:
@@ -108,8 +120,10 @@ class BoardBenchWorkerTests(unittest.TestCase):
         def bind(project_id: str | None) -> None:
             events.append(("bind", project_id))
 
-        def launch(argv: list[str], *, permission_mode: str) -> int:
-            events.append(("launch", argv, permission_mode))
+        def launch(
+            argv: list[str], *, permission_mode: str, model_turn_limit: int
+        ) -> int:
+            events.append(("launch", argv, permission_mode, model_turn_limit))
             return 0
 
         def load_runtime() -> _WorkerRuntime:
@@ -118,6 +132,7 @@ class BoardBenchWorkerTests(unittest.TestCase):
                     "environment",
                     os.environ.get("PCBDRAFT_REPOSITORY_CONFIG"),
                     os.environ.get("PCBDRAFT_DEBUG_TRACE_PATH"),
+                    os.environ.get("PCBDRAFT_PCB_TOOL_CALL_LIMIT"),
                 )
             )
             return _WorkerRuntime(configure, lambda: service, bind, launch)
@@ -127,7 +142,12 @@ class BoardBenchWorkerTests(unittest.TestCase):
         self.assertEqual(
             events,
             [
-                ("environment", str(self.repository_config), str(self.trace)),
+                (
+                    "environment",
+                    str(self.repository_config),
+                    str(self.trace),
+                    "500",
+                ),
                 ("configure", self.repository),
                 ("create", "case-00-run-1"),
                 ("bind", "project-case-00-run-1"),
@@ -140,9 +160,63 @@ class BoardBenchWorkerTests(unittest.TestCase):
                         str(self.usage),
                     ],
                     "workspace",
+                    90,
                 ),
             ],
         )
+
+    def test_real_hermes_oneshot_parser_reaches_provider_boundary_with_limit(
+        self,
+    ) -> None:
+        """Exercise the installed parser without making a provider request."""
+
+        probe = textwrap.dedent(
+            """
+            import sys
+            from types import SimpleNamespace
+
+            import pcbdraft.interfaces.hermes_cli as adapter
+
+            adapter.activate()
+            import hermes_cli.main as hermes_main
+            import hermes_cli.oneshot as oneshot
+            import run_agent
+
+            adapter.activate = lambda **_kwargs: None
+            adapter.connection_status = lambda: SimpleNamespace(usable=True)
+
+            def provider_boundary(prompt, **_kwargs):
+                assert prompt == "parser-only-probe"
+                assert "--max-turns" not in sys.argv
+                assert getattr(
+                    run_agent.AIAgent, "_pcbdraft_model_turn_limit", None
+                ) == 90
+                return 0
+
+            oneshot.run_oneshot = provider_boundary
+            hermes_main._cleanup_oneshot_runtime = lambda: None
+
+            def exit_without_hard_shutdown(code):
+                raise SystemExit(code)
+
+            hermes_main._exit_after_oneshot = exit_without_hard_shutdown
+            code = adapter.launch_cli(
+                ["--oneshot", "parser-only-probe"],
+                model_turn_limit=90,
+            )
+            raise SystemExit(code)
+            """
+        )
+        completed = subprocess.run(
+            [sys.executable, "-c", probe],
+            cwd=Path(__file__).resolve().parents[2],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertNotIn("invalid choice", completed.stderr)
 
     def test_request_is_self_contained_prompt_only_json(self) -> None:
         self._write_request()

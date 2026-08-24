@@ -16,6 +16,7 @@ from pcbdraft.agent.tooling import (
     call_from_view,
 )
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.domain.operations import SEMANTIC_TRANSACTION_POLICY
 
 
 def _view(*, status: str = "draft", revision: int = 3) -> dict[str, Any]:
@@ -214,15 +215,18 @@ class PCBToolingTests(unittest.TestCase):
     def test_registry_is_closed_and_declares_effect_and_risk(self) -> None:
         specs = {spec.name: spec for spec in DEFAULT_PCB_TOOL_REGISTRY.specs}
 
-        self.assertEqual(len(specs), 57)
+        self.assertEqual(len(specs), 60)
         self.assertTrue(
             {
                 "create_project",
                 "inspect_design",
+                "inspect_transaction",
                 "search_parts",
                 "describe_part",
                 "register_kicad_part",
                 "add_component",
+                "connect_group",
+                "place_group",
                 "set_board_outline",
                 "route_net",
                 "run_drc",
@@ -247,7 +251,7 @@ class PCBToolingTests(unittest.TestCase):
         self.assertEqual(specs["set_board_outline"].risk, "high")
         self.assertEqual(
             DEFAULT_PCB_TOOL_REGISTRY.schema_fingerprint(),
-            "34f249bc137275e4846aa47f4e805f9fc28ffdc20e5596d1e01c620cbc8fe372",
+            "9c911df313e0d2d08839f2714bad764f27c1e59b5a2e0128412cc863cf3a15a1",
         )
         self.assertTrue(
             all(
@@ -283,6 +287,20 @@ class PCBToolingTests(unittest.TestCase):
         self.assertEqual(outline["height_mm"]["exclusiveMinimum"], 0)
         place = specs["place_footprint"].input_schema["properties"]
         self.assertEqual(place["side"]["enum"], ["front", "back"])
+        connections = specs["connect_group"].input_schema["properties"]["connections"][
+            "properties"
+        ]["entries"]
+        self.assertEqual(
+            connections["maxItems"],
+            SEMANTIC_TRANSACTION_POLICY.max_connection_entries,
+        )
+        placements = specs["place_group"].input_schema["properties"]["placements"][
+            "properties"
+        ]["entries"]
+        self.assertEqual(
+            placements["maxItems"],
+            SEMANTIC_TRANSACTION_POLICY.max_placement_entries,
+        )
         via = specs["add_via"].input_schema["properties"]
         self.assertEqual(via["diameter_mm"]["exclusiveMinimum"], 0)
         self.assertEqual(via["drill_mm"]["exclusiveMinimum"], 0)
@@ -414,6 +432,127 @@ class PCBToolingTests(unittest.TestCase):
         specs = tuple(
             downgraded if spec.name == downgraded.name else spec
             for spec in PCB_TOOL_SPECS
+        )
+
+        with self.assertRaisesRegex(ValueError, "fixed handler authority"):
+            PCBToolRegistry(specs)
+
+    def test_stage_projections_are_deterministic_registry_subsets(self) -> None:
+        full = DEFAULT_PCB_TOOL_REGISTRY.specs
+        full_names = {spec.name for spec in full}
+        full_bytes = len(
+            json.dumps(
+                DEFAULT_PCB_TOOL_REGISTRY.openai_responses_tools(),
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+
+        unbound = DEFAULT_PCB_TOOL_REGISTRY.projected_specs(None, project_bound=False)
+        self.assertEqual(
+            [spec.name for spec in unbound],
+            [
+                "create_project",
+                "search_symbols",
+                "describe_symbol",
+                "search_footprints",
+                "describe_footprint",
+            ],
+        )
+        routing = DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+            "routing", project_bound=True
+        )
+        routing_again = DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+            "routing", project_bound=True
+        )
+        routing_names = {spec.name for spec in routing}
+        self.assertEqual(routing, routing_again)
+        self.assertLessEqual(routing_names, full_names)
+        self.assertTrue(
+            {
+                "inspect_design",
+                "inspect_transaction",
+                "update_component",
+                "connect_group",
+                "move_footprint",
+                "route_net",
+                "run_drc",
+            }
+            <= routing_names
+        )
+        self.assertFalse(
+            {
+                "create_project",
+                "register_kicad_part",
+                "add_power_domain",
+                "export_gerbers",
+            }
+            & routing_names
+        )
+        routing_bytes = len(
+            json.dumps(
+                DEFAULT_PCB_TOOL_REGISTRY.projected_openai_responses_tools(
+                    "routing", project_bound=True
+                ),
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        self.assertLess(routing_bytes, full_bytes * 0.6)
+
+        unknown_names = {
+            spec.name
+            for spec in DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+                None, project_bound=True
+            )
+        }
+        self.assertTrue(
+            {
+                "inspect_design",
+                "update_component",
+                "connect_group",
+                "move_footprint",
+                "route_net",
+                "run_drc",
+            }
+            <= unknown_names
+        )
+        self.assertFalse(
+            {"create_project", "export_gerbers", "export_bom"} & unknown_names
+        )
+        self.assertLessEqual(len(unknown_names), 30)
+        unknown_bytes = len(
+            json.dumps(
+                DEFAULT_PCB_TOOL_REGISTRY.projected_openai_responses_tools(
+                    None, project_bound=True
+                ),
+                separators=(",", ":"),
+            ).encode("utf-8")
+        )
+        self.assertLess(unknown_bytes, full_bytes * 0.6)
+
+        release_names = {
+            spec.name
+            for spec in DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+                "release_gate", project_bound=True
+            )
+        }
+        self.assertIn("export_gerbers", release_names)
+        self.assertIn("move_footprint", release_names)
+        self.assertIn("route_net", release_names)
+
+        with self.assertRaisesRegex(ValidationError, "projection stage"):
+            DEFAULT_PCB_TOOL_REGISTRY.projected_specs(  # type: ignore[arg-type]
+                "model_selected_stage", project_bound=True
+            )
+
+    def test_registry_cannot_change_fixed_stage_or_capability_metadata(self) -> None:
+        original = DEFAULT_PCB_TOOL_REGISTRY.resolve("route_net")
+        changed = replace(
+            original,
+            evidence_stages=frozenset({"not_started"}),
+            capabilities=frozenset({"semantic"}),
+        )
+        specs = tuple(
+            changed if spec.name == changed.name else spec for spec in PCB_TOOL_SPECS
         )
 
         with self.assertRaisesRegex(ValueError, "fixed handler authority"):
@@ -652,6 +791,145 @@ class PCBToolingTests(unittest.TestCase):
             executor.execute(call, timeout=12.0)
 
         self.assertEqual(service.calls, [])
+
+    def test_bounded_semantic_group_validation_has_stable_failure_codes(self) -> None:
+        connection = {
+            "net_id": "net_out",
+            "component_id": "load_r",
+            "pin": "1",
+            "role": "signal",
+        }
+        placement = {
+            "component_id": "load_r",
+            "x_mm": 1.0,
+            "y_mm": 2.0,
+            "rotation_deg": 0.0,
+            "side": "front",
+        }
+        cases = (
+            (
+                "connect_group",
+                {"connections": {"entries": []}},
+                "semantic_transaction_empty",
+            ),
+            (
+                "connect_group",
+                {
+                    "connections": {
+                        "entries": [
+                            connection
+                            for _index in range(
+                                SEMANTIC_TRANSACTION_POLICY.max_connection_entries + 1
+                            )
+                        ]
+                    }
+                },
+                "semantic_transaction_overflow",
+            ),
+            (
+                "connect_group",
+                {"connections": {"entries": [connection, connection]}},
+                "semantic_transaction_duplicate",
+            ),
+            (
+                "connect_group",
+                {
+                    "connections": {
+                        "entries": [
+                            connection,
+                            {**connection, "net_id": "net_3v3"},
+                        ]
+                    }
+                },
+                "semantic_transaction_conflict",
+            ),
+            (
+                "place_group",
+                {"placements": {"entries": [placement, placement]}},
+                "semantic_transaction_duplicate",
+            ),
+            (
+                "place_group",
+                {"placements": {"entries": [placement, {**placement, "x_mm": 3.0}]}},
+                "semantic_transaction_conflict",
+            ),
+        )
+        for name, arguments, code in cases:
+            with (
+                self.subTest(name=name, code=code),
+                self.assertRaisesRegex(ValidationError, code),
+            ):
+                ToolCall(
+                    name=name,
+                    project_id="board",
+                    source="model",
+                    arguments=arguments,
+                    baseline_revision=3,
+                )
+
+        normalized = ToolCall(
+            name="place_group",
+            project_id="board",
+            source="model",
+            arguments={
+                "placements": {"entries": [{**placement, "x_mm": 1, "y_mm": 2}]}
+            },
+            baseline_revision=3,
+        )
+        entry = normalized.arguments["placements"]["entries"][0]
+        self.assertEqual(entry["x_mm"], 1.0)
+        self.assertEqual(entry["y_mm"], 2.0)
+
+    def test_semantic_group_values_are_not_coerced_from_malformed_scalars(self) -> None:
+        connection = {
+            "net_id": "net_out",
+            "component_id": "load_r",
+            "pin": "1",
+            "role": "signal",
+        }
+        placement = {
+            "component_id": "load_r",
+            "x_mm": 1.0,
+            "y_mm": 2.0,
+            "rotation_deg": 0.0,
+            "side": "front",
+        }
+        invalid_arguments = (
+            {"connections": {"entries": [{**connection, "net_id": True}]}},
+            {"connections": {"entries": [{**connection, "pin": 1}]}},
+            {"connections": {"entries": [{**connection, "unexpected": "field"}]}},
+            {"placements": {"entries": [{**placement, "x_mm": True}]}},
+            {"placements": {"entries": [{**placement, "y_mm": "2"}]}},
+            {"placements": {"entries": [{**placement, "side": False}]}},
+            {"placements": {"entries": [{**placement, "unexpected": "field"}]}},
+        )
+        for arguments in invalid_arguments:
+            name = "connect_group" if "connections" in arguments else "place_group"
+            with (
+                self.subTest(name=name, arguments=arguments),
+                self.assertRaises(ValidationError),
+            ):
+                ToolCall(
+                    name=name,
+                    project_id="board",
+                    source="model",
+                    arguments=arguments,
+                    baseline_revision=3,
+                )
+
+        normalized = ToolCall(
+            name="place_group",
+            project_id="board",
+            source="model",
+            arguments={
+                "placements": {"entries": [{**placement, "rotation_deg": 450.0}]}
+            },
+            baseline_revision=3,
+        )
+        self.assertEqual(
+            normalized.arguments["placements"]["entries"][0]["rotation_deg"],
+            90.0,
+        )
 
     def test_duplicate_repair_findings_remain_rejected_locally(self) -> None:
         service = ToolService(status="generated")

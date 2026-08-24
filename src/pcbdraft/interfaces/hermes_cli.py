@@ -22,12 +22,14 @@ import functools
 import logging
 import sys
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
 from pcbdraft.agent.permissions import PermissionMode
 from pcbdraft.agent.persona import write_soul
-from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.hermes_paths import (
     DEBUG_PLUGIN_DIR_NAME,
     hermes_home,
@@ -358,10 +360,48 @@ def _apply_model_persistence_patch() -> None:
     model_switch.resolve_persist_behavior = _persist_every_switch
 
 
+@contextmanager
+def _force_model_turn_limit(limit: int | None) -> Iterator[None]:
+    """Bind an isolated one-shot worker to an explicit Hermes iteration limit.
+
+    Hermes exposes ``--max-turns`` only on its ``chat`` subcommand, while the
+    script-safe ``--oneshot`` path bypasses that parser and constructs
+    ``AIAgent`` directly.  BoardBench workers are separate processes, so a
+    process-local constructor wrapper is the narrowest way to pass the frozen
+    limit into the actual agent without rewriting user configuration.
+    """
+
+    if limit is None:
+        yield
+        return
+    if isinstance(limit, bool) or not 1 <= limit <= 100_000:
+        raise ValidationError("Hermes model-turn limit is invalid")
+
+    import run_agent
+
+    original = run_agent.AIAgent
+
+    @functools.wraps(original)
+    def limited_agent(*args: Any, **kwargs: Any) -> Any:
+        configured = kwargs.get("max_iterations")
+        if configured is not None and configured != limit:
+            raise ValidationError("Hermes model-turn limit conflicts with the worker")
+        kwargs["max_iterations"] = limit
+        return original(*args, **kwargs)
+
+    limited_agent._pcbdraft_model_turn_limit = limit  # type: ignore[attr-defined]
+    run_agent.AIAgent = limited_agent
+    try:
+        yield
+    finally:
+        run_agent.AIAgent = original
+
+
 def launch_cli(
     argv: list[str] | None = None,
     *,
     permission_mode: PermissionMode = "workspace",
+    model_turn_limit: int | None = None,
 ) -> int:
     """Launch the Hermes interactive terminal (prompt_toolkit REPL) as PCBDraft.
 
@@ -395,27 +435,28 @@ def launch_cli(
     previous = list(sys.argv)
     sys.argv = ["pcbdraft"] + tokens
     try:
-        while True:
-            exit_code = 0
-            try:
-                hermes_main.main()
-            except SystemExit as exc:
-                exit_code = int(exc.code or 0)
-            requested = _take_deferred_connection()
-            if requested is None:
-                return exit_code
-            try:
-                status = connect(requested)
-            except PCBDraftError as exc:
-                print(f"✗ {exc}", file=sys.stderr)
-                print("Returning to the PCBDraft terminal.")
-                continue
-            if status.outcome != "cancelled":
-                from pcbdraft.agent.hermes_tools import refresh_service_provider
+        with _force_model_turn_limit(model_turn_limit):
+            while True:
+                exit_code = 0
+                try:
+                    hermes_main.main()
+                except SystemExit as exc:
+                    exit_code = int(exc.code or 0)
+                requested = _take_deferred_connection()
+                if requested is None:
+                    return exit_code
+                try:
+                    status = connect(requested)
+                except PCBDraftError as exc:
+                    print(f"✗ {exc}", file=sys.stderr)
+                    print("Returning to the PCBDraft terminal.")
+                    continue
+                if status.outcome != "cancelled":
+                    from pcbdraft.agent.hermes_tools import refresh_service_provider
 
-                refresh_service_provider()
-            print(format_connection_status(status))
-            print("Returning to the PCBDraft terminal.")
+                    refresh_service_provider()
+                print(format_connection_status(status))
+                print("Returning to the PCBDraft terminal.")
     finally:
         _take_deferred_connection()
         sys.argv = previous

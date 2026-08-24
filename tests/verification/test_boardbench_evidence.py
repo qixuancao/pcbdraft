@@ -42,6 +42,7 @@ from pcbdraft.verification.boardbench_runner import (
     create_campaign,
     initialize_run_receipts,
 )
+from pcbdraft.verification.boardbench_v2 import store_run_v2, terminal_run_v2
 from tests.verification.test_boardbench_runner import NOW, _corpus, _environment
 
 HASH_A = "a" * 64
@@ -85,15 +86,20 @@ class BoardBenchEvidenceTests(unittest.TestCase):
                     / "design.kicad_sch",
                     "(kicad_sch (version 20250114) (generator pcbdraft))\n",
                 )
-            terminal = replace(
+            terminal_v2 = terminal_run_v2(
                 running,
-                status="completed",
+                self.campaign,
+                artifacts,
                 completed_at=NOW,
-                termination_reason="fixture",
+                fallback_status="completed",
+                fallback_reason="fixture",
                 final_response="done",
+                duration_seconds=0.0,
+                worker_exit_code=0,
                 inventory=build_inventory(artifacts),
             )
-            store_run(path, terminal)
+            store_run_v2(path, terminal_v2)
+            terminal = terminal_v2.to_legacy()
             self.runs[item.run_id] = terminal
 
     def tearDown(self) -> None:

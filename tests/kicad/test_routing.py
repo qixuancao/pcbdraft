@@ -12,8 +12,12 @@ from pcbdraft.kicad.pcb import (
     _routing_failure_message,
 )
 from pcbdraft.kicad.routing import (
+    ROUTING_FAILURE_CODES,
     GridRouter,
     RouteSegment,
+    RouteVia,
+    RoutingFailure,
+    RoutingFailureError,
     RoutingKeepout,
     RoutingPad,
     RoutingResult,
@@ -121,6 +125,7 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(result.state, "heuristic")
         self.assertEqual(result.unrouted, ("N",))
         self.assertIn("could not connect", result.diagnostics[0])
+        self.assertEqual(result.failures[0].code, "no_legal_channel")
 
     def test_router_enforces_grid_bounds_without_a_static_layer_cap(self) -> None:
         self.assertEqual(_router(layers=1).layer_count, 1)
@@ -141,12 +146,27 @@ class RoutingTests(unittest.TestCase):
         self.assertEqual(result.state, "heuristic")
         self.assertLessEqual(result.expanded_nodes, 1)
         self.assertEqual(result.unrouted, ("A", "B"))
+        self.assertEqual(
+            {failure.code for failure in result.failures},
+            {"search_budget_exhausted"},
+        )
         self.assertTrue(
             any(
                 "total routing expansion budget was exhausted" in item
                 for item in result.diagnostics
             )
         )
+
+    def test_branch_expansion_budget_is_not_reported_as_total_exhaustion(self) -> None:
+        result = _router(max_expansions=1).route(
+            (
+                RoutingPad("left", "N", 2, 2, 0.5, 0.5, (0,)),
+                RoutingPad("right", "N", 8, 2, 0.5, 0.5, (0,)),
+            )
+        )
+        self.assertEqual(result.failures[0].code, "search_budget_exhausted")
+        self.assertIn("per-branch", result.failures[0].blocking_summary)
+        self.assertNotIn("total routing", result.failures[0].blocking_summary)
 
     def test_fine_pitch_seed_becomes_the_pad_terminal(self) -> None:
         seed = RouteSegment("N", 0, 1.03, 2.07, 2.0, 2.0, 0.2)
@@ -169,7 +189,7 @@ class RoutingTests(unittest.TestCase):
         )
 
     def test_seed_must_be_anchored_to_a_real_pad(self) -> None:
-        with self.assertRaisesRegex(ValidationError, "not anchored"):
+        with self.assertRaisesRegex(ValidationError, "not anchored") as captured:
             _router().route(
                 (
                     RoutingPad("a", "N", 2, 2, 0.5, 0.5, (0,)),
@@ -177,6 +197,150 @@ class RoutingTests(unittest.TestCase):
                 ),
                 seed_segments=(RouteSegment("N", 0, 3, 3, 4, 3, 0.2),),
             )
+        self.assertIsInstance(captured.exception, RoutingFailureError)
+        self.assertEqual(captured.exception.failure.code, "invalid_seed")
+
+    def test_zero_length_seed_is_typed_but_sub_grid_direction_is_normalized(
+        self,
+    ) -> None:
+        pads = (
+            RoutingPad("fine", "N", 2, 2, 0.35, 0.5, (0,)),
+            RoutingPad("far", "N", 8, 2, 0.5, 0.5, (0,)),
+        )
+        with self.assertRaises(RoutingFailureError) as captured:
+            _router().route(
+                pads,
+                seed_segments=(RouteSegment("N", 0, 2, 2, 2, 2, 0.2),),
+            )
+        self.assertEqual(captured.exception.failure.code, "zero_length_seed")
+
+        normalized = _router().route(
+            pads,
+            seed_segments=(RouteSegment("N", 0, 2, 2, 2.01, 2.01, 0.2),),
+        )
+        self.assertEqual(normalized.state, "completed")
+        self.assertIn(
+            RouteSegment("N", 0, 2, 2, 2.01, 2.01, 0.2),
+            normalized.segments,
+        )
+
+    def test_sub_grid_seed_bridge_is_checked_against_retained_vias(self) -> None:
+        seed = RouteSegment("N", 0, 2, 2, 2.01, 2.01, 0.2)
+        result = _router(layers=2).route(
+            (
+                RoutingPad("fine", "N", 2, 2, 0.35, 0.5, (0,)),
+                RoutingPad("far", "N", 8, 2, 0.5, 0.5, (0,)),
+            ),
+            seed_segments=(seed,),
+            obstacle_vias=(RouteVia("OTHER", 2.1, 2.0, 0.6, 0.3, 0, 1),),
+        )
+        self.assertNotIn(seed, result.segments)
+        self.assertTrue(
+            any("omitted obstructed optional" in item for item in result.diagnostics)
+        )
+
+    def test_non_finite_seed_has_typed_invalid_seed_failure(self) -> None:
+        with self.assertRaises(RoutingFailureError) as captured:
+            _router().route(
+                (
+                    RoutingPad("left", "N", 2, 2, 0.5, 0.5, (0,)),
+                    RoutingPad("right", "N", 8, 2, 0.5, 0.5, (0,)),
+                ),
+                seed_segments=(RouteSegment("N", 0, float("nan"), 2, 3, 2, 0.2),),
+            )
+        self.assertEqual(captured.exception.failure.code, "invalid_seed")
+
+    def test_search_evidence_distinguishes_escape_and_copper_congestion(self) -> None:
+        escape = _router().route(
+            (
+                RoutingPad("normal", "N", 2, 2, 0.3, 0.3, (0,)),
+                RoutingPad("edge", "N", 0.1, 2, 0.8, 0.8, (0,)),
+            )
+        )
+        self.assertEqual(escape.failures[0].code, "pad_escape_blocked")
+
+        congestion = _router(layers=1).route(
+            (
+                RoutingPad("left", "N", 2, 5, 0.5, 0.5, (0,)),
+                RoutingPad("right", "N", 8, 5, 0.5, 0.5, (0,)),
+            ),
+            obstacle_segments=(RouteSegment("OTHER", 0, 5, 0.5, 5, 9.5, 0.2),),
+        )
+        self.assertEqual(congestion.failures[0].code, "congestion_exhausted")
+
+        mixed_obstacles = _router(layers=1).route(
+            (
+                RoutingPad("left", "N", 2, 5, 0.5, 0.5, (0,)),
+                RoutingPad("right", "N", 8, 5, 0.5, 0.5, (0,)),
+            ),
+            keepouts=(RoutingKeepout("wall", 4.5, 0, 5.5, 10, (0,)),),
+            obstacle_segments=(RouteSegment("UNRELATED", 0, 1, 1, 1.5, 1, 0.2),),
+        )
+        self.assertEqual(mixed_obstacles.failures[0].code, "no_legal_channel")
+
+    def test_all_routing_failure_codes_have_stable_machine_projection(self) -> None:
+        self.assertEqual(
+            ROUTING_FAILURE_CODES,
+            {
+                "invalid_seed",
+                "zero_length_seed",
+                "pad_escape_blocked",
+                "no_legal_channel",
+                "congestion_exhausted",
+                "search_budget_exhausted",
+                "native_commit_failed",
+                "native_connectivity_failed",
+                "unintended_net_merge",
+            },
+        )
+        for code in sorted(ROUTING_FAILURE_CODES):
+            with self.subTest(code=code):
+                failure = RoutingFailure(
+                    code,
+                    "NET",
+                    ("U1.1", "J1.1"),
+                    4,
+                    state_revision=7,
+                    state_context=("placement=U1.1@1,1;J1.1@2,2", "order=0/1"),
+                )
+                self.assertEqual(failure.to_dict()["code"], code)
+                self.assertIn(f"{code}|NET|U1.1,J1.1|revision=7", failure.retry_key)
+
+    def test_retry_key_is_stable_for_same_state_and_changes_with_relevant_state(
+        self,
+    ) -> None:
+        pads = (
+            RoutingPad("left", "N", 2, 5, 0.5, 0.5, (0,)),
+            RoutingPad("right", "N", 8, 5, 0.5, 0.5, (0,)),
+        )
+        keepout = (RoutingKeepout("wall", 4.5, 0, 5.5, 10, (0, 1)),)
+        first = _router().route(pads, keepouts=keepout, state_revision=12).failures[0]
+        repeated = (
+            _router()
+            .route(reversed(pads), keepouts=keepout, state_revision=12)
+            .failures[0]
+        )
+        moved = (
+            _router()
+            .route(
+                (
+                    pads[0],
+                    RoutingPad("right", "N", 8, 6, 0.5, 0.5, (0,)),
+                ),
+                keepouts=keepout,
+                state_revision=12,
+            )
+            .failures[0]
+        )
+        revised = _router().route(pads, keepouts=keepout, state_revision=13).failures[0]
+
+        self.assertEqual(first.retry_key, repeated.retry_key)
+        self.assertNotEqual(first.retry_key, moved.retry_key)
+        self.assertNotEqual(first.retry_key, revised.retry_key)
+        self.assertIsNotNone(first.blocking_region)
+        self.assertEqual(first.nearest_obstacle_class, "unknown")
+        self.assertTrue(any(item.startswith("layers=") for item in first.state_context))
+        self.assertTrue(any(item.startswith("order=") for item in first.state_context))
 
     def test_obstructed_optional_fine_pitch_seed_falls_back_to_bounded_route(
         self,

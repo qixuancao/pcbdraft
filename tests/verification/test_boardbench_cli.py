@@ -203,6 +203,89 @@ class BoardBenchCliTests(unittest.TestCase):
             run_ids=("case-00-run-1", "case-01-run-1"),
         )
 
+    def test_campaign_initialize_and_authorize_comparison_are_model_free(self) -> None:
+        corpus = object()
+        plans = tuple(
+            SimpleNamespace(
+                run_id=f"case-{index:02d}-run-{repetition}",
+                case_id=f"case-{index:02d}",
+                repetition=repetition,
+            )
+            for index in range(20)
+            for repetition in range(1, 4)
+        )
+        campaign = SimpleNamespace(campaign_id="formal-v1", runs=plans)
+        campaign_root = Path("campaigns/formal-v1")
+        with (
+            patch.object(self.cli, "load_corpus", return_value=corpus),
+            patch.object(self.cli, "load_campaign", return_value=campaign),
+            patch.object(
+                self.cli, "initialize_run_receipts", return_value=(object(),) * 60
+            ) as initialize,
+            patch.object(self.cli, "run_campaign") as run,
+        ):
+            result, stdout, stderr = self._invoke(
+                [
+                    "campaign",
+                    "initialize",
+                    "--campaign",
+                    str(campaign_root),
+                    "--corpus",
+                    "private/corpus.json",
+                ]
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr, "")
+        self.assertIn("initialized 60 planned", stdout)
+        initialize.assert_called_once_with(campaign_root, campaign, corpus)
+        run.assert_not_called()
+
+        manifest = object()
+        record = SimpleNamespace(campaign_id=campaign.campaign_id)
+
+        def planned_receipt(path: Path) -> SimpleNamespace:
+            plan = next(item for item in plans if item.run_id == path.parent.name)
+            return SimpleNamespace(
+                run_state="planned",
+                campaign_id=campaign.campaign_id,
+                run_id=plan.run_id,
+                case_id=plan.case_id,
+                repetition=plan.repetition,
+            )
+
+        with (
+            patch.object(self.cli, "load_campaign", return_value=campaign),
+            patch.object(self.cli, "load_comparison_manifest", return_value=manifest),
+            patch.object(self.cli, "load_run_v2", side_effect=planned_receipt),
+            patch.object(
+                self.cli, "formal_comparison_launch_record", return_value=record
+            ) as bind,
+            patch.object(
+                self.cli,
+                "write_formal_comparison_launch",
+                return_value=Path("launches/formal-v1/launch.json"),
+            ) as write,
+            patch.object(self.cli, "run_campaign") as run,
+        ):
+            result, stdout, stderr = self._invoke(
+                [
+                    "campaign",
+                    "authorize-comparison",
+                    "--campaign",
+                    str(campaign_root),
+                    "--manifest",
+                    "plans/manifest.json",
+                    "--output",
+                    "launches",
+                ]
+            )
+        self.assertEqual(result, 0)
+        self.assertEqual(stderr, "")
+        self.assertIn("formal comparison authorized", stdout)
+        bind.assert_called_once()
+        write.assert_called_once_with(Path("launches"), record)
+        run.assert_not_called()
+
     def test_campaign_create_invalid_wall_timeout_is_reported(self) -> None:
         corpus = object()
         for raw, expected, message in (

@@ -1731,7 +1731,7 @@ class BoardBenchContractTests(unittest.TestCase):
             with self.assertRaisesRegex(ValidationError, "exceeds"):
                 load_run(disguised_run)
 
-    def test_private_atomic_storage_and_terminal_run_immutability(self) -> None:
+    def test_private_atomic_storage_and_legacy_run_read_only(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "campaigns"
             campaign_dir = allocate_campaign_directory(root, "campaign-v1")
@@ -1748,11 +1748,11 @@ class BoardBenchContractTests(unittest.TestCase):
 
             run_path = campaign_dir / "run.json"
             store_run(run_path, BoardBenchRun.from_dict(_run_document("planned")))
-            store_run(run_path, BoardBenchRun.from_dict(_run_document("running")))
-            terminal = BoardBenchRun.from_dict(_run_document("completed"))
-            store_run(run_path, terminal)
             original = run_path.read_bytes()
-            with self.assertRaisesRegex(ValidationError, "immutable"):
+            with self.assertRaisesRegex(ValidationError, "v1 run is read-only"):
+                store_run(run_path, BoardBenchRun.from_dict(_run_document("running")))
+            terminal = BoardBenchRun.from_dict(_run_document("completed"))
+            with self.assertRaisesRegex(ValidationError, "v1 run is read-only"):
                 store_run(run_path, terminal)
             self.assertEqual(original, run_path.read_bytes())
 
@@ -1760,10 +1760,10 @@ class BoardBenchContractTests(unittest.TestCase):
             store_run(
                 skipped_running, BoardBenchRun.from_dict(_run_document("planned"))
             )
-            with self.assertRaisesRegex(ValidationError, "status transition"):
+            with self.assertRaisesRegex(ValidationError, "v1 run is read-only"):
                 store_run(skipped_running, terminal)
 
-    def test_concurrent_write_once_and_terminal_transitions_have_one_winner(
+    def test_concurrent_write_once_and_legacy_transitions_are_read_only(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -1788,10 +1788,8 @@ class BoardBenchContractTests(unittest.TestCase):
 
             run_path = root / "run.json"
             store_run(run_path, BoardBenchRun.from_dict(_run_document("planned")))
-            store_run(run_path, BoardBenchRun.from_dict(_run_document("running")))
             completed = BoardBenchRun.from_dict(_run_document("completed"))
-            failed_document = _run_document("failed")
-            failed = BoardBenchRun.from_dict(failed_document)
+            running = BoardBenchRun.from_dict(_run_document("running"))
             barrier = threading.Barrier(2)
 
             def finish(run: BoardBenchRun) -> str:
@@ -1803,12 +1801,9 @@ class BoardBenchContractTests(unittest.TestCase):
                 return run.status
 
             with ThreadPoolExecutor(max_workers=2) as executor:
-                results = list(executor.map(finish, (completed, failed)))
-            self.assertEqual(
-                1, sum(result in {"completed", "failed"} for result in results)
-            )
-            self.assertEqual(1, sum("immutable" in result for result in results))
-            self.assertTrue(load_run(run_path).terminal)
+                results = list(executor.map(finish, (completed, running)))
+            self.assertEqual(2, sum("v1 run is read-only" in item for item in results))
+            self.assertEqual(load_run(run_path).status, "planned")
 
     def test_storage_rechecks_parent_after_lock_and_rejects_path_swap(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

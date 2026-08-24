@@ -37,6 +37,22 @@ publication ...
 Repeated `--run-id` selects a bounded subset but never changes the immutable
 campaign denominator.
 
+The versioned Python boundaries are:
+
+```python
+planned_run_v2(campaign, planned_run) -> BoardBenchRunV2
+start_run_v2(run, started_at) -> BoardBenchRunV2
+terminal_run_v2(...) -> BoardBenchRunV2
+load_run_v2(path) -> BoardBenchRunV2
+load_normalized_run(path) -> NormalizedBoardBenchRun  # v1 or v2, read-only
+
+evaluation_v5_from_legacy_score(...) -> BoardBenchEvaluationV5
+compare_evaluations_v5(previous, current, ...) -> BoardBenchComparisonV5
+
+comparison_manifest_from_campaign(source) -> ComparisonCampaignManifest
+run_deterministic_preflight(output_root, ...) -> DeterministicPreflightResult
+```
+
 ## 3. Contracts
 
 ### Cohorts and evidence claims
@@ -91,6 +107,69 @@ per-run output directory. A partially written score attempt must be preserved
 outside the canonical `scores/<run-id>/` path before a missing score is retried;
 never overwrite it in place.
 
+### Run v2 lifecycle and budgets
+
+`BoardBenchRunV2` has one immutable campaign/run/case/repetition identity and
+three execution states: `planned`, `running`, and `terminal`. Terminal runs keep
+`process_status`, `task_outcome`, `termination_reason`, `stage_reached`,
+`release_gate_passed`, `outcome_source`, worker exit code, artifact inventory,
+actual-cost evidence, and context-quality evidence as separate fields. A later
+worker crash/timeout/cancel or configuration drift outranks an earlier product
+receipt; an unbound or stale receipt cannot manufacture a pass.
+
+The ordered budget dimensions are `model_turns`, `pcb_tool_calls`,
+`route_attempts`, `route_node_expansions`, `uncached_input_tokens`,
+`output_tokens`, `cache_read_tokens`, and `wall_time`. The comparison constants
+are 90 model turns, 500 PCB tool calls, and 3600 seconds. Limits not enforced by
+the runtime remain null with observed/unknown consumption; they must not be
+invented during v1 projection. The 501st PCB tool call is rejected before side
+effects. An observed consumption exactly equal to its limit remains
+`within_limit`; `exhausted` at that value requires a separate authoritative
+runtime rejection/timeout signal. Inferred exhaustion requires consumption
+strictly above the limit. Exhaustion is terminal
+`budget_exhausted:<dimension>`, never passed.
+
+All v2, v5, manifest, and launch timestamps must be real timezone-aware calendar
+timestamps and obey lifecycle ordering. Boolean values never satisfy numeric or
+sequence fields despite Python's `bool`/`int` relationship. Cross-artifact
+adapters validate campaign, run, case, repetition, revision, and source identity
+together; comparisons additionally require distinct old/new campaign ids.
+
+### Evaluator v5 layers and causal evidence
+
+Evaluator v5 writes three independent layers: `design_intent`,
+`native_artifact`, and `delivery_readiness`. Each layer owns deterministic,
+source-attributed evidence and derives `pass|fail|unknown` from that evidence.
+Without qualified engineer or physical evidence, delivery readiness remains
+unknown even when native ERC/DRC pass. Graph comparison supports only explicit
+policy-backed equivalences (symmetric two-terminal parts, series topology,
+connector slot permutation, legal no-connect, and unspecified pin order); true
+opens, shorts, missing required endpoints, or non-bijective mappings fail.
+
+`first_blocking_stage`, `terminal_stage`, `root_causes`, and `symptoms` are
+separate causal fields. The first blocker cannot occur after the terminal stage
+or be detached from every root cause. v5 reads v1/v4 evidence and writes to a
+fresh namespace; it never rewrites old score/review/hardware artifacts.
+
+### Deterministic preflight versus formal comparison
+
+The preflight starts with natural-language text and enters the real Agent
+closed-tool protocol, but uses an explicitly labelled deterministic fake
+provider. It may validate semantic/native materialization and v2/v5 plumbing;
+it is not model reasoning, human review, delivery readiness, or hardware
+evidence. Its campaign/case/run ids live in the `deterministic-preflight`
+namespace and are forbidden from the formal 60-run denominator.
+
+The frozen comparison manifest accepts only the read-only `ai_reviewed_pilot`
+campaign evaluated under v4, and contains exactly 20 cases x 3 repetitions,
+Luna through `openai-codex`, KiCad 10.0.5, evaluator v5, and the fixed budget
+constants. Both that manifest and a separately loaded launch record independently
+reject a malformed denominator or any `deterministic-preflight` identity. The
+manifest is a preflight plan while `formal_campaign_started=false`; only separate
+operator authorization may start paid execution. Manifest/report writers require
+fresh non-symlink directories, bounded reads, closed schemas, relative artifact
+references, and exact identity/revision bindings.
+
 ## 4. Validation & Error Matrix
 
 | Condition | Required behavior |
@@ -105,6 +184,16 @@ never overwrite it in place.
 | AI review supplied as engineer review | Keep separate; do not call canonical review import |
 | Pilot sent to seal/publication | Reject regardless of downstream artifact count |
 | Human review or five-category physical evidence missing | Completeness/seal gate fails closed |
+| Product receipt identity/revision/time window differs from the run | Ignore it as pass evidence and use trace/worker truth |
+| Agent exits normally before release gate | Terminal v2 run is `incomplete` / `agent_returned_before_gate` |
+| Authoritative runtime rejects the next turn/call or signals wall timeout | Stop on the named dimension; preserve all prior evidence and planned denominator |
+| Observed consumption equals a configured hard limit without an exhaustion signal | Keep `within_limit`; do not invent a terminal reason |
+| Timestamp is impossible/reversed, a boolean occupies a numeric field, or an identity binding differs | Reject the artifact or adapter transition before publication |
+| v1 artifact lacks a budget or context field | Project it as unknown; never guess zero or a configured limit |
+| v5 layer evidence is unavailable or contradicts its summary | Reject malformed artifact or derive `unknown`; never infer pass |
+| Graph equivalence exceeds its bounded mapping search | Return unknown with the limit reason, not a guessed match |
+| Preflight id appears in formal planned runs | Reject the manifest before execution |
+| Preflight report claims autonomous model, human, or hardware evidence | Reject as malformed |
 
 ## 5. Good / Base / Bad Cases
 
@@ -119,6 +208,15 @@ never overwrite it in place.
 - Bad: copy an AI review into `reviews/<run-id>/review.json` and call it an
   engineer review.
 - Bad: delete a timed-out run and rerun the same id to improve the success rate.
+- Good: a worker exits zero but its bound product receipt says the release gate
+  was not reached; v2 records an exited process and incomplete PCB task.
+- Base: exactly 90 turns, 500 accepted PCB calls, or 3600 observed seconds is
+  still within the inclusive comparison limit unless the runtime separately
+  records that the next action was rejected or the process timed out.
+- Base: deterministic preflight proves nine real PCB tools can reach a native
+  KiCad/v2/v5 report. Design intent and delivery readiness remain unknown.
+- Bad: count that fake-provider preflight as one of the 60 Luna runs or promote
+  native DRC pass to engineer orderability.
 
 ## 6. Tests Required
 
@@ -138,6 +236,17 @@ never overwrite it in place.
 - `tests.verification.test_boardbench_cli` and
   `tests.interfaces.test_boardbench_worker`: CLI argument boundaries and the
   natural-language worker path.
+- `tests.verification.test_boardbench_v2`: strict lifecycle combinations,
+  v1 unknown preservation, terminal precedence/binding, named budget evidence,
+  inclusive exact-limit semantics, real/ordered timestamps, denominator
+  identity, boolean rejection, and the actual 500-call pre-side-effect guard.
+- `tests.verification.test_boardbench_evaluator_v5`: three-layer evidence,
+  bounded electrical graph equivalence, bijective mapping, causal ordering,
+  fresh writers, immutable legacy inputs, and traversal/symlink rejection.
+- `tests.verification.test_boardbench_preflight`: exact 20 x 3 manifest,
+  non-formal namespace, natural-language Agent boundary, real native KiCad
+  integration, v2/v5/report round trips, and truthful unknown human/hardware
+  claims.
 
 Focused iteration uses the nearest modules plus Ruff/format and
 `git diff --check`; paid campaigns and physical work never run in CI.
@@ -168,4 +277,24 @@ python scripts/boardbench.py campaign run \
 AI inspection is retained under ai-reviews/ with
 human_engineering_approval=false; canonical reviews remain absent until an
 actual qualified engineer supplies them.
+```
+
+Wrong — collapsing process completion, native checks, and delivery into one
+success flag:
+
+```json
+{"status": "completed", "overall": "pass", "order_ready": true}
+```
+
+Correct — preserve independent lifecycle and evaluation layers:
+
+```json
+{
+  "process_status": "exited",
+  "task_outcome": "incomplete",
+  "termination_reason": "agent_returned_before_gate",
+  "design_intent": "unknown",
+  "native_artifact": "pass",
+  "delivery_readiness": "unknown"
+}
 ```

@@ -17,7 +17,13 @@ from pcbdraft.core.debug_trace import (
 )
 from pcbdraft.core.hermes_paths import DEBUG_PLUGIN_DIR_NAME, install_vendor_path
 from pcbdraft.interfaces.hermes_cli import install_debug_plugin
-from pcbdraft.interfaces.hermes_plugin import register
+from pcbdraft.interfaces.hermes_plugin import (
+    _clear_session_decisions,
+    _context_quality_metrics,
+    _cost_metrics,
+    _project_pcb_tool_schemas,
+    register,
+)
 from pcbdraft.model.hermes_config import write_hermes_config
 
 
@@ -180,9 +186,239 @@ class DebugPluginTests(unittest.TestCase):
                 "post_llm_call",
             },
         )
-        self.assertEqual(set(context.middleware), {"tool_execution"})
+        self.assertEqual(set(context.middleware), {"llm_request", "tool_execution"})
 
-    def test_middleware_dispatches_only_one_pcb_call_per_provider_response(
+    def test_stage_schema_projection_rebuilds_a_strict_registry_subset(self) -> None:
+        from pcbdraft.agent.hermes_tools import ModelToolProjection
+        from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY
+
+        routing_specs = DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+            "routing", project_bound=True
+        )
+        projection = ModelToolProjection("routing", "board", 7, 4, routing_specs)
+        original = [
+            {
+                "type": "function",
+                "function": {
+                    "name": spec.external_name,
+                    "description": "stale transport copy",
+                    "parameters": {"type": "object"},
+                },
+            }
+            for spec in DEFAULT_PCB_TOOL_REGISTRY.specs
+        ]
+        original.append({"type": "function", "function": {"name": "clock"}})
+        original.append({"type": "function", "function": {"name": "pcb_unknown_tool"}})
+        request = {"model": "board-model", "tools": original}
+
+        with patch(
+            "pcbdraft.agent.hermes_tools.model_tool_projection",
+            return_value=projection,
+        ):
+            projected = _project_pcb_tool_schemas(request, "session-stage")["request"]
+
+        names = {item["function"]["name"] for item in projected["tools"]}
+        self.assertIn("clock", names)
+        self.assertIn("pcb_route_net", names)
+        self.assertIn("pcb_move_footprint", names)
+        self.assertIn("pcb_connect_group", names)
+        self.assertNotIn("pcb_export_gerbers", names)
+        self.assertNotIn("pcb_register_kicad_part", names)
+        self.assertNotIn("pcb_unknown_tool", names)
+        self.assertEqual(
+            names & {spec.external_name for spec in routing_specs},
+            {spec.external_name for spec in routing_specs},
+        )
+        route = next(
+            item
+            for item in projected["tools"]
+            if item["function"]["name"] == "pcb_route_net"
+        )
+        route_spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("route_net")
+        self.assertEqual(route["function"]["parameters"], route_spec.input_schema)
+        self.assertEqual(
+            route["function"]["description"], route_spec.protocol_description
+        )
+
+    def test_stage_schema_projection_rebuilds_direct_provider_shapes(self) -> None:
+        from pcbdraft.agent.hermes_tools import ModelToolProjection
+        from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY
+
+        routing_specs = DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+            "routing", project_bound=True
+        )
+        projection = ModelToolProjection("routing", "board", 7, 4, routing_specs)
+        route_spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("route_net")
+        for original, schema_key in (
+            (
+                {
+                    "type": "function",
+                    "name": "pcb_route_net",
+                    "description": "stale Responses copy",
+                    "parameters": {"type": "object"},
+                },
+                "parameters",
+            ),
+            (
+                {
+                    "name": "pcb_route_net",
+                    "description": "stale input-schema copy",
+                    "input_schema": {"type": "object"},
+                },
+                "input_schema",
+            ),
+        ):
+            with (
+                self.subTest(schema_key=schema_key),
+                patch(
+                    "pcbdraft.agent.hermes_tools.model_tool_projection",
+                    return_value=projection,
+                ),
+            ):
+                projected = _project_pcb_tool_schemas(
+                    {"model": "board-model", "tools": [original]},
+                    "session-stage-direct",
+                )["request"]["tools"]
+
+            self.assertEqual(len(projected), 1)
+            self.assertEqual(projected[0]["name"], "pcb_route_net")
+            self.assertEqual(projected[0][schema_key], route_spec.input_schema)
+            self.assertEqual(
+                projected[0]["description"], route_spec.protocol_description
+            )
+
+    def test_stage_schema_projection_fails_to_a_bounded_corrective_subset(self) -> None:
+        from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY
+
+        original = DEFAULT_PCB_TOOL_REGISTRY.openai_responses_tools()
+        with (
+            patch(
+                "pcbdraft.agent.hermes_tools.model_tool_projection",
+                side_effect=RuntimeError("stage adapter unavailable"),
+            ),
+            patch(
+                "pcbdraft.agent.hermes_tools.get_session_project_id",
+                return_value="board",
+            ),
+        ):
+            projected = _project_pcb_tool_schemas(
+                {"model": "board-model", "tools": original},
+                "session-stage-fallback",
+            )["request"]["tools"]
+
+        names = {item["name"] for item in projected}
+        self.assertIn("pcb_inspect_design", names)
+        self.assertIn("pcb_connect_group", names)
+        self.assertIn("pcb_move_footprint", names)
+        self.assertIn("pcb_route_net", names)
+        self.assertIn("pcb_run_drc", names)
+        self.assertNotIn("pcb_create_project", names)
+        self.assertNotIn("pcb_export_gerbers", names)
+        self.assertLessEqual(len(names), 30)
+        self.assertLess(
+            len(json.dumps(projected, separators=(",", ":")).encode("utf-8")),
+            len(json.dumps(original, separators=(",", ":")).encode("utf-8")) * 0.6,
+        )
+
+    def test_cost_and_context_quality_metrics_remain_separate(self) -> None:
+        unknown_cost = _cost_metrics(
+            {
+                "input_tokens": 100,
+                "cache_read_tokens": 90,
+                "output_tokens": 7,
+            }
+        )
+        self.assertEqual(unknown_cost["uncached_input_tokens"], 10)
+        self.assertEqual(unknown_cost["cache_read_tokens"], 90)
+        self.assertIsNone(unknown_cost["actual_cost_value"])
+        self.assertEqual(unknown_cost["actual_cost_status"], "unknown")
+        estimated_only = _cost_metrics(
+            {
+                "estimated_cost_usd": 0.2,
+                "actual_cost_usd": 0.0,
+                "cost_status": "estimated",
+            }
+        )
+        self.assertIsNone(estimated_only["actual_cost_value"])
+        self.assertEqual(estimated_only["actual_cost_status"], "unknown")
+        zero_default = _cost_metrics({"actual_cost_usd": 0.0})
+        self.assertIsNone(zero_default["actual_cost_value"])
+        self.assertEqual(zero_default["actual_cost_status"], "unknown")
+
+        reported_cost = _cost_metrics(
+            {
+                "input_tokens": 100,
+                "output_tokens": 7,
+                "actual_cost_usd": 0.012,
+                "cost_source": "provider_response",
+            }
+        )
+        self.assertEqual(reported_cost["actual_cost_value"], 0.012)
+        self.assertEqual(reported_cost["actual_cost_currency"], "USD")
+        self.assertEqual(reported_cost["actual_cost_status"], "reported")
+        self.assertEqual(reported_cost["cost_source"], "provider_response")
+        alternate_reported_cost = _cost_metrics(
+            {
+                "prompt_tokens": 20,
+                "completion_tokens": 3,
+                "prompt_tokens_details": {"cached_tokens": 5},
+                "cost_status": "actual",
+                "cost_amount": 0.025,
+                "cost_currency": "EUR",
+            }
+        )
+        self.assertEqual(alternate_reported_cost["uncached_input_tokens"], 15)
+        self.assertEqual(alternate_reported_cost["output_tokens"], 3)
+        self.assertEqual(alternate_reported_cost["actual_cost_value"], 0.025)
+        self.assertEqual(alternate_reported_cost["actual_cost_currency"], "EUR")
+
+        first = _context_quality_metrics(
+            session_id="metrics-session",
+            turn_id="turn-1",
+            active_tokens=100,
+            active_bytes=400,
+            message_count=2,
+        )
+        second = _context_quality_metrics(
+            session_id="metrics-session",
+            turn_id="turn-1",
+            active_tokens=115,
+            active_bytes=460,
+            message_count=4,
+        )
+        self.assertEqual(first["newly_added_tokens_estimate"], 100)
+        self.assertEqual(second["newly_added_tokens_estimate"], 15)
+        self.assertEqual(second["repeated_content_token_estimate"], 100)
+        self.assertNotIn("cache_read_tokens", second)
+        self.assertEqual(second["active_context_token_estimate"], 115)
+        empty = _context_quality_metrics(
+            session_id="empty-metrics-session",
+            turn_id="turn-1",
+            active_tokens=0,
+            active_bytes=0,
+            message_count=0,
+        )
+        self.assertEqual(empty["repeated_content_ratio"], 0.0)
+        other_session = _context_quality_metrics(
+            session_id="other-metrics-session",
+            turn_id="turn-2",
+            active_tokens=10,
+            active_bytes=40,
+            message_count=1,
+        )
+        self.assertIsNone(other_session["previous_turn_id"])
+        _clear_session_decisions("metrics-session")
+        after_reset = _context_quality_metrics(
+            session_id="metrics-session",
+            turn_id="turn-2",
+            active_tokens=12,
+            active_bytes=48,
+            message_count=1,
+        )
+        self.assertIsNone(after_reset["previous_turn_id"])
+        self.assertEqual(after_reset["newly_added_tokens_estimate"], 12)
+
+    def test_middleware_batches_reads_but_dispatches_only_one_write_per_response(
         self,
     ) -> None:
         context = FakePluginContext()
@@ -199,29 +435,236 @@ class DebugPluginTests(unittest.TestCase):
             "turn_id": "turn-1",
             "api_request_id": "turn-1:api:1",
         }
-        first = middleware(
+        first_read = middleware(
             tool_name="pcb_inspect_project",
             args={},
             next_call=dispatch,
             **common,
         )
-        second = middleware(
+        second_read = middleware(
             tool_name="pcb_search_parts",
             args={"query": "LED"},
             next_call=dispatch,
             **common,
         )
-        next_decision = middleware(
-            tool_name="pcb_search_parts",
-            args={"query": "LED"},
+        batch_write = middleware(
+            tool_name="pcb_connect_group",
+            args={
+                "connections": {
+                    "entries": [
+                        {
+                            "net_id": "net_out",
+                            "component_id": "load_r",
+                            "pin": "2",
+                            "role": "signal",
+                        }
+                    ]
+                }
+            },
+            next_call=dispatch,
+            **common,
+        )
+        second_write = middleware(
+            tool_name="pcb_place_group",
+            args={
+                "placements": {
+                    "entries": [
+                        {
+                            "component_id": "load_r",
+                            "x_mm": 1.0,
+                            "y_mm": 2.0,
+                            "rotation_deg": 0.0,
+                            "side": "front",
+                        }
+                    ]
+                }
+            },
+            next_call=dispatch,
+            **common,
+        )
+        trailing_read = middleware(
+            tool_name="pcb_inspect_design",
+            args={},
+            next_call=dispatch,
+            **common,
+        )
+        next_decision_write = middleware(
+            tool_name="pcb_add_component",
+            args={"value": {}},
             next_call=dispatch,
             **{**common, "api_request_id": "turn-1:api:2"},
         )
 
-        self.assertEqual(first, "executed")
-        self.assertTrue(json.loads(second)["blocked"])
-        self.assertEqual(next_decision, "executed")
-        self.assertEqual(calls, [{}, {"query": "LED"}])
+        self.assertEqual(first_read, "executed")
+        self.assertEqual(second_read, "executed")
+        self.assertEqual(batch_write, "executed")
+        blocked = json.loads(second_write)
+        self.assertTrue(blocked["blocked"])
+        self.assertEqual(blocked["policy"], "one_pcb_write_per_model_decision")
+        self.assertEqual(trailing_read, "executed")
+        self.assertEqual(next_decision_write, "executed")
+        self.assertEqual(
+            calls,
+            [
+                {},
+                {"query": "LED"},
+                {
+                    "connections": {
+                        "entries": [
+                            {
+                                "net_id": "net_out",
+                                "component_id": "load_r",
+                                "pin": "2",
+                                "role": "signal",
+                            }
+                        ]
+                    }
+                },
+                {},
+                {"value": {}},
+            ],
+        )
+
+    def test_middleware_blocks_unknown_pcb_tool_before_dispatch(self) -> None:
+        context = FakePluginContext()
+        register(context)
+        middleware = context.middleware["tool_execution"][0]
+        calls: list[dict] = []
+        common = {
+            "session_id": "session-unknown-tool",
+            "turn_id": "turn-1",
+            "api_request_id": "turn-1:api:1",
+        }
+
+        blocked = middleware(
+            tool_name="pcb_not_a_real_tool",
+            args={},
+            next_call=lambda args: calls.append(args),
+            **common,
+        )
+        valid_write = middleware(
+            tool_name="pcb_add_component",
+            args={"value": {}},
+            next_call=lambda args: calls.append(args) or "executed",
+            **common,
+        )
+
+        payload = json.loads(blocked)
+        self.assertTrue(payload["blocked"])
+        self.assertEqual(payload["policy"], "closed_pcb_toolbox")
+        self.assertEqual(valid_write, "executed")
+        self.assertEqual(calls, [{"value": {}}])
+
+    def test_middleware_enforces_session_pcb_tool_budget_before_dispatch(self) -> None:
+        context = FakePluginContext()
+        calls: list[dict] = []
+        common = {
+            "session_id": "session-tool-budget",
+            "turn_id": "turn-1",
+            "api_request_id": "turn-1:api:1",
+        }
+
+        with patch.dict(
+            os.environ,
+            {
+                "PCBDRAFT_PCB_TOOL_CALL_LIMIT": "2",
+                "PCBDRAFT_DEBUG_TRACE_PATH": str(self.trace_path),
+            },
+        ):
+            reset_trace_writer()
+            register(context)
+            middleware = context.middleware["tool_execution"][0]
+            for _ in range(2):
+                self.assertEqual(
+                    middleware(
+                        tool_name="pcb_inspect_project",
+                        args={},
+                        next_call=lambda args: calls.append(args) or "executed",
+                        **common,
+                    ),
+                    "executed",
+                )
+            blocked = middleware(
+                tool_name="pcb_inspect_project",
+                args={},
+                next_call=lambda args: calls.append(args) or "executed",
+                **common,
+            )
+
+        payload = json.loads(blocked)
+        self.assertTrue(payload["blocked"])
+        self.assertEqual(payload["policy"], "pcb_tool_call_budget")
+        self.assertEqual(len(calls), 2)
+        event = self._recorded_events()[-1]
+        self.assertEqual(event["event"], "pcb_tool_budget_exhausted")
+        self.assertEqual(event["data"]["consumed"], 2)
+
+    def test_session_terminal_reports_enforced_pcb_tool_budget(self) -> None:
+        class Service:
+            def __init__(self) -> None:
+                self.values: dict | None = None
+
+            def record_product_session_terminal(self, project_id: str, **values):
+                self.values = {"project_id": project_id, **values}
+                return {
+                    "process_status": "exited",
+                    "task_outcome": "incomplete",
+                    "termination_reason": values["termination_reason"],
+                    "stage_reached": "routing",
+                    "release_gate_passed": False,
+                    "artifact": "product-sessions/receipt.json",
+                }
+
+        service = Service()
+        context = FakePluginContext()
+        register(context)
+        middleware = context.middleware["tool_execution"][0]
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "PCBDRAFT_DEBUG_TRACE_PATH": str(self.trace_path),
+                    "PCBDRAFT_PCB_TOOL_CALL_LIMIT": "1",
+                },
+            ),
+            patch(
+                "pcbdraft.agent.hermes_tools.get_session_project_id",
+                return_value="board-1",
+            ),
+            patch("pcbdraft.agent.hermes_tools.get_service", return_value=service),
+        ):
+            common = {
+                "session_id": "session-terminal-budget",
+                "turn_id": "turn-1",
+                "api_request_id": "turn-1:api:1",
+            }
+            middleware(
+                tool_name="pcb_inspect_project",
+                args={},
+                next_call=lambda _args: "executed",
+                **common,
+            )
+            middleware(
+                tool_name="pcb_inspect_project",
+                args={},
+                next_call=lambda _args: self.fail("budget overrun dispatched"),
+                **common,
+            )
+            context.hooks["on_session_end"][0](
+                session_id=common["session_id"],
+                turn_id=common["turn_id"],
+                completed=True,
+                failed=False,
+                interrupted=False,
+                turn_exit_reason="completed",
+                model="gpt-5.6-luna",
+            )
+
+        self.assertIsNotNone(service.values)
+        self.assertEqual(
+            service.values["termination_reason"],
+            "budget_exhausted:pcb_tool_calls",
+        )
 
     def test_hooks_forward_full_conversation_step(self) -> None:
         import os as _os
@@ -245,6 +688,7 @@ class DebugPluginTests(unittest.TestCase):
                 message_count=2,
                 tool_count=8,
                 approx_input_tokens=1000,
+                request_char_count=4000,
                 retry_count=0,
                 request={"method": "POST", "body": {"model": "mimo-v2.5"}},
             )
@@ -338,6 +782,10 @@ class DebugPluginTests(unittest.TestCase):
         request = next(event for event in events if event["event"] == "model_request")
         self.assertEqual(request["data"]["api_call_count"], 1)
         self.assertEqual(request["data"]["request"]["body"]["model"], "mimo-v2.5")
+        self.assertEqual(
+            request["data"]["context_quality"]["active_context_token_estimate"],
+            1000,
+        )
         response = next(event for event in events if event["event"] == "model_response")
         self.assertEqual(
             response["data"]["response"]["assistant_message"]["tool_calls"][0][
@@ -345,12 +793,140 @@ class DebugPluginTests(unittest.TestCase):
             ]["name"],
             "pcb_plan_request",
         )
+        self.assertEqual(
+            response["data"]["cost_metrics"]["actual_cost_status"], "unknown"
+        )
         error = next(event for event in events if event["event"] == "model_error")
         self.assertEqual(error["data"]["http_status"], 429)
         self.assertTrue(error["data"]["retryable"])
         tool = next(event for event in events if event["event"] == "tool_end")
         self.assertEqual(tool["data"]["tool_name"], "pcb_plan_request")
         self.assertEqual(tool["data"]["status"], "ok")
+
+    def test_session_end_records_product_terminal_before_unbinding(self) -> None:
+        class Service:
+            def __init__(self) -> None:
+                self.receipts: list[dict] = []
+
+            def record_product_session_terminal(self, project_id: str, **values):
+                self.receipts.append({"project_id": project_id, **values})
+                return {
+                    "process_status": "exited",
+                    "task_outcome": "incomplete",
+                    "termination_reason": "agent_returned_before_gate",
+                    "stage_reached": "routing",
+                    "release_gate_passed": False,
+                    "artifact": "product-sessions/receipt.json",
+                }
+
+        service = Service()
+        with (
+            patch.dict(os.environ, {"PCBDRAFT_DEBUG_TRACE_PATH": str(self.trace_path)}),
+            patch(
+                "pcbdraft.agent.hermes_tools.get_session_project_id",
+                return_value="board-1",
+            ),
+            patch("pcbdraft.agent.hermes_tools.get_service", return_value=service),
+        ):
+            context = FakePluginContext()
+            register(context)
+            context.hooks["on_session_end"][0](
+                session_id="session-1",
+                turn_id="turn-1",
+                completed=True,
+                failed=False,
+                interrupted=False,
+                turn_exit_reason="completed",
+                model="gpt-5.6-luna",
+            )
+
+        self.assertEqual(len(service.receipts), 1)
+        self.assertEqual(service.receipts[0]["project_id"], "board-1")
+        self.assertEqual(service.receipts[0]["process_status"], "exited")
+        events = self._recorded_events()
+        self.assertEqual(
+            [event["event"] for event in events],
+            ["plugin_loaded", "product_session_terminal", "session_end"],
+        )
+
+    def test_session_end_maps_turn_failure_budget_and_strategy_truthfully(self) -> None:
+        class Service:
+            def __init__(self) -> None:
+                self.receipts: list[dict] = []
+
+            def record_product_session_terminal(self, project_id: str, **values):
+                self.receipts.append({"project_id": project_id, **values})
+                return {
+                    "process_status": values["process_status"],
+                    "task_outcome": "incomplete",
+                    "termination_reason": values["termination_reason"],
+                    "stage_reached": "routing",
+                    "release_gate_passed": False,
+                    "artifact": "product-sessions/receipt.json",
+                }
+
+        service = Service()
+        cases = (
+            (
+                False,
+                True,
+                False,
+                "all_retries_exhausted_no_response",
+                "exited",
+                "tool_failure",
+            ),
+            (
+                False,
+                False,
+                False,
+                "max_iterations_reached(90/90)",
+                "exited",
+                "budget_exhausted:model_turns",
+            ),
+            (False, False, True, "interrupted_by_user", "cancelled", "cancelled"),
+            (
+                True,
+                False,
+                False,
+                "strategy_change_required",
+                "exited",
+                "human_intervention_required",
+            ),
+        )
+        with (
+            patch.dict(os.environ, {"PCBDRAFT_DEBUG_TRACE_PATH": str(self.trace_path)}),
+            patch(
+                "pcbdraft.agent.hermes_tools.get_session_project_id",
+                return_value="board-1",
+            ),
+            patch("pcbdraft.agent.hermes_tools.get_service", return_value=service),
+        ):
+            context = FakePluginContext()
+            register(context)
+            hook = context.hooks["on_session_end"][0]
+            for index, (
+                completed,
+                failed,
+                interrupted,
+                reason,
+                expected_process,
+                expected_reason,
+            ) in enumerate(cases):
+                hook(
+                    session_id="session-1",
+                    turn_id=f"turn-{index}",
+                    completed=completed,
+                    failed=failed,
+                    interrupted=interrupted,
+                    turn_exit_reason=reason,
+                    model="gpt-5.6-luna",
+                )
+                self.assertEqual(
+                    service.receipts[-1]["process_status"], expected_process
+                )
+                self.assertEqual(
+                    service.receipts[-1]["termination_reason"], expected_reason
+                )
 
 
 class DebugPluginInstallTests(unittest.TestCase):

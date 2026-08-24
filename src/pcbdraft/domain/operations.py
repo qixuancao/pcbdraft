@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -51,6 +52,197 @@ SUPPORTED_OPERATIONS = {
     "update_board",
     "set_metadata",
 }
+
+
+@dataclass(frozen=True)
+class SemanticTransactionPolicy:
+    """Conservative public bounds for one model-selected semantic transaction."""
+
+    max_connection_entries: int
+    max_placement_entries: int
+
+    def __post_init__(self) -> None:
+        if self.max_connection_entries < 1 or self.max_placement_entries < 1:
+            raise ValueError("semantic transaction limits must be positive")
+
+
+SEMANTIC_TRANSACTION_POLICY = SemanticTransactionPolicy(
+    max_connection_entries=16,
+    max_placement_entries=8,
+)
+
+
+@dataclass(frozen=True)
+class ConnectGroupEntry:
+    """One normalized endpoint-to-net intent in ``pcb_connect_group``."""
+
+    net_id: str
+    component_id: str
+    pin: str
+    role: str
+
+    def to_tool_arguments(self) -> dict[str, str]:
+        return {
+            "net_id": self.net_id,
+            "component_id": self.component_id,
+            "pin": self.pin,
+            "role": self.role,
+        }
+
+
+@dataclass(frozen=True)
+class PlaceGroupEntry:
+    """One normalized absolute footprint pose in ``pcb_place_group``."""
+
+    component_id: str
+    x_mm: float
+    y_mm: float
+    rotation_deg: float
+    side: str
+
+    def to_tool_arguments(self) -> dict[str, str | float]:
+        return {
+            "component_id": self.component_id,
+            "x_mm": self.x_mm,
+            "y_mm": self.y_mm,
+            "rotation_deg": self.rotation_deg,
+            "side": self.side,
+        }
+
+
+def _semantic_group_entries(
+    value: Any, *, kind: str, limit: int
+) -> list[Mapping[str, Any]]:
+    if not isinstance(value, Mapping) or set(value) != {"entries"}:
+        raise ValidationError(
+            f"semantic_transaction_invalid: {kind} payload must contain only entries"
+        )
+    entries = value["entries"]
+    if not isinstance(entries, list):
+        raise ValidationError(
+            f"semantic_transaction_invalid: {kind}.entries must be an array"
+        )
+    if not entries:
+        raise ValidationError(
+            f"semantic_transaction_empty: {kind} requires at least one entry"
+        )
+    if len(entries) > limit:
+        raise ValidationError(
+            f"semantic_transaction_overflow: {kind} permits at most {limit} entries"
+        )
+    result: list[Mapping[str, Any]] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, Mapping):
+            raise ValidationError(
+                f"semantic_transaction_invalid: {kind}.entries[{index}] must be an object"
+            )
+        result.append(entry)
+    return result
+
+
+def parse_connect_group(value: Any) -> tuple[ConnectGroupEntry, ...]:
+    """Validate one bounded connection payload before any design mutation."""
+
+    raw_entries = _semantic_group_entries(
+        value,
+        kind="connect_group",
+        limit=SEMANTIC_TRANSACTION_POLICY.max_connection_entries,
+    )
+    expected = {"net_id", "component_id", "pin", "role"}
+    result: list[ConnectGroupEntry] = []
+    by_endpoint: dict[tuple[str, str], ConnectGroupEntry] = {}
+    for index, raw in enumerate(raw_entries):
+        if set(raw) != expected:
+            raise ValidationError(
+                f"semantic_transaction_invalid: connect_group.entries[{index}] has an invalid shape"
+            )
+        entry = ConnectGroupEntry(
+            net_id=_identifier(raw["net_id"], f"connect_group.entries[{index}].net_id"),
+            component_id=_identifier(
+                raw["component_id"],
+                f"connect_group.entries[{index}].component_id",
+            ),
+            pin=_string(raw["pin"], f"connect_group.entries[{index}].pin", limit=64),
+            role=_identifier(raw["role"], f"connect_group.entries[{index}].role"),
+        )
+        key = (entry.component_id, entry.pin)
+        prior = by_endpoint.get(key)
+        if prior == entry:
+            raise ValidationError(
+                "semantic_transaction_duplicate: connect_group repeats endpoint "
+                f"{entry.component_id}.{entry.pin}"
+            )
+        if prior is not None:
+            raise ValidationError(
+                "semantic_transaction_conflict: connect_group assigns endpoint "
+                f"{entry.component_id}.{entry.pin} more than once"
+            )
+        by_endpoint[key] = entry
+        result.append(entry)
+    return tuple(result)
+
+
+def parse_place_group(value: Any) -> tuple[PlaceGroupEntry, ...]:
+    """Validate one bounded absolute-placement payload before design mutation."""
+
+    raw_entries = _semantic_group_entries(
+        value,
+        kind="place_group",
+        limit=SEMANTIC_TRANSACTION_POLICY.max_placement_entries,
+    )
+    expected = {"component_id", "x_mm", "y_mm", "rotation_deg", "side"}
+    result: list[PlaceGroupEntry] = []
+    by_component: dict[str, PlaceGroupEntry] = {}
+    for index, raw in enumerate(raw_entries):
+        if set(raw) != expected:
+            raise ValidationError(
+                f"semantic_transaction_invalid: place_group.entries[{index}] has an invalid shape"
+            )
+        numbers: list[float] = []
+        for name in ("x_mm", "y_mm", "rotation_deg"):
+            raw_number = raw[name]
+            if isinstance(raw_number, bool) or not isinstance(raw_number, (int, float)):
+                raise ValidationError(
+                    f"semantic_transaction_invalid: place_group.entries[{index}].{name} must be a number"
+                )
+            number = float(raw_number)
+            if not math.isfinite(number):
+                raise ValidationError(
+                    f"semantic_transaction_invalid: place_group.entries[{index}].{name} must be finite"
+                )
+            numbers.append(number)
+        side = raw["side"]
+        if not isinstance(side, str) or side not in {"front", "back"}:
+            raise ValidationError(
+                f"semantic_transaction_invalid: place_group.entries[{index}].side must be front or back"
+            )
+        entry = PlaceGroupEntry(
+            component_id=_identifier(
+                raw["component_id"],
+                f"place_group.entries[{index}].component_id",
+            ),
+            x_mm=numbers[0],
+            y_mm=numbers[1],
+            # Placement IR canonicalizes rotations modulo one turn.  Do the
+            # same before duplicate/conflict checks so 90 and 450 degrees do
+            # not create a no-op transaction with a fresh revision.
+            rotation_deg=numbers[2] % 360.0,
+            side=side,
+        )
+        prior = by_component.get(entry.component_id)
+        if prior == entry:
+            raise ValidationError(
+                "semantic_transaction_duplicate: place_group repeats component "
+                f"{entry.component_id}"
+            )
+        if prior is not None:
+            raise ValidationError(
+                "semantic_transaction_conflict: place_group assigns component "
+                f"{entry.component_id} more than once"
+            )
+        by_component[entry.component_id] = entry
+        result.append(entry)
+    return tuple(result)
 
 
 @dataclass(frozen=True)

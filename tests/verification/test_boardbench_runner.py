@@ -30,12 +30,14 @@ from pcbdraft.verification.boardbench_runner import (
     _canonical_hash,
     _effective_tool_call_budget,
     _secret_free_configuration,
+    _trace_summary,
     capture_environment,
     create_campaign,
     initialize_run_receipts,
     plan_campaign,
     run_campaign,
 )
+from pcbdraft.verification.boardbench_v2 import RUN_V2_SCHEMA, load_run_v2
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -249,6 +251,19 @@ class BoardBenchRunnerTests(unittest.TestCase):
             wall_timeout_seconds=30.0,
         )
 
+    def test_trace_summary_rejects_boolean_sequence_numbers(self) -> None:
+        trace_root = self.root / "trace"
+        trace_root.mkdir()
+        atomic_write_text(
+            trace_root / "agent-trace.jsonl",
+            '{"seq":true,"event":"turn_complete","data":{}}\n',
+        )
+
+        summary = _trace_summary(trace_root)
+
+        self.assertTrue(summary.gap_detected)
+        self.assertIsNone(summary.final_response)
+
     @staticmethod
     def _git(repository: Path, *arguments: str) -> bytes:
         result = run_command(
@@ -327,7 +342,7 @@ class BoardBenchRunnerTests(unittest.TestCase):
                 ),
                 status,
             )
-            self.assertEqual(captured.tool_call_budget, 73)
+            self.assertEqual(captured.tool_call_budget, 500)
             return captured
 
         first = snapshot()
@@ -403,7 +418,7 @@ class BoardBenchRunnerTests(unittest.TestCase):
         self.assertIn('"max_tokens": 8192', rendered)
         self.assertIn('"tokenizer": "stable-tokenizer"', rendered)
         self.assertIn('"proactive_prune_tokens": 4096', rendered)
-        self.assertEqual(_effective_tool_call_budget(raw), 73)
+        self.assertEqual(_effective_tool_call_budget(raw), 500)
 
         rotated_secret = {
             **raw,
@@ -425,21 +440,30 @@ class BoardBenchRunnerTests(unittest.TestCase):
             _canonical_hash(sanitized),
             _canonical_hash(_secret_free_configuration(changed_limit)),
         )
-        with self.assertRaisesRegex(ValidationError, "agent.max_turns"):
-            _effective_tool_call_budget({"agent": {"max_turns": True}})
+        self.assertEqual(
+            _effective_tool_call_budget({"agent": {"max_turns": True}}), 500
+        )
 
     def test_plan_freezes_exactly_sixty_ids_and_effective_hermes_budget(self) -> None:
         self.assertEqual(DEFAULT_WALL_TIMEOUT_SECONDS, 3600.0)
+        with self.assertRaisesRegex(ValidationError, "fixed at 500"):
+            plan_campaign(
+                self.corpus,
+                campaign_id="invalid-budget",
+                environment=replace(self.environment, tool_call_budget=73),
+                evaluator_version="boardbench-evaluator-v1",
+                created_at=NOW,
+            )
         campaign = plan_campaign(
             self.corpus,
             campaign_id="campaign-v1",
-            environment=replace(self.environment, tool_call_budget=73),
+            environment=self.environment,
             evaluator_version="boardbench-evaluator-v1",
             created_at=NOW,
         )
         self.assertEqual(len(campaign.runs), 60)
         self.assertEqual(len({run.run_id for run in campaign.runs}), 60)
-        self.assertEqual(campaign.tool_call_budget, 73)
+        self.assertEqual(campaign.tool_call_budget, 500)
         self.assertEqual(campaign.wall_timeout_seconds, DEFAULT_WALL_TIMEOUT_SECONDS)
         self.assertEqual(
             {(run.case_id, run.repetition) for run in campaign.runs},
@@ -493,6 +517,10 @@ class BoardBenchRunnerTests(unittest.TestCase):
         self.assertEqual(len({_argument(call, "--trace") for call in fake.calls}), 60)
         self.assertEqual(len({_argument(call, "--usage") for call in fake.calls}), 60)
         self.assertEqual(
+            {_argument(call, "--pcb-tool-call-limit") for call in fake.calls},
+            {Path("500")},
+        )
+        self.assertEqual(
             [request["prompt"] for request in fake.requests],
             [case.prompt for case in self.corpus.cases for _ in range(3)],
         )
@@ -512,6 +540,11 @@ class BoardBenchRunnerTests(unittest.TestCase):
             sessions.add(first_event["data"]["session_id"])
         self.assertEqual(len(sessions), 60)
         first_root = campaign_root / "runs" / campaign.runs[0].run_id
+        first_v2 = load_run_v2(first_root / "run.json")
+        self.assertEqual(first_v2.to_dict()["schema"], RUN_V2_SCHEMA)
+        self.assertEqual(first_v2.process_status.value, "exited")
+        self.assertEqual(first_v2.task_outcome.value, "incomplete")
+        self.assertEqual(first_v2.termination_reason, "agent_returned_before_gate")
         first_inventory = {item.path for item in results[0].inventory}
         self.assertIn("trace/agent-trace.jsonl", first_inventory)
         self.assertIn("trace/agent-trace.jsonl.1", first_inventory)
@@ -558,15 +591,17 @@ class BoardBenchRunnerTests(unittest.TestCase):
         selected = (campaign.runs[7].run_id, campaign.runs[2].run_id)
         fake = _FakeWorkerProcess()
 
-        results = run_campaign(
-            campaign_root,
-            self.corpus,
-            source_root=self.root,
-            environment_probe=lambda: self.environment,
-            command_runner=fake,
-            fixture_label=FIXTURE_LABEL,
-            run_ids=selected,
-        )
+        with mock.patch("pcbdraft.verification.boardbench.store_run") as legacy_store:
+            results = run_campaign(
+                campaign_root,
+                self.corpus,
+                source_root=self.root,
+                environment_probe=lambda: self.environment,
+                command_runner=fake,
+                fixture_label=FIXTURE_LABEL,
+                run_ids=selected,
+            )
+        legacy_store.assert_not_called()
 
         self.assertEqual(60, len(results))
         self.assertEqual(2, len(fake.calls))
@@ -667,7 +702,13 @@ class BoardBenchRunnerTests(unittest.TestCase):
         )
         failed = results[0]
         self.assertEqual(failed.status, "failed")
-        self.assertEqual(failed.termination_reason, "worker_exit_7")
+        self.assertEqual(failed.termination_reason, "crashed")
+        self.assertEqual(
+            load_run_v2(
+                campaign_root / "runs" / failed.run_id / "run.json"
+            ).process_status.value,
+            "crashed",
+        )
         paths = {item.path for item in failed.inventory}
         self.assertIn("failure.json", paths)
         stderr = (
@@ -680,6 +721,20 @@ class BoardBenchRunnerTests(unittest.TestCase):
         campaign = load_campaign(campaign_root / "campaign.json")
         planned = initialize_run_receipts(campaign_root, campaign, self.corpus)
         first = planned[0]
+        with self.assertRaisesRegex(ValidationError, "immutable identity"):
+            store_run(
+                campaign_root / "runs" / first.run_id / "run.json",
+                replace(
+                    first,
+                    campaign_id="different-campaign",
+                    status="running",
+                    started_at=NOW,
+                ),
+            )
+        self.assertEqual(
+            load_run_v2(campaign_root / "runs" / first.run_id / "run.json").run_state,
+            "planned",
+        )
         store_run(
             campaign_root / "runs" / first.run_id / "run.json",
             replace(first, status="running", started_at=NOW),
@@ -694,7 +749,7 @@ class BoardBenchRunnerTests(unittest.TestCase):
             fixture_label=FIXTURE_LABEL,
         )
         self.assertEqual(results[0].status, "interrupted")
-        self.assertEqual(results[0].termination_reason, "prior_worker_interrupted")
+        self.assertEqual(results[0].termination_reason, "cancelled")
         self.assertEqual(len(fake.calls), 59)
 
     def test_configuration_drift_terminates_without_retry(self) -> None:

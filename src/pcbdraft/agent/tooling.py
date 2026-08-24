@@ -34,6 +34,11 @@ from pcbdraft.agent.repair import (
 )
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.domain.operations import (
+    SEMANTIC_TRANSACTION_POLICY,
+    parse_connect_group,
+    parse_place_group,
+)
 
 ToolSource = Literal["runtime_policy", "model", "mcp", "user"]
 ToolEffect = Literal[
@@ -45,6 +50,30 @@ ToolEffect = Literal[
     "authoritative_write",
 ]
 ToolRisk = Literal["low", "medium", "high"]
+EvidenceStage = Literal[
+    "not_started",
+    "requirements_frozen",
+    "schematic_semantic",
+    "native_schematic_confirmed",
+    "footprint_net_sync",
+    "placement",
+    "routing",
+    "native_connectivity_confirmed",
+    "erc_drc",
+    "release_gate",
+]
+ToolCapability = Literal[
+    "project",
+    "inspection",
+    "diagnostics",
+    "library",
+    "semantic",
+    "placement",
+    "routing",
+    "verification",
+    "preview",
+    "delivery",
+]
 
 _TOOL_SOURCES = frozenset({"runtime_policy", "model", "mcp", "user"})
 _TOOL_EFFECTS = frozenset(
@@ -58,6 +87,34 @@ _TOOL_EFFECTS = frozenset(
     }
 )
 _TOOL_RISKS = frozenset({"low", "medium", "high"})
+_EVIDENCE_STAGES = frozenset(
+    {
+        "not_started",
+        "requirements_frozen",
+        "schematic_semantic",
+        "native_schematic_confirmed",
+        "footprint_net_sync",
+        "placement",
+        "routing",
+        "native_connectivity_confirmed",
+        "erc_drc",
+        "release_gate",
+    }
+)
+_TOOL_CAPABILITIES = frozenset(
+    {
+        "project",
+        "inspection",
+        "diagnostics",
+        "library",
+        "semantic",
+        "placement",
+        "routing",
+        "verification",
+        "preview",
+        "delivery",
+    }
+)
 # OpenAI function names and MCP tool names share this deliberately conservative
 # protocol subset.  OpenAI currently caps function names at 64 characters.
 _PROTOCOL_TOOL_NAME = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
@@ -238,6 +295,10 @@ class ToolSpec:
     annotations: MCPToolAnnotations
     allowed_statuses: frozenset[str]
     arguments: tuple[ToolArgumentSpec, ...] = ()
+    evidence_stages: frozenset[EvidenceStage] = cast(
+        frozenset[EvidenceStage], _EVIDENCE_STAGES
+    )
+    capabilities: frozenset[ToolCapability] = frozenset({"inspection"})
 
     def __post_init__(self) -> None:
         if (
@@ -292,6 +353,18 @@ class ToolSpec:
         names = [argument.name for argument in self.arguments]
         if len(names) != len(set(names)):
             raise ValueError(f"PCB tool {self.name} has duplicate argument names")
+        if (
+            not isinstance(self.evidence_stages, frozenset)
+            or not self.evidence_stages
+            or not self.evidence_stages <= _EVIDENCE_STAGES
+        ):
+            raise ValueError(f"PCB tool {self.name} has invalid evidence stages")
+        if (
+            not isinstance(self.capabilities, frozenset)
+            or not self.capabilities
+            or not self.capabilities <= _TOOL_CAPABILITIES
+        ):
+            raise ValueError(f"PCB tool {self.name} has invalid capabilities")
         _assert_closed_object_schemas(self.input_schema)
 
     @property
@@ -927,6 +1000,191 @@ _EVIDENCE_ANNOTATIONS = MCPToolAnnotations(
     read_only=False, destructive=False, idempotent=False, open_world=False
 )
 
+_PROJECT_INDEPENDENT_TOOL_NAMES = frozenset(
+    {
+        "search_symbols",
+        "describe_symbol",
+        "search_footprints",
+        "describe_footprint",
+    }
+)
+_INSPECTION_TOOL_NAMES = frozenset(
+    {
+        "inspect_project",
+        "inspect_design",
+        "inspect_component",
+        "inspect_net",
+        "inspect_board",
+        "inspect_events",
+        "inspect_evidence",
+        "inspect_transaction",
+    }
+)
+_PROJECT_CATALOG_TOOL_NAMES = frozenset(
+    {"search_parts", "describe_part", "register_kicad_part"}
+)
+_EARLY_DESIGN_TOOL_NAMES = frozenset(
+    {
+        "add_block",
+        "remove_block",
+        "add_power_domain",
+        "update_power_domain",
+        "remove_power_domain",
+        "add_interface",
+        "update_interface",
+        "remove_interface",
+        "add_constraint",
+        "update_constraint",
+        "remove_constraint",
+    }
+)
+_PLACEMENT_TOOL_NAMES = frozenset(
+    {
+        "place_footprint",
+        "place_group",
+        "move_footprint",
+        "rotate_footprint",
+        "unplace_footprint",
+    }
+)
+_ROUTING_TOOL_NAMES = frozenset({"route_net", "unroute_net", "add_via", "remove_via"})
+_CHECK_TOOL_NAMES = frozenset(
+    {"check_semantics", "check_connectivity", "run_erc", "run_drc"}
+)
+_PREVIEW_TOOL_NAMES = frozenset({"render_schematic", "render_board", "render_3d"})
+_DELIVERY_TOOL_NAMES = frozenset(
+    {"export_gerbers", "export_drill", "export_bom", "export_pick_place", "export_step"}
+)
+_UNKNOWN_STAGE_CORRECTIVE_TOOL_NAMES = frozenset(
+    {
+        # Evidence inspection remains available so an unavailable stage can be
+        # diagnosed without falling back to the complete toolbox.
+        "inspect_project",
+        "inspect_design",
+        "inspect_component",
+        "inspect_net",
+        "inspect_board",
+        "inspect_evidence",
+        "inspect_transaction",
+        "search_parts",
+        "describe_part",
+        # Keep one bounded set of backwards-corrective semantic, placement,
+        # routing, and verification actions.  Stage projection is context
+        # shaping only; the full registry remains the execution authority.
+        "update_component",
+        "assign_footprint",
+        "connect_pin",
+        "connect_group",
+        "disconnect_pin",
+        "place_footprint",
+        "place_group",
+        "move_footprint",
+        "rotate_footprint",
+        "unplace_footprint",
+        "route_net",
+        "unroute_net",
+        "add_via",
+        "remove_via",
+        "check_semantics",
+        "check_connectivity",
+        "run_erc",
+        "run_drc",
+    }
+)
+_PLACEMENT_STAGES = frozenset(
+    {
+        "footprint_net_sync",
+        "placement",
+        "routing",
+        "native_connectivity_confirmed",
+        "erc_drc",
+        "release_gate",
+    }
+)
+_EARLY_DESIGN_STAGES = frozenset(
+    {
+        "not_started",
+        "requirements_frozen",
+        "schematic_semantic",
+        "native_schematic_confirmed",
+        "footprint_net_sync",
+    }
+)
+_ROUTING_STAGES = frozenset(
+    {
+        "placement",
+        "routing",
+        "native_connectivity_confirmed",
+        "erc_drc",
+        "release_gate",
+    }
+)
+_ERC_STAGES = frozenset(
+    {
+        "schematic_semantic",
+        "native_schematic_confirmed",
+        "footprint_net_sync",
+        "placement",
+        "routing",
+        "native_connectivity_confirmed",
+        "erc_drc",
+        "release_gate",
+    }
+)
+
+
+def _flat_stage_contract(
+    name: str, effect: ToolEffect
+) -> tuple[frozenset[EvidenceStage], frozenset[ToolCapability]]:
+    """Return immutable model-exposure metadata stored on the canonical spec."""
+
+    if name == "create_project":
+        return frozenset({"not_started"}), frozenset({"project"})
+    if name in _PROJECT_INDEPENDENT_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _EARLY_DESIGN_STAGES), frozenset(
+            {"library"}
+        )
+    if name in _PROJECT_CATALOG_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _EARLY_DESIGN_STAGES), frozenset(
+            {"library", "semantic"}
+        )
+    if name in _EARLY_DESIGN_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _EARLY_DESIGN_STAGES), frozenset(
+            {"semantic"}
+        )
+    if name == "inspect_transaction":
+        return cast(frozenset[EvidenceStage], _EVIDENCE_STAGES), frozenset(
+            {"inspection", "diagnostics"}
+        )
+    if name in _INSPECTION_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _EVIDENCE_STAGES), frozenset(
+            {"inspection"}
+        )
+    if name in _PLACEMENT_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _PLACEMENT_STAGES), frozenset(
+            {"placement"}
+        )
+    if name in _ROUTING_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _ROUTING_STAGES), frozenset({"routing"})
+    if name in _CHECK_TOOL_NAMES:
+        if name in {"check_semantics", "check_connectivity"}:
+            stages = _EVIDENCE_STAGES
+        elif name == "run_erc":
+            stages = _ERC_STAGES
+        else:
+            stages = _ROUTING_STAGES
+        return cast(frozenset[EvidenceStage], stages), frozenset({"verification"})
+    if name in _PREVIEW_TOOL_NAMES:
+        stages = _ERC_STAGES if name == "render_schematic" else _PLACEMENT_STAGES
+        return cast(frozenset[EvidenceStage], stages), frozenset({"preview"})
+    if name in _DELIVERY_TOOL_NAMES:
+        return frozenset({"release_gate"}), frozenset({"delivery"})
+    if effect == "read":
+        return cast(frozenset[EvidenceStage], _EVIDENCE_STAGES), frozenset(
+            {"inspection"}
+        )
+    return cast(frozenset[EvidenceStage], _EVIDENCE_STAGES), frozenset({"semantic"})
+
 
 def _argument(name: str, value_type: type, description: str) -> ToolArgumentSpec:
     return ToolArgumentSpec(name, value_type, description)
@@ -965,6 +1223,7 @@ def _flat_spec(
         if effect == "evidence_write"
         else _WRITE_ANNOTATIONS
     )
+    evidence_stages, capabilities = _flat_stage_contract(name, effect)
     return ToolSpec(
         name=name,
         external_name=f"pcb_{name}",
@@ -986,6 +1245,8 @@ def _flat_spec(
             else _DESIGN_PROJECT_STATUSES
         ),
         arguments=arguments,
+        evidence_stages=evidence_stages,
+        capabilities=capabilities,
     )
 
 
@@ -1007,6 +1268,45 @@ _ENDPOINT_SCHEMA: dict[str, Any] = {
     },
     "required": ["component", "pin", "role"],
     "additionalProperties": False,
+}
+_CONNECT_GROUP_ENTRY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "net_id": _TEXT_SCHEMA,
+        "component_id": _TEXT_SCHEMA,
+        "pin": _TEXT_SCHEMA,
+        "role": _TEXT_SCHEMA,
+    },
+    "required": ["net_id", "component_id", "pin", "role"],
+    "additionalProperties": False,
+}
+_CONNECT_GROUP_PROPERTIES: dict[str, Any] = {
+    "entries": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": SEMANTIC_TRANSACTION_POLICY.max_connection_entries,
+        "items": _CONNECT_GROUP_ENTRY_SCHEMA,
+    }
+}
+_PLACE_GROUP_ENTRY_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "component_id": _TEXT_SCHEMA,
+        "x_mm": {"type": "number"},
+        "y_mm": {"type": "number"},
+        "rotation_deg": {"type": "number"},
+        "side": {"type": "string", "enum": ["front", "back"]},
+    },
+    "required": ["component_id", "x_mm", "y_mm", "rotation_deg", "side"],
+    "additionalProperties": False,
+}
+_PLACE_GROUP_PROPERTIES: dict[str, Any] = {
+    "entries": {
+        "type": "array",
+        "minItems": 1,
+        "maxItems": SEMANTIC_TRANSACTION_POLICY.max_placement_entries,
+        "items": _PLACE_GROUP_ENTRY_SCHEMA,
+    }
 }
 _PARAMETER_SCALAR_SCHEMA: dict[str, Any] = {
     "anyOf": [
@@ -1188,6 +1488,16 @@ PCB_TOOL_SPECS = (
     _flat_spec("inspect_events", "Inspect recent durable project events"),
     _flat_spec("inspect_evidence", "Inspect retained check and output evidence"),
     _flat_spec(
+        "inspect_transaction",
+        "Inspect one bounded transaction receipt by its opaque artifact identity",
+        arguments=(
+            _ID(
+                "artifact_id",
+                "Opaque transaction artifact identity returned by a PCB write",
+            ),
+        ),
+    ),
+    _flat_spec(
         "search_symbols",
         "Search installed local KiCad symbol libraries",
         arguments=(_ID("query", "Symbol name or library query"),),
@@ -1335,6 +1645,19 @@ PCB_TOOL_SPECS = (
         ),
     ),
     _flat_spec(
+        "connect_group",
+        "Atomically connect one bounded group of component pins to existing nets",
+        effect="authoritative_write",
+        risk="medium",
+        arguments=(
+            _object_argument(
+                "connections",
+                "Bounded endpoint-to-net connection transaction",
+                _CONNECT_GROUP_PROPERTIES,
+            ),
+        ),
+    ),
+    _flat_spec(
         "disconnect_pin",
         "Disconnect one component pin from one net",
         effect="authoritative_write",
@@ -1440,6 +1763,19 @@ PCB_TOOL_SPECS = (
                 str,
                 "Board side",
                 {"type": "string", "enum": ["front", "back"]},
+            ),
+        ),
+    ),
+    _flat_spec(
+        "place_group",
+        "Atomically apply one bounded group of absolute footprint poses",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            _object_argument(
+                "placements",
+                "Bounded absolute footprint placement transaction",
+                _PLACE_GROUP_PROPERTIES,
             ),
         ),
     ),
@@ -1629,6 +1965,8 @@ class PCBToolRegistry:
             spec.risk,
             spec.annotations,
             spec.allowed_statuses,
+            spec.evidence_stages,
+            spec.capabilities,
             tuple(
                 (argument.name, argument.value_type, argument._schema_json)
                 for argument in spec.arguments
@@ -1638,6 +1976,50 @@ class PCBToolRegistry:
     @property
     def specs(self) -> tuple[ToolSpec, ...]:
         return tuple(self._specs.values())
+
+    def projected_specs(
+        self,
+        stage: EvidenceStage | None,
+        *,
+        project_bound: bool,
+    ) -> tuple[ToolSpec, ...]:
+        """Project model schemas without changing the full execution authority.
+
+        Unknown project evidence intentionally keeps a small, fixed corrective
+        subset rather than failing open to nearly the complete toolbox.  A
+        known stage uses the tags stored on each canonical spec.  Neither branch
+        can introduce a tool absent from this registry.
+        """
+
+        if stage is not None and stage not in _EVIDENCE_STAGES:
+            raise ValidationError("PCB tool schema projection stage is invalid")
+        if not project_bound:
+            allowed = _PROJECT_INDEPENDENT_TOOL_NAMES | {"create_project"}
+            return tuple(spec for spec in self.specs if spec.name in allowed)
+        if stage is None:
+            return tuple(
+                spec
+                for spec in self.specs
+                if spec.name in _UNKNOWN_STAGE_CORRECTIVE_TOOL_NAMES
+            )
+        return tuple(
+            spec
+            for spec in self.specs
+            if spec.name != "create_project" and stage in spec.evidence_stages
+        )
+
+    def projected_openai_responses_tools(
+        self,
+        stage: EvidenceStage | None,
+        *,
+        project_bound: bool,
+    ) -> list[dict[str, Any]]:
+        """Return a fresh Responses schema subset from this same registry."""
+
+        return [
+            spec.to_openai_responses_tool()
+            for spec in self.projected_specs(stage, project_bound=project_bound)
+        ]
 
     def resolve(self, name: str) -> ToolSpec:
         # Internal deterministic callers keep their established short names,
@@ -1691,6 +2073,20 @@ class PCBToolRegistry:
                 raise ValidationError(
                     f"PCB tool {spec.name} argument {argument.name} has an invalid type"
                 )
+        if spec.name == "connect_group":
+            normalized["connections"] = {
+                "entries": [
+                    entry.to_tool_arguments()
+                    for entry in parse_connect_group(normalized["connections"])
+                ]
+            }
+        elif spec.name == "place_group":
+            normalized["placements"] = {
+                "entries": [
+                    entry.to_tool_arguments()
+                    for entry in parse_place_group(normalized["placements"])
+                ]
+            }
         schema_errors = list(
             Draft202012Validator(spec.input_schema).iter_errors(normalized)
         )

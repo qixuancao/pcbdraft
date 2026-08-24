@@ -10,6 +10,8 @@ import re
 import secrets
 import shutil
 import tempfile
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -46,12 +48,34 @@ from pcbdraft.domain.component_qualification import (
 from pcbdraft.domain.ir import BoardSpec, Design, Scope, canonical_json_bytes
 from pcbdraft.domain.operations import (
     ChangeSet,
+    ConnectGroupEntry,
+    PlaceGroupEntry,
     apply_change_set,
+    parse_connect_group,
+    parse_place_group,
     semantic_diff,
 )
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.scope import evaluate_scope
+from pcbdraft.kicad.consistency import (
+    NATIVE_OPERATION_POLICIES,
+    NativeBoardProjection,
+    NativeConsistencyReport,
+    NativeMismatch,
+    NativeOperationDeltaReport,
+    NativeSchematicProjection,
+    compare_native_consistency,
+    compare_native_operation_delta,
+    inspect_native_consistency,
+)
+from pcbdraft.kicad.pcb import inspect_native_board
 from pcbdraft.kicad.previews import generate_preview, generate_previews
+from pcbdraft.kicad.routing import (
+    ROUTING_FAILURE_CODES,
+    RoutingFailure,
+    RoutingFailureError,
+)
+from pcbdraft.kicad.schematic import inspect_native_schematic
 from pcbdraft.model.providers import (
     MAX_USER_MESSAGE_BYTES,
     IntentProvider,
@@ -64,6 +88,36 @@ from pcbdraft.services.managed import (
     load_generation_request,
     materialize_managed_design,
     open_managed_project,
+)
+from pcbdraft.services.progress import (
+    DEFAULT_CONVERGENCE_POLICY,
+    ConvergenceDecision,
+    ConvergenceObservation,
+    EngineeringStage,
+    EvidenceCheck,
+    EvidenceStatus,
+    MetricValue,
+    ProcessStatus,
+    ProductSessionTerminalReceipt,
+    ProgressClassification,
+    ProgressVector,
+    StageEvidence,
+    StageProjection,
+    compare_progress,
+    derive_stage,
+    evaluate_convergence,
+    product_terminal_receipt_id,
+    store_product_session_terminal,
+    terminal_outcome,
+    validate_product_terminal_receipt_id,
+)
+from pcbdraft.verification.gates import (
+    DrcDelta,
+    DrcEvidence,
+    compare_drc_evidence,
+    count_severities,
+    run_drc_evidence,
+    structured_violations,
 )
 from pcbdraft.verification.release import (
     build_manufacturing_release,
@@ -97,6 +151,9 @@ _ATTEMPT_FIELDS = {
     "error",
 }
 APP_FILE_LIMIT = 4 * 1024 * 1024
+TRANSACTION_INSPECTION_FILE_LIMIT = 256 * 1024
+TRANSACTION_INSPECTION_ITEM_LIMIT = 16
+TRANSACTION_INSPECTION_DEPTH_LIMIT = 8
 PENDING_REQUEST_NAME = "pending-agent-request.json"
 PENDING_PLAN_NAME = "pending-circuit-plan.json"
 PENDING_DESIGN_NAME = "pending-design.pcbir.json"
@@ -136,6 +193,682 @@ _CONVERSATION_FIELDS = {
     "proposal",
     "decisions",
 }
+_PHYSICAL_PCB_OPERATIONS = frozenset(
+    {
+        "place_footprint",
+        "place_group",
+        "move_footprint",
+        "rotate_footprint",
+        "unplace_footprint",
+        "route_net",
+        "unroute_net",
+        "add_via",
+        "remove_via",
+    }
+)
+_NATIVE_DELTA_OPERATIONS = frozenset(NATIVE_OPERATION_POLICIES) - {
+    "register_kicad_part"
+}
+
+
+def _transaction_inspection_depth_is_valid(value: object, *, depth: int = 0) -> bool:
+    """Reject pathological receipt nesting before projecting explicit detail."""
+
+    if depth > TRANSACTION_INSPECTION_DEPTH_LIMIT:
+        return False
+    if isinstance(value, Mapping):
+        return all(
+            _transaction_inspection_depth_is_valid(item, depth=depth + 1)
+            for item in value.values()
+        )
+    if isinstance(value, list):
+        return all(
+            _transaction_inspection_depth_is_valid(item, depth=depth + 1)
+            for item in value
+        )
+    return value is None or isinstance(value, (bool, int, float, str))
+
+
+class _PCBOperationPostconditionError(ValidationError):
+    """Internal expected failure carrying a stable transaction error code."""
+
+    def __init__(
+        self,
+        error_code: str,
+        message: str,
+        *,
+        routing_failure: RoutingFailure | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.error_code = error_code
+        self.routing_failure = routing_failure
+
+
+def _bind_transaction_failure(exc: BaseException, transaction_id: str) -> None:
+    """Attach only an opaque retained receipt identity to an expected failure."""
+
+    if isinstance(exc, PCBDraftError):
+        exc.transaction_id = transaction_id  # type: ignore[attr-defined]
+
+
+def _native_postconditions(
+    tool_name: str, report: NativeConsistencyReport
+) -> list[dict[str, Any]]:
+    codes = {item.code for item in report.mismatches}
+    conditions: list[dict[str, Any]] = [
+        {
+            "name": "native_consistency",
+            "passed": report.consistency_passed,
+            "mismatch_count": len(report.mismatches),
+        }
+    ]
+    if tool_name == "route_net":
+        conditions.extend(
+            (
+                {
+                    "name": "native_nonzero_copper",
+                    "passed": "native_zero_copper" not in codes,
+                },
+                {
+                    "name": "native_endpoint_connectivity",
+                    "passed": "native_connectivity_failed" not in codes,
+                },
+                {
+                    "name": "native_net_isolation",
+                    "passed": not codes
+                    & {"unintended_net_merge", "unintended_board_net_merge"},
+                },
+            )
+        )
+    return conditions
+
+
+def _routing_failure_context(design: Design, net_id: str | None) -> tuple[str, ...]:
+    net = next((item for item in design.nets if item.id == net_id), None)
+    if net is None:
+        return (f"layers=board:{design.board.layers}", "order=unknown")
+    components = {item.id: item for item in design.components}
+    placements: list[str] = []
+    for component_id in sorted({item.component for item in net.endpoints})[:8]:
+        component = components.get(component_id)
+        placement = component.placement if component is not None else None
+        placements.append(
+            f"{component_id}@"
+            + (
+                f"{placement.x_mm:.9g},{placement.y_mm:.9g}/{placement.rotation_deg:.9g}/{placement.side}"
+                if placement is not None
+                else "unplaced"
+            )
+        )
+    order = tuple(item.id for item in sorted(design.nets, key=lambda item: item.id))
+    return (
+        *("placement=" + item for item in placements),
+        f"layers=board:{design.board.layers}",
+        f"order={order.index(net.id)}/{len(order)}",
+    )
+
+
+def _consistency_rejection(
+    tool_name: str,
+    net_id: str | None,
+    report: NativeConsistencyReport,
+    *,
+    design: Design | None = None,
+    state_revision: int = 0,
+) -> _PCBOperationPostconditionError:
+    codes = {item.code for item in report.mismatches}
+    shown = ", ".join(sorted(codes)[:4]) or "unknown mismatch"
+    if tool_name != "route_net":
+        return _PCBOperationPostconditionError(
+            "native_consistency_failed",
+            f"native KiCad consistency postcondition failed: {shown}",
+        )
+    if codes & {"unintended_net_merge", "unintended_board_net_merge"}:
+        error_code = "unintended_net_merge"
+    elif codes & {"native_connectivity_failed", "native_zero_copper"}:
+        error_code = "native_connectivity_failed"
+    else:
+        error_code = "native_commit_failed"
+    failure = RoutingFailure(
+        code=error_code,
+        net=net_id or "unknown",
+        expanded_nodes=0,
+        blocking_summary=f"native postcondition mismatch: {shown}",
+        recommendations=("inspect_native_artifact",),
+        nearest_obstacle_class="native_artifact",
+        state_revision=state_revision,
+        state_context=(
+            _routing_failure_context(design, net_id) if design is not None else ()
+        ),
+    )
+    return _PCBOperationPostconditionError(
+        error_code,
+        failure.diagnostic,
+        routing_failure=failure,
+    )
+
+
+def _unavailable_consistency_report(candidate_revision: int) -> NativeConsistencyReport:
+    return NativeConsistencyReport(
+        candidate_revision,
+        "unknown",
+        "unknown",
+        "not_evaluated",
+        (
+            NativeMismatch(
+                "board_projection_unknown",
+                "board",
+                "connectivity",
+                "evaluated",
+                "native inspection failed",
+            ),
+            NativeMismatch(
+                "schematic_projection_unknown",
+                "schematic",
+                "connectivity",
+                "evaluated",
+                "native inspection failed",
+            ),
+        ),
+    )
+
+
+def _drc_postcondition(delta: DrcDelta) -> dict[str, Any]:
+    return {
+        "name": "no_new_drc_errors",
+        "passed": delta.passed,
+        "comparable": delta.comparable,
+        "new_error_count": len(delta.new_error_fingerprints),
+    }
+
+
+def _native_delta_postconditions(
+    report: NativeOperationDeltaReport,
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": item.name,
+            "passed": item.passed,
+            "expected": item.expected,
+            "observed": item.observed,
+        }
+        for item in report.checks
+    ]
+
+
+def _native_board_projection(managed: Any) -> NativeBoardProjection:
+    snapshots = managed.manifest.get("native_snapshots")
+    if not isinstance(snapshots, dict) or "board" not in snapshots:
+        raise ValidationError("managed project lacks a native board snapshot")
+    snapshot = snapshots["board"]
+    projection = NativeBoardProjection.from_snapshot(snapshot)
+    if _native_board_projection_complete(snapshot, projection):
+        return projection
+    refreshed_snapshot = inspect_native_board(
+        managed.design,
+        managed.board_path,
+        include_connectivity=True,
+    )
+    refreshed = NativeBoardProjection.from_snapshot(refreshed_snapshot)
+    if not _native_board_projection_complete(refreshed_snapshot, refreshed):
+        raise ValidationError(
+            "native board reinspection lacks operation-delta evidence"
+        )
+    return refreshed
+
+
+def _native_board_projection_complete(
+    snapshot: Any,
+    projection: NativeBoardProjection,
+) -> bool:
+    if not isinstance(snapshot, Mapping):
+        return False
+    pose_references = {item.reference for item in projection.footprint_poses}
+    complete_poses = len(projection.footprint_poses) == len(
+        projection.components
+    ) and pose_references == set(projection.components)
+    required_board_rules = {
+        "layers",
+        "thickness_mm",
+        "min_clearance_mm",
+        "min_track_mm",
+        "min_drill_mm",
+        "edge_clearance_mm",
+    }
+    complete_board_rules = required_board_rules <= {
+        key for key, _value in projection.board_rules
+    }
+    detailed_copper = all(
+        item.geometry for item in projection.copper if item.kind in {"segment", "via"}
+    )
+    complete_components = (
+        len(projection.component_artifacts) == len(projection.components)
+        and {item.reference for item in projection.component_artifacts}
+        == set(projection.components)
+        and all(item.part_id is not None for item in projection.component_artifacts)
+    )
+    complete_nets = isinstance(snapshot, Mapping) and isinstance(
+        snapshot.get("nets"), list
+    )
+    tracks = snapshot.get("tracks")
+    complete_tracks = isinstance(tracks, list) and all(
+        isinstance(item, Mapping)
+        and (
+            (
+                item.get("kind") == "segment"
+                and "width_mm" in item
+                and ("layer_index" in item or "layer" in item)
+            )
+            or (
+                item.get("kind") == "via"
+                and {
+                    "x_mm",
+                    "y_mm",
+                    "width_mm",
+                    "drill_mm",
+                    "from_layer",
+                    "to_layer",
+                }
+                <= set(item)
+            )
+        )
+        for item in tracks
+    )
+    zones = snapshot.get("zones")
+    complete_zones = isinstance(zones, list) and all(
+        isinstance(item, Mapping) and isinstance(item.get("pad_connection"), str)
+        for item in zones
+    )
+    return (
+        projection.status == "evaluated"
+        and complete_poses
+        and complete_board_rules
+        and complete_components
+        and complete_nets
+        and complete_tracks
+        and complete_zones
+        and len(projection.outline) == 4
+        and detailed_copper
+    )
+
+
+def _native_schematic_projection(managed: Any) -> NativeSchematicProjection:
+    snapshots = managed.manifest.get("native_snapshots")
+    if not isinstance(snapshots, dict) or "schematic" not in snapshots:
+        raise ValidationError("managed project lacks a native schematic snapshot")
+    projection = NativeSchematicProjection.from_snapshot(snapshots["schematic"])
+    if _native_schematic_projection_complete(projection):
+        return projection
+    refreshed = NativeSchematicProjection.from_snapshot(
+        inspect_native_schematic(managed.schematic_path, include_connectivity=True)
+    )
+    if not _native_schematic_projection_complete(refreshed):
+        raise ValidationError(
+            "native schematic reinspection lacks operation-delta evidence"
+        )
+    return refreshed
+
+
+def _native_schematic_projection_complete(
+    projection: NativeSchematicProjection,
+) -> bool:
+    return (
+        projection.status == "evaluated"
+        and len(projection.component_artifacts) == len(projection.components)
+        and {item.reference for item in projection.component_artifacts}
+        == set(projection.components)
+        and all(item.part_id is not None for item in projection.component_artifacts)
+    )
+
+
+def _routed_component_nets(design: Design, component_id: str) -> tuple[str, ...]:
+    connected = {
+        net.id
+        for net in design.nets
+        if any(endpoint.component == component_id for endpoint in net.endpoints)
+    }
+    retained = {route.net for route in design.native_intent.routes}
+    retained.update(via.net for via in design.native_intent.vias)
+    return tuple(sorted(connected & retained))
+
+
+def _reject_stale_copper_transform(
+    tool_name: str,
+    arguments: Mapping[str, Any],
+    before: Design,
+    candidate: Design,
+    *,
+    before_graph: PartGraph,
+    candidate_graph: PartGraph,
+) -> None:
+    transform_operations = {
+        "place_footprint",
+        "place_group",
+        "move_footprint",
+        "rotate_footprint",
+        "unplace_footprint",
+    }
+    component_contract_operations = {"assign_footprint", "update_component"}
+    if tool_name not in transform_operations | component_contract_operations:
+        return
+    component_ids = (
+        tuple(
+            entry.component_id for entry in parse_place_group(arguments["placements"])
+        )
+        if tool_name == "place_group"
+        else (str(arguments["component_id"]),)
+    )
+    for component_id in component_ids:
+        before_component = next(
+            (item for item in before.components if item.id == component_id), None
+        )
+        after_component = next(
+            (item for item in candidate.components if item.id == component_id), None
+        )
+        if before_component is None or after_component is None:
+            continue
+        if tool_name in transform_operations:
+            changed = before_component.placement != after_component.placement
+        else:
+            changed = _component_footprint_contract(
+                before_component,
+                before_graph,
+            ) != _component_footprint_contract(after_component, candidate_graph)
+        if not changed:
+            continue
+        routed_nets = _routed_component_nets(before, component_id)
+        if routed_nets:
+            raise _PCBOperationPostconditionError(
+                "routed_footprint_transform_unsupported",
+                "footprint geometry change is blocked until associated retained copper is unrouted: "
+                + ", ".join(routed_nets),
+            )
+
+
+def _component_footprint_contract(component: Any, graph: PartGraph) -> object:
+    if component.attributes.get("exclude_from_board", False):
+        return None
+    part = graph.get(component.part_id)
+    if part.footprint is None:
+        return None
+    return (
+        part.footprint,
+        tuple((pin.number, pin.footprint_pad) for pin in part.pins),
+    )
+
+
+def _operation_failure_code(exc: BaseException, *, stage: str, tool_name: str) -> str:
+    if isinstance(exc, RoutingFailureError):
+        return exc.failure.code
+    if isinstance(exc, _PCBOperationPostconditionError):
+        return exc.error_code
+    if stage in {"routing_probe", "routing_commit", "native_consistency"} and (
+        tool_name == "route_net"
+    ):
+        return "native_commit_failed"
+    if stage == "native_consistency":
+        return "native_verification_failed"
+    if stage == "native_delta":
+        return (
+            "native_commit_failed"
+            if tool_name == "route_net"
+            else "native_delta_failed"
+        )
+    if stage == "drc":
+        return "drc_unavailable"
+    if stage == "publication":
+        return "publication_failed"
+    return "native_materialization_failed"
+
+
+_FATAL_DRC_MARKERS = (
+    "short",
+    "clearance",
+    "board_edge",
+    "copper_edge",
+    "hole",
+    "courtyard_overlap",
+)
+
+
+def _fatal_drc_count(structured: Mapping[str, Any]) -> int:
+    values = structured.get("violations")
+    if not isinstance(values, list):
+        return 0
+    return sum(
+        1
+        for item in values
+        if isinstance(item, Mapping)
+        and item.get("severity") == "error"
+        and isinstance(item.get("type"), str)
+        and any(marker in item["type"].lower() for marker in _FATAL_DRC_MARKERS)
+    )
+
+
+def _drc_progress_metrics(
+    evidence: DrcEvidence | None, source_revision: int
+) -> tuple[MetricValue, MetricValue, EvidenceCheck]:
+    if evidence is None or not evidence.available or evidence.gate.error_count is None:
+        unknown = MetricValue.unknown(source_revision)
+        return unknown, unknown, EvidenceCheck.unknown(source_revision)
+    return (
+        MetricValue.known(_fatal_drc_count(evidence.structured), source_revision),
+        MetricValue.known(evidence.gate.error_count, source_revision),
+        EvidenceCheck.known(evidence.gate.error_count == 0, source_revision),
+    )
+
+
+def _progress_vector(
+    design: Design,
+    graph: PartGraph,
+    source_revision: int,
+    *,
+    consistency: NativeConsistencyReport | None,
+    board: NativeBoardProjection | None,
+    fatal_drc: MetricValue | None = None,
+    error_drc: MetricValue | None = None,
+    erc_error: MetricValue | None = None,
+    routing_failure_count: int = 0,
+) -> ProgressVector:
+    consistency_known = bool(
+        consistency is not None
+        and consistency.schematic_status == "evaluated"
+        and consistency.board_status == "evaluated"
+    )
+    mismatch = (
+        MetricValue.known(len(consistency.mismatches), source_revision)
+        if consistency_known and consistency is not None
+        else MetricValue.unknown(source_revision)
+    )
+    unresolved = (
+        MetricValue.known(board.unconnected_count, source_revision)
+        if board is not None
+        and board.status == "evaluated"
+        and board.unconnected_count is not None
+        else MetricValue.unknown(source_revision)
+    )
+    unplaced = sum(
+        component.placement is None
+        for component in design.components
+        if graph.get(component.part_id).footprint is not None
+        and not component.attributes.get("exclude_from_board", False)
+    )
+    return ProgressVector(
+        source_revision,
+        mismatch,
+        unresolved,
+        (fatal_drc or MetricValue.unknown(source_revision)).for_revision(
+            source_revision
+        ),
+        (error_drc or MetricValue.unknown(source_revision)).for_revision(
+            source_revision
+        ),
+        (erc_error or MetricValue.unknown(source_revision)).for_revision(
+            source_revision
+        ),
+        MetricValue.known(unplaced, source_revision),
+        MetricValue.known(routing_failure_count, source_revision),
+    )
+
+
+def _progress_stage_evidence(
+    design: Design,
+    source_revision: int,
+    *,
+    requirements_frozen: bool,
+    consistency: NativeConsistencyReport | None,
+    progress: ProgressVector,
+    erc_check: EvidenceCheck,
+    drc_check: EvidenceCheck,
+) -> StageEvidence:
+    current = lambda passed: EvidenceCheck.known(passed, source_revision)
+    consistency_current = bool(
+        consistency is not None
+        and consistency.candidate_revision == source_revision
+        and consistency.schematic_status == "evaluated"
+        and consistency.board_status == "evaluated"
+    )
+    schematic_clean = consistency_current and not any(
+        item.scope == "schematic"
+        for item in consistency.mismatches  # type: ignore[union-attr]
+    )
+    native_clean = consistency_current and consistency.consistency_passed  # type: ignore[union-attr]
+    unresolved = progress.unresolved_connection_count
+    routing_failures = progress.routing_failure_count
+    routing_started = (
+        bool(design.native_intent.routes or design.native_intent.vias)
+        or (unresolved.is_current(source_revision) and unresolved.value == 0)
+        or (
+            routing_failures.is_current(source_revision)
+            and bool(routing_failures.value)
+        )
+    )
+    native_connected = bool(
+        native_clean
+        and unresolved.is_current(source_revision)
+        and unresolved.value == 0
+    )
+    return StageEvidence(
+        source_revision,
+        current(requirements_frozen),
+        current(not design.issues()),
+        current(schematic_clean),
+        current(native_clean),
+        current(routing_started),
+        current(native_connected),
+        erc_check,
+        drc_check,
+    )
+
+
+def _attach_progress(
+    receipt: dict[str, Any],
+    before: ProgressVector,
+    after: ProgressVector,
+    before_stage: StageProjection,
+    after_stage: StageProjection,
+) -> None:
+    delta = compare_progress(before, after)
+    receipt["progress_before"] = before.to_dict()
+    receipt["progress_after"] = after.to_dict()
+    receipt["progress_delta"] = delta.to_dict()
+    receipt["stage_before"] = before_stage.to_dict()
+    receipt["stage_after"] = after_stage.to_dict()
+
+
+def _transaction_progress_projection(receipt: Mapping[str, Any]) -> dict[str, Any]:
+    """Expose factual legacy-transaction progress to its durable caller."""
+
+    fields = (
+        "version",
+        "status",
+        "progress_before",
+        "progress_after",
+        "progress_delta",
+        "stage_before",
+        "stage_after",
+        "candidate_progress",
+        "candidate_stage",
+        "convergence_classification",
+        "publication",
+        "application",
+        "application_progress",
+        "undo",
+        "undo_progress",
+    )
+    return {key: copy.deepcopy(receipt[key]) for key in fields if key in receipt}
+
+
+def _route_state_key(design: Design, net_id: str, design_revision: int) -> str:
+    return "|".join(
+        (f"revision={design_revision}", *_routing_failure_context(design, net_id))
+    )
+
+
+def _route_state_record(
+    design: Design, net_id: str, design_revision: int
+) -> dict[str, Any]:
+    """Return the structured facts whose changes make a route retry distinct."""
+
+    return {
+        "design_revision": design_revision,
+        "net_id": net_id,
+        "context": list(_routing_failure_context(design, net_id)),
+    }
+
+
+def _route_state_key_from_record(value: object) -> str:
+    if not isinstance(value, Mapping) or set(value) != {
+        "design_revision",
+        "net_id",
+        "context",
+    }:
+        raise ValidationError("route convergence state is malformed")
+    revision = value["design_revision"]
+    net_id = value["net_id"]
+    context = value["context"]
+    if (
+        isinstance(revision, bool)
+        or not isinstance(revision, int)
+        or revision < 0
+        or not isinstance(net_id, str)
+        or not net_id
+        or not isinstance(context, list)
+        or not all(isinstance(item, str) and item for item in context)
+    ):
+        raise ValidationError("route convergence state is malformed")
+    return "|".join((f"revision={revision}", *context))
+
+
+def _routing_failure_retry_key(value: object) -> str:
+    """Validate retained structured Router evidence and recompute its retry key."""
+
+    if not isinstance(value, Mapping):
+        raise ValidationError("route convergence failure is malformed")
+    try:
+        blocking_region_value = value.get("blocking_region")
+        blocking_region = (
+            tuple(float(item) for item in blocking_region_value)
+            if isinstance(blocking_region_value, list)
+            else None
+        )
+        failure = RoutingFailure(
+            code=str(value["code"]),
+            net=str(value["net"]),
+            endpoints=tuple(str(item) for item in value["endpoints"]),
+            expanded_nodes=value["expanded_nodes"],
+            blocking_summary=str(value["blocking_summary"]),
+            recommendations=tuple(str(item) for item in value["recommendations"]),
+            blocking_region=blocking_region,  # type: ignore[arg-type]
+            nearest_obstacle_class=value["nearest_obstacle_class"],
+            state_revision=value["state_revision"],
+            state_context=tuple(str(item) for item in value["state_context"]),
+        )
+    except (KeyError, TypeError, ValueError, ValidationError) as exc:
+        raise ValidationError("route convergence failure is malformed") from exc
+    if value.get("retry_key") != failure.retry_key:
+        raise ValidationError("route convergence retry key is inconsistent")
+    return failure.retry_key
 
 
 @dataclass(frozen=True)
@@ -625,6 +1358,7 @@ class ApplicationService:
             "inspect_board",
             "inspect_events",
             "inspect_evidence",
+            "inspect_transaction",
         }:
             return self._inspect_pcb_tool(project_id, tool_name, arguments)
         if tool_name in {
@@ -696,8 +1430,13 @@ class ApplicationService:
     ) -> dict[str, Any]:
         project = self._open(project_id)
         view = self._public_project(project)
-        if tool_name == "inspect_events":
-            facts: dict[str, Any] = {"events": self.events(project_id)[-100:]}
+        facts: dict[str, Any]
+        if tool_name == "inspect_transaction":
+            facts = self._inspect_transaction_artifact(
+                project, str(arguments["artifact_id"])
+            )
+        elif tool_name == "inspect_events":
+            facts = {"events": self.events(project_id)[-100:]}
         elif tool_name == "inspect_evidence":
             facts = {
                 "artifacts": view["artifacts"],
@@ -777,6 +1516,97 @@ class ApplicationService:
         facts["project_id"] = project_id
         facts["revision"] = project.state["revision"]
         return self._with_tool_result(view, facts)
+
+    @staticmethod
+    def _inspect_transaction_artifact(
+        project: ApplicationProject, artifact_id: str
+    ) -> dict[str, Any]:
+        """Read one current-project transaction receipt through a fixed boundary."""
+
+        match = re.fullmatch(
+            r"transaction:([0-9]{8}T[0-9]{6}Z-[0-9a-f]{8})", artifact_id
+        )
+        if match is None:
+            raise ValidationError("transaction artifact identity is invalid")
+        transaction_id = match.group(1)
+        transactions_root = project.root / "transactions"
+        if transactions_root.is_symlink() or not transactions_root.is_dir():
+            raise ValidationError("transaction artifact is unavailable")
+        transaction = transactions_root / transaction_id
+        receipt_path = transaction / "receipt.json"
+        if (
+            transaction.is_symlink()
+            or not transaction.is_dir()
+            or receipt_path.is_symlink()
+            or not receipt_path.is_file()
+        ):
+            raise ValidationError("transaction artifact is unavailable")
+        receipt = load_json_limited(receipt_path, TRANSACTION_INSPECTION_FILE_LIMIT)
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("schema")
+            not in {
+                "pcbdraft-flat-operation-receipt",
+                "pcbdraft-kicad-part-registration-receipt",
+            }
+            or receipt.get("version") not in {1, 2}
+            or receipt.get("status") not in {"preparing", "noop", "applied", "failed"}
+            or not isinstance(receipt.get("operation"), str)
+            or not receipt["operation"]
+            or not _transaction_inspection_depth_is_valid(receipt)
+        ):
+            raise ValidationError("transaction artifact receipt is invalid")
+
+        def bounded_list(name: str) -> list[Any]:
+            values = receipt.get(name)
+            if not isinstance(values, list):
+                return []
+            return copy.deepcopy(values[:TRANSACTION_INSPECTION_ITEM_LIMIT])
+
+        detail = {
+            key: copy.deepcopy(receipt[key])
+            for key in (
+                "schema",
+                "version",
+                "status",
+                "operation",
+                "error_code",
+                "failure",
+                "baseline_revision",
+                "baseline_design_revision",
+                "candidate_revision",
+                "committed_revision",
+                "committed_design_revision",
+                "consistency_passed",
+                "intended_delta",
+                "native_delta",
+                "drc_delta",
+                "routing_failure",
+                "rollback_performed",
+                "rollback",
+                "progress_delta",
+                "stage_before",
+                "stage_after",
+                "convergence",
+                "transaction_scope",
+            )
+            if key in receipt
+        }
+        detail["postconditions"] = bounded_list("postconditions")
+        artifacts = receipt.get("artifact")
+        detail["available_details"] = (
+            sorted(str(key) for key in artifacts)[:TRANSACTION_INSPECTION_ITEM_LIMIT]
+            if isinstance(artifacts, Mapping)
+            else []
+        )
+        return {
+            "artifact_id": artifact_id,
+            "detail": detail,
+            "detail_truncated": bool(
+                isinstance(receipt.get("postconditions"), list)
+                and len(receipt["postconditions"]) > TRANSACTION_INSPECTION_ITEM_LIMIT
+            ),
+        }
 
     @staticmethod
     def _retained_evidence(
@@ -917,6 +1747,8 @@ class ApplicationService:
         before_catalog_hash = hashlib.sha256(
             canonical_json_bytes(authoritative.graph.to_dict())
         ).hexdigest()
+        baseline_design_revision = int(project.state["design_revision"])
+        before_progress, before_stage = self._current_progress_and_stage(project)
         transaction_id = new_run_id()
         transaction = make_directory(project.root / "transactions" / transaction_id)
         staged = transaction / "staged"
@@ -924,16 +1756,39 @@ class ApplicationService:
         receipt_path = transaction / "receipt.json"
         receipt: dict[str, Any] = {
             "schema": "pcbdraft-kicad-part-registration-receipt",
-            "version": 1,
+            "version": 2,
             "status": "preparing",
             "operation": "register_kicad_part",
+            "native_scope": "catalog_plus_native_rematerialization",
             "created_at": utc_timestamp(),
             "baseline_revision": expected_revision,
+            "baseline_design_revision": baseline_design_revision,
+            "candidate_revision": None,
+            "committed_revision": None,
+            "committed_design_revision": None,
             "before_hash": authoritative.design.content_hash(),
             "before_catalog_hash": before_catalog_hash,
             "part_id": value.get("id"),
+            "rollback_performed": False,
+            "rollback": {
+                "state": "not_required",
+                "performed": False,
+                "live_unchanged": True,
+            },
+            "artifact": {
+                "transaction_id": transaction_id,
+                "receipt": "receipt.json",
+            },
         }
+        _attach_progress(
+            receipt,
+            before_progress,
+            before_progress,
+            before_stage,
+            before_stage,
+        )
         atomic_write_json(receipt_path, receipt)
+        stage = "inspection"
         try:
             from pcbdraft.agent.footprint_resolver import LocalKiCadFootprintResolver
             from pcbdraft.agent.part_resolver import LocalKiCadPartResolver
@@ -999,7 +1854,9 @@ class ApplicationService:
                 receipt.update(
                     {
                         "status": "noop",
+                        "native_scope": "catalog_noop_no_native_write",
                         "completed_at": utc_timestamp(),
+                        "candidate_revision": baseline_design_revision,
                         "after_hash": authoritative.design.content_hash(),
                         "after_catalog_hash": before_catalog_hash,
                     }
@@ -1025,6 +1882,7 @@ class ApplicationService:
             ).hexdigest()
             receipt.update(
                 {
+                    "candidate_revision": baseline_design_revision + 1,
                     "after_hash": candidate.content_hash(),
                     "after_catalog_hash": after_catalog_hash,
                     "symbol": symbol.to_dict(),
@@ -1033,6 +1891,7 @@ class ApplicationService:
             )
             atomic_write_json(receipt_path, receipt)
             request = load_generation_request(authoritative.requirements_path)
+            stage = "materialization"
             materialize_managed_design(
                 request,
                 candidate,
@@ -1056,11 +1915,121 @@ class ApplicationService:
                 != after_catalog_hash
             ):
                 raise ValidationError("staged part catalog hash changed")
+            candidate_revision = baseline_design_revision + 1
+            stage = "native_consistency"
+            consistency_failure: PCBDraftError | None = None
+            try:
+                consistency = inspect_native_consistency(
+                    candidate,
+                    staged_project.schematic_path,
+                    staged_project.board_path,
+                    candidate_revision=candidate_revision,
+                    graph=graph,
+                )
+            except PCBDraftError as exc:
+                consistency_failure = exc
+                consistency = _unavailable_consistency_report(candidate_revision)
+            atomic_write_json(
+                transaction / "native-consistency.json", consistency.to_dict()
+            )
+            receipt["consistency_passed"] = consistency.consistency_passed
+            receipt["postconditions"] = _native_postconditions(
+                "register_kicad_part", consistency
+            )
+            receipt["artifact"]["native_consistency"] = "native-consistency.json"
+            try:
+                candidate_board = _native_board_projection(staged_project)
+            except PCBDraftError:
+                candidate_board = None
+            after_progress = _progress_vector(
+                candidate,
+                graph,
+                candidate_revision,
+                consistency=consistency,
+                board=candidate_board,
+                fatal_drc=before_progress.fatal_drc_count.for_revision(
+                    candidate_revision
+                ),
+                error_drc=before_progress.error_drc_count.for_revision(
+                    candidate_revision
+                ),
+                erc_error=before_progress.erc_error_count.for_revision(
+                    candidate_revision
+                ),
+            )
+            after_stage = derive_stage(
+                after_progress,
+                _progress_stage_evidence(
+                    candidate,
+                    candidate_revision,
+                    requirements_frozen=staged_project.requirements_path.is_file(),
+                    consistency=consistency,
+                    progress=after_progress,
+                    erc_check=EvidenceCheck.unknown(candidate_revision),
+                    drc_check=EvidenceCheck.unknown(candidate_revision),
+                ),
+            )
+            _attach_progress(
+                receipt,
+                before_progress,
+                after_progress,
+                before_stage,
+                after_stage,
+            )
+            if consistency_failure is not None:
+                raise _PCBOperationPostconditionError(
+                    "native_verification_failed",
+                    "native KiCad inspection failed",
+                ) from consistency_failure
+            if not consistency.consistency_passed:
+                raise _consistency_rejection("register_kicad_part", None, consistency)
+            stage = "native_delta"
+            native_delta = compare_native_operation_delta(
+                "register_kicad_part",
+                {},
+                authoritative.design,
+                candidate,
+                _native_board_projection(authoritative),
+                _native_board_projection(staged_project),
+                before_schematic=_native_schematic_projection(authoritative),
+                after_schematic=_native_schematic_projection(staged_project),
+                graph=graph,
+            )
+            atomic_write_json(
+                transaction / "native-operation-delta.json", native_delta.to_dict()
+            )
+            receipt["artifact"]["native_delta"] = "native-operation-delta.json"
+            receipt["postconditions"].extend(_native_delta_postconditions(native_delta))
+            receipt["native_delta"] = {
+                "operation_checked": True,
+                "policy": native_delta.policy,
+                "passed": native_delta.passed,
+                "failed_checks": [
+                    item.name for item in native_delta.checks if not item.passed
+                ][:4],
+            }
+            atomic_write_json(receipt_path, receipt)
+            if not native_delta.passed:
+                raise _PCBOperationPostconditionError(
+                    "native_delta_failed",
+                    "part registration changed unrelated native project state",
+                )
         except BaseException as exc:
             receipt["status"] = "failed"
             receipt["failed_at"] = utc_timestamp()
             receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+            receipt["error_code"] = _operation_failure_code(
+                exc, stage=stage, tool_name="register_kicad_part"
+            )
+            _attach_progress(
+                receipt,
+                before_progress,
+                before_progress,
+                before_stage,
+                before_stage,
+            )
             atomic_write_json(receipt_path, receipt)
+            _bind_transaction_failure(exc, transaction_id)
             raise
 
         with ResourceLock(project.root, self.locks_root):
@@ -1092,14 +2061,6 @@ class ApplicationService:
                 os.replace(staged, current.design_root)
                 published = open_managed_project(current.design_root)
                 published.assert_synchronized()
-                receipt.update(
-                    {
-                        "status": "applied",
-                        "applied_at": utc_timestamp(),
-                        "manifest_hashes": published.manifest["hashes"],
-                    }
-                )
-                atomic_write_json(receipt_path, receipt)
                 current.state["status"] = "generated"
                 current.state["revision"] += 1
                 current.state["design_revision"] += 1
@@ -1120,6 +2081,24 @@ class ApplicationService:
                     f"Registered installed KiCad part {part.id}",
                 )
                 self._write_records(current.root, current.state, current.conversation)
+                # Publish success last.  A receipt write failure must still be
+                # able to restore the live design, event, and project records
+                # without leaving a durable applied claim for a rolled-back part.
+                receipt.update(
+                    {
+                        "status": "applied",
+                        "applied_at": utc_timestamp(),
+                        "manifest_hashes": published.manifest["hashes"],
+                        "committed_revision": current.state["revision"],
+                        "committed_design_revision": current.state["design_revision"],
+                        "rollback": {
+                            "state": "committed",
+                            "performed": False,
+                            "live_unchanged": False,
+                        },
+                    }
+                )
+                atomic_write_json(receipt_path, receipt)
             except BaseException as exc:
                 rollback_failures: list[BaseException] = []
                 if moved_before:
@@ -1143,14 +2122,56 @@ class ApplicationService:
                 receipt["status"] = "failed"
                 receipt["failed_at"] = utc_timestamp()
                 receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+                receipt.pop("applied_at", None)
+                receipt.pop("manifest_hashes", None)
+                receipt["committed_revision"] = None
+                receipt["committed_design_revision"] = None
+                receipt["error_code"] = _operation_failure_code(
+                    exc, stage="publication", tool_name="register_kicad_part"
+                )
+                receipt["rollback_performed"] = moved_before and not rollback_failures
+                receipt["rollback"] = {
+                    "state": (
+                        "restored"
+                        if moved_before and not rollback_failures
+                        else "incomplete"
+                        if rollback_failures
+                        else "not_required"
+                    ),
+                    "performed": moved_before and not rollback_failures,
+                    "live_unchanged": not rollback_failures,
+                }
+                if not rollback_failures:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        before_progress,
+                        before_stage,
+                        before_stage,
+                    )
+                else:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        ProgressVector.unknown(baseline_design_revision),
+                        before_stage,
+                        StageProjection(
+                            EngineeringStage.NOT_STARTED,
+                            False,
+                            ("rollback_state_unknown",),
+                        ),
+                    )
                 try:
                     atomic_write_json(receipt_path, receipt)
                 except PCBDraftError:
                     pass
                 if rollback_failures:
-                    raise PCBDraftError(
+                    failure = PCBDraftError(
                         "part publication failed and rollback was incomplete"
-                    ) from exc
+                    )
+                    _bind_transaction_failure(failure, transaction_id)
+                    raise failure from exc
+                _bind_transaction_failure(exc, transaction_id)
                 raise
         return self._with_tool_result(
             self.open_project(project_id),
@@ -1167,6 +2188,10 @@ class ApplicationService:
                 "after_catalog_hash": after_catalog_hash,
                 "revision": current.state["revision"],
                 "design_revision": current.state["design_revision"],
+                "progress_before": receipt["progress_before"],
+                "progress_after": receipt["progress_after"],
+                "progress_delta": receipt["progress_delta"],
+                "stage": receipt["stage_after"],
             },
         )
 
@@ -1194,6 +2219,20 @@ class ApplicationService:
             output=output,
             timeout=timeout,
         )
+        check_receipt_path = output / "receipt.json"
+        check_receipt = load_json_limited(check_receipt_path, APP_FILE_LIMIT)
+        if (
+            not isinstance(check_receipt, dict)
+            or check_receipt.get("schema") != "pcbdraft-individual-check-receipt"
+            or check_receipt.get("status") != "complete"
+        ):
+            raise ValidationError("individual PCB check receipt is incomplete")
+        # The low-level checker is reusable outside ApplicationService and binds
+        # itself to content.  The product boundary additionally binds its
+        # evidence to the exact semantic revision before it can advance a stage.
+        check_receipt["source_revision"] = expected_revision
+        check_receipt["source_design_revision"] = project.state["design_revision"]
+        atomic_write_json(check_receipt_path, check_receipt)
         summary = {
             "run_id": run_id,
             "check": kind,
@@ -1350,6 +2389,559 @@ class ApplicationService:
             {**summary, "revision": current.state["revision"]},
         )
 
+    @staticmethod
+    def _native_progress_sources(
+        managed: Any,
+        design_revision: int,
+        graph: PartGraph,
+    ) -> tuple[NativeConsistencyReport | None, NativeBoardProjection | None]:
+        """Reuse retained native projections, failing to unknown rather than zero."""
+
+        try:
+            board = _native_board_projection(managed)
+            schematic = _native_schematic_projection(managed)
+            report = compare_native_consistency(
+                managed.design,
+                schematic,
+                board,
+                candidate_revision=design_revision,
+                graph=graph,
+            )
+        except PCBDraftError:
+            return None, None
+        return report, board
+
+    @staticmethod
+    def _retained_check_progress(
+        project: ApplicationProject,
+        design_hash: str,
+        kind: str,
+        design_revision: int,
+    ) -> tuple[MetricValue, MetricValue | None, EvidenceCheck]:
+        """Read the newest check bound to the current semantic design hash."""
+
+        retained_validation = project.state.get("last_validation")
+        if isinstance(retained_validation, Mapping):
+            relative_report = retained_validation.get("report")
+            if (
+                isinstance(relative_report, str)
+                and retained_validation.get("source_design_revision") == design_revision
+            ):
+                report_path = project.root / relative_report
+                try:
+                    report_path.relative_to(project.root)
+                except ValueError:
+                    pass
+                else:
+                    aggregate = ApplicationService._aggregate_check_progress(
+                        report_path.parent,
+                        design_hash,
+                        kind,
+                        design_revision,
+                    )
+                    if aggregate[0].status is not EvidenceStatus.UNKNOWN:
+                        return aggregate
+
+        root = project.root / "validation"
+        if not root.is_dir() or root.is_symlink():
+            return (
+                MetricValue.unknown(design_revision),
+                None,
+                EvidenceCheck.unknown(design_revision),
+            )
+        for directory in sorted(root.iterdir(), reverse=True)[:100]:
+            if directory.is_symlink() or not directory.is_dir():
+                continue
+            try:
+                receipt = load_json_limited(directory / "receipt.json", APP_FILE_LIMIT)
+                if (
+                    not isinstance(receipt, Mapping)
+                    or receipt.get("schema") != "pcbdraft-individual-check-receipt"
+                    or receipt.get("status") != "complete"
+                    or receipt.get("check") != kind
+                    or receipt.get("design_content_hash") != design_hash
+                    or receipt.get("source_design_revision") != design_revision
+                    or not isinstance(receipt.get("report"), str)
+                ):
+                    continue
+                report = load_json_limited(
+                    directory / str(receipt["report"]), APP_FILE_LIMIT
+                )
+            except PCBDraftError:
+                # Malformed or partial evidence cannot become a known zero.
+                continue
+            if (
+                not isinstance(report, Mapping)
+                or report.get("check") != kind
+                or report.get("design_content_hash") != design_hash
+                or report.get("outcome") != receipt.get("outcome")
+                or report.get("state") != receipt.get("state")
+            ):
+                continue
+            details = report.get("details")
+            violations = (
+                details.get("violations") if isinstance(details, Mapping) else None
+            )
+            if not isinstance(violations, list):
+                continue
+            errors, _warnings = count_severities(violations)
+            outcome = report.get("outcome")
+            if outcome not in {"pass", "fail"}:
+                continue
+            metric = MetricValue.known(errors, design_revision)
+            fatal = (
+                MetricValue.known(
+                    _fatal_drc_count({"violations": violations}), design_revision
+                )
+                if kind == "run_drc"
+                else None
+            )
+            return (
+                metric,
+                fatal,
+                EvidenceCheck.known(outcome == "pass", design_revision),
+            )
+        return (
+            MetricValue.unknown(design_revision),
+            None,
+            EvidenceCheck.unknown(design_revision),
+        )
+
+    @staticmethod
+    def _bind_aggregate_validation_revision(
+        validation_root: Path, design_hash: str, design_revision: int
+    ) -> None:
+        """Bind a complete aggregate receipt to the revision that produced it."""
+
+        receipt_path = validation_root / "receipt.json"
+        try:
+            receipt = load_json_limited(receipt_path, APP_FILE_LIMIT)
+        except PCBDraftError:
+            return
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("schema") != "pcbdraft-validation-receipt"
+            or receipt.get("status") != "complete"
+            or receipt.get("design_content_hash") != design_hash
+        ):
+            return
+        receipt["source_design_revision"] = design_revision
+        atomic_write_json(receipt_path, receipt)
+
+    @staticmethod
+    def _aggregate_check_progress(
+        validation_root: Path,
+        design_hash: str,
+        kind: str,
+        design_revision: int,
+    ) -> tuple[MetricValue, MetricValue | None, EvidenceCheck]:
+        """Read one aggregate validation's normalized ERC/DRC evidence."""
+
+        unknown = (
+            MetricValue.unknown(design_revision),
+            None,
+            EvidenceCheck.unknown(design_revision),
+        )
+        if kind not in {"run_erc", "run_drc"}:
+            return unknown
+        try:
+            receipt = load_json_limited(
+                validation_root / "receipt.json", APP_FILE_LIMIT
+            )
+            if (
+                not isinstance(receipt, Mapping)
+                or receipt.get("schema") != "pcbdraft-validation-receipt"
+                or receipt.get("status") != "complete"
+                or receipt.get("design_content_hash") != design_hash
+                or receipt.get("source_design_revision") != design_revision
+                or not isinstance(receipt.get("tool_runs"), Mapping)
+            ):
+                return unknown
+            tool_kind = "erc" if kind == "run_erc" else "drc"
+            tool_run = receipt["tool_runs"].get(tool_kind)
+            if (
+                not isinstance(tool_run, Mapping)
+                or tool_run.get("status") != "completed"
+                or tool_run.get("failure") is not None
+                or not isinstance(tool_run.get("normalized_report"), str)
+            ):
+                return unknown
+            report_name = str(tool_run["normalized_report"])
+            if (
+                Path(report_name).name != report_name
+                or report_name != f"{tool_kind}.json"
+            ):
+                return unknown
+            document = load_json_limited(validation_root / report_name, APP_FILE_LIMIT)
+        except PCBDraftError:
+            return unknown
+        if not isinstance(document, Mapping) or not document:
+            return unknown
+        errors, _warnings = count_severities(document)
+        metric = MetricValue.known(errors, design_revision)
+        if kind == "run_erc":
+            return metric, None, EvidenceCheck.known(errors == 0, design_revision)
+        structured = structured_violations(document)
+        fatal = (
+            MetricValue.unknown(design_revision)
+            if structured["violations_truncated"]
+            else MetricValue.known(_fatal_drc_count(structured), design_revision)
+        )
+        return metric, fatal, EvidenceCheck.known(errors == 0, design_revision)
+
+    @staticmethod
+    def _transaction_receipts(
+        project: ApplicationProject, *, strict: bool = False
+    ) -> tuple[dict[str, Any], ...]:
+        root = project.root / "transactions"
+        if not root.is_dir() or root.is_symlink():
+            return ()
+        paths = tuple(root.glob("*/receipt.json"))
+        if strict and len(paths) > 2_000:
+            raise ValidationError("route convergence history exceeds its bound")
+        records: list[tuple[str, str, dict[str, Any]]] = []
+        for path in paths:
+            try:
+                value = load_json_limited(path, APP_FILE_LIMIT)
+            except PCBDraftError as exc:
+                if strict:
+                    raise ValidationError(
+                        "route convergence history contains an unreadable receipt"
+                    ) from exc
+                continue
+            if isinstance(value, dict):
+                created_at = value.get("created_at")
+                records.append(
+                    (
+                        created_at if isinstance(created_at, str) else "",
+                        path.parent.name,
+                        value,
+                    )
+                )
+            elif strict:
+                raise ValidationError(
+                    "route convergence history contains a malformed receipt"
+                )
+        records.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return tuple(item[2] for item in records[: 2_000 if strict else 100])
+
+    @classmethod
+    def _routing_failure_count(
+        cls, project: ApplicationProject, design_revision: int, state_key: str | None
+    ) -> int:
+        return sum(
+            receipt.get("operation") == "route_net"
+            and receipt.get("status") == "failed"
+            and receipt.get("baseline_design_revision") == design_revision
+            and (state_key is None or receipt.get("convergence_state_key") == state_key)
+            and isinstance(receipt.get("routing_failure"), Mapping)
+            for receipt in cls._transaction_receipts(project)
+        )
+
+    @classmethod
+    def _route_convergence_decision(
+        cls,
+        project: ApplicationProject,
+        *,
+        state_key: str,
+    ) -> ConvergenceDecision:
+        observations: list[ConvergenceObservation] = []
+        matching_retry_key: str | None = None
+        try:
+            receipts = cls._transaction_receipts(project, strict=True)
+            for receipt in reversed(receipts):
+                schema = receipt.get("schema")
+                if schema not in {
+                    "pcbdraft-flat-operation-receipt",
+                    "pcbdraft-kicad-part-registration-receipt",
+                    "pcbdraft-agent-repair-transaction",
+                }:
+                    raise ValidationError(
+                        "route convergence history contains an unknown receipt"
+                    )
+                if schema != "pcbdraft-flat-operation-receipt":
+                    if receipt.get("operation") == "route_net":
+                        raise ValidationError(
+                            "route convergence receipt schema is inconsistent"
+                        )
+                    continue
+                operation = receipt.get("operation")
+                if not isinstance(operation, str):
+                    raise ValidationError(
+                        "route convergence history contains a malformed operation"
+                    )
+                if operation != "route_net":
+                    continue
+                if receipt.get("version") != 2 or receipt.get("status") not in {
+                    "failed",
+                    "applied",
+                }:
+                    raise ValidationError(
+                        "route convergence history contains an incomplete route receipt"
+                    )
+                retained_state = _route_state_key_from_record(
+                    receipt.get("convergence_state")
+                )
+                if receipt.get("convergence_state_key") != retained_state:
+                    raise ValidationError("route convergence state key is inconsistent")
+                delta = receipt.get("progress_delta")
+                classification = (
+                    delta.get("classification") if isinstance(delta, Mapping) else None
+                )
+                if (
+                    not isinstance(delta, Mapping)
+                    or delta.get("schema") != "pcbdraft-progress-delta"
+                    or delta.get("version") != 1
+                    or classification
+                    not in {item.value for item in ProgressClassification}
+                ):
+                    raise ValidationError(
+                        "route convergence progress evidence is malformed"
+                    )
+                failure = receipt.get("routing_failure")
+                retry_key = (
+                    _routing_failure_retry_key(failure) if failure is not None else None
+                )
+                observations.append(
+                    ConvergenceObservation(
+                        retained_state,
+                        ProgressClassification(classification),
+                        retry_key,
+                    )
+                )
+                if retained_state == state_key and retry_key is not None:
+                    matching_retry_key = retry_key
+        except ValidationError:
+            return ConvergenceDecision(
+                False,
+                "strategy_change_required",
+                "convergence_history_invalid",
+                0,
+                0,
+            )
+        return evaluate_convergence(
+            tuple(observations),
+            state_key=state_key,
+            retry_key=matching_retry_key,
+            policy=DEFAULT_CONVERGENCE_POLICY,
+        )
+
+    def _current_progress_and_stage(
+        self, project: ApplicationProject
+    ) -> tuple[ProgressVector, StageProjection]:
+        if not project.design_root.is_dir() or project.design_root.is_symlink():
+            revision = int(project.state["design_revision"])
+            return (
+                ProgressVector.unknown(revision),
+                StageProjection(
+                    EngineeringStage.NOT_STARTED,
+                    False,
+                    ("requirements_not_frozen",),
+                ),
+            )
+        managed = open_managed_project(project.design_root)
+        managed.assert_synchronized()
+        revision = int(project.state["design_revision"])
+        progress, stage, _consistency = self._managed_progress_and_stage(
+            project,
+            managed,
+            revision,
+        )
+        return progress, stage
+
+    def inspect_engineering_stage(self, project_id: str) -> dict[str, Any]:
+        """Return the evidence-derived stage bound to both live revisions.
+
+        This internal adapter surface exists so provider schema projection can
+        cache a stage only while the project and design revisions are unchanged.
+        It deliberately returns no model-selectable stage input.  The evidence
+        identity is the bounded retained validation run id, not an additional
+        cryptographic audit digest.
+        """
+
+        project = self._open(project_id)
+        _progress, stage = self._current_progress_and_stage(project)
+        retained_validation = project.state.get("last_validation")
+        validation_run_id = (
+            retained_validation.get("run_id")
+            if isinstance(retained_validation, Mapping)
+            else None
+        )
+        evidence_source = (
+            f"validation-run:{validation_run_id}"
+            if isinstance(validation_run_id, str)
+            and re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}", validation_run_id)
+            else "validation-run:none"
+        )
+        return {
+            "project_id": project_id,
+            "live_revision": int(project.state["revision"]),
+            "design_revision": int(project.state["design_revision"]),
+            "evidence_source": evidence_source,
+            **stage.to_dict(),
+        }
+
+    def _managed_progress_and_stage(
+        self,
+        project: ApplicationProject,
+        managed: Any,
+        revision: int,
+        *,
+        validation_root: Path | None = None,
+        include_routing_failures: bool = True,
+    ) -> tuple[ProgressVector, StageProjection, NativeConsistencyReport | None]:
+        """Project revision progress for either the live or one staged tree."""
+
+        graph = managed.graph.with_footprint_overrides(managed.design)
+        consistency, board = self._native_progress_sources(managed, revision, graph)
+        if validation_root is None:
+            erc, _unused, erc_check = self._retained_check_progress(
+                project, managed.design.content_hash(), "run_erc", revision
+            )
+            drc, fatal, drc_check = self._retained_check_progress(
+                project, managed.design.content_hash(), "run_drc", revision
+            )
+        else:
+            erc, _unused, erc_check = self._aggregate_check_progress(
+                validation_root, managed.design.content_hash(), "run_erc", revision
+            )
+            drc, fatal, drc_check = self._aggregate_check_progress(
+                validation_root, managed.design.content_hash(), "run_drc", revision
+            )
+        progress = _progress_vector(
+            managed.design,
+            graph,
+            revision,
+            consistency=consistency,
+            board=board,
+            fatal_drc=fatal,
+            error_drc=drc,
+            erc_error=erc,
+            routing_failure_count=(
+                self._routing_failure_count(project, revision, None)
+                if include_routing_failures
+                else 0
+            ),
+        )
+        stage = derive_stage(
+            progress,
+            _progress_stage_evidence(
+                managed.design,
+                revision,
+                requirements_frozen=managed.requirements_path.is_file(),
+                consistency=consistency,
+                progress=progress,
+                erc_check=erc_check,
+                drc_check=drc_check,
+            ),
+        )
+        return progress, stage, consistency
+
+    @staticmethod
+    def _require_current_native_consistency(
+        report: NativeConsistencyReport | None,
+        revision: int,
+        *,
+        label: str,
+    ) -> NativeConsistencyReport:
+        if (
+            report is None
+            or report.candidate_revision != revision
+            or report.schematic_status != "evaluated"
+            or report.board_status != "evaluated"
+            or not report.consistency_passed
+        ):
+            raise _PCBOperationPostconditionError(
+                "native_consistency_failed",
+                f"legacy modification {label} native consistency is unavailable or failing",
+            )
+        return report
+
+    def record_product_session_terminal(
+        self,
+        project_id: str,
+        *,
+        session_id: str,
+        turn_id: str,
+        process_status: ProcessStatus | str,
+        termination_reason: str | None = None,
+        receipt_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Write the one PCB-level outcome shared by durable and Hermes sessions."""
+
+        try:
+            process = ProcessStatus(process_status)
+        except ValueError as exc:
+            raise ValidationError("product session process status is invalid") from exc
+        resolved_receipt_id = (
+            validate_product_terminal_receipt_id(receipt_id)
+            if receipt_id is not None
+            else product_terminal_receipt_id(session_id, turn_id)
+        )
+        project = self._open(project_id)
+        with ResourceLock(project.root, self.locks_root):
+            project = self._open(project_id)
+            existing_path = (
+                project.root / "product-sessions" / f"{resolved_receipt_id}.json"
+            )
+            if existing_path.is_file() and not existing_path.is_symlink():
+                existing = ProductSessionTerminalReceipt.from_dict(
+                    load_json_limited(existing_path, APP_FILE_LIMIT)
+                )
+                if (
+                    existing.project_id != project_id
+                    or existing.session_id != session_id
+                    or existing.turn_id != turn_id
+                ):
+                    raise ValidationError(
+                        "product session receipt identity is already bound"
+                    )
+                retained_stage = StageProjection(
+                    existing.stage_reached,
+                    existing.release_gate_passed,
+                    () if existing.release_gate_passed else ("retained_terminal",),
+                )
+                requested_outcome, requested_termination = terminal_outcome(
+                    process_status=process,
+                    requested_reason=termination_reason,
+                    stage=retained_stage,
+                )
+                if (
+                    existing.process_status is not process
+                    or existing.task_outcome is not requested_outcome
+                    or existing.termination_reason != requested_termination
+                ):
+                    raise ValidationError(
+                        "product session terminal receipt facts conflict"
+                    )
+                result = existing.to_dict()
+                result["artifact"] = existing_path.relative_to(project.root).as_posix()
+                return result
+            progress, stage = self._current_progress_and_stage(project)
+            outcome, reason = terminal_outcome(
+                process_status=process,
+                requested_reason=termination_reason,
+                stage=stage,
+            )
+            receipt = ProductSessionTerminalReceipt(
+                resolved_receipt_id,
+                project_id,
+                session_id,
+                turn_id,
+                utc_timestamp(),
+                process,
+                outcome,
+                reason,
+                stage.stage,
+                stage.release_gate_passed,
+                progress.source_revision,
+                progress,
+            )
+            path = store_product_session_terminal(project.root, receipt)
+            result = receipt.to_dict()
+            result["artifact"] = path.relative_to(project.root).as_posix()
+            return result
+
     def apply_pcb_operation(
         self,
         project_id: str,
@@ -1369,8 +2961,14 @@ class ApplicationService:
             raise ValidationError("project has no synchronized design to modify")
         authoritative = open_managed_project(project.design_root)
         authoritative.assert_synchronized()
-        operation = self._flat_semantic_operation(
-            tool_name, arguments, authoritative.design
+        before_graph = authoritative.graph.with_footprint_overrides(
+            authoritative.design
+        )
+        operations = self._flat_semantic_operations(
+            tool_name,
+            arguments,
+            authoritative.design,
+            graph=before_graph,
         )
         change_set = ChangeSet.from_dict(
             {
@@ -1380,7 +2978,7 @@ class ApplicationService:
                 "base_hash": authoritative.design.content_hash(),
                 "intent": f"Apply concrete PCB operation {tool_name}.",
                 "actor": "flat-pcb-toolbox",
-                "operations": [operation],
+                "operations": operations,
                 "provenance": [f"tool:{tool_name}"],
             }
         )
@@ -1407,19 +3005,130 @@ class ApplicationService:
         staged = transaction / "staged"
         before = transaction / "before"
         receipt_path = transaction / "receipt.json"
+        transaction_deadline = time.monotonic() + timeout
+        route_net_id = str(arguments["net_id"]) if tool_name == "route_net" else None
+        baseline_design_revision = int(project.state["design_revision"])
+        candidate_design_revision = baseline_design_revision + 1
+        convergence_state_key = (
+            _route_state_key(
+                authoritative.design,
+                route_net_id,
+                baseline_design_revision,
+            )
+            if route_net_id is not None
+            else f"revision={baseline_design_revision}"
+        )
+        convergence_state = (
+            _route_state_record(
+                authoritative.design,
+                route_net_id,
+                baseline_design_revision,
+            )
+            if route_net_id is not None
+            else None
+        )
+        before_consistency, before_board = self._native_progress_sources(
+            authoritative, baseline_design_revision, before_graph
+        )
+        before_erc, _unused_fatal, before_erc_check = self._retained_check_progress(
+            project,
+            authoritative.design.content_hash(),
+            "run_erc",
+            baseline_design_revision,
+        )
+        before_drc_metric, before_fatal_drc, before_drc_check = (
+            self._retained_check_progress(
+                project,
+                authoritative.design.content_hash(),
+                "run_drc",
+                baseline_design_revision,
+            )
+        )
+        before_progress = _progress_vector(
+            authoritative.design,
+            before_graph,
+            baseline_design_revision,
+            consistency=before_consistency,
+            board=before_board,
+            fatal_drc=before_fatal_drc,
+            error_drc=before_drc_metric,
+            erc_error=before_erc,
+            routing_failure_count=self._routing_failure_count(
+                project, baseline_design_revision, convergence_state_key
+            ),
+        )
+        before_stage_evidence = _progress_stage_evidence(
+            authoritative.design,
+            baseline_design_revision,
+            requirements_frozen=authoritative.requirements_path.is_file(),
+            consistency=before_consistency,
+            progress=before_progress,
+            erc_check=before_erc_check,
+            drc_check=before_drc_check,
+        )
+        before_stage = derive_stage(before_progress, before_stage_evidence)
+        convergence = (
+            self._route_convergence_decision(project, state_key=convergence_state_key)
+            if route_net_id is not None
+            else ConvergenceDecision(True, "continue", None, 0, 0)
+        )
         receipt: dict[str, Any] = {
             "schema": "pcbdraft-flat-operation-receipt",
-            "version": 1,
+            "version": 2,
             "status": "preparing",
             "operation": tool_name,
             "created_at": utc_timestamp(),
             "before_hash": authoritative.design.content_hash(),
             "after_hash": candidate.content_hash(),
             "baseline_revision": expected_revision,
+            "baseline_design_revision": baseline_design_revision,
+            "candidate_revision": candidate_design_revision,
+            "committed_revision": None,
+            "committed_design_revision": None,
+            "consistency_passed": False,
+            "postconditions": [],
+            "rollback_performed": False,
+            "rollback": {
+                "state": "not_required",
+                "performed": False,
+                "live_unchanged": True,
+            },
+            "artifact": {
+                "transaction_id": transaction_id,
+                "receipt": "receipt.json",
+            },
+            "convergence_state_key": convergence_state_key,
+            "convergence_state": convergence_state,
+            "convergence": convergence.to_dict(),
+            "transaction_scope": {
+                "kind": tool_name,
+                "entry_count": len(operations),
+            },
         }
+        _attach_progress(
+            receipt,
+            before_progress,
+            before_progress,
+            before_stage,
+            before_stage,
+        )
         atomic_write_json(receipt_path, receipt)
         atomic_write_json(transaction / "semantic-diff.json", candidate_diff)
+        stage = "materialization"
         try:
+            if not convergence.allowed:
+                raise _PCBOperationPostconditionError(
+                    convergence.action,
+                    "route retry stopped until placement, layer, order, or revision state changes",
+                )
+            _reject_stale_copper_transform(
+                tool_name,
+                arguments,
+                authoritative.design,
+                candidate,
+                before_graph=before_graph,
+                candidate_graph=graph,
+            )
             generated = materialize_managed_design(
                 request,
                 candidate,
@@ -1430,16 +3139,17 @@ class ApplicationService:
                 lock_timeout=min(10.0, timeout),
                 auto_place=False,
                 route_net_ids=(
-                    frozenset({str(arguments["net_id"])})
-                    if tool_name == "route_net"
+                    frozenset({route_net_id})
+                    if route_net_id is not None
                     else frozenset()
                 ),
                 allow_incomplete=True,
             )
             if tool_name == "route_net":
+                stage = "routing_probe"
                 candidate = self._retain_generated_route(
                     candidate,
-                    str(arguments["net_id"]),
+                    route_net_id or "",
                     generated.pcb.routing,
                 )
                 candidate_diff = semantic_diff(authoritative.design, candidate)
@@ -1447,6 +3157,7 @@ class ApplicationService:
                 atomic_write_json(receipt_path, receipt)
                 atomic_write_json(transaction / "semantic-diff.json", candidate_diff)
                 os.replace(staged, transaction / "routing-probe")
+                stage = "routing_commit"
                 materialize_managed_design(
                     request,
                     candidate,
@@ -1463,13 +3174,315 @@ class ApplicationService:
             staged_project.assert_synchronized()
             if staged_project.design.content_hash() != candidate.content_hash():
                 raise ValidationError("staged semantic design hash changed")
+            stage = "native_consistency"
+            consistency_failure: PCBDraftError | None = None
+            try:
+                consistency = inspect_native_consistency(
+                    candidate,
+                    staged_project.schematic_path,
+                    staged_project.board_path,
+                    candidate_revision=candidate_design_revision,
+                    graph=graph,
+                    require_routed_net_ids=(
+                        frozenset({route_net_id})
+                        if route_net_id is not None
+                        else frozenset()
+                    ),
+                )
+            except PCBDraftError as exc:
+                consistency_failure = exc
+                consistency = _unavailable_consistency_report(candidate_design_revision)
+            atomic_write_json(
+                transaction / "native-consistency.json", consistency.to_dict()
+            )
+            receipt["artifact"]["native_consistency"] = "native-consistency.json"
+            receipt["consistency_passed"] = consistency.consistency_passed
+            receipt["postconditions"] = _native_postconditions(tool_name, consistency)
+            receipt["native_delta"] = {
+                "mismatch_count": len(consistency.mismatches),
+                "required_routed_net": route_net_id,
+            }
+            receipt["intended_delta"] = candidate_diff["summary"]
+            try:
+                candidate_board = _native_board_projection(staged_project)
+            except PCBDraftError:
+                candidate_board = None
+            after_progress = _progress_vector(
+                candidate,
+                graph,
+                candidate_design_revision,
+                consistency=consistency,
+                board=candidate_board,
+                fatal_drc=before_progress.fatal_drc_count.for_revision(
+                    candidate_design_revision
+                ),
+                error_drc=before_progress.error_drc_count.for_revision(
+                    candidate_design_revision
+                ),
+                erc_error=before_progress.erc_error_count.for_revision(
+                    candidate_design_revision
+                ),
+                routing_failure_count=0,
+            )
+            after_stage_evidence = _progress_stage_evidence(
+                candidate,
+                candidate_design_revision,
+                requirements_frozen=staged_project.requirements_path.is_file(),
+                consistency=consistency,
+                progress=after_progress,
+                erc_check=before_erc_check.for_revision(candidate_design_revision),
+                drc_check=before_drc_check.for_revision(candidate_design_revision),
+            )
+            after_stage = derive_stage(after_progress, after_stage_evidence)
+            _attach_progress(
+                receipt,
+                before_progress,
+                after_progress,
+                before_stage,
+                after_stage,
+            )
+            atomic_write_json(receipt_path, receipt)
+            if consistency_failure is not None:
+                if tool_name == "route_net":
+                    failure = RoutingFailure(
+                        code="native_commit_failed",
+                        net=route_net_id or "unknown",
+                        blocking_summary="native KiCad inspection failed",
+                        recommendations=("inspect_native_artifact",),
+                        nearest_obstacle_class="native_artifact",
+                        state_revision=candidate_design_revision,
+                        state_context=_routing_failure_context(candidate, route_net_id),
+                    )
+                    raise _PCBOperationPostconditionError(
+                        failure.code,
+                        failure.diagnostic,
+                        routing_failure=failure,
+                    ) from consistency_failure
+                raise _PCBOperationPostconditionError(
+                    "native_verification_failed",
+                    "native KiCad inspection failed",
+                ) from consistency_failure
+            if not consistency.consistency_passed:
+                raise _consistency_rejection(
+                    tool_name,
+                    route_net_id,
+                    consistency,
+                    design=candidate,
+                    state_revision=candidate_design_revision,
+                )
+            if tool_name in _NATIVE_DELTA_OPERATIONS:
+                stage = "native_delta"
+                native_operation_delta = compare_native_operation_delta(
+                    tool_name,
+                    arguments,
+                    authoritative.design,
+                    candidate,
+                    before_board or _native_board_projection(authoritative),
+                    candidate_board or _native_board_projection(staged_project),
+                    before_schematic=_native_schematic_projection(authoritative),
+                    after_schematic=_native_schematic_projection(staged_project),
+                    graph=graph,
+                )
+                atomic_write_json(
+                    transaction / "native-operation-delta.json",
+                    native_operation_delta.to_dict(),
+                )
+                receipt["artifact"]["native_delta"] = "native-operation-delta.json"
+                receipt["native_delta"].update(
+                    {
+                        "operation_checked": True,
+                        "policy": native_operation_delta.policy,
+                        "passed": native_operation_delta.passed,
+                        "failed_checks": [
+                            item.name
+                            for item in native_operation_delta.checks
+                            if not item.passed
+                        ][:4],
+                    }
+                )
+                receipt["postconditions"].extend(
+                    _native_delta_postconditions(native_operation_delta)
+                )
+                atomic_write_json(receipt_path, receipt)
+                if not native_operation_delta.passed:
+                    error_code = (
+                        "native_commit_failed"
+                        if tool_name == "route_net"
+                        else "native_delta_failed"
+                    )
+                    raise _PCBOperationPostconditionError(
+                        error_code,
+                        "native KiCad operation delta postcondition failed: "
+                        + ", ".join(
+                            item.name
+                            for item in native_operation_delta.checks
+                            if not item.passed
+                        ),
+                    )
+            if tool_name in _PHYSICAL_PCB_OPERATIONS:
+                stage = "drc"
+                before_drc = run_drc_evidence(
+                    input_file=authoritative.board_path,
+                    output_dir=transaction / "drc-before",
+                    deadline=transaction_deadline,
+                    redactions={str(authoritative.root): "<before-design>"},
+                )
+                after_drc = run_drc_evidence(
+                    input_file=staged_project.board_path,
+                    output_dir=transaction / "drc-after",
+                    deadline=transaction_deadline,
+                    redactions={str(staged_project.root): "<candidate-design>"},
+                )
+                drc_delta = compare_drc_evidence(before_drc, after_drc)
+                atomic_write_json(transaction / "drc-delta.json", drc_delta.to_dict())
+                receipt["artifact"]["drc_before"] = "drc-before/evidence.json"
+                receipt["artifact"]["drc_after"] = "drc-after/evidence.json"
+                receipt["artifact"]["drc_delta"] = "drc-delta.json"
+                receipt["drc_delta"] = {
+                    "comparable": drc_delta.comparable,
+                    "passed": drc_delta.passed,
+                    "before_error_count": drc_delta.before_error_count,
+                    "after_error_count": drc_delta.after_error_count,
+                    "new_error_count": len(drc_delta.new_error_fingerprints),
+                    "failure_kind": drc_delta.failure_kind,
+                }
+                receipt["postconditions"].append(_drc_postcondition(drc_delta))
+                before_fatal, before_error_drc, scoped_before_drc_check = (
+                    _drc_progress_metrics(before_drc, baseline_design_revision)
+                )
+                after_fatal, after_error_drc, scoped_after_drc_check = (
+                    _drc_progress_metrics(after_drc, candidate_design_revision)
+                )
+                before_progress = _progress_vector(
+                    authoritative.design,
+                    before_graph,
+                    baseline_design_revision,
+                    consistency=before_consistency,
+                    board=before_board,
+                    fatal_drc=before_fatal,
+                    error_drc=before_error_drc,
+                    erc_error=before_erc,
+                    routing_failure_count=self._routing_failure_count(
+                        project,
+                        baseline_design_revision,
+                        convergence_state_key,
+                    ),
+                )
+                before_stage = derive_stage(
+                    before_progress,
+                    _progress_stage_evidence(
+                        authoritative.design,
+                        baseline_design_revision,
+                        requirements_frozen=authoritative.requirements_path.is_file(),
+                        consistency=before_consistency,
+                        progress=before_progress,
+                        erc_check=before_erc_check,
+                        drc_check=scoped_before_drc_check,
+                    ),
+                )
+                after_progress = _progress_vector(
+                    candidate,
+                    graph,
+                    candidate_design_revision,
+                    consistency=consistency,
+                    board=candidate_board,
+                    fatal_drc=after_fatal,
+                    error_drc=after_error_drc,
+                    erc_error=before_erc.for_revision(candidate_design_revision),
+                    routing_failure_count=0,
+                )
+                after_stage = derive_stage(
+                    after_progress,
+                    _progress_stage_evidence(
+                        candidate,
+                        candidate_design_revision,
+                        requirements_frozen=staged_project.requirements_path.is_file(),
+                        consistency=consistency,
+                        progress=after_progress,
+                        erc_check=before_erc_check.for_revision(
+                            candidate_design_revision
+                        ),
+                        drc_check=scoped_after_drc_check,
+                    ),
+                )
+                _attach_progress(
+                    receipt,
+                    before_progress,
+                    after_progress,
+                    before_stage,
+                    after_stage,
+                )
+                atomic_write_json(receipt_path, receipt)
+                if not drc_delta.comparable:
+                    raise _PCBOperationPostconditionError(
+                        "drc_unavailable",
+                        "native DRC comparison was unavailable",
+                    )
+                if not drc_delta.passed:
+                    raise _PCBOperationPostconditionError(
+                        "new_drc_error",
+                        "physical PCB operation introduced new DRC errors",
+                    )
         except BaseException as exc:
             receipt["status"] = "failed"
             receipt["failed_at"] = utc_timestamp()
             receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+            receipt["error_code"] = _operation_failure_code(
+                exc, stage=stage, tool_name=tool_name
+            )
+            receipt["rollback_performed"] = False
+            receipt["rollback"] = {
+                "state": "not_required",
+                "performed": False,
+                "live_unchanged": True,
+            }
+            if isinstance(exc, RoutingFailureError):
+                receipt["routing_failure"] = exc.failure.to_dict()
+            elif (
+                isinstance(exc, _PCBOperationPostconditionError)
+                and exc.routing_failure is not None
+            ):
+                receipt["routing_failure"] = exc.routing_failure.to_dict()
+            elif (
+                tool_name == "route_net"
+                and receipt["error_code"] in ROUTING_FAILURE_CODES
+            ):
+                receipt["routing_failure"] = RoutingFailure(
+                    code=receipt["error_code"],
+                    net=route_net_id or "unknown",
+                    blocking_summary=f"route transaction failed during {stage}",
+                    recommendations=("inspect_native_artifact",),
+                    nearest_obstacle_class="native_artifact",
+                    state_revision=candidate_design_revision,
+                    state_context=_routing_failure_context(candidate, route_net_id),
+                ).to_dict()
+            live_after_progress = before_progress
+            if tool_name == "route_net" and isinstance(
+                receipt.get("routing_failure"), Mapping
+            ):
+                failures = before_progress.routing_failure_count
+                current_failures = (
+                    failures.value
+                    if failures.is_current(baseline_design_revision)
+                    and failures.value is not None
+                    else 0
+                )
+                live_after_progress = before_progress.replace_metric(
+                    "routing_failure_count",
+                    MetricValue.known(current_failures + 1, baseline_design_revision),
+                )
+            _attach_progress(
+                receipt,
+                before_progress,
+                live_after_progress,
+                before_stage,
+                before_stage,
+            )
             atomic_write_json(receipt_path, receipt)
+            _bind_transaction_failure(exc, transaction_id)
             raise
 
+        stage = "publication"
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             original_state = copy.deepcopy(current.state)
@@ -1492,14 +3505,6 @@ class ApplicationService:
                 os.replace(staged, current.design_root)
                 published = open_managed_project(current.design_root)
                 published.assert_synchronized()
-                receipt.update(
-                    {
-                        "status": "applied",
-                        "applied_at": utc_timestamp(),
-                        "manifest_hashes": published.manifest["hashes"],
-                    }
-                )
-                atomic_write_json(receipt_path, receipt)
                 current.state["status"] = "generated"
                 current.state["revision"] += 1
                 current.state["design_revision"] += 1
@@ -1520,6 +3525,25 @@ class ApplicationService:
                     f"Applied concrete PCB operation {tool_name}",
                 )
                 self._write_records(current.root, current.state, current.conversation)
+                # The applied receipt is the final publication write.  If it
+                # fails, the surrounding handler can still restore the native
+                # design, event, and project records without ever retaining a
+                # durable success receipt for the rolled-back transaction.
+                receipt.update(
+                    {
+                        "status": "applied",
+                        "applied_at": utc_timestamp(),
+                        "manifest_hashes": published.manifest["hashes"],
+                        "committed_revision": current.state["revision"],
+                        "committed_design_revision": current.state["design_revision"],
+                        "rollback": {
+                            "state": "committed",
+                            "performed": False,
+                            "live_unchanged": False,
+                        },
+                    }
+                )
+                atomic_write_json(receipt_path, receipt)
             except BaseException as exc:
                 rollback_failures: list[BaseException] = []
                 if moved_before:
@@ -1543,6 +3567,45 @@ class ApplicationService:
                 receipt["status"] = "failed"
                 receipt["failed_at"] = utc_timestamp()
                 receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+                receipt.pop("applied_at", None)
+                receipt.pop("manifest_hashes", None)
+                receipt["committed_revision"] = None
+                receipt["committed_design_revision"] = None
+                receipt["error_code"] = _operation_failure_code(
+                    exc, stage=stage, tool_name=tool_name
+                )
+                receipt["rollback_performed"] = moved_before and not rollback_failures
+                receipt["rollback"] = {
+                    "state": (
+                        "restored"
+                        if moved_before and not rollback_failures
+                        else "incomplete"
+                        if rollback_failures
+                        else "not_required"
+                    ),
+                    "performed": moved_before and not rollback_failures,
+                    "live_unchanged": not rollback_failures,
+                }
+                if not rollback_failures:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        before_progress,
+                        before_stage,
+                        before_stage,
+                    )
+                else:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        ProgressVector.unknown(baseline_design_revision),
+                        before_stage,
+                        StageProjection(
+                            EngineeringStage.NOT_STARTED,
+                            False,
+                            ("rollback_state_unknown",),
+                        ),
+                    )
                 try:
                     atomic_write_json(receipt_path, receipt)
                 except PCBDraftError:
@@ -1550,9 +3613,12 @@ class ApplicationService:
                     # never authoritative without the matching project record.
                     pass
                 if rollback_failures:
-                    raise PCBDraftError(
+                    publication_failure = PCBDraftError(
                         "PCB operation publication failed and rollback was incomplete"
-                    ) from exc
+                    )
+                    _bind_transaction_failure(publication_failure, transaction_id)
+                    raise publication_failure from exc
+                _bind_transaction_failure(exc, transaction_id)
                 raise
         result = {
             "operation": tool_name,
@@ -1563,6 +3629,15 @@ class ApplicationService:
             "revision": current.state["revision"],
             "changed": candidate_diff["summary"],
             "synchronized": True,
+            "consistency_passed": receipt["consistency_passed"],
+            "postconditions": receipt["postconditions"],
+            "transaction_artifact": transaction_id,
+            "progress_before": receipt["progress_before"],
+            "progress_after": receipt["progress_after"],
+            "progress_delta": receipt["progress_delta"],
+            "stage": receipt["stage_after"],
+            "convergence": receipt["convergence"],
+            "transaction_scope": receipt["transaction_scope"],
         }
         return self._with_tool_result(self.open_project(project_id), result)
 
@@ -1574,10 +3649,35 @@ class ApplicationService:
         if net is None:
             raise ValidationError(f"net is absent: {net_id}")
         if net.name in routing.unrouted:
-            raise ValidationError(f"router could not complete net: {net_id}")
+            failures = tuple(getattr(routing, "failures", ()))
+            failure = next(
+                (item for item in failures if item.net == net.name),
+                RoutingFailure(
+                    code="no_legal_channel",
+                    net=net.name,
+                    expanded_nodes=int(getattr(routing, "expanded_nodes", 0)),
+                    blocking_summary="router could not complete the selected net",
+                    recommendations=("change_layer", "reposition_component"),
+                    nearest_obstacle_class="unknown",
+                    state_revision=design.native_intent.geometry_revision,
+                    state_context=_routing_failure_context(design, net_id),
+                ),
+            )
+            raise RoutingFailureError(failure)
         segments = [item for item in routing.segments if item.net == net.name]
         if len(net.endpoints) > 1 and not segments:
-            raise ValidationError(f"router produced no copper for net: {net_id}")
+            raise RoutingFailureError(
+                RoutingFailure(
+                    code="native_commit_failed",
+                    net=net.name,
+                    expanded_nodes=int(getattr(routing, "expanded_nodes", 0)),
+                    blocking_summary="router completed without materializable copper",
+                    recommendations=("inspect_pad_escape",),
+                    nearest_obstacle_class="native_artifact",
+                    state_revision=design.native_intent.geometry_revision,
+                    state_context=_routing_failure_context(design, net_id),
+                )
+            )
         document = design.to_dict()
         native = document["native_intent"]
 
@@ -1680,6 +3780,139 @@ class ApplicationService:
                 raise ValidationError(f"{field} contains a duplicate or invalid name")
             result[name] = entry["value"]
         return result
+
+    @classmethod
+    def _flat_semantic_operations(
+        cls,
+        tool_name: str,
+        arguments: dict[str, Any],
+        design: Design,
+        *,
+        graph: PartGraph,
+    ) -> list[dict[str, Any]]:
+        """Normalize one concrete tool into one atomic semantic change set."""
+
+        if tool_name == "connect_group":
+            connection_entries = parse_connect_group(arguments["connections"])
+            cls._validate_connect_group(connection_entries, design, graph)
+            return [
+                cls._flat_semantic_operation(
+                    "connect_pin", entry.to_tool_arguments(), design
+                )
+                for entry in connection_entries
+            ]
+        if tool_name == "place_group":
+            placement_entries = parse_place_group(arguments["placements"])
+            cls._validate_place_group(placement_entries, design, graph)
+            return [
+                cls._flat_semantic_operation(
+                    "place_footprint", entry.to_tool_arguments(), design
+                )
+                for entry in placement_entries
+            ]
+        return [cls._flat_semantic_operation(tool_name, arguments, design)]
+
+    @staticmethod
+    def _validate_connect_group(
+        entries: tuple[ConnectGroupEntry, ...],
+        design: Design,
+        graph: PartGraph,
+    ) -> None:
+        """Resolve every group endpoint and conflict before creating a candidate."""
+
+        components = {item.id: item for item in design.components}
+        nets = {item.id: item for item in design.nets}
+        connected = {
+            (endpoint.component, endpoint.pin): (net.id, endpoint.role)
+            for net in design.nets
+            for endpoint in net.endpoints
+        }
+        for entry in entries:
+            net = nets.get(entry.net_id)
+            if net is None:
+                raise ValidationError(
+                    "semantic_transaction_invalid_net: connect_group references "
+                    f"absent net {entry.net_id}"
+                )
+            component = components.get(entry.component_id)
+            if component is None:
+                raise ValidationError(
+                    "semantic_transaction_invalid_endpoint: connect_group references "
+                    f"absent component {entry.component_id}"
+                )
+            part = graph.get(component.part_id)
+            if part.pin(entry.pin) is None:
+                raise ValidationError(
+                    "semantic_transaction_invalid_endpoint: connect_group references "
+                    f"absent pin {entry.component_id}.{entry.pin}"
+                )
+            prior = connected.get((entry.component_id, entry.pin))
+            if prior == (entry.net_id, entry.role):
+                raise ValidationError(
+                    "semantic_transaction_duplicate: connect_group endpoint is already connected: "
+                    f"{entry.component_id}.{entry.pin}"
+                )
+            if prior is not None:
+                raise ValidationError(
+                    "semantic_transaction_conflict: connect_group endpoint is already "
+                    f"connected to {prior[0]} as {prior[1]}: "
+                    f"{entry.component_id}.{entry.pin}"
+                )
+
+    @staticmethod
+    def _validate_place_group(
+        entries: tuple[PlaceGroupEntry, ...],
+        design: Design,
+        graph: PartGraph,
+    ) -> None:
+        """Resolve every absolute pose, board bound, and copper conflict first."""
+
+        components = {item.id: item for item in design.components}
+        for entry in entries:
+            component = components.get(entry.component_id)
+            if component is None:
+                raise ValidationError(
+                    "semantic_transaction_invalid_component: place_group references "
+                    f"absent component {entry.component_id}"
+                )
+            part = graph.get(component.part_id)
+            if component.attributes.get("exclude_from_board", False) or (
+                part.footprint is None
+            ):
+                raise ValidationError(
+                    "semantic_transaction_invalid_component: place_group component "
+                    f"has no board footprint: {entry.component_id}"
+                )
+            if not (
+                0.0 <= entry.x_mm <= design.board.width_mm
+                and 0.0 <= entry.y_mm <= design.board.height_mm
+            ):
+                raise ValidationError(
+                    "semantic_transaction_out_of_bounds: place_group pose lies outside "
+                    f"the board: {entry.component_id}"
+                )
+            existing = component.placement
+            if existing is not None and (
+                existing.x_mm,
+                existing.y_mm,
+                existing.rotation_deg,
+                existing.side,
+            ) == (
+                entry.x_mm,
+                entry.y_mm,
+                entry.rotation_deg,
+                entry.side,
+            ):
+                raise ValidationError(
+                    "semantic_transaction_duplicate: place_group pose is already applied: "
+                    f"{entry.component_id}"
+                )
+            routed_nets = _routed_component_nets(design, entry.component_id)
+            if routed_nets:
+                raise ValidationError(
+                    "semantic_transaction_conflict: place_group component retains routed "
+                    f"copper on {', '.join(routed_nets)}: {entry.component_id}"
+                )
 
     @classmethod
     def _flat_semantic_operation(
@@ -2325,6 +4558,10 @@ class ApplicationService:
         if request.design_id != previous_plan.design_id:
             raise ValidationError("pending repair request and plan identities differ")
         authoritative = None
+        baseline_design_revision = int(project.state["design_revision"])
+        before_progress: ProgressVector | None = None
+        before_stage: StageProjection | None = None
+        before_consistency: NativeConsistencyReport | None = None
         if project.design_root.is_dir() and not project.design_root.is_symlink():
             authoritative = open_managed_project(project.design_root)
             authoritative.assert_synchronized()
@@ -2332,6 +4569,13 @@ class ApplicationService:
                 raise ValidationError(
                     "authoritative design identity differs from the pending repair plan"
                 )
+            before_progress, before_stage, before_consistency = (
+                self._managed_progress_and_stage(
+                    project,
+                    authoritative,
+                    baseline_design_revision,
+                )
+            )
         prior_status = project.state["status"]
         prior_validation = project.state["last_validation"]
         prior_preview = project.state["last_preview"]
@@ -2437,7 +4681,7 @@ class ApplicationService:
         receipt_path = transaction / "receipt.json"
         receipt: dict[str, Any] = {
             "schema": "pcbdraft-agent-repair-transaction",
-            "version": 1,
+            "version": 2,
             "status": "preparing",
             "created_at": utc_timestamp(),
             "request": normalized["summary"],
@@ -2450,7 +4694,23 @@ class ApplicationService:
             "prior_release": prior_release,
             "validation": None,
             "result_status": None,
+            "baseline_design_revision": baseline_design_revision,
+            "candidate_revision": baseline_design_revision + 1,
+            "postconditions": [],
+            "artifact": {},
         }
+        if before_progress is None or before_stage is None:
+            raise ValidationError("repair transaction lacks authoritative progress")
+        _attach_progress(
+            receipt,
+            before_progress,
+            before_progress,
+            before_stage,
+            before_stage,
+        )
+        receipt["convergence_classification"] = receipt["progress_delta"][
+            "classification"
+        ]
         atomic_write_json(receipt_path, receipt)
         try:
             materialize_managed_design(
@@ -2467,6 +4727,11 @@ class ApplicationService:
                 candidate,
                 output=transaction / "validation",
                 timeout=timeout,
+            )
+            self._bind_aggregate_validation_revision(
+                transaction / "validation",
+                candidate.design.content_hash(),
+                baseline_design_revision + 1,
             )
             validation_report = load_json_limited(
                 validation_run.report_path, APP_FILE_LIMIT
@@ -2486,6 +4751,7 @@ class ApplicationService:
                 ),
                 "production_ready": validation_run.production_ready,
                 "production_claimed": False,
+                "source_design_revision": baseline_design_revision + 1,
                 "assurance": str(
                     candidate.design.metadata.get("assurance", "provisional")
                 ),
@@ -2494,10 +4760,65 @@ class ApplicationService:
                 transaction / "semantic-diff.json",
                 semantic_diff(authoritative.design, candidate.design),
             )
+            candidate_progress, candidate_stage, candidate_consistency = (
+                self._managed_progress_and_stage(
+                    project,
+                    candidate,
+                    baseline_design_revision + 1,
+                    validation_root=transaction / "validation",
+                    include_routing_failures=False,
+                )
+            )
+            verified_candidate = self._require_current_native_consistency(
+                candidate_consistency,
+                baseline_design_revision + 1,
+                label="staged candidate",
+            )
+            atomic_write_json(
+                transaction / "native-consistency-before.json",
+                (
+                    before_consistency.to_dict()
+                    if before_consistency is not None
+                    else _unavailable_consistency_report(
+                        baseline_design_revision
+                    ).to_dict()
+                ),
+            )
+            atomic_write_json(
+                transaction / "native-consistency-candidate.json",
+                verified_candidate.to_dict(),
+            )
+            receipt["artifact"] = {
+                "semantic_diff": "semantic-diff.json",
+                "native_consistency_before": "native-consistency-before.json",
+                "native_consistency_candidate": "native-consistency-candidate.json",
+                "validation": "validation",
+            }
+            receipt["candidate_progress"] = candidate_progress.to_dict()
+            receipt["candidate_stage"] = candidate_stage.to_dict()
+            receipt["postconditions"] = [
+                {
+                    "name": "candidate_native_consistency",
+                    "passed": verified_candidate.consistency_passed,
+                }
+            ]
         except BaseException as exc:
             receipt["status"] = "failed"
             receipt["failed_at"] = utc_timestamp()
             receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
+            receipt["error_code"] = _operation_failure_code(
+                exc, stage="native_consistency", tool_name="repair_candidate"
+            )
+            _attach_progress(
+                receipt,
+                before_progress,
+                before_progress,
+                before_stage,
+                before_stage,
+            )
+            receipt["convergence_classification"] = receipt["progress_delta"][
+                "classification"
+            ]
             atomic_write_json(receipt_path, receipt)
             self._record_failure(
                 project_id,
@@ -2509,80 +4830,140 @@ class ApplicationService:
             raise
 
         receipt["validation"] = validation_summary
-        if candidate_feedback is not None:
-            receipt["status"] = "rejected"
-            receipt["rejected_at"] = utc_timestamp()
+        rejected = candidate_feedback is not None
+        if rejected:
             receipt["repair_feedback"] = candidate_feedback
-            atomic_write_json(receipt_path, receipt)
-            with ResourceLock(project.root, self.locks_root):
-                current = self._open(project_id)
+        else:
+            receipt["result_status"] = (
+                "validated" if validation_run.candidate_ready else "generated"
+            )
+        # Candidate-only evidence may be durable while the top-level live
+        # progress remains neutral.  The terminal ready/rejected fact is
+        # published only after matching project records and its event.
+        prepublication_receipt = copy.deepcopy(receipt)
+        atomic_write_json(receipt_path, prepublication_receipt)
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            original_state = copy.deepcopy(current.state)
+            original_conversation = copy.deepcopy(current.conversation)
+            event_path: Path | None = None
+            try:
                 if current.state["revision"] != expected_revision:
                     raise ValidationError(
                         "project changed while a repair candidate was validated"
                     )
-                current.state["status"] = "repair_failed"
+                current_managed = open_managed_project(current.design_root)
+                current_managed.assert_synchronized()
+                if current_managed.design.content_hash() != receipt["before_hash"]:
+                    raise ValidationError(
+                        "authoritative design changed while a repair was staged"
+                    )
+                current.state["status"] = (
+                    "repair_failed" if rejected else "change_ready"
+                )
+                if not rejected:
+                    current.state["active_transaction"] = transaction_id
                 current.state["revision"] += 1
                 current.state["updated_at"] = utc_timestamp()
                 text = (
                     "The repair candidate retained deterministic L1-L3 failures; "
                     "the authoritative design was not changed."
+                    if rejected
+                    else "A replacement design passed deterministic L1-L3 repair "
+                    "gates and is staged for atomic application."
                 )
                 self._append_message(
                     current.conversation,
                     "assistant",
-                    "repair_rejected",
+                    "repair_rejected" if rejected else "repair_ready",
                     text,
-                    data={
-                        "transaction_id": transaction_id,
-                        "repair_feedback": candidate_feedback,
-                    },
+                    data=(
+                        {
+                            "transaction_id": transaction_id,
+                            "repair_feedback": candidate_feedback,
+                        }
+                        if rejected
+                        else {"transaction_id": transaction_id}
+                    ),
+                )
+                event_path = (
+                    current.root
+                    / "events"
+                    / f"{current.state['event_sequence'] + 1:08d}.json"
                 )
                 self._event(
                     current.state,
                     current.root,
-                    "repair.candidate_failed",
+                    "repair.candidate_failed" if rejected else "repair.ready",
                     text,
-                    level="error",
+                    level="error" if rejected else "info",
                 )
                 self._write_records(current.root, current.state, current.conversation)
-            return self.open_project(project_id)
-
-        receipt["status"] = "ready"
-        receipt["ready_at"] = utc_timestamp()
-        receipt["result_status"] = (
-            "validated" if validation_run.candidate_ready else "generated"
-        )
-        atomic_write_json(receipt_path, receipt)
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError(
-                    "project changed while a repair candidate was being staged"
-                )
-            current_managed = open_managed_project(current.design_root)
-            current_managed.assert_synchronized()
-            if current_managed.design.content_hash() != receipt["before_hash"]:
-                raise ValidationError(
-                    "authoritative design changed while a repair was staged"
-                )
-            current.state["active_transaction"] = transaction_id
-            current.state["status"] = "change_ready"
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            text = (
-                "A replacement design passed deterministic L1-L3 repair gates and "
-                "is staged for atomic application."
-            )
-            self._append_message(
-                current.conversation,
-                "assistant",
-                "repair_ready",
-                text,
-                data={"transaction_id": transaction_id},
-            )
-            self._event(current.state, current.root, "repair.ready", text)
-            self._write_records(current.root, current.state, current.conversation)
-        return self.open_project(project_id)
+                terminal = "rejected" if rejected else "ready"
+                receipt["status"] = terminal
+                receipt[f"{terminal}_at"] = utc_timestamp()
+                receipt["publication"] = {
+                    "status": "committed",
+                    "rollback": {
+                        "state": "committed",
+                        "performed": False,
+                        "live_unchanged": True,
+                    },
+                }
+                atomic_write_json(receipt_path, receipt)
+            except BaseException as exc:
+                rollback_failures: list[BaseException] = []
+                try:
+                    atomic_write_json(
+                        current.root / "conversation.json", original_conversation
+                    )
+                    atomic_write_json(current.root / "project.json", original_state)
+                    if event_path is not None and event_path.is_file():
+                        event_path.unlink()
+                except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                    rollback_failures.append(rollback_exc)
+                receipt.clear()
+                receipt.update(copy.deepcopy(prepublication_receipt))
+                receipt["publication"] = {
+                    "status": (
+                        "rollback_incomplete" if rollback_failures else "failed"
+                    ),
+                    "error_code": "publication_failed",
+                    "failure": _sanitize_secret_text(str(exc))[:2048],
+                    "rollback": {
+                        "state": "incomplete" if rollback_failures else "restored",
+                        "performed": not rollback_failures,
+                        "live_unchanged": not rollback_failures,
+                    },
+                }
+                if rollback_failures:
+                    receipt["status"] = "rollback_incomplete"
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        ProgressVector.unknown(before_progress.source_revision),
+                        before_stage,
+                        StageProjection(
+                            EngineeringStage.NOT_STARTED,
+                            False,
+                            ("rollback_state_unknown",),
+                        ),
+                    )
+                    receipt["convergence_classification"] = receipt["progress_delta"][
+                        "classification"
+                    ]
+                try:
+                    atomic_write_json(receipt_path, receipt)
+                except PCBDraftError:
+                    pass
+                if rollback_failures:
+                    raise PCBDraftError(
+                        "repair candidate publication failed and rollback was incomplete"
+                    ) from exc
+                raise
+        result = self.open_project(project_id)
+        result["transaction_progress"] = _transaction_progress_projection(receipt)
+        return result
 
     def events(self, project_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         if after < 0:
@@ -3303,6 +5684,7 @@ class ApplicationService:
                 "status": receipt.get("status"),
                 "diff": diff,
                 "validation": _public_readiness_record(receipt.get("validation")),
+                "progress": _transaction_progress_projection(receipt),
             }
         public_state = dict(project.state)
         public_state["last_validation"] = _public_readiness_record(
@@ -3371,6 +5753,11 @@ class ApplicationService:
             expected_revision = state["revision"]
         try:
             result = validate_managed_project(managed, output=output, timeout=timeout)
+            self._bind_aggregate_validation_revision(
+                output,
+                managed.design.content_hash(),
+                int(project.state["design_revision"]),
+            )
             report = load_json_limited(result.report_path, APP_FILE_LIMIT)
         except BaseException as exc:
             self._record_failure(
@@ -3390,6 +5777,7 @@ class ApplicationService:
             "production_evidence_complete": result.production_evidence_complete,
             "production_ready": result.production_ready,
             "production_claimed": False,
+            "source_design_revision": project.state["design_revision"],
             "assurance": str(managed.design.metadata.get("assurance", "verified")),
             "levels": report["levels"],
         }
@@ -3577,92 +5965,323 @@ class ApplicationService:
         transaction = project.root / "transactions" / transaction_id
         receipt_path = transaction / "receipt.json"
         receipt = load_json_limited(receipt_path, APP_FILE_LIMIT)
-        if not isinstance(receipt, dict) or receipt.get("status") != "ready":
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("schema") != "pcbdraft-agent-repair-transaction"
+            or receipt.get("status") != "ready"
+            or receipt.get("version") not in {1, 2}
+        ):
             raise ValidationError("semantic change receipt is not ready")
         staged = transaction / "staged"
         before = transaction / "before"
-        current_managed = open_managed_project(project.design_root)
-        staged_managed = open_managed_project(staged)
-        if current_managed.design.content_hash() != receipt["before_hash"]:
-            raise ValidationError("authoritative design changed after semantic preview")
-        if staged_managed.design.content_hash() != receipt["after_hash"]:
-            raise ValidationError(
-                "staged design no longer matches the semantic receipt"
-            )
+        baseline_progress, baseline_stage = self._current_progress_and_stage(project)
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before candidate application")
-            if current.state["active_transaction"] != transaction_id:
-                raise ValidationError("active semantic transaction changed")
-            state = current.state
-            conversation = current.conversation
+            original_state = copy.deepcopy(current.state)
+            original_conversation = copy.deepcopy(current.conversation)
+            original_receipt = copy.deepcopy(receipt)
             moved_before = False
+            moved_candidate = False
+            event_path: Path | None = None
+            before_progress = baseline_progress
+            before_stage = baseline_stage
             try:
+                if current.state["revision"] != expected_revision:
+                    raise ValidationError(
+                        "project changed before candidate application"
+                    )
+                if current.state["active_transaction"] != transaction_id:
+                    raise ValidationError("active semantic transaction changed")
+                if before.exists() or before.is_symlink():
+                    raise ValidationError("candidate application backup already exists")
+                current_managed = open_managed_project(current.design_root)
+                staged_managed = open_managed_project(staged)
+                current_managed.assert_synchronized()
+                staged_managed.assert_synchronized()
+                if current_managed.design.content_hash() != receipt["before_hash"]:
+                    raise ValidationError(
+                        "authoritative design changed after semantic preview"
+                    )
+                if staged_managed.design.content_hash() != receipt["after_hash"]:
+                    raise ValidationError(
+                        "staged design no longer matches the semantic receipt"
+                    )
+                semantic_delta = load_json_limited(
+                    transaction / "semantic-diff.json", APP_FILE_LIMIT
+                )
+                if (
+                    not isinstance(semantic_delta, Mapping)
+                    or semantic_delta.get("schema") != "pcbdraft-semantic-diff"
+                    or semantic_delta.get("before_hash") != receipt["before_hash"]
+                    or semantic_delta.get("after_hash") != receipt["after_hash"]
+                ):
+                    raise _PCBOperationPostconditionError(
+                        "native_delta_failed",
+                        "legacy modification semantic replacement identity is invalid",
+                    )
+                before_revision = int(current.state["design_revision"])
+                after_revision = before_revision + 1
+                before_progress, before_stage, before_consistency = (
+                    self._managed_progress_and_stage(
+                        current,
+                        current_managed,
+                        before_revision,
+                    )
+                )
+                after_progress, after_stage, after_consistency = (
+                    self._managed_progress_and_stage(
+                        current,
+                        staged_managed,
+                        after_revision,
+                        validation_root=transaction / "validation",
+                        include_routing_failures=False,
+                    )
+                )
+                verified_before = self._require_current_native_consistency(
+                    before_consistency,
+                    before_revision,
+                    label="authoritative source",
+                )
+                verified_after = self._require_current_native_consistency(
+                    after_consistency,
+                    after_revision,
+                    label="staged candidate",
+                )
+                atomic_write_json(
+                    transaction / "application-native-before.json",
+                    verified_before.to_dict(),
+                )
+                atomic_write_json(
+                    transaction / "application-native-after.json",
+                    verified_after.to_dict(),
+                )
+                receipt["version"] = 2
+                receipt["baseline_design_revision"] = before_revision
+                receipt["candidate_revision"] = after_revision
+                receipt.setdefault("artifact", {})
+                receipt["artifact"].update(
+                    {
+                        "application_native_before": "application-native-before.json",
+                        "application_native_after": "application-native-after.json",
+                    }
+                )
+                receipt["postconditions"] = [
+                    {
+                        "name": "source_native_consistency",
+                        "passed": verified_before.consistency_passed,
+                    },
+                    {
+                        "name": "candidate_native_consistency",
+                        "passed": verified_after.consistency_passed,
+                    },
+                    {
+                        "name": "semantic_replacement_identity",
+                        "passed": True,
+                    },
+                ]
+                _attach_progress(
+                    receipt,
+                    before_progress,
+                    after_progress,
+                    before_stage,
+                    after_stage,
+                )
+                receipt["convergence_classification"] = receipt["progress_delta"][
+                    "classification"
+                ]
+                receipt["application_progress"] = {
+                    key: copy.deepcopy(receipt[key])
+                    for key in (
+                        "progress_before",
+                        "progress_after",
+                        "progress_delta",
+                        "stage_before",
+                        "stage_after",
+                    )
+                }
+                receipt["application"] = {
+                    "status": "publishing",
+                    "error_code": None,
+                    "rollback": {
+                        "state": "not_required",
+                        "performed": False,
+                        "live_unchanged": True,
+                    },
+                }
+                atomic_write_json(receipt_path, receipt)
                 os.replace(current.design_root, before)
                 moved_before = True
                 os.replace(staged, current.design_root)
-            except BaseException:
-                if (
-                    moved_before
-                    and before.exists()
-                    and not current.design_root.exists()
-                ):
-                    os.replace(before, current.design_root)
-                raise
-            receipt["status"] = "applied"
-            receipt["applied_at"] = utc_timestamp()
-            atomic_write_json(receipt_path, receipt)
-            state["status"] = receipt.get("result_status", "validated")
-            state["active_transaction"] = None
-            state["last_transaction"] = transaction_id
-            state["last_validation"] = {
-                "run_id": f"transaction:{transaction_id}",
-                "report": (
-                    Path("transactions")
-                    / transaction_id
-                    / receipt["validation"]["report"]
-                ).as_posix(),
-                **{
-                    key: receipt["validation"][key]
-                    for key in (
-                        "report_sha256",
-                        "candidate_ready",
-                        "production_evidence_complete",
-                        "production_ready",
-                        "production_claimed",
+                moved_candidate = True
+                current.state["status"] = receipt.get("result_status", "validated")
+                current.state["active_transaction"] = None
+                current.state["last_transaction"] = transaction_id
+                current.state["last_validation"] = {
+                    "run_id": f"transaction:{transaction_id}",
+                    "report": (
+                        Path("transactions")
+                        / transaction_id
+                        / receipt["validation"]["report"]
+                    ).as_posix(),
+                    **{
+                        key: receipt["validation"][key]
+                        for key in (
+                            "report_sha256",
+                            "candidate_ready",
+                            "production_evidence_complete",
+                            "production_ready",
+                            "production_claimed",
+                            "source_design_revision",
+                        )
+                    },
+                    "assurance": receipt["validation"].get("assurance", "provisional"),
+                    "levels": load_json_limited(
+                        transaction / receipt["validation"]["report"], APP_FILE_LIMIT
+                    )["levels"],
+                }
+                current.state["last_release"] = None
+                current.state["last_preview"] = None
+                current.state["design_revision"] = after_revision
+                current.state["revision"] += 1
+                current.state["updated_at"] = utc_timestamp()
+                text = (
+                    "Applied the staged replacement atomically; undo remains available."
+                    if receipt.get("schema") == "pcbdraft-agent-repair-transaction"
+                    else "Applied the confirmed semantic change atomically; undo remains available."
+                )
+                self._append_message(
+                    current.conversation,
+                    "assistant",
+                    "change_applied",
+                    text,
+                    data={"transaction_id": transaction_id},
+                )
+                event_path = (
+                    current.root
+                    / "events"
+                    / f"{current.state['event_sequence'] + 1:08d}.json"
+                )
+                self._event(current.state, current.root, "change.applied", text)
+                self._write_records(current.root, current.state, current.conversation)
+                receipt["status"] = "applied"
+                receipt["applied_at"] = utc_timestamp()
+                receipt["application"] = {
+                    "status": "committed",
+                    "error_code": None,
+                    "rollback": {
+                        "state": "committed",
+                        "performed": False,
+                        "live_unchanged": False,
+                    },
+                }
+                atomic_write_json(receipt_path, receipt)
+                expected_revision = int(current.state["revision"])
+            except BaseException as exc:
+                rollback_failures: list[BaseException] = []
+                if moved_candidate:
+                    try:
+                        if staged.exists() or staged.is_symlink():
+                            raise ValidationError(
+                                "staged rollback destination already exists"
+                            )
+                        os.replace(current.design_root, staged)
+                    except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                        rollback_failures.append(rollback_exc)
+                if moved_before:
+                    try:
+                        if (
+                            current.design_root.exists()
+                            or current.design_root.is_symlink()
+                        ):
+                            raise ValidationError(
+                                "live rollback destination already exists"
+                            )
+                        os.replace(before, current.design_root)
+                    except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                        rollback_failures.append(rollback_exc)
+                try:
+                    atomic_write_json(
+                        current.root / "conversation.json", original_conversation
                     )
-                },
-                "assurance": receipt["validation"].get("assurance", "provisional"),
-                "levels": load_json_limited(
-                    transaction / receipt["validation"]["report"], APP_FILE_LIMIT
-                )["levels"],
-            }
-            state["last_release"] = None
-            state["last_preview"] = None
-            state["design_revision"] += 1
-            state["revision"] += 1
-            state["updated_at"] = utc_timestamp()
-            text = (
-                "Applied the staged replacement atomically; undo remains available."
-                if receipt.get("schema") == "pcbdraft-agent-repair-transaction"
-                else "Applied the confirmed semantic change atomically; undo remains available."
-            )
-            self._append_message(
-                conversation,
-                "assistant",
-                "change_applied",
-                text,
-                data={"transaction_id": transaction_id},
-            )
-            self._event(state, current.root, "change.applied", text)
-            self._write_records(current.root, state, conversation)
-            expected_revision = int(state["revision"])
-        return self.generate_project_previews(
+                    atomic_write_json(current.root / "project.json", original_state)
+                    if event_path is not None and event_path.is_file():
+                        event_path.unlink()
+                except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                    rollback_failures.append(rollback_exc)
+                receipt.pop("applied_at", None)
+                receipt["status"] = (
+                    "rollback_incomplete"
+                    if rollback_failures
+                    else str(original_receipt.get("status", "ready"))
+                )
+                receipt["application"] = {
+                    "status": "rollback_incomplete" if rollback_failures else "failed",
+                    "error_code": _operation_failure_code(
+                        exc, stage="publication", tool_name="repair_candidate"
+                    ),
+                    "failure": _sanitize_secret_text(str(exc))[:2048],
+                    "rollback": {
+                        "state": (
+                            "incomplete"
+                            if rollback_failures
+                            else "restored"
+                            if moved_before or moved_candidate
+                            else "not_required"
+                        ),
+                        "performed": (moved_before or moved_candidate)
+                        and not rollback_failures,
+                        "live_unchanged": not rollback_failures,
+                    },
+                }
+                if rollback_failures:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        ProgressVector.unknown(before_progress.source_revision),
+                        before_stage,
+                        StageProjection(
+                            EngineeringStage.NOT_STARTED,
+                            False,
+                            ("rollback_state_unknown",),
+                        ),
+                    )
+                else:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        before_progress,
+                        before_stage,
+                        before_stage,
+                    )
+                receipt["convergence_classification"] = receipt["progress_delta"][
+                    "classification"
+                ]
+                receipt["application_progress"] = {
+                    key: copy.deepcopy(receipt[key])
+                    for key in (
+                        "progress_before",
+                        "progress_after",
+                        "progress_delta",
+                        "stage_before",
+                        "stage_after",
+                    )
+                }
+                try:
+                    atomic_write_json(receipt_path, receipt)
+                except PCBDraftError:
+                    pass
+                if rollback_failures:
+                    raise PCBDraftError(
+                        "candidate application failed and rollback was incomplete"
+                    ) from exc
+                raise
+        result = self.generate_project_previews(
             project_id,
             timeout=timeout,
             expected_revision=expected_revision,
         )
+        result["transaction_progress"] = _transaction_progress_projection(receipt)
+        return result
 
     def discard_modification(
         self, project_id: str, *, expected_revision: int | None = None
@@ -3716,53 +6335,300 @@ class ApplicationService:
         transaction = project.root / "transactions" / transaction_id
         receipt_path = transaction / "receipt.json"
         receipt = load_json_limited(receipt_path, APP_FILE_LIMIT)
-        if receipt.get("status") != "applied":
+        if (
+            not isinstance(receipt, dict)
+            or receipt.get("schema") != "pcbdraft-agent-repair-transaction"
+            or receipt.get("status") != "applied"
+            or receipt.get("version") not in {1, 2}
+        ):
             raise ValidationError("last semantic transaction is not undoable")
-        managed = open_managed_project(project.design_root)
-        if managed.design.content_hash() != receipt["after_hash"]:
-            raise ValidationError(
-                "authoritative design changed after the last transaction"
-            )
         before = transaction / "before"
         after = transaction / "after"
-        open_managed_project(before).assert_synchronized()
+        baseline_progress, baseline_stage = self._current_progress_and_stage(project)
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before last-change undo")
-            if current.state["last_transaction"] != transaction_id:
-                raise ValidationError("last semantic transaction changed")
+            original_state = copy.deepcopy(current.state)
+            original_conversation = copy.deepcopy(current.conversation)
+            original_receipt = copy.deepcopy(receipt)
             moved_after = False
+            moved_before = False
+            event_path: Path | None = None
+            before_progress = baseline_progress
+            before_stage = baseline_stage
             try:
+                if current.state["revision"] != expected_revision:
+                    raise ValidationError("project changed before last-change undo")
+                if current.state["last_transaction"] != transaction_id:
+                    raise ValidationError("last semantic transaction changed")
+                if after.exists() or after.is_symlink():
+                    raise ValidationError("undo backup already exists")
+                managed = open_managed_project(current.design_root)
+                restored_managed = open_managed_project(before)
+                managed.assert_synchronized()
+                restored_managed.assert_synchronized()
+                if managed.design.content_hash() != receipt["after_hash"]:
+                    raise ValidationError(
+                        "authoritative design changed after the last transaction"
+                    )
+                if restored_managed.design.content_hash() != receipt["before_hash"]:
+                    raise _PCBOperationPostconditionError(
+                        "native_delta_failed",
+                        "undo target no longer matches the semantic replacement identity",
+                    )
+                semantic_delta = load_json_limited(
+                    transaction / "semantic-diff.json", APP_FILE_LIMIT
+                )
+                if (
+                    not isinstance(semantic_delta, Mapping)
+                    or semantic_delta.get("schema") != "pcbdraft-semantic-diff"
+                    or semantic_delta.get("before_hash") != receipt["before_hash"]
+                    or semantic_delta.get("after_hash") != receipt["after_hash"]
+                ):
+                    raise _PCBOperationPostconditionError(
+                        "native_delta_failed",
+                        "undo semantic replacement identity is invalid",
+                    )
+                before_revision = int(current.state["design_revision"])
+                after_revision = before_revision + 1
+                before_progress, before_stage, before_consistency = (
+                    self._managed_progress_and_stage(
+                        current,
+                        managed,
+                        before_revision,
+                    )
+                )
+                prior_validation_root: Path | None = None
+                prior_validation = receipt.get("prior_validation")
+                if isinstance(prior_validation, Mapping) and isinstance(
+                    prior_validation.get("report"), str
+                ):
+                    candidate = current.root / str(prior_validation["report"])
+                    try:
+                        candidate.relative_to(current.root)
+                    except ValueError:
+                        pass
+                    else:
+                        prior_validation_root = candidate.parent
+                after_progress, after_stage, after_consistency = (
+                    self._managed_progress_and_stage(
+                        current,
+                        restored_managed,
+                        after_revision,
+                        validation_root=prior_validation_root,
+                        include_routing_failures=False,
+                    )
+                )
+                verified_before = self._require_current_native_consistency(
+                    before_consistency,
+                    before_revision,
+                    label="applied source",
+                )
+                verified_after = self._require_current_native_consistency(
+                    after_consistency,
+                    after_revision,
+                    label="undo target",
+                )
+                atomic_write_json(
+                    transaction / "undo-native-before.json",
+                    verified_before.to_dict(),
+                )
+                atomic_write_json(
+                    transaction / "undo-native-after.json",
+                    verified_after.to_dict(),
+                )
+                receipt["version"] = 2
+                receipt.setdefault("artifact", {})
+                receipt["artifact"].update(
+                    {
+                        "undo_native_before": "undo-native-before.json",
+                        "undo_native_after": "undo-native-after.json",
+                    }
+                )
+                receipt["postconditions"] = [
+                    {
+                        "name": "undo_source_native_consistency",
+                        "passed": verified_before.consistency_passed,
+                    },
+                    {
+                        "name": "undo_target_native_consistency",
+                        "passed": verified_after.consistency_passed,
+                    },
+                    {
+                        "name": "undo_semantic_replacement_identity",
+                        "passed": True,
+                    },
+                ]
+                _attach_progress(
+                    receipt,
+                    before_progress,
+                    after_progress,
+                    before_stage,
+                    after_stage,
+                )
+                receipt["convergence_classification"] = receipt["progress_delta"][
+                    "classification"
+                ]
+                receipt["undo_progress"] = {
+                    key: copy.deepcopy(receipt[key])
+                    for key in (
+                        "progress_before",
+                        "progress_after",
+                        "progress_delta",
+                        "stage_before",
+                        "stage_after",
+                    )
+                }
+                receipt["undo"] = {
+                    "status": "publishing",
+                    "error_code": None,
+                    "rollback": {
+                        "state": "not_required",
+                        "performed": False,
+                        "live_unchanged": True,
+                    },
+                }
+                atomic_write_json(receipt_path, receipt)
                 os.replace(current.design_root, after)
                 moved_after = True
                 os.replace(before, current.design_root)
-            except BaseException:
-                if moved_after and after.exists() and not current.design_root.exists():
-                    os.replace(after, current.design_root)
+                moved_before = True
+                current.state["status"] = receipt.get("prior_status", "generated")
+                current.state["last_transaction"] = None
+                current.state["last_validation"] = receipt.get("prior_validation")
+                current.state["last_preview"] = receipt.get("prior_preview")
+                current.state["last_release"] = receipt.get("prior_release")
+                current.state["design_revision"] = after_revision
+                current.state["revision"] += 1
+                current.state["updated_at"] = utc_timestamp()
+                text = "Undo restored the exact previous authoritative managed project."
+                self._append_message(
+                    current.conversation,
+                    "assistant",
+                    "change_undone",
+                    text,
+                    data={"transaction_id": transaction_id},
+                )
+                event_path = (
+                    current.root
+                    / "events"
+                    / f"{current.state['event_sequence'] + 1:08d}.json"
+                )
+                self._event(current.state, current.root, "change.undone", text)
+                self._write_records(current.root, current.state, current.conversation)
+                receipt["status"] = "undone"
+                receipt["undone_at"] = utc_timestamp()
+                receipt["undo"] = {
+                    "status": "committed",
+                    "error_code": None,
+                    "rollback": {
+                        "state": "committed",
+                        "performed": False,
+                        "live_unchanged": False,
+                    },
+                }
+                atomic_write_json(receipt_path, receipt)
+            except BaseException as exc:
+                rollback_failures: list[BaseException] = []
+                if moved_before:
+                    try:
+                        if before.exists() or before.is_symlink():
+                            raise ValidationError(
+                                "undo target rollback destination already exists"
+                            )
+                        os.replace(current.design_root, before)
+                    except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                        rollback_failures.append(rollback_exc)
+                if moved_after:
+                    try:
+                        if (
+                            current.design_root.exists()
+                            or current.design_root.is_symlink()
+                        ):
+                            raise ValidationError(
+                                "live undo rollback destination already exists"
+                            )
+                        os.replace(after, current.design_root)
+                    except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                        rollback_failures.append(rollback_exc)
+                try:
+                    atomic_write_json(
+                        current.root / "conversation.json", original_conversation
+                    )
+                    atomic_write_json(current.root / "project.json", original_state)
+                    if event_path is not None and event_path.is_file():
+                        event_path.unlink()
+                except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
+                    rollback_failures.append(rollback_exc)
+                receipt.pop("undone_at", None)
+                receipt["status"] = (
+                    "rollback_incomplete"
+                    if rollback_failures
+                    else str(original_receipt.get("status", "applied"))
+                )
+                receipt["undo"] = {
+                    "status": "rollback_incomplete" if rollback_failures else "failed",
+                    "error_code": _operation_failure_code(
+                        exc, stage="publication", tool_name="undo_modification"
+                    ),
+                    "failure": _sanitize_secret_text(str(exc))[:2048],
+                    "rollback": {
+                        "state": (
+                            "incomplete"
+                            if rollback_failures
+                            else "restored"
+                            if moved_after or moved_before
+                            else "not_required"
+                        ),
+                        "performed": (moved_after or moved_before)
+                        and not rollback_failures,
+                        "live_unchanged": not rollback_failures,
+                    },
+                }
+                if rollback_failures:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        ProgressVector.unknown(before_progress.source_revision),
+                        before_stage,
+                        StageProjection(
+                            EngineeringStage.NOT_STARTED,
+                            False,
+                            ("rollback_state_unknown",),
+                        ),
+                    )
+                else:
+                    _attach_progress(
+                        receipt,
+                        before_progress,
+                        before_progress,
+                        before_stage,
+                        before_stage,
+                    )
+                receipt["convergence_classification"] = receipt["progress_delta"][
+                    "classification"
+                ]
+                receipt["undo_progress"] = {
+                    key: copy.deepcopy(receipt[key])
+                    for key in (
+                        "progress_before",
+                        "progress_after",
+                        "progress_delta",
+                        "stage_before",
+                        "stage_after",
+                    )
+                }
+                try:
+                    atomic_write_json(receipt_path, receipt)
+                except PCBDraftError:
+                    pass
+                if rollback_failures:
+                    raise PCBDraftError(
+                        "last-change undo failed and rollback was incomplete"
+                    ) from exc
                 raise
-            receipt["status"] = "undone"
-            receipt["undone_at"] = utc_timestamp()
-            atomic_write_json(receipt_path, receipt)
-            current.state["status"] = receipt.get("prior_status", "generated")
-            current.state["last_transaction"] = None
-            current.state["last_validation"] = receipt.get("prior_validation")
-            current.state["last_preview"] = receipt.get("prior_preview")
-            current.state["last_release"] = receipt.get("prior_release")
-            current.state["design_revision"] += 1
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            text = "Undo restored the exact previous authoritative managed project."
-            self._append_message(
-                current.conversation,
-                "assistant",
-                "change_undone",
-                text,
-                data={"transaction_id": transaction_id},
-            )
-            self._event(current.state, current.root, "change.undone", text)
-            self._write_records(current.root, current.state, current.conversation)
-        return self.open_project(project_id)
+        result = self.open_project(project_id)
+        result["transaction_progress"] = _transaction_progress_projection(receipt)
+        return result
 
     def build_release(
         self,

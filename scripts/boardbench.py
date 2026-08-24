@@ -15,6 +15,7 @@ from pathlib import Path
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import portable_record_path
+from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.verification.boardbench import (
     BoardBenchCampaign,
     BoardBenchCorpus,
@@ -32,6 +33,11 @@ from pcbdraft.verification.boardbench_evidence import (
     import_review,
     import_selection,
 )
+from pcbdraft.verification.boardbench_preflight import (
+    formal_comparison_launch_record,
+    load_comparison_manifest,
+    write_formal_comparison_launch,
+)
 from pcbdraft.verification.boardbench_report import (
     aggregate_report,
     create_publication_bundle,
@@ -42,8 +48,10 @@ from pcbdraft.verification.boardbench_report import (
 from pcbdraft.verification.boardbench_runner import (
     DEFAULT_WALL_TIMEOUT_SECONDS,
     create_campaign,
+    initialize_run_receipts,
     run_campaign,
 )
+from pcbdraft.verification.boardbench_v2 import load_run_v2
 
 Handler = Callable[[argparse.Namespace], int]
 
@@ -94,6 +102,43 @@ def _command_campaign_run(args: argparse.Namespace) -> int:
     else:
         receipts = run_campaign(args.campaign, corpus)
         print(f"BoardBench campaign has {len(receipts)} run receipts.")
+    return 0
+
+
+def _command_campaign_initialize(args: argparse.Namespace) -> int:
+    corpus = load_corpus(args.corpus)
+    campaign_root = args.campaign.expanduser()
+    campaign = load_campaign(campaign_root / "campaign.json")
+    receipts = initialize_run_receipts(campaign_root, campaign, corpus)
+    print(f"BoardBench initialized {len(receipts)} planned run receipts.")
+    return 0
+
+
+def _command_campaign_authorize_comparison(args: argparse.Namespace) -> int:
+    campaign_root = args.campaign.expanduser()
+    campaign = load_campaign(campaign_root / "campaign.json")
+    manifest = load_comparison_manifest(args.manifest)
+    if len(campaign.runs) != 60:
+        raise ValidationError("formal comparison requires 60 initialized runs")
+    for plan in campaign.runs:
+        run = load_run_v2(campaign_root / "runs" / plan.run_id / "run.json")
+        if (
+            run.run_state != "planned"
+            or run.campaign_id != campaign.campaign_id
+            or run.run_id != plan.run_id
+            or run.case_id != plan.case_id
+            or run.repetition != plan.repetition
+        ):
+            raise ValidationError(
+                "formal comparison authorization requires untouched planned receipts"
+            )
+    record = formal_comparison_launch_record(
+        manifest,
+        campaign,
+        authorized_at=utc_timestamp(),
+    )
+    path = write_formal_comparison_launch(args.output, record)
+    _print_path("BoardBench formal comparison authorized", path)
     return 0
 
 
@@ -293,6 +338,27 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     _set_handler(campaign_create, _command_campaign_create)
+    campaign_initialize = campaign_actions.add_parser("initialize")
+    _path_argument(campaign_initialize, "--campaign", "campaign directory")
+    _path_argument(
+        campaign_initialize,
+        "--corpus",
+        "the campaign's exact frozen corpus JSON",
+    )
+    _set_handler(campaign_initialize, _command_campaign_initialize)
+    campaign_authorize = campaign_actions.add_parser("authorize-comparison")
+    _path_argument(campaign_authorize, "--campaign", "fresh base campaign directory")
+    _path_argument(
+        campaign_authorize,
+        "--manifest",
+        "frozen evaluator-v5 comparison preflight manifest",
+    )
+    _path_argument(
+        campaign_authorize,
+        "--output",
+        "fresh local root for the immutable authorization record",
+    )
+    _set_handler(campaign_authorize, _command_campaign_authorize_comparison)
     for action in ("run", "resume"):
         campaign_execute = campaign_actions.add_parser(action)
         _path_argument(campaign_execute, "--campaign", "campaign directory")

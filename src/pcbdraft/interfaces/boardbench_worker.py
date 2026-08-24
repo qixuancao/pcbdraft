@@ -26,6 +26,7 @@ MAX_PROMPT_BYTES = 64 * 1024
 MAX_REQUEST_BYTES = MAX_PROMPT_BYTES + 4 * 1024
 REQUEST_SCHEMA = "pcbdraft-boardbench-worker-request"
 REQUEST_VERSION = 1
+MODEL_TURN_LIMIT = 90
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 
 
@@ -39,6 +40,7 @@ class WorkerRequest:
     repository_config: Path
     trace: Path
     usage: Path
+    pcb_tool_call_limit: int
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--repository-config", required=True, type=Path)
     parser.add_argument("--trace", required=True, type=Path)
     parser.add_argument("--usage", required=True, type=Path)
+    parser.add_argument("--pcb-tool-call-limit", required=True, type=int)
     return parser
 
 
@@ -126,6 +129,9 @@ def parse_request(argv: Sequence[str] | None = None) -> WorkerRequest:
     args = _parser().parse_args(list(argv) if argv is not None else None)
     request_path = _validate_path(Path(args.request), "request", may_exist=True)
     run_id, prompt = _request_document(request_path)
+    pcb_tool_call_limit = int(args.pcb_tool_call_limit)
+    if not 1 <= pcb_tool_call_limit <= 100_000:
+        raise ValidationError("BoardBench PCB tool-call limit is invalid")
     return WorkerRequest(
         run_id=run_id,
         prompt=prompt,
@@ -135,6 +141,7 @@ def parse_request(argv: Sequence[str] | None = None) -> WorkerRequest:
         ),
         trace=_validate_path(Path(args.trace), "trace", may_exist=False),
         usage=_validate_path(Path(args.usage), "usage", may_exist=False),
+        pcb_tool_call_limit=pcb_tool_call_limit,
     )
 
 
@@ -168,6 +175,7 @@ def run_worker(
             "PCBDRAFT_REPOSITORY_CONFIG": str(request.repository_config),
             "PCBDRAFT_DEBUG_TRACE": "1",
             "PCBDRAFT_DEBUG_TRACE_PATH": str(request.trace),
+            "PCBDRAFT_PCB_TOOL_CALL_LIMIT": str(request.pcb_tool_call_limit),
             "NO_COLOR": "1",
         }
     )
@@ -188,6 +196,7 @@ def run_worker(
                 str(request.usage),
             ],
             permission_mode="workspace",
+            model_turn_limit=MODEL_TURN_LIMIT,
         )
     )
 

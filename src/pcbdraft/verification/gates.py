@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pcbdraft.core.errors import PCBDraftError
-from pcbdraft.core.io import load_json_limited, make_directory
+from pcbdraft.core.io import atomic_write_json, load_json_limited, make_directory
 from pcbdraft.core.process import redact_argv, remaining_timeout, run_command
 from pcbdraft.core.project import ProjectFiles, sha256_file
 from pcbdraft.kicad.runtime import find_kicad_cli
@@ -41,6 +43,61 @@ class GateResult:
             "raw_report_sha256": self.raw_report_sha256,
             "argv": self.argv,
             "duration_seconds": self.duration_seconds,
+            "failure_kind": self.failure_kind,
+        }
+
+
+@dataclass(frozen=True)
+class DrcEvidence:
+    """One bounded native DRC run plus stable error identities."""
+
+    gate: GateResult
+    structured: dict[str, Any]
+    error_fingerprints: tuple[str, ...]
+
+    @property
+    def available(self) -> bool:
+        return (
+            self.gate.tool_status == "ok"
+            and self.structured.get("available") is True
+            and self.structured.get("violations_truncated") is False
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "pcbdraft-drc-evidence",
+            "version": 1,
+            "available": self.available,
+            "gate": self.gate.to_dict(),
+            "structured": self.structured,
+            "error_fingerprints": list(self.error_fingerprints),
+        }
+
+
+@dataclass(frozen=True)
+class DrcDelta:
+    """Multiset delta that permits retained errors but rejects new ones."""
+
+    comparable: bool
+    before_error_count: int
+    after_error_count: int
+    new_error_fingerprints: tuple[str, ...]
+    failure_kind: str | None = None
+
+    @property
+    def passed(self) -> bool:
+        return self.comparable and not self.new_error_fingerprints
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "pcbdraft-drc-delta",
+            "version": 1,
+            "comparable": self.comparable,
+            "passed": self.passed,
+            "before_error_count": self.before_error_count,
+            "after_error_count": self.after_error_count,
+            "new_error_count": len(self.new_error_fingerprints),
+            "new_error_fingerprints": list(self.new_error_fingerprints),
             "failure_kind": self.failure_kind,
         }
 
@@ -339,6 +396,119 @@ def run_gate(
         argv=redacted,
         duration_seconds=result.duration_seconds,
     )
+
+
+def run_drc_evidence(
+    *,
+    input_file: Path,
+    output_dir: Path,
+    deadline: float,
+    redactions: Mapping[str, str],
+    executable: str | None = None,
+) -> DrcEvidence:
+    """Run one native DRC and persist reusable structured evidence."""
+
+    make_directory(output_dir)
+    resolved_executable = executable or find_kicad_cli()
+    if resolved_executable is None:
+        gate = _failed_result(
+            name="drc",
+            raw_report="drc.json",
+            argv=[],
+            exit_code=None,
+            duration=0.0,
+            failure_kind="missing_executable",
+        )
+    else:
+        gate = run_gate(
+            name="drc",
+            input_file=input_file,
+            raw_output=output_dir / "drc.json",
+            executable=resolved_executable,
+            deadline=deadline,
+            redactions=redactions,
+        )
+    structured = collect_structured_evidence(
+        output_dir=output_dir, results={"drc": gate}
+    )["drc"]
+    fingerprints = (
+        _error_fingerprints(structured)
+        if structured.get("available") is True
+        and structured.get("violations_truncated") is False
+        else ()
+    )
+    evidence = DrcEvidence(gate, structured, fingerprints)
+    atomic_write_json(output_dir / "evidence.json", evidence.to_dict())
+    return evidence
+
+
+def compare_drc_evidence(before: DrcEvidence, after: DrcEvidence) -> DrcDelta:
+    """Return newly introduced error-severity violations as a multiset delta."""
+
+    if not before.available or not after.available:
+        failures = [
+            evidence.gate.failure_kind or "structured_evidence_unavailable"
+            for evidence in (before, after)
+            if not evidence.available
+        ]
+        return DrcDelta(
+            False,
+            len(before.error_fingerprints),
+            len(after.error_fingerprints),
+            (),
+            ",".join(failures),
+        )
+    new_errors = tuple(
+        sorted(
+            (
+                Counter(after.error_fingerprints) - Counter(before.error_fingerprints)
+            ).elements()
+        )
+    )
+    return DrcDelta(
+        True,
+        len(before.error_fingerprints),
+        len(after.error_fingerprints),
+        new_errors,
+    )
+
+
+def _error_fingerprints(structured: Mapping[str, Any]) -> tuple[str, ...]:
+    values = structured.get("violations")
+    if not isinstance(values, list):
+        return ()
+    fingerprints: list[str] = []
+    for value in values:
+        if not isinstance(value, dict) or value.get("severity") != "error":
+            continue
+        # Report ordering, descriptions, and positions can all change when a
+        # footprint moves even though KiCad is reporting the same violation.
+        # The violation type plus the stable UUIDs of its native items are the
+        # durable electrical/geometric identity.  The multiset comparison still
+        # detects an additional violation when KiCad supplies only a type.
+        item_uuids = tuple(
+            sorted(
+                item["uuid"]
+                for item in value.get("items", ())
+                if isinstance(item, dict)
+                and isinstance(item.get("uuid"), str)
+                and item["uuid"]
+            )
+        )
+        identity = {
+            "type": value.get("type") if isinstance(value.get("type"), str) else "",
+            "item_uuids": item_uuids,
+        }
+        fingerprints.append(
+            json.dumps(
+                identity,
+                ensure_ascii=True,
+                sort_keys=True,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        )
+    return tuple(sorted(fingerprints))
 
 
 def run_gates(

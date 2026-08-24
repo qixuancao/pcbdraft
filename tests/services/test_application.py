@@ -9,6 +9,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch
 
 from pcbdraft.agent.design import CircuitPlan
@@ -19,7 +20,8 @@ from pcbdraft.agent.repair import (
     validation_feedback_from_levels,
 )
 from pcbdraft.agent.turns import TurnStatus
-from pcbdraft.core.errors import ValidationError
+from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.io import atomic_write_json
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.project import sha256_file
 from pcbdraft.model.providers import (
@@ -37,6 +39,26 @@ from pcbdraft.services.jobs import (
     JobRunner,
 )
 from tests.agent.test_design import circuit_plan_dict, indicator_plan_dict
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in sorted(root.rglob("*"))
+        if path.is_file() and not path.is_symlink()
+    }
+
+
+def _live_publication_bytes(
+    service: ApplicationService, project_id: str
+) -> dict[str, Any]:
+    root = service.project_root(project_id)
+    return {
+        "design": _tree_bytes(root / "design"),
+        "project": (root / "project.json").read_bytes(),
+        "conversation": (root / "conversation.json").read_bytes(),
+        "events": _tree_bytes(root / "events"),
+    }
 
 
 class GenericPlanningProvider:
@@ -565,10 +587,41 @@ class ApplicationConversationTests(unittest.TestCase):
             ):
                 staged = service.prepare_agent_repair(project_id, feedback, timeout=90)
             self.assertEqual(staged["project"]["status"], "change_ready")
+            self.assertIn("candidate_progress", staged["transaction_progress"])
+            self.assertEqual(staged["active_change"]["progress"]["status"], "ready")
+            transaction_id = str(staged["state"]["active_transaction"])
+            transaction = (
+                service.project_root(project_id) / "transactions" / transaction_id
+            )
+            receipt_path = transaction / "receipt.json"
+            ready_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(ready_receipt["version"], 2)
+            self.assertEqual(ready_receipt["status"], "ready")
+            self.assertEqual(
+                ready_receipt["progress_delta"]["classification"], "neutral"
+            )
+            self.assertEqual(
+                ready_receipt["progress_before"]["source_revision"],
+                ready_receipt["progress_after"]["source_revision"],
+            )
+            self.assertEqual(
+                ready_receipt["candidate_progress"]["source_revision"],
+                ready_receipt["progress_before"]["source_revision"] + 1,
+            )
+            self.assertEqual(
+                ready_receipt["candidate_progress"]["metrics"]["error_drc_count"][
+                    "status"
+                ],
+                "unknown",
+            )
             self.assertEqual(
                 service.open_project(project_id)["design"]["content_hash"],
                 before_hash,
             )
+            # A retained v1 repair receipt remains readable; apply recalculates
+            # live v2 progress instead of trusting absent historical fields.
+            ready_receipt["version"] = 1
+            atomic_write_json(receipt_path, ready_receipt)
             with self.assertRaisesRegex(ValidationError, "expected revision"):
                 service.apply_modification(
                     project_id,
@@ -577,6 +630,108 @@ class ApplicationConversationTests(unittest.TestCase):
             self.assertEqual(
                 service.open_project(project_id)["project"]["status"], "change_ready"
             )
+
+            from pcbdraft.services import application as application_module
+
+            real_write = application_module.atomic_write_json
+            terminal_status_to_reject = "applied"
+
+            def reject_terminal_receipt(
+                path: Path, value: Any, *args: Any, **kwargs: Any
+            ) -> None:
+                if (
+                    path == receipt_path
+                    and isinstance(value, dict)
+                    and value.get("status") == terminal_status_to_reject
+                ):
+                    raise PCBDraftError("injected terminal receipt failure")
+                real_write(path, value, *args, **kwargs)
+
+            expected_revision = int(staged["state"]["revision"])
+            unchanged_ready = _live_publication_bytes(service, project_id)
+            real_native_sources = service._native_progress_sources
+
+            def hide_staged_native_evidence(
+                managed: Any, design_revision: int, graph: Any
+            ) -> Any:
+                if Path(managed.root) == transaction / "staged":
+                    return None, None
+                return real_native_sources(managed, design_revision, graph)
+
+            with (
+                patch.object(
+                    service,
+                    "_native_progress_sources",
+                    side_effect=hide_staged_native_evidence,
+                ),
+                self.assertRaisesRegex(
+                    ValidationError, "staged candidate native consistency"
+                ),
+            ):
+                service.apply_modification(
+                    project_id,
+                    expected_revision=expected_revision,
+                )
+            self.assertEqual(
+                _live_publication_bytes(service, project_id), unchanged_ready
+            )
+            native_failed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(native_failed_receipt["status"], "ready")
+            self.assertEqual(
+                native_failed_receipt["application"]["error_code"],
+                "native_consistency_failed",
+            )
+
+            for boundary in ("event", "records", "receipt"):
+                context = (
+                    patch.object(
+                        service,
+                        "_event",
+                        side_effect=PCBDraftError("injected apply event failure"),
+                    )
+                    if boundary == "event"
+                    else patch.object(
+                        service,
+                        "_write_records",
+                        side_effect=PCBDraftError("injected apply record failure"),
+                    )
+                    if boundary == "records"
+                    else patch.object(
+                        application_module,
+                        "atomic_write_json",
+                        side_effect=reject_terminal_receipt,
+                    )
+                )
+                with (
+                    self.subTest(apply_failure=boundary),
+                    context,
+                    self.assertRaises(PCBDraftError),
+                ):
+                    service.apply_modification(
+                        project_id,
+                        expected_revision=expected_revision,
+                    )
+                self.assertEqual(
+                    _live_publication_bytes(service, project_id), unchanged_ready
+                )
+                failed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                self.assertEqual(failed_receipt["status"], "ready")
+                self.assertEqual(failed_receipt["application"]["status"], "failed")
+                self.assertTrue(
+                    failed_receipt["application"]["rollback"]["live_unchanged"]
+                )
+                self.assertEqual(
+                    failed_receipt["progress_delta"]["classification"], "neutral"
+                )
+                self.assertEqual(
+                    failed_receipt["application_progress"]["progress_delta"][
+                        "classification"
+                    ],
+                    "neutral",
+                )
+                self.assertTrue((transaction / "staged").is_dir())
+                self.assertFalse((transaction / "before").exists())
+
             with patch.object(
                 service,
                 "generate_project_previews",
@@ -587,9 +742,86 @@ class ApplicationConversationTests(unittest.TestCase):
                     expected_revision=int(staged["state"]["revision"]),
                 )
             self.assertEqual(applied["project"]["status"], "validated")
+            self.assertEqual(
+                applied["transaction_progress"]["application"]["status"],
+                "committed",
+            )
             self.assertNotEqual(applied["design"]["content_hash"], before_hash)
+            applied_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(applied_receipt["status"], "applied")
+            self.assertEqual(applied_receipt["application"]["status"], "committed")
+            self.assertTrue(
+                all(item["passed"] for item in applied_receipt["postconditions"])
+            )
+            self.assertEqual(
+                applied_receipt["progress_after"]["source_revision"],
+                applied_receipt["progress_before"]["source_revision"] + 1,
+            )
+
+            applied_revision = int(applied["state"]["revision"])
+            unchanged_applied = _live_publication_bytes(service, project_id)
+            terminal_status_to_reject = "undone"
+            for boundary in ("event", "records", "receipt"):
+                context = (
+                    patch.object(
+                        service,
+                        "_event",
+                        side_effect=PCBDraftError("injected undo event failure"),
+                    )
+                    if boundary == "event"
+                    else patch.object(
+                        service,
+                        "_write_records",
+                        side_effect=PCBDraftError("injected undo record failure"),
+                    )
+                    if boundary == "records"
+                    else patch.object(
+                        application_module,
+                        "atomic_write_json",
+                        side_effect=reject_terminal_receipt,
+                    )
+                )
+                with (
+                    self.subTest(undo_failure=boundary),
+                    context,
+                    self.assertRaises(PCBDraftError),
+                ):
+                    service.undo_last_modification(
+                        project_id,
+                        expected_revision=applied_revision,
+                    )
+                self.assertEqual(
+                    _live_publication_bytes(service, project_id), unchanged_applied
+                )
+                failed_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                self.assertEqual(failed_receipt["status"], "applied")
+                self.assertEqual(failed_receipt["undo"]["status"], "failed")
+                self.assertTrue(failed_receipt["undo"]["rollback"]["live_unchanged"])
+                self.assertEqual(
+                    failed_receipt["progress_delta"]["classification"], "neutral"
+                )
+                self.assertEqual(
+                    failed_receipt["undo_progress"]["progress_delta"]["classification"],
+                    "neutral",
+                )
+                self.assertTrue((transaction / "before").is_dir())
+                self.assertFalse((transaction / "after").exists())
+
             undone = service.undo_last_modification(project_id)
             self.assertEqual(undone["design"]["content_hash"], before_hash)
+            self.assertEqual(
+                undone["transaction_progress"]["undo"]["status"], "committed"
+            )
+            undone_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+            self.assertEqual(undone_receipt["status"], "undone")
+            self.assertEqual(undone_receipt["undo"]["status"], "committed")
+            self.assertTrue(
+                all(item["passed"] for item in undone_receipt["postconditions"])
+            )
+            self.assertEqual(
+                undone_receipt["progress_after"]["source_revision"],
+                undone_receipt["progress_before"]["source_revision"] + 1,
+            )
 
             with patch(
                 "pcbdraft.services.application.validate_managed_project",
@@ -611,6 +843,183 @@ class ApplicationConversationTests(unittest.TestCase):
             self.assertEqual(
                 conversational["conversation"]["messages"][-2]["kind"], "revision"
             )
+
+            service.discard_modification(
+                project_id,
+                expected_revision=int(conversational["state"]["revision"]),
+            )
+            prior_transactions = {
+                item.name
+                for item in (
+                    service.project_root(project_id) / "transactions"
+                ).iterdir()
+            }
+            rejected_feedback = validation_feedback_from_levels(
+                failed_levels, attempt=2
+            )
+            self.assertIsNotNone(rejected_feedback)
+
+            def fake_rejected_validation(
+                project: object, *, output: Path, timeout: float, **kwargs: object
+            ) -> SimpleNamespace:
+                del project, timeout, kwargs
+                output.mkdir(parents=True)
+                report = output / "validation.json"
+                report.write_text(
+                    json.dumps({"levels": failed_levels}, sort_keys=True) + "\n",
+                    encoding="utf-8",
+                )
+                return SimpleNamespace(
+                    report_path=report,
+                    report_sha256=sha256_file(report),
+                    candidate_ready=False,
+                    production_evidence_complete=False,
+                    production_ready=False,
+                )
+
+            with patch(
+                "pcbdraft.services.application.validate_managed_project",
+                side_effect=fake_rejected_validation,
+            ):
+                rejected = service.prepare_agent_repair(
+                    project_id,
+                    rejected_feedback,
+                    timeout=90,
+                )
+            self.assertEqual(rejected["project"]["status"], "repair_failed")
+            self.assertEqual(rejected["transaction_progress"]["status"], "rejected")
+            self.assertEqual(rejected["design"]["content_hash"], before_hash)
+            rejected_transaction = next(
+                item
+                for item in (
+                    service.project_root(project_id) / "transactions"
+                ).iterdir()
+                if item.name not in prior_transactions
+            )
+            rejected_receipt = json.loads(
+                (rejected_transaction / "receipt.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(rejected_receipt["status"], "rejected")
+            self.assertEqual(
+                rejected_receipt["progress_delta"]["classification"], "neutral"
+            )
+            self.assertEqual(
+                rejected_receipt["progress_before"]["source_revision"],
+                rejected_receipt["progress_after"]["source_revision"],
+            )
+            self.assertEqual(
+                rejected_receipt["candidate_progress"]["metrics"]["erc_error_count"][
+                    "status"
+                ],
+                "unknown",
+            )
+
+            # Candidate publication is success-last too: a final ready receipt
+            # failure removes its event/state claim and leaves neutral live
+            # progress plus separately labelled candidate evidence.
+            ready_event_count = sum(
+                item["kind"] == "repair.ready" for item in service.events(project_id)
+            )
+            transactions_before_failure = {
+                item.name
+                for item in (
+                    service.project_root(project_id) / "transactions"
+                ).iterdir()
+            }
+            retry_feedback = validation_feedback_from_levels(failed_levels, attempt=1)
+            assert retry_feedback is not None
+
+            def reject_ready_receipt(
+                path: Path, value: Any, *args: Any, **kwargs: Any
+            ) -> None:
+                if (
+                    path.name == "receipt.json"
+                    and isinstance(value, dict)
+                    and value.get("schema") == "pcbdraft-agent-repair-transaction"
+                    and value.get("status") == "ready"
+                ):
+                    raise PCBDraftError("injected ready receipt failure")
+                real_write(path, value, *args, **kwargs)
+
+            with (
+                patch(
+                    "pcbdraft.services.application.validate_managed_project",
+                    side_effect=fake_validation,
+                ),
+                patch.object(
+                    application_module,
+                    "atomic_write_json",
+                    side_effect=reject_ready_receipt,
+                ),
+                self.assertRaisesRegex(PCBDraftError, "injected ready receipt failure"),
+            ):
+                service.prepare_agent_repair(
+                    project_id,
+                    retry_feedback,
+                    timeout=90,
+                )
+            failed_transaction = next(
+                item
+                for item in (
+                    service.project_root(project_id) / "transactions"
+                ).iterdir()
+                if item.name not in transactions_before_failure
+            )
+            publication_failed = json.loads(
+                (failed_transaction / "receipt.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(publication_failed["status"], "preparing")
+            self.assertEqual(publication_failed["publication"]["status"], "failed")
+            self.assertEqual(
+                publication_failed["progress_delta"]["classification"], "neutral"
+            )
+            self.assertIn("candidate_progress", publication_failed)
+            self.assertIsNone(
+                service.open_project(project_id)["state"]["active_transaction"]
+            )
+            self.assertEqual(
+                sum(
+                    item["kind"] == "repair.ready"
+                    for item in service.events(project_id)
+                ),
+                ready_event_count,
+            )
+
+    def test_aggregate_progress_requires_current_complete_report_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            validation = Path(temporary)
+            receipt = {
+                "schema": "pcbdraft-validation-receipt",
+                "version": 1,
+                "status": "complete",
+                "design_content_hash": "design-hash",
+                "source_design_revision": 4,
+                "tool_runs": {
+                    "erc": {
+                        "status": "completed",
+                        "failure": None,
+                        "normalized_report": "erc.json",
+                    }
+                },
+            }
+            atomic_write_json(validation / "receipt.json", receipt)
+            atomic_write_json(validation / "erc.json", [])
+
+            malformed, _fatal, _check = ApplicationService._aggregate_check_progress(
+                validation, "design-hash", "run_erc", 4
+            )
+            self.assertEqual(malformed.status.value, "unknown")
+
+            atomic_write_json(validation / "erc.json", {"violations": []})
+            current, _fatal, _check = ApplicationService._aggregate_check_progress(
+                validation, "design-hash", "run_erc", 4
+            )
+            stale, _fatal, _check = ApplicationService._aggregate_check_progress(
+                validation, "design-hash", "run_erc", 5
+            )
+            self.assertEqual(current.status.value, "known")
+            self.assertEqual(current.value, 0)
+            self.assertEqual(stale.status.value, "unknown")
 
     def test_secrets_are_redacted_before_provider_and_storage(self) -> None:
         sentinel = "test-provider-secret-value-123456789"

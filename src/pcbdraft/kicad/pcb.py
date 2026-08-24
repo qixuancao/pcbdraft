@@ -124,6 +124,7 @@ class PcbGeneration:
                     for key, value in sorted(self.constraint_metrics.items())
                 },
                 "diagnostics": list(self.routing.diagnostics),
+                "failures": [item.to_dict() for item in self.routing.failures],
             },
             "constraint_metrics": self.constraint_metrics,
         }
@@ -134,6 +135,7 @@ def inspect_native_board(
     board_path: str | Path,
     *,
     system_python: str | Path | None = None,
+    include_connectivity: bool = False,
 ) -> dict[str, Any]:
     """Return a bounded semantic snapshot of an existing native KiCad board."""
     source = Path(board_path).resolve(strict=True)
@@ -144,6 +146,8 @@ def inspect_native_board(
         "design_id": design.design_id,
         "board_path": str(source),
     }
+    if include_connectivity:
+        job["include_connectivity"] = True
     with tempfile.TemporaryDirectory(prefix="pcbdraft-board-inspect-") as temporary:
         result_path = Path(temporary) / "board-inspection.json"
         result = _run_worker(
@@ -809,6 +813,7 @@ def _route(
         seed_segments=escape_segments,
         obstacle_segments=retained_segments,
         obstacle_vias=explicit_vias,
+        state_revision=design.native_intent.geometry_revision,
     )
     routed = RoutingResult(
         segments=tuple(sorted((*routed.segments, *retained_segments))),
@@ -817,6 +822,7 @@ def _route(
         state=routed.state,
         expanded_nodes=routed.expanded_nodes,
         diagnostics=routed.diagnostics,
+        failures=routed.failures,
     )
     # Flat semantic tools pass an explicit selection (including the empty set).
     # Stitching-via synthesis is a legacy whole-board routing behavior and must
@@ -864,6 +870,7 @@ def _add_reference_stitching_vias(
                     )
                 )
             ),
+            failures=routing.failures,
         )
     if design.board.layers == 1:
         return routing
@@ -1021,6 +1028,7 @@ def _add_reference_stitching_vias(
                 )
             )
         ),
+        failures=routing.failures,
     )
 
 
@@ -1707,6 +1715,8 @@ def _build_job(
                 "y_mm": via.y_mm,
                 "diameter_mm": via.diameter_mm,
                 "drill_mm": via.drill_mm,
+                "from_layer": via.from_layer,
+                "to_layer": via.to_layer,
             }
             for via in vias
         ],
