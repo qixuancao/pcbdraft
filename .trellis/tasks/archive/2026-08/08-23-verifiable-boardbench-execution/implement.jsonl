@@ -1,6 +1,0 @@
-{"file":".trellis/spec/backend/flat-pcb-toolbox.md","reason":"修改型 PCB 工具必须继续遵守 flat toolbox、managed project 与 closed-toolbox 契约。"}
-{"file":".trellis/spec/backend/boardbench-contract.md","reason":"BoardBench campaign、不可变 artifact、runner、schema 与评分版本化的现有权威契约。"}
-{"file":".trellis/spec/backend/error-handling.md","reason":"事务 fail-closed、稳定错误码、回滚和用户可见错误语义。"}
-{"file":".trellis/spec/backend/quality-guidelines.md","reason":"确定性回归、快速验证和兼容性实现要求。"}
-{"file":".trellis/tasks/archive/2026-08/08-21-end-to-end-boardbench/research/five-category-real-baseline.md","reason":"旧 20×3 pilot 的固定题库、环境、预算和基线设计。"}
-{"file":".trellis/tasks/archive/2026-08/08-21-end-to-end-boardbench/verification.md","reason":"60-run 已验证事实、失败聚集和不可越权的人类/实物边界。"}
