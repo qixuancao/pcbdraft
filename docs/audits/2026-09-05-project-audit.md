@@ -177,3 +177,9 @@ F08 已修复：预览返回绑定 board、manifest 和全部 tracked-file hashe
 39 项相关服务、哈希边界、GUI 和离线 JS 测试通过（0.551 秒）；三类预览
 输入变化均在状态/native mutation 前拒绝，解析中修改也被拒绝。3 个改动
 源文件的 mypy、相关 Ruff、JS 语法和 diff 检查通过。未运行完整原生导入验收。
+
+## 第六轮：Python 支持声明
+
+F09 已修复：CI、默认 matrix 脚本和包 classifier 都统一为 3.11–3.13，
+与 `requires-python` 和锁文件保持一致。验证使用 TOML/SpecifierSet 与文本
+矩阵比较，并通过 `bash -n`、diff 检查；没有运行 Python 版本矩阵。

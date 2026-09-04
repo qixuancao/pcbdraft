@@ -4,7 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPO_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-MATRIX_VERSIONS=${MATRIX_VERSIONS:-"3.11 3.12 3.13 3.14"}
+MATRIX_VERSIONS=${MATRIX_VERSIONS:-"3.11 3.12 3.13"}
 MATRIX_FULL=${MATRIX_FULL:-0}
 
 cd "$REPO_DIR"
