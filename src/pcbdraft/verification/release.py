@@ -42,6 +42,11 @@ AUDIT_ARTIFACT_PATHS = frozenset(
         "validation/receipt.json",
         "validation/erc.raw.json",
         "validation/drc.raw.json",
+        "validation/erc.evidence.json",
+        "validation/drc.evidence.json",
+        "validation/drc.baseline.evidence.json",
+        "validation/drc.baseline.raw.json",
+        "validation/drc.delta.json",
     }
 )
 RELEASE_CONTROL_PATHS = frozenset(
@@ -95,6 +100,11 @@ def build_manufacturing_release(
     *,
     graph: PartGraph | None = None,
     timeout: float = 180.0,
+    canonical_revision: int | None = None,
+    design_revision: int | None = None,
+    baseline_drc_evidence: Path | None = None,
+    expected_baseline_design_revision: int | None = None,
+    expected_baseline_content_hash: str | None = None,
 ) -> ManufacturingRelease:
     """Generate real KiCad manufacturing outputs after all candidate gates pass."""
     if not math.isfinite(timeout) or timeout <= 0 or timeout > 3600:
@@ -132,6 +142,11 @@ def build_manufacturing_release(
                 output=root / "validation",
                 graph=resolved_graph,
                 timeout=max(1.0, deadline - time.monotonic()),
+                canonical_revision=canonical_revision,
+                design_revision=design_revision,
+                baseline_drc_evidence=baseline_drc_evidence,
+                expected_baseline_design_revision=expected_baseline_design_revision,
+                expected_baseline_content_hash=expected_baseline_content_hash,
                 _already_locked=True,
             )
             if not validation.candidate_ready:
@@ -187,6 +202,13 @@ def build_manufacturing_release(
                 "validation": {
                     "report": validation.report_path.relative_to(root).as_posix(),
                     "report_sha256": validation.report_sha256,
+                    "erc_evidence": validation.erc_evidence_path.relative_to(
+                        root
+                    ).as_posix(),
+                    "drc_evidence": validation.drc_evidence_path.relative_to(
+                        root
+                    ).as_posix(),
+                    "drc_delta": validation.drc_delta_path.relative_to(root).as_posix(),
                 },
                 "contracts": {
                     "bom": bom_contract,
@@ -209,9 +231,7 @@ def build_manufacturing_release(
                     "normalized_timestamp": REPRODUCIBLE_TIMESTAMP + "Z",
                     "excluded_from_content_archive": [
                         "receipt.json",
-                        "validation/receipt.json",
-                        "validation/erc.raw.json",
-                        "validation/drc.raw.json",
+                        *sorted(AUDIT_ARTIFACT_PATHS),
                     ],
                     "execution_audit_location": "receipt.json and validation/receipt.json",
                 },

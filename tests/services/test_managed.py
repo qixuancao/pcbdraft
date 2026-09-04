@@ -231,6 +231,11 @@ class ManagedPipelineTests(unittest.TestCase):
                 "validation/receipt.json",
                 "validation/erc.raw.json",
                 "validation/drc.raw.json",
+                "validation/erc.evidence.json",
+                "validation/drc.evidence.json",
+                "validation/drc.baseline.evidence.json",
+                "validation/drc.baseline.raw.json",
+                "validation/drc.delta.json",
             },
         )
 

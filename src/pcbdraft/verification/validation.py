@@ -35,7 +35,20 @@ from pcbdraft.services.managed import (
     open_managed_project,
 )
 from pcbdraft.verification.evidence import load_external_evidence
-from pcbdraft.verification.gates import GATE_JSON_LIMIT, count_severities
+from pcbdraft.verification.gates import (
+    GATE_JSON_LIMIT,
+    VIOLATION_EXIT_CODES,
+    count_severities,
+)
+from pcbdraft.verification.rule_evidence import (
+    DrcDelta,
+    RuleEvidence,
+    WarningPolicy,
+    capture_rule_evidence,
+    compare_drc_evidence,
+    fail_closed_drc_delta,
+    materialize_rule_evidence,
+)
 
 VALIDATION_SCHEMA = "pcbdraft-validation"
 VALIDATION_VERSION = 2
@@ -113,6 +126,9 @@ class ValidationRun:
     candidate_ready: bool
     production_evidence_complete: bool
     production_ready: bool
+    erc_evidence_path: Path
+    drc_evidence_path: Path
+    drc_delta_path: Path
 
 
 @dataclass(frozen=True)
@@ -290,6 +306,12 @@ def validate_managed_project(
     output: str | Path | None = None,
     graph: PartGraph | None = None,
     timeout: float = 90.0,
+    canonical_revision: int | None = None,
+    design_revision: int | None = None,
+    baseline_drc_evidence: Path | None = None,
+    expected_baseline_design_revision: int | None = None,
+    expected_baseline_content_hash: str | None = None,
+    warning_policy: WarningPolicy = "report_only",
     _already_locked: bool = False,
 ) -> ValidationRun:
     """Run deterministic and declared heuristic gates without inventing evidence."""
@@ -301,6 +323,22 @@ def validate_managed_project(
         else open_managed_project(project_value)
     )
     resolved_graph = graph or project.graph
+    # Standalone managed projects have a semantic revision label (for example
+    # "A"), not an ApplicationService sequence.  Sequence zero is the explicit
+    # headless binding when no application revision was supplied.
+    resolved_design_revision = 0 if design_revision is None else design_revision
+    resolved_canonical_revision = (
+        resolved_design_revision
+        if canonical_revision is None
+        else canonical_revision
+    )
+    if (
+        not isinstance(resolved_design_revision, int)
+        or resolved_design_revision < 0
+        or not isinstance(resolved_canonical_revision, int)
+        or resolved_canonical_revision < 0
+    ):
+        raise ValidationError("validation revision binding must be non-negative")
     output_dir = _validation_output(project, output)
     deadline = time.monotonic() + timeout
     receipt = {
@@ -310,6 +348,8 @@ def validate_managed_project(
         "started_at": utc_timestamp(),
         "project": portable_record_path(project.root),
         "design_content_hash": project.design.content_hash(),
+        "canonical_revision": resolved_canonical_revision,
+        "source_design_revision": resolved_design_revision,
     }
     atomic_write_json(output_dir / "receipt.json", receipt)
     try:
@@ -325,7 +365,63 @@ def validate_managed_project(
         with lock:
             erc = _run_kicad_report("erc", project, output_dir / "erc.json", deadline)
             drc = _run_kicad_report("drc", project, output_dir / "drc.json", deadline)
-            checks = _build_checks(project, resolved_graph, erc, drc)
+            erc_evidence = _capture_tool_evidence(
+                "erc",
+                erc,
+                project.schematic_path,
+                output_dir / "erc.evidence.json",
+                canonical_revision=resolved_canonical_revision,
+                design_revision=resolved_design_revision,
+                design_content_hash=project.design.content_hash(),
+            )
+            drc_evidence = _capture_tool_evidence(
+                "drc",
+                drc,
+                project.board_path,
+                output_dir / "drc.evidence.json",
+                canonical_revision=resolved_canonical_revision,
+                design_revision=resolved_design_revision,
+                design_content_hash=project.design.content_hash(),
+            )
+            baseline_mode = "provided"
+            baseline_revision: int | None
+            baseline_hash: str | None
+            if baseline_drc_evidence is None:
+                baseline_mode = "self_bootstrap"
+                baseline_source = drc_evidence.path
+                baseline_revision = resolved_design_revision
+                baseline_hash = project.design.content_hash()
+            else:
+                baseline_source = baseline_drc_evidence
+                baseline_revision = expected_baseline_design_revision
+                baseline_hash = expected_baseline_content_hash
+            baseline_public: dict[str, Any]
+            try:
+                baseline_evidence = materialize_rule_evidence(
+                    baseline_source,
+                    output_dir / "drc.baseline.evidence.json",
+                    raw_name="drc.baseline.raw.json",
+                )
+                drc_delta = compare_drc_evidence(
+                    baseline_evidence,
+                    drc_evidence,
+                    expected_baseline_design_revision=baseline_revision,
+                    expected_baseline_content_hash=baseline_hash,
+                    expected_candidate_design_revision=resolved_design_revision,
+                    expected_candidate_content_hash=project.design.content_hash(),
+                    warning_policy=warning_policy,
+                )
+                baseline_public = _public_rule_evidence(baseline_evidence)
+            except PCBDraftError:
+                drc_delta = fail_closed_drc_delta(
+                    drc_evidence,
+                    "baseline_evidence_invalid",
+                    warning_policy=warning_policy,
+                )
+                baseline_public = {"complete": False, "failure": "invalid"}
+            drc_delta_path = output_dir / "drc.delta.json"
+            atomic_write_json(drc_delta_path, drc_delta.to_dict())
+            checks = _build_checks(project, resolved_graph, erc, drc, drc_delta)
             levels = _levels(checks)
             candidate_ready = _ready(checks, "blocks_candidate")
             production_evidence_complete = candidate_ready and _ready(
@@ -359,6 +455,18 @@ def validate_managed_project(
                     "erc": _public_tool_result(erc),
                     "drc": _public_tool_result(drc),
                 },
+                "complete_rule_evidence": {
+                    "erc": _public_rule_evidence(erc_evidence),
+                    "drc": _public_rule_evidence(drc_evidence),
+                    "drc_baseline": {
+                        **baseline_public,
+                        "mode": baseline_mode,
+                    },
+                    "drc_delta": {
+                        "report": drc_delta_path.name,
+                        **_public_drc_delta(drc_delta),
+                    },
+                },
             }
             report_path = output_dir / "validation.json"
             atomic_write_json(report_path, report)
@@ -376,6 +484,13 @@ def validate_managed_project(
                         "erc": _audit_tool_result(erc),
                         "drc": _audit_tool_result(drc),
                     },
+                    "complete_rule_evidence": {
+                        "erc": erc_evidence.path.name,
+                        "drc": drc_evidence.path.name,
+                        "drc_baseline": "drc.baseline.evidence.json",
+                        "drc_delta": drc_delta_path.name,
+                        "baseline_mode": baseline_mode,
+                    },
                 }
             )
             atomic_write_json(output_dir / "receipt.json", receipt)
@@ -387,6 +502,9 @@ def validate_managed_project(
                 candidate_ready=candidate_ready,
                 production_evidence_complete=production_evidence_complete,
                 production_ready=production_ready,
+                erc_evidence_path=erc_evidence.path,
+                drc_evidence_path=drc_evidence.path,
+                drc_delta_path=drc_delta_path,
             )
     except BaseException as exc:
         receipt["status"] = "failed"
@@ -485,7 +603,7 @@ def _run_kicad_report(
         failure = "timeout"
     elif result.output_limited:
         failure = "output_limit"
-    elif result.returncode != 0:
+    elif result.returncode != 0 and result.returncode not in VIOLATION_EXIT_CODES:
         failure = f"exit_code_{result.returncode}"
     try:
         document = (
@@ -515,11 +633,94 @@ def _run_kicad_report(
     }
 
 
+def _capture_tool_evidence(
+    kind: str,
+    tool: dict[str, Any],
+    source_file: Path,
+    output: Path,
+    *,
+    canonical_revision: int,
+    design_revision: int,
+    design_content_hash: str,
+) -> RuleEvidence:
+    raw_name = tool.get("raw_report")
+    raw_report = (
+        output.parent / raw_name
+        if isinstance(raw_name, str) and Path(raw_name).name == raw_name
+        else None
+    )
+    return capture_rule_evidence(
+        kind=kind,
+        raw_report=raw_report,
+        output=output,
+        source_file=source_file,
+        canonical_revision=canonical_revision,
+        design_revision=design_revision,
+        design_content_hash=design_content_hash,
+        failure=(
+            str(tool.get("failure") or "tool_evidence_unavailable")
+            if tool.get("status") != "completed"
+            else None
+        ),
+        expected_raw_sha256=(
+            str(tool["raw_sha256"])
+            if isinstance(tool.get("raw_sha256"), str)
+            else None
+        ),
+    )
+
+
+def _public_rule_evidence(evidence: RuleEvidence) -> dict[str, Any]:
+    return {
+        "status": evidence.status,
+        "complete": evidence.complete,
+        "failure": evidence.failure,
+        "report": evidence.path.name,
+        "raw_report": evidence.raw_report,
+        "canonical_revision": evidence.canonical_revision,
+        "design_revision": evidence.design_revision,
+        "design_content_hash": evidence.design_content_hash,
+        "source_file_sha256": evidence.source_file_sha256,
+        "tool_version": evidence.tool_version,
+        "counts": {
+            "error": evidence.error_count,
+            "warning": evidence.warning_count,
+            "findings": len(evidence.findings),
+        },
+    }
+
+
+def _public_drc_delta(delta: DrcDelta) -> dict[str, Any]:
+    value = delta.to_dict()
+    stable_bindings = {
+        name: {
+            key: item
+            for key, item in binding.items()
+            if key != "raw_report_sha256"
+        }
+        for name, binding in (
+            ("baseline_binding", value["baseline_binding"]),
+            ("candidate_binding", value["candidate_binding"]),
+        )
+    }
+    return {
+        "schema": value["schema"],
+        "version": value["version"],
+        "comparable": value["comparable"],
+        "passed": value["passed"],
+        "failure_kinds": value["failure_kinds"],
+        "warning_policy": value["warning_policy"],
+        "counts": value["counts"],
+        **stable_bindings,
+    }
+
+
 def _build_checks(
     project: ManagedProject,
     graph: PartGraph,
     erc: dict[str, Any],
     drc: dict[str, Any],
+    drc_delta: DrcDelta,
 ) -> tuple[CheckResult, ...]:
     checks: list[CheckResult] = []
     drift = project.drift()
@@ -716,6 +917,33 @@ def _build_checks(
             "KiCad schematic-to-PCB footprint, field, net, and pad parity",
             candidate=True,
             production=True,
+        )
+    )
+    delta_counts = drc_delta.to_dict()["counts"]
+    checks.append(
+        CheckResult(
+            "l2.incremental_drc_release_gate",
+            "L2",
+            "completed" if drc_delta.comparable else "unavailable",
+            "pass"
+            if drc_delta.passed
+            else "fail"
+            if drc_delta.comparable
+            else "unknown",
+            "Complete baseline and candidate DRC identities contain no new unwaived blocking findings."
+            if drc_delta.passed
+            else "Incremental DRC comparison found a new unwaived blocking finding."
+            if drc_delta.comparable
+            else "Complete source-bound DRC comparison evidence is unavailable; release is blocked.",
+            ("drc.delta.json",),
+            {
+                "comparable": drc_delta.comparable,
+                "warning_policy": drc_delta.warning_policy,
+                "failure_kinds": list(drc_delta.failure_kinds),
+                **delta_counts,
+            },
+            True,
+            True,
         )
     )
     checks.extend(_ignored_rule_checks(erc, drc))

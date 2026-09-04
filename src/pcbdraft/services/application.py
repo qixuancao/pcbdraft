@@ -2547,6 +2547,43 @@ class ApplicationService:
         atomic_write_json(receipt_path, receipt)
 
     @staticmethod
+    def _latest_drc_baseline(
+        project: ApplicationProject,
+    ) -> tuple[Path, int, str] | None:
+        """Locate the newest complete application validation as a DRC baseline."""
+
+        root = project.root / "validation"
+        if not root.is_dir() or root.is_symlink():
+            return None
+        for directory in sorted(root.iterdir(), reverse=True)[:100]:
+            if directory.is_symlink() or not directory.is_dir():
+                continue
+            try:
+                receipt = load_json_limited(
+                    directory / "receipt.json", APP_FILE_LIMIT
+                )
+            except PCBDraftError:
+                continue
+            if (
+                not isinstance(receipt, Mapping)
+                or receipt.get("schema") != "pcbdraft-validation-receipt"
+                or receipt.get("status") != "complete"
+                or not isinstance(receipt.get("source_design_revision"), int)
+                or not isinstance(receipt.get("design_content_hash"), str)
+                or not isinstance(receipt.get("complete_rule_evidence"), Mapping)
+            ):
+                continue
+            name = receipt["complete_rule_evidence"].get("drc")
+            if not isinstance(name, str) or Path(name).name != name:
+                continue
+            return (
+                directory / name,
+                int(receipt["source_design_revision"]),
+                str(receipt["design_content_hash"]),
+            )
+        return None
+
+    @staticmethod
     def _aggregate_check_progress(
         validation_root: Path,
         design_hash: str,
@@ -4633,6 +4670,8 @@ class ApplicationService:
                 candidate,
                 output=transaction / "validation",
                 timeout=timeout,
+                canonical_revision=expected_revision,
+                design_revision=baseline_design_revision + 1,
             )
             self._bind_aggregate_validation_revision(
                 transaction / "validation",
@@ -5642,6 +5681,8 @@ class ApplicationService:
             raise ValidationError("project must be generated before validation")
         managed = open_managed_project(project.design_root)
         managed.assert_synchronized()
+        baseline = self._latest_drc_baseline(project)
+        source_design_revision = int(project.state["design_revision"])
         run_id = new_run_id()
         output = project.root / "validation" / run_id
         with ResourceLock(project.root, self.locks_root):
@@ -5658,7 +5699,20 @@ class ApplicationService:
             self._write_records(current.root, state, current.conversation)
             expected_revision = state["revision"]
         try:
-            result = validate_managed_project(managed, output=output, timeout=timeout)
+            result = validate_managed_project(
+                managed,
+                output=output,
+                timeout=timeout,
+                canonical_revision=expected_revision,
+                design_revision=source_design_revision,
+                baseline_drc_evidence=baseline[0] if baseline is not None else None,
+                expected_baseline_design_revision=(
+                    baseline[1] if baseline is not None else None
+                ),
+                expected_baseline_content_hash=(
+                    baseline[2] if baseline is not None else None
+                ),
+            )
             self._bind_aggregate_validation_revision(
                 output,
                 managed.design.content_hash(),
@@ -5683,7 +5737,15 @@ class ApplicationService:
             "production_evidence_complete": result.production_evidence_complete,
             "production_ready": result.production_ready,
             "production_claimed": False,
-            "source_design_revision": project.state["design_revision"],
+            "source_design_revision": source_design_revision,
+            "source_content_hash": managed.design.content_hash(),
+            "erc_evidence": result.erc_evidence_path.relative_to(
+                project.root
+            ).as_posix(),
+            "drc_evidence": result.drc_evidence_path.relative_to(
+                project.root
+            ).as_posix(),
+            "drc_delta": result.drc_delta_path.relative_to(project.root).as_posix(),
             "assurance": str(managed.design.metadata.get("assurance", "verified")),
             "levels": report["levels"],
         }
@@ -6557,6 +6619,26 @@ class ApplicationService:
             raise ValidationError(
                 "release requires a passing engineering-candidate validation"
             )
+        managed = open_managed_project(project.design_root)
+        managed.assert_synchronized()
+        baseline_relative = validation.get("drc_evidence")
+        baseline_revision = validation.get("source_design_revision")
+        baseline_hash = validation.get("source_content_hash")
+        if (
+            not isinstance(baseline_relative, str)
+            or not isinstance(baseline_revision, int)
+            or not isinstance(baseline_hash, str)
+            or baseline_revision != project.state["design_revision"]
+            or baseline_hash != managed.design.content_hash()
+        ):
+            raise ValidationError(
+                "release requires complete DRC baseline evidence bound to the current design; run validation again"
+            )
+        baseline_path = project.root / baseline_relative
+        try:
+            baseline_path.resolve(strict=False).relative_to(project.root.resolve())
+        except ValueError as exc:
+            raise ValidationError("release DRC baseline path is outside the project") from exc
         release_id = new_run_id()
         output = project.root / "releases" / release_id
         with ResourceLock(project.root, self.locks_root):
@@ -6576,7 +6658,14 @@ class ApplicationService:
             expected_revision = current.state["revision"]
         try:
             release = build_manufacturing_release(
-                project.design_root, output, timeout=timeout
+                project.design_root,
+                output,
+                timeout=timeout,
+                canonical_revision=expected_revision,
+                design_revision=int(project.state["design_revision"]),
+                baseline_drc_evidence=baseline_path,
+                expected_baseline_design_revision=baseline_revision,
+                expected_baseline_content_hash=baseline_hash,
             )
             verified = verify_manufacturing_release(release.root)
         except BaseException as exc:
@@ -6599,6 +6688,9 @@ class ApplicationService:
             "production_evidence_complete": release.production_evidence_complete,
             "production_ready": release.production_ready,
             "production_claimed": False,
+            "source_revision": expected_revision,
+            "source_design_revision": project.state["design_revision"],
+            "source_content_hash": managed.design.content_hash(),
             "offline_verification": verified.to_dict(),
         }
         with ResourceLock(project.root, self.locks_root):
