@@ -122,6 +122,11 @@ class GUIFrontendTests(unittest.TestCase):
         self.assertIn("new EventSource(url)", self.script)
         self.assertIn("state.eventCursor = sequence", self.script)
         self.assertIn("inspector.setScene(scene, payload?.ipc)", self.script)
+        initial_snapshot = self.script.index(
+            "await refreshSnapshot({ resetStreamCursor: true });"
+        )
+        secondary_reads = self.script.index("await Promise.all([", initial_snapshot)
+        self.assertLess(initial_snapshot, secondary_reads)
 
     def test_snapshot_fallback_runs_only_while_sse_is_disconnected_with_backoff(
         self,

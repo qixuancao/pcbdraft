@@ -552,10 +552,13 @@ async function openProject(projectId) {
   showPrimary2d();
   elements.boardEmpty.hidden = false;
   updateIndicator(elements.stream, "connecting", "warn");
+  // Establish one complete canonical frame before secondary read models begin
+  // loading.  Those reads share the project lock and must not make the initial
+  // snapshot look like an authoritative write is still in progress.
+  await refreshSnapshot({ resetStreamCursor: true });
   await Promise.all([
     inspector.setProject(projectId),
     conversation.setProject(projectId),
-    refreshSnapshot({ resetStreamCursor: true }),
   ]);
   startEvents();
 }
