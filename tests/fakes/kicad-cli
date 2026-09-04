@@ -24,7 +24,7 @@ if len(args) >= 3 and args[:3] == ["sch", "export", "netlist"]:
     try:
         output = Path(args[args.index("--output") + 1])
     except (ValueError, IndexError):
-        raise SystemExit(64)
+        raise SystemExit(64) from None
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         """<?xml version="1.0" encoding="UTF-8"?>
@@ -43,7 +43,7 @@ if len(args) >= 3 and args[:3] == ["pcb", "export", "stats"]:
     try:
         output = Path(args[args.index("--output") + 1])
     except (ValueError, IndexError):
-        raise SystemExit(64)
+        raise SystemExit(64) from None
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
         json.dumps({"board": {"has_outline": True, "width": "10 mm"}, "components": {"total": 1}}),
@@ -55,21 +55,21 @@ if len(args) >= 3 and args[:3] == ["pcb", "export", "ipcd356"]:
     try:
         output = Path(args[args.index("--output") + 1])
     except (ValueError, IndexError):
-        raise SystemExit(64)
+        raise SystemExit(64) from None
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text("P  CODE 00\n317GND              R1    -1    D0100PA00X+000000Y+000000\n999\n", encoding="utf-8")
     raise SystemExit(0)
 
 if len(args) < 4 or args[:2] not in (["sch", "erc"], ["pcb", "drc"]):
     print("unsupported fake invocation", file=sys.stderr)
-    raise SystemExit(64)
+    raise SystemExit(64) from None
 
 gate = "erc" if args[:2] == ["sch", "erc"] else "drc"
 try:
     output = Path(args[args.index("--output") + 1])
     input_file = Path(args[-1])
 except (ValueError, IndexError):
-    raise SystemExit(64)
+    raise SystemExit(64) from None
 
 text = input_file.read_text(encoding="utf-8")
 if f"{gate.upper()}_TOOL_FAIL" in text:
@@ -90,8 +90,12 @@ violations = [
 document = {
     "$schema": f"https://schemas.kicad.org/{gate}.v1.json",
     "kicad_version": "10.0.5-fake",
-    "violations": violations,
+    "included_severities": ["error", "warning"],
 }
+if gate == "erc":
+    document["sheets"] = [{"path": "/", "violations": violations}]
+else:
+    document.update(violations=violations, unconnected_items=[], schematic_parity=[])
 output.parent.mkdir(parents=True, exist_ok=True)
 output.write_text(json.dumps(document), encoding="utf-8")
 print(f"Found {len(violations)} violations")

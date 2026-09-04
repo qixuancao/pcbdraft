@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import time
 import unittest
@@ -1053,7 +1054,21 @@ class ExistingGateIdentityTests(unittest.TestCase):
             ) -> CommandResult:
                 calls.append(tuple(argv))
                 output_index = argv.index("--output") + 1
-                atomic_write_text(Path(argv[output_index]), '{"violations": []}\n')
+                kind = "erc" if "erc" in argv else "drc"
+                document = {
+                    "$schema": f"https://schemas.kicad.org/{kind}.v1.json",
+                    "kicad_version": "10.0.5-fake",
+                    **(
+                        {"sheets": [{"violations": []}]}
+                        if kind == "erc"
+                        else {
+                            "violations": [],
+                            "unconnected_items": [],
+                            "schematic_parity": [],
+                        }
+                    ),
+                }
+                atomic_write_text(Path(argv[output_index]), json.dumps(document))
                 return CommandResult(tuple(argv), 0, b"", b"", 0.01)
 
             with patch("pcbdraft.verification.gates.run_command", side_effect=fake_run):

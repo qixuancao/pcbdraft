@@ -10,7 +10,11 @@ from unittest import mock
 import httpx
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.interfaces.gui import _open_project_in_kicad, create_gui_app
+from pcbdraft.interfaces.gui import (
+    _asset_response,
+    _open_project_in_kicad,
+    create_gui_app,
+)
 
 
 class _Service:
@@ -377,6 +381,24 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(download.headers["x-pcbdraft-revision"], "3")
         self.assertEqual(download.headers["x-pcbdraft-content-hash"], "a" * 64)
         self.assertEqual(traversal.status_code, 404)
+
+    async def test_asset_queries_cannot_override_the_bundled_resource(self) -> None:
+        sentinel = self.root / "private-sentinel.txt"
+        sentinel.write_text("PCBDRAFT_PRIVATE_TEST_SENTINEL", encoding="utf-8")
+        for prefix in ("", "/pcbdraft"):
+            expected = await self.client.get(f"{prefix}/assets/app.js")
+            for name in (str(sentinel), "../private-sentinel.txt"):
+                response = await self.client.get(
+                    f"{prefix}/assets/app.js",
+                    params={"name": name, "content_type": "text/plain"},
+                )
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.content, expected.content)
+                self.assertEqual(
+                    response.headers["content-type"], expected.headers["content-type"]
+                )
+        with self.assertRaisesRegex(ValidationError, "unknown static asset"):
+            _asset_response(str(sentinel), "text/plain")
 
     async def test_healthz_is_bounded_and_available_at_both_mount_paths(self) -> None:
         for prefix in ("", "/pcbdraft"):

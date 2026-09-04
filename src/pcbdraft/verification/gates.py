@@ -18,6 +18,45 @@ GATE_PROCESS_OUTPUT_LIMIT = 1024 * 1024
 VIOLATION_EXIT_CODES = {5}
 
 
+def rule_report_shape_valid(kind: str, document: Any) -> bool:
+    """Accept supported KiCad result sections; absent evidence is not zero errors."""
+    if kind not in {"erc", "drc"} or not isinstance(document, dict):
+        return False
+    if document.get("$schema") != f"https://schemas.kicad.org/{kind}.v1.json":
+        return False
+    version = document.get("kicad_version")
+    if not isinstance(version, str) or not version.strip():
+        return False
+    included = document.get("included_severities")
+    if included is not None and (
+        not isinstance(included, list)
+        or not all(isinstance(item, str) for item in included)
+        or not {"error", "warning"}.issubset(included)
+    ):
+        return False
+
+    def violations_valid(value: Any) -> bool:
+        return isinstance(value, list) and all(
+            isinstance(item, dict) and item.get("severity") in ("error", "warning")
+            for item in value
+        )
+
+    if kind == "drc":
+        return all(
+            violations_valid(document.get(key))
+            for key in ("violations", "unconnected_items", "schematic_parity")
+        )
+    sheets = document.get("sheets")
+    return (
+        isinstance(sheets, list)
+        and bool(sheets)
+        and all(
+            isinstance(sheet, dict) and violations_valid(sheet.get("violations"))
+            for sheet in sheets
+        )
+    )
+
+
 @dataclass(frozen=True)
 class GateResult:
     name: str
@@ -313,6 +352,10 @@ def run_gate(
     try:
         raw_output.chmod(0o600)
         document = load_json_limited(raw_output, GATE_JSON_LIMIT)
+        if not rule_report_shape_valid(name, document) or report_declares_truncation(
+            document
+        ):
+            raise PCBDraftError("malformed or incomplete rule report")
         errors, warnings = count_severities(document)
         report_hash = sha256_file(raw_output, max_bytes=GATE_JSON_LIMIT)
     except (OSError, PCBDraftError):
@@ -400,3 +443,27 @@ def gate_dict(results: Mapping[str, GateResult], *, prefix: str) -> dict[str, An
         value["raw_report"] = f"{prefix}/{result.raw_report}"
         rendered[name] = value
     return rendered
+
+
+def report_declares_truncation(value: Any) -> bool:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            normalized = str(key).lower()
+            if (
+                normalized
+                in {
+                    "truncated",
+                    "violations_truncated",
+                    "output_truncated",
+                    "report_truncated",
+                }
+                and child is True
+            ):
+                return True
+            if normalized in {"complete", "evidence_complete"} and child is False:
+                return True
+            if report_declares_truncation(child):
+                return True
+    elif isinstance(value, list):
+        return any(report_declares_truncation(child) for child in value)
+    return False

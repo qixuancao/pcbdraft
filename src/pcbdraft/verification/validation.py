@@ -39,6 +39,8 @@ from pcbdraft.verification.gates import (
     GATE_JSON_LIMIT,
     VIOLATION_EXIT_CODES,
     count_severities,
+    report_declares_truncation,
+    rule_report_shape_valid,
 )
 from pcbdraft.verification.rule_evidence import (
     DrcDelta,
@@ -611,6 +613,10 @@ def _run_kicad_report(
     except PCBDraftError:
         failure = "missing_or_invalid_json"
         document = None
+    if failure is None and not rule_report_shape_valid(kind, document):
+        failure = "malformed_rule_report"
+    if failure is None and report_declares_truncation(document):
+        failure = "truncated_underlying_evidence"
     reported_at = document.get("date") if isinstance(document, dict) else None
     if isinstance(document, dict):
         normalized_document = copy.deepcopy(document)

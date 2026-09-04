@@ -672,13 +672,23 @@ def _add_route(
 
 
 def _asset_response(name: str, media_type: str) -> Response:
+    if name != "index.html" and name not in _STATIC_ASSETS:
+        raise ValidationError("unknown static asset")
     resource = files("pcbdraft").joinpath("web", name)
-    data = resource.read_bytes()
+    with resource.open("rb") as stream:
+        data = stream.read(MAX_STATIC_BYTES + 1)
     if len(data) > MAX_STATIC_BYTES:
         raise ValidationError("static asset exceeds the size limit")
     if name == "index.html":
         return HTMLResponse(data.decode("utf-8"), media_type="text/html")
     return Response(data, media_type=media_type, headers={"Cache-Control": "no-cache"})
+
+
+def _static_endpoint(name: str, media_type: str) -> Callable[[], Any]:
+    async def static_asset() -> Response:
+        return _asset_response(name, media_type)
+
+    return static_asset
 
 
 async def _local_security_response(
@@ -878,16 +888,10 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
 
     _add_route(app, "/", index, methods=["GET"], name="index")
     for asset_name, media_type in _STATIC_ASSETS.items():
-
-        async def static_asset(
-            name: str = asset_name, content_type: str = media_type
-        ) -> Response:
-            return _asset_response(name, content_type)
-
         _add_route(
             app,
             f"/assets/{asset_name}",
-            static_asset,
+            _static_endpoint(asset_name, media_type),
             methods=["GET"],
             name=f"asset-{asset_name}",
         )

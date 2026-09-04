@@ -18,7 +18,12 @@ from typing import Any, Literal, cast
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.io import atomic_write_json, load_json_limited
 from pcbdraft.core.project import sha256_file
-from pcbdraft.verification.gates import GATE_JSON_LIMIT, count_severities
+from pcbdraft.verification.gates import (
+    GATE_JSON_LIMIT,
+    count_severities,
+    report_declares_truncation,
+    rule_report_shape_valid,
+)
 
 RULE_EVIDENCE_SCHEMA = "pcbdraft-complete-rule-evidence"
 RULE_EVIDENCE_VERSION = 1
@@ -179,9 +184,11 @@ def capture_rule_evidence(
     errors: int | None = None
     warnings: int | None = None
     if unavailable is None:
-        if not isinstance(document, dict) or not _schema_matches(kind, document):
+        if not isinstance(document, dict) or not rule_report_shape_valid(
+            kind, document
+        ):
             unavailable = "malformed_raw_report"
-        elif _declares_truncation(document):
+        elif report_declares_truncation(document):
             unavailable = "truncated_underlying_evidence"
         else:
             tool = document.get("kicad_version")
@@ -325,8 +332,8 @@ def load_rule_evidence(path: Path) -> RuleEvidence:
         raise PCBDraftError("complete rule evidence raw report is unavailable") from exc
     if (
         not isinstance(document, dict)
-        or not _schema_matches(kind, document)
-        or _declares_truncation(document)
+        or not rule_report_shape_valid(kind, document)
+        or report_declares_truncation(document)
         or document.get("kicad_version") != tool_version
     ):
         raise PCBDraftError("complete rule evidence raw report is malformed")
@@ -679,35 +686,6 @@ def _identity_scalar(value: Any) -> str | int | float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return value
     return None
-
-
-def _schema_matches(kind: str, document: dict[str, Any]) -> bool:
-    schema = document.get("$schema")
-    return isinstance(schema, str) and f"/{kind}." in schema
-
-
-def _declares_truncation(value: Any) -> bool:
-    if isinstance(value, dict):
-        for key, child in value.items():
-            normalized = str(key).lower()
-            if (
-                normalized
-                in {
-                    "truncated",
-                    "violations_truncated",
-                    "output_truncated",
-                    "report_truncated",
-                }
-                and child is True
-            ):
-                return True
-            if normalized in {"complete", "evidence_complete"} and child is False:
-                return True
-            if _declares_truncation(child):
-                return True
-    elif isinstance(value, list):
-        return any(_declares_truncation(child) for child in value)
-    return False
 
 
 def _identity_counter(
