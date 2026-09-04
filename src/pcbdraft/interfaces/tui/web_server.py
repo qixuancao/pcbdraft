@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import uvicorn
+
     from pcbdraft.tools.mcp_dashboard_oauth import DashboardOAuthFlow
 
 
@@ -62,8 +63,6 @@ from pcbdraft.interfaces.tui._subprocess_compat import (
 )
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
 
 from pcbdraft.agent.memory_backends.config_schema import (
     STORAGE_HONCHO_HOST_BLOCK,

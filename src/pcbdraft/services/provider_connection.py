@@ -1,4 +1,4 @@
-"""PCBDraft entry-point adapter for the vendored Hermes provider system."""
+"""PCBDraft entry-point adapter for the native PCBDraft provider system."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ class ConnectionOptions:
 
 @dataclass(frozen=True)
 class ConnectionStatus:
-    """Secret-free projection of active Hermes provider state."""
+    """Secret-free projection of active PCBDraft provider state."""
 
     configured: bool
     usable: bool
@@ -103,14 +103,14 @@ def activate_provider_runtime() -> None:
             "model connection state must not use a symbolic-link directory: shared"
         )
     shared_auth = make_directory(shared_auth)
-    # Always replace generic Hermes paths inherited from a standalone install.
+    # Always replace generic PCBDraft paths inherited from a standalone install.
     os.environ["PCBDRAFT_RUNTIME_HOME"] = str(home)
     os.environ["PCBDRAFT_RUNTIME_SHARED_AUTH_DIR"] = str(shared_auth)
     os.environ["PCBDRAFT_RUNTIME_HOME_MODE"] = "0700"
 
 
 def _snapshot_connection_state() -> tuple[_FileSnapshot, ...]:
-    """Capture the bounded provider files that a Hermes setup flow may mutate."""
+    """Capture the bounded provider files that a PCBDraft setup flow may mutate."""
 
     home = runtime_home()
     snapshots: list[_FileSnapshot] = []
@@ -171,7 +171,7 @@ def _restore_connection_state(snapshots: tuple[_FileSnapshot, ...]) -> None:
 
 
 def _config_signature() -> tuple[int, int, int] | None:
-    """Return an atomic-write-sensitive signature for Hermes config.yaml."""
+    """Return an atomic-write-sensitive signature for PCBDraft config.yaml."""
 
     try:
         details = (runtime_home() / "config.yaml").stat()
@@ -185,7 +185,7 @@ def _config_signature() -> tuple[int, int, int] | None:
 
 
 def provider_identities() -> tuple[str, ...]:
-    """Return the concrete identities used by the Hermes provider picker."""
+    """Return the concrete identities used by the PCBDraft provider picker."""
 
     activate_provider_runtime()
     from pcbdraft.model.catalog import CANONICAL_PROVIDERS
@@ -239,7 +239,7 @@ def _source_kind(value: object) -> str:
     if any(marker in source for marker in ("local", "loopback")):
         return "local"
     if any(marker in source for marker in ("explicit", "custom", "config")):
-        return "hermes-config"
+        return "runtime-config"
     return "provider-managed"
 
 
@@ -256,7 +256,7 @@ _STATE_MESSAGES: dict[ConnectionState, str | None] = {
 
 
 def classify_provider_error(exc: BaseException) -> ConnectionState:
-    """Classify vendored failures without exposing their raw text."""
+    """Classify provider failures without exposing their raw text."""
 
     code = str(getattr(exc, "code", "") or "").casefold()
     name = type(exc).__name__.casefold()
@@ -296,7 +296,7 @@ def classify_provider_error(exc: BaseException) -> ConnectionState:
 
 @contextmanager
 def _wizard_timeout(seconds: float | None) -> Iterator[None]:
-    """Apply one wall-clock deadline when a Hermes sub-flow ignores args."""
+    """Apply one wall-clock deadline when a PCBDraft sub-flow ignores args."""
 
     if seconds is None:
         yield
@@ -336,7 +336,7 @@ def _wizard_timeout(seconds: float | None) -> Iterator[None]:
 
 @contextmanager
 def _reauthentication_override(enabled: bool) -> Iterator[None]:
-    """Force selected Hermes flows past reusable cached credentials."""
+    """Force selected PCBDraft flows past reusable cached credentials."""
 
     if not enabled:
         yield
@@ -355,7 +355,7 @@ def _reauthentication_override(enabled: bool) -> Iterator[None]:
 
 
 def connection_status(*, verify: bool = True) -> ConnectionStatus:
-    """Read the active Hermes model and optionally verify runtime resolution."""
+    """Read the active PCBDraft model and optionally verify runtime resolution."""
 
     activate_provider_runtime()
     from pcbdraft.model.configuration import load_config_readonly
@@ -388,7 +388,7 @@ def connection_status(*, verify: bool = True) -> ConnectionStatus:
             provider,
             model,
             _auth_kind(provider),
-            "hermes-config",
+            "runtime-config",
             state="ready",
         )
     try:
@@ -414,7 +414,7 @@ def connection_status(*, verify: bool = True) -> ConnectionStatus:
             provider,
             model,
             _auth_kind(provider),
-            "hermes-config",
+            "runtime-config",
             outcome="unavailable",
             error=_STATE_MESSAGES[state],
             state=state,
@@ -422,7 +422,7 @@ def connection_status(*, verify: bool = True) -> ConnectionStatus:
 
 
 def connect(options: ConnectionOptions | None = None) -> ConnectionStatus:
-    """Run Hermes' canonical provider/auth/model wizard and report safe state."""
+    """Run PCBDraft' canonical provider/auth/model wizard and report safe state."""
 
     selected = options or ConnectionOptions()
     activate_provider_runtime()

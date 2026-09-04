@@ -110,6 +110,7 @@ pcbdraft = [
     "tools/**/*.json",
     "tools/**/*.wav",
     "tools/**/*.onnx",
+    "tools/**/*.tflite",
     "web/*.html",
     "web/*.css",
     "web/*.js",

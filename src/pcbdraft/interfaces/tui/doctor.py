@@ -3220,8 +3220,6 @@ def run_doctor(args):
 
     _section("Tool Availability")
     try:
-        # Add project root to path for imports
-        sys.path.insert(0, str(PROJECT_ROOT))
         from pcbdraft.tools.dispatch import (
             TOOLSET_REQUIREMENTS,
             check_tool_availability,

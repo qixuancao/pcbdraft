@@ -223,10 +223,6 @@ def _project_root_str_fast() -> str:
     return _startup_fast.project_root_str()
 
 
-def _ensure_project_root_on_path_fast() -> None:
-    _startup_fast.ensure_project_root_on_path()
-
-
 def _set_process_title() -> None:
     """Set the process title to 'hermes' so tools like 'ps', 'top', and
     'htop' show the app name instead of 'python3.xx'.
@@ -420,8 +416,6 @@ def _try_termux_ultrafast_version() -> bool:
     return _try_ultrafast_version()
 
 
-_ensure_project_root_on_path_fast()
-
 if _try_ultrafast_version():
     raise SystemExit(0)
 
@@ -503,9 +497,8 @@ def _require_tty(command_name: str) -> None:
         sys.exit(1)
 
 
-# Add project root to path
+# Runtime resource root; imports use installed package names.
 PROJECT_ROOT = Path(_project_root_str_fast())
-_ensure_project_root_on_path_fast()
 
 
 # ---------------------------------------------------------------------------
@@ -13120,11 +13113,11 @@ def main():
     # =========================================================================
     if _plugin_cli_discovery_needed():
         try:
-            from pcbdraft.agent.memory_backends import discover_plugin_cli_commands
             from pcbdraft.agent.extensions.manager import (
                 discover_plugins,
                 get_plugin_manager,
             )
+            from pcbdraft.agent.memory_backends import discover_plugin_cli_commands
 
             seen_plugin_commands = set()
             for cmd_info in discover_plugin_cli_commands():

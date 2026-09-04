@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import List, Optional
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
-sys.path.insert(0, str(PROJECT_ROOT))
 
 # Gateway-lifecycle command detection lives in ``cron.lifecycle_guard`` so it
 # can be shared across every job-creation path (CLI + the agent's ``cronjob``

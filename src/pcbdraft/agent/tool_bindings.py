@@ -1,4 +1,4 @@
-"""Register the flat, PCBDraft-only PCB toolbox into vendored Hermes."""
+"""Register the flat, PCBDraft-only PCB toolbox into native PCBDraft."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ __all__ = (
 
 _PCB_TOOLSET = "pcbdraft"
 
-#: Timeout shared by the concrete Hermes-facing flat PCB handlers.
+#: Timeout shared by the concrete model-facing flat PCB handlers.
 DEFAULT_PCB_TOOL_TIMEOUT = 600.0
 
 #: Explicit inspect responses are bounded independently of normal receipts.
@@ -103,7 +103,9 @@ class _ProjectContextStore:
 
     def bound_project(self, session_id: str) -> str | None:
         if not session_id:
-            raise PCBDraftError("PCB project access requires a trusted Hermes session")
+            raise PCBDraftError(
+                "PCB project access requires a trusted PCBDraft session"
+            )
         with self._lock:
             binding = self._sessions.get(session_id)
             if binding is not None and binding.epoch == self._epoch:
@@ -137,17 +139,17 @@ class _ProjectContextStore:
 
         if not session_id:
             raise PCBDraftError(
-                "PCB project creation requires a trusted Hermes session"
+                "PCB project creation requires a trusted PCBDraft session"
             )
         with self._lock:
             current = self._sessions.get(session_id)
             if current is not None and current.epoch == self._epoch:
                 raise PCBDraftError(
-                    "this Hermes session is already bound to a PCB project"
+                    "this PCBDraft session is already bound to a PCB project"
                 )
             if self._trusted_project_id is not None:
                 raise PCBDraftError(
-                    "this Hermes session already has a user-selected PCB project"
+                    "this PCBDraft session already has a user-selected PCB project"
                 )
             view = create()
             project = view.get("project")
@@ -332,7 +334,7 @@ def get_current_project_id() -> str | None:
 
 
 def get_session_project_id(session_id: str) -> str | None:
-    """Return the project already used by one live Hermes session, if any."""
+    """Return the project already used by one live PCBDraft session, if any."""
 
     return _context_store().session_project(session_id)
 
@@ -348,7 +350,7 @@ def set_current_project_id(value: str | None) -> None:
 
 
 def reset_session_project_context(session_id: str) -> None:
-    """Forget one ended Hermes session without changing human selection."""
+    """Forget one ended PCBDraft session without changing human selection."""
 
     _context_store().reset_session(session_id)
 
@@ -827,7 +829,7 @@ def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], str]:
                 except PCBDraftError:
                     pass
             return json.dumps(payload, ensure_ascii=False)
-        except Exception as exc:  # noqa: BLE001 - defensive Hermes boundary
+        except Exception as exc:  # noqa: BLE001 - defensive PCBDraft boundary
             del exc
             return json.dumps(
                 {

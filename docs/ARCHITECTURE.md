@@ -277,7 +277,7 @@ inspect the retained project and submit a new turn.
 
 ## Goal Mode
 
-The default agent loop is a simple Ralph-style goal loop built on the vendored
+The default agent loop is a simple Ralph-style goal loop built on the native
 PCBDraft `GoalManager` (no PCBDraft-specific task system is added):
 
 1. the user's PCB request becomes a standing goal (`/goal <objective>`);

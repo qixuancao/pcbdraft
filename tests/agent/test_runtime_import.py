@@ -24,6 +24,8 @@ with tempfile.TemporaryDirectory() as home:
     from pcbdraft.agent.loop import AIAgent
     from pcbdraft.model.provider_profiles import list_providers
     from pcbdraft.agent.extensions.manager import get_plugin_manager
+    from pcbdraft.interfaces.tui import _startup_fast
+    assert not hasattr(_startup_fast, 'ensure_project_root_on_path')
     assert AIAgent.__module__ == 'pcbdraft.agent.loop'
     assert TerminalApp.__module__ == 'pcbdraft.interfaces.tui.app'
     assert len(list_providers()) >= 30

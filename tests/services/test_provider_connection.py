@@ -582,7 +582,7 @@ class NativeIntentProviderTests(unittest.TestCase):
             "anthropic",
             "claude-sonnet-4",
             "api_key",
-            "hermes-config",
+            "runtime-config",
         )
         with patch(
             "pcbdraft.services.provider_connection.connection_status",

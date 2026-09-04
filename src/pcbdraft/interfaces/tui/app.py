@@ -12151,12 +12151,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
     def process_command(self, command: str) -> bool:
         """Dispatch the PCBDraft command surface and rotate project context."""
         from pcbdraft.core.errors import PCBDraftError
-        from pcbdraft.interfaces.commands import HANDLERS
         from pcbdraft.interfaces.terminal import (
             _defer_connection,
             _rotate_project_conversation,
             _slash_connection_options,
         )
+        from pcbdraft.interfaces.tui.project_commands import HANDLERS
         from pcbdraft.services.provider_connection import ConnectionOptions
 
         tokens = command.strip().split(None, 1)

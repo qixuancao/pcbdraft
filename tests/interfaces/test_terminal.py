@@ -18,13 +18,12 @@ from pcbdraft.agent.tool_bindings import (
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.repository import configure_repository
 from pcbdraft.core.runtime_paths import runtime_home
-from pcbdraft.interfaces.commands import (
+from pcbdraft.interfaces.terminal import _take_deferred_connection, launch_cli
+from pcbdraft.interfaces.tui.project_commands import (
     BUILTIN_COMMANDS,
     HANDLERS,
     PCBDRAFT_CATEGORY,
-    apply_command_surface,
 )
-from pcbdraft.interfaces.terminal import _take_deferred_connection, launch_cli
 from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.provider_connection import ConnectionOptions, ConnectionStatus
 
@@ -209,7 +208,7 @@ class SlashHandlerTests(unittest.TestCase):
 
     def test_connect_without_provider_is_actionable(self) -> None:
         with patch(
-            "pcbdraft.interfaces.commands.connect",
+            "pcbdraft.interfaces.tui.project_commands.connect",
             return_value=ConnectionStatus(
                 False, False, None, None, None, None, outcome="cancelled"
             ),
@@ -224,13 +223,16 @@ class SlashHandlerTests(unittest.TestCase):
             "zai",
             "glm-test",
             "api_key",
-            "hermes-config",
+            "runtime-config",
             outcome="changed",
         )
         with (
-            patch("pcbdraft.interfaces.commands.connect", return_value=connected),
             patch(
-                "pcbdraft.interfaces.commands.refresh_service_provider"
+                "pcbdraft.interfaces.tui.project_commands.connect",
+                return_value=connected,
+            ),
+            patch(
+                "pcbdraft.interfaces.tui.project_commands.refresh_service_provider"
             ) as refresh_provider,
         ):
             result = HANDLERS["connect"]("")
@@ -432,7 +434,7 @@ class SlashHandlerTests(unittest.TestCase):
         import pcbdraft.interfaces.tui.app as terminal_module
 
         connected = ConnectionStatus(
-            True, True, "zai", "glm-test", "api_key", "hermes-config"
+            True, True, "zai", "glm-test", "api_key", "runtime-config"
         )
         cancelled = ConnectionStatus(
             True,
@@ -440,7 +442,7 @@ class SlashHandlerTests(unittest.TestCase):
             "zai",
             "glm-test",
             "api_key",
-            "hermes-config",
+            "runtime-config",
             outcome="cancelled",
             state="cancelled",
         )
@@ -474,7 +476,7 @@ class SlashHandlerTests(unittest.TestCase):
         import pcbdraft.interfaces.tui.app as terminal_module
 
         connected = ConnectionStatus(
-            True, True, "zai", "glm-test", "api_key", "hermes-config"
+            True, True, "zai", "glm-test", "api_key", "runtime-config"
         )
         launches = 0
 
@@ -511,7 +513,7 @@ class SlashHandlerTests(unittest.TestCase):
         from pcbdraft.interfaces.terminal import _defer_connection
 
         connected = ConnectionStatus(
-            True, True, "zai", "glm-test", "api_key", "hermes-config"
+            True, True, "zai", "glm-test", "api_key", "runtime-config"
         )
         _defer_connection(ConnectionOptions(refresh=True))
         with (
@@ -585,7 +587,6 @@ class CommandSurfaceTests(unittest.TestCase):
     def test_registry_contains_only_the_pcbdraft_surface(self) -> None:
         from pcbdraft.interfaces.tui import commands
 
-        apply_command_surface()
         names = [command.name for command in commands.COMMAND_REGISTRY]
         self.assertEqual(
             set(names),
@@ -603,18 +604,6 @@ class CommandSurfaceTests(unittest.TestCase):
         self.assertIn(PCBDRAFT_CATEGORY, commands.COMMANDS_BY_CATEGORY)
         self.assertIn("/projects", commands.COMMANDS_BY_CATEGORY[PCBDRAFT_CATEGORY])
         self.assertIn("new", commands.GATEWAY_KNOWN_COMMANDS)
-
-    def test_apply_command_surface_is_idempotent(self) -> None:
-        from pcbdraft.interfaces.tui import commands
-
-        apply_command_surface()
-        first_names = [command.name for command in commands.COMMAND_REGISTRY]
-        first_lookup = dict(commands._COMMAND_LOOKUP)
-        apply_command_surface()
-        self.assertEqual(
-            [command.name for command in commands.COMMAND_REGISTRY], first_names
-        )
-        self.assertEqual(dict(commands._COMMAND_LOOKUP), first_lookup)
 
 
 class RuntimePathsTests(unittest.TestCase):

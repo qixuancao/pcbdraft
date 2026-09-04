@@ -30,7 +30,6 @@ import sys
 
 __all__ = [
     "project_root_str",
-    "ensure_project_root_on_path",
     "is_termux_env",
     "is_termux_fast_version_argv",
     "is_global_fast_version_argv",
@@ -47,18 +46,6 @@ __all__ = [
 def project_root_str() -> str:
     """Repo root as a str — the single source for main.py's PROJECT_ROOT."""
     return os.path.realpath(os.path.join(os.path.dirname(__file__), os.pardir))
-
-
-def ensure_project_root_on_path() -> None:
-    """Put the project root at sys.path[0], deduping realpath-equivalents."""
-    project_root = project_root_str()
-    normalized_root = os.path.normcase(os.path.realpath(project_root))
-    sys.path[:] = [
-        entry
-        for entry in sys.path
-        if not entry or os.path.normcase(os.path.realpath(entry)) != normalized_root
-    ]
-    sys.path.insert(0, project_root)
 
 
 def is_termux_env() -> bool:

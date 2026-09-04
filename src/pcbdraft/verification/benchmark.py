@@ -695,7 +695,7 @@ def _run_model_benchmark(
             "artifacts": str(artifacts),
             "provider": provider.provider_id,
             "model": provider.model,
-            "config": "hermes-config",
+            "config": "runtime-config",
             "deterministic_results_are_not_reported_as_model_results": True,
         }
     vectors = [tuple(item["fault"] for item in output["results"]) for output in outputs]
@@ -748,7 +748,7 @@ def _run_model_benchmark(
         "failures": failures,
         "provider": provider.provider_id,
         "model": provider.model,
-        "config": "hermes-config",
+        "config": "runtime-config",
         "sample": {
             "selection": "sha256-stratified, at most 16 fault and 8 clean model-eligible cases",
             "case_ids": [case.id for case in selected],

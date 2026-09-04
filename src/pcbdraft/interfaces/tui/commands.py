@@ -1,4 +1,4 @@
-"""Slash command definitions and autocomplete for the Hermes CLI.
+"""Slash command definitions and autocomplete for the native PCBDraft TUI.
 
 Central registry for all slash commands. Every consumer -- CLI help, gateway
 dispatch, Telegram BotCommands, Slack subcommand mapping, autocomplete --
@@ -143,7 +143,7 @@ VALID_BUSY_POLICIES: frozenset[str] = frozenset(
 # Central registry -- single source of truth
 # ---------------------------------------------------------------------------
 
-from pcbdraft.interfaces.commands import PCBDRAFT_COMMANDS
+from pcbdraft.interfaces.tui.project_commands import PCBDRAFT_COMMANDS
 
 COMMAND_REGISTRY: list[CommandDef] = [
     CommandDef(
@@ -165,7 +165,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
     ),
     CommandDef(
         "goal",
-        "Set a standing goal Hermes works on across turns until achieved",
+        "Set a standing goal PCBDraft works on across turns until achieved",
         "Session",
         args_hint="[text | draft <text> | show | gate add <cmd> | pause | resume | clear | status | wait <pid> | unwait]",
         busy_policy="dispatch",

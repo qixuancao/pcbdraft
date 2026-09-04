@@ -10,7 +10,7 @@ recursive-include src/pcbdraft/interfaces/tui *.yaml *.yml *.json
 recursive-include src/pcbdraft/model *.yaml *.yml *.json
 recursive-include src/pcbdraft/agent *.yaml *.yml *.json
 recursive-include src/pcbdraft/agent/extensions *.yaml *.yml *.json
-recursive-include src/pcbdraft/tools *.yaml *.yml *.json *.wav *.onnx
+recursive-include src/pcbdraft/tools *.yaml *.yml *.json *.wav *.onnx *.tflite
 recursive-include src/pcbdraft/web *.html *.css *.js
 prune artifacts
 global-exclude *.py[cod] __pycache__ *.kicad_prl

@@ -26,6 +26,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         requests.append(body)
         messages = body["messages"]
+        if body.get("tools"):
+            system = "\n".join(
+                str(message.get("content", ""))
+                for message in messages
+                if message.get("role") == "system"
+            )
+            assert "PCBDraft" in system
+            assert "You are Hermes Agent" not in system
+            assert "You run on Hermes Agent" not in system
         results = [m for m in messages if m.get("role") == "tool"]
         if results:
             receipt = json.loads(results[-1]["content"])

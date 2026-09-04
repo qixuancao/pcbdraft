@@ -1,7 +1,7 @@
-"""Private, isolated Hermes worker for one GUI message.
+"""Private, isolated PCBDraft worker for one GUI message.
 
 The prompt crosses the process boundary only in a private request file.  This
-module deliberately calls the current vendored Hermes one-shot agent function
+module deliberately calls the current native PCBDraft one-shot agent function
 directly: the public one-shot command hard-exits and is therefore unsuitable
 for returning a structured result to the resident GUI server.
 """
@@ -218,7 +218,7 @@ class _WorkerEventWriter:
 
 
 def _install_safe_observer(writer: _WorkerEventWriter) -> Any:
-    """Register narrow callbacks that cannot receive raw Hermes payloads."""
+    """Register narrow callbacks that cannot receive raw PCBDraft payloads."""
 
     from pcbdraft.agent.extensions.manager import (
         PluginContext,
@@ -275,7 +275,7 @@ def _install_safe_observer(writer: _WorkerEventWriter) -> Any:
 
 
 def _load_runtime() -> _WorkerRuntime:
-    """Load only the current PCBDraft/vendored-Hermes product path."""
+    """Load only the current PCBDraft/native product path."""
 
     from pcbdraft.agent.tool_bindings import _set_service, set_current_project_id
     from pcbdraft.interfaces.terminal import activate

@@ -1,25 +1,12 @@
-"""PCBDraft slash command surface for the interactive terminal.
+"""Project commands consumed directly by the native TUI command registry.
 
-The bare ``pcbdraft`` launch runs the vendored Hermes ``prompt_toolkit``
-terminal.  That runtime ships ~50 built-in slash commands for messaging,
-voice, kanban, billing, and other non-PCB concerns; this module owns the
-pruned surface PCBDraft actually delivers:
-
-* :data:`BUILTIN_COMMANDS` — the Hermes built-ins PCBDraft keeps;
-* :data:`PCBDRAFT_COMMANDS` / :data:`HANDLERS` — PCBDraft-owned commands
-  (``/new``, ``/projects``, ``/project``, ``/open`` and the PCB workflow
-  commands) backed by :class:`~pcbdraft.services.application.ApplicationService`
-  and the repository authority;
-* :func:`apply_command_surface` — rebuilds the vendored
-  ``hermes_cli.commands`` registry in place so help, autocomplete, and
-  dispatch expose only this surface.  Vendor files are never edited by hand.
+Handlers operate through ApplicationService and the trusted project context.
+Help, autocomplete and dispatch share interfaces.tui.commands definitions.
 """
 
 from __future__ import annotations
 
-import re
 from collections.abc import Callable
-from typing import Any
 
 from pcbdraft.agent.tool_bindings import (
     get_current_project_id,
@@ -40,10 +27,9 @@ __all__ = (
     "HANDLERS",
     "PCBDRAFT_CATEGORY",
     "PCBDRAFT_COMMANDS",
-    "apply_command_surface",
 )
 
-#: Hermes built-ins retained in the PCBDraft terminal surface.
+#: PCBDraft built-ins retained in the PCBDraft terminal surface.
 BUILTIN_COMMANDS = frozenset(
     {"status", "model", "goal", "stop", "retry", "undo", "quit", "help", "clear"}
 )
@@ -102,7 +88,7 @@ def handle_project(raw_args: str) -> str:
 
     With no argument the persisted repository is shown.  With a directory the
     repository pointer is updated and the current project context is cleared;
-    the Hermes home stays under the PCBDraft config directory and never moves
+    the PCBDraft home stays under the PCBDraft config directory and never moves
     into the repository.
     """
 
@@ -139,7 +125,7 @@ def handle_open(raw_args: str) -> str:
 
 
 def handle_connect(raw_args: str) -> str:
-    """Open the shared Hermes provider/auth/model wizard."""
+    """Open the shared PCBDraft provider/auth/model wizard."""
 
     tokens = {token.casefold() for token in raw_args.split()}
     status = connect(
@@ -297,86 +283,3 @@ PCBDRAFT_COMMANDS: tuple[tuple[str, str, str, Callable[[str], str]], ...] = (
 HANDLERS: dict[str, Callable[[str], str]] = {
     name: handler for name, _description, _args_hint, handler in PCBDRAFT_COMMANDS
 }
-
-
-def apply_command_surface() -> None:
-    """Prune the vendored Hermes command registry to the PCBDraft surface.
-
-    Rebuilds ``COMMAND_REGISTRY`` (slice assignment), ``_COMMAND_LOOKUP``
-    (rebind), and the derived dicts ``COMMANDS`` / ``COMMANDS_BY_CATEGORY`` /
-    ``SUBCOMMANDS`` (in-place mutation so consumers holding from-import
-    references see the same objects), then rebinds the derived frozensets.
-    Mirrors the module-level derivation in ``vendor/hermes/hermes_cli/
-    commands.py`` and never edits that file.
-    """
-
-    from pcbdraft.interfaces.tui import commands
-
-    kept = [
-        command
-        for command in commands.COMMAND_REGISTRY
-        if command.name in BUILTIN_COMMANDS
-    ]
-    owned = [
-        commands.CommandDef(
-            name=name,
-            description=description,
-            category=PCBDRAFT_CATEGORY,
-            args_hint=args_hint,
-            busy_policy="dispatch",
-        )
-        for name, description, args_hint, _handler in PCBDRAFT_COMMANDS
-    ]
-    commands.COMMAND_REGISTRY[:] = [*kept, *owned]
-    commands._COMMAND_LOOKUP = commands._build_command_lookup()
-    _rebuild_derived_lookups(commands)
-
-
-def _rebuild_derived_lookups(commands: Any) -> None:
-    """Rebuild the derived command lookups exactly like the vendor module."""
-
-    flat: dict[str, str] = {}
-    for command in commands.COMMAND_REGISTRY:
-        if not command.gateway_only:
-            flat[f"/{command.name}"] = commands._build_description(command)
-            for alias in command.aliases:
-                flat[f"/{alias}"] = f"{command.description} (alias for /{command.name})"
-    commands.COMMANDS.clear()
-    commands.COMMANDS.update(flat)
-
-    by_category: dict[str, dict[str, str]] = {}
-    for command in commands.COMMAND_REGISTRY:
-        if not command.gateway_only:
-            category = by_category.setdefault(command.category, {})
-            category[f"/{command.name}"] = flat[f"/{command.name}"]
-            for alias in command.aliases:
-                category[f"/{alias}"] = flat[f"/{alias}"]
-    commands.COMMANDS_BY_CATEGORY.clear()
-    commands.COMMANDS_BY_CATEGORY.update(by_category)
-
-    subcommands: dict[str, list[str]] = {}
-    for command in commands.COMMAND_REGISTRY:
-        if command.subcommands:
-            subcommands[f"/{command.name}"] = list(command.subcommands)
-    pipe_subs = re.compile(r"[a-z]+(?:\|[a-z]+)+")
-    for command in commands.COMMAND_REGISTRY:
-        key = f"/{command.name}"
-        if key in subcommands or not command.args_hint:
-            continue
-        match = pipe_subs.search(command.args_hint)
-        if match:
-            subcommands[key] = match.group(0).split("|")
-    commands.SUBCOMMANDS.clear()
-    commands.SUBCOMMANDS.update(subcommands)
-
-    commands.GATEWAY_KNOWN_COMMANDS = frozenset(
-        name
-        for command in commands.COMMAND_REGISTRY
-        if not command.cli_only or command.gateway_config_gate
-        for name in (command.name, *command.aliases)
-    )
-    commands.ACTIVE_SESSION_BYPASS_COMMANDS = frozenset(
-        command.name
-        for command in commands.COMMAND_REGISTRY
-        if command.busy_policy != "reject"
-    )

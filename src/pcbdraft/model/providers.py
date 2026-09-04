@@ -714,7 +714,7 @@ class NativeIntentProvider:
 
 
 def resolve_provider(name: str = "auto") -> IntentProvider | None:
-    """Resolve the active Hermes provider without returning a credential.
+    """Resolve the active native provider without returning a credential.
 
     ``auto`` returns ``None`` when nothing is configured so that the terminal can
     still start and guide the user through ``/connect``; every planning path
