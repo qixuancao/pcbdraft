@@ -14,6 +14,7 @@ from unittest import mock
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.services.gui_artifacts import GUIArtifactService
+from pcbdraft.verification.rule_evidence import capture_rule_evidence
 
 
 class _Service:
@@ -472,6 +473,69 @@ class GUIArtifactServiceTests(unittest.TestCase):
         report["tool_runs"] = {}
         self._replace_validation_report(report)
         self.assertEqual(self.artifacts.validation("demo-board")["state"], "warning")
+
+    def test_validation_reverifies_complete_evidence_and_bounds_ui_findings(
+        self,
+    ) -> None:
+        validation_root = self.root / "validation" / "run-1"
+        source = validation_root / "design.kicad_pcb"
+        source.write_text("(kicad_pcb)", encoding="utf-8")
+        for kind in ("erc", "drc"):
+            raw = validation_root / f"{kind}.json"
+            raw.write_text(
+                json.dumps(
+                    {
+                        "$schema": f"https://example.test/{kind}.v1.json",
+                        "kicad_version": "10.0.5",
+                        "violations": [
+                            {
+                                "severity": "warning",
+                                "type": f"{kind}_warning",
+                                "description": "bounded location",
+                                "items": [
+                                    {
+                                        "uuid": "11111111-1111-1111-1111-111111111111",
+                                        "pos": {"x": 9.0, "y": 8.0},
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            capture_rule_evidence(
+                kind=kind,
+                raw_report=raw,
+                output=validation_root / f"{kind}.evidence.json",
+                source_file=source,
+                canonical_revision=7,
+                design_revision=4,
+                design_content_hash="a" * 64,
+            )
+        state = json.loads((self.root / "project.json").read_text(encoding="utf-8"))
+        state["last_validation"].update(
+            {
+                "design_content_hash": "a" * 64,
+                "erc_evidence": "validation/run-1/erc.evidence.json",
+                "drc_evidence": "validation/run-1/drc.evidence.json",
+            }
+        )
+        (self.root / "project.json").write_text(json.dumps(state), encoding="utf-8")
+
+        current = self.artifacts.validation("demo-board")
+        self.assertTrue(current["machine_evidence_complete"])
+        self.assertEqual(len(current["findings"]), 2)
+        self.assertEqual(
+            current["findings"][0]["items"][0]["uuid"],
+            "11111111-1111-1111-1111-111111111111",
+        )
+        self.assertNotIn("identity", json.dumps(current))
+
+        (validation_root / "drc.json").write_text("{}", encoding="utf-8")
+        damaged = self.artifacts.validation("demo-board")
+        self.assertFalse(damaged["machine_evidence_complete"])
+        self.assertEqual(damaged["state"], "failed")
 
     def test_retained_individual_checks_project_the_real_complete_shape(self) -> None:
         self._write_project_state(last_validation=None)

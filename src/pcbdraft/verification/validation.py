@@ -44,6 +44,7 @@ from pcbdraft.verification.rule_evidence import (
     DrcDelta,
     RuleEvidence,
     WarningPolicy,
+    bounded_diagnostic_view,
     capture_rule_evidence,
     compare_drc_evidence,
     fail_closed_drc_delta,
@@ -328,9 +329,7 @@ def validate_managed_project(
     # headless binding when no application revision was supplied.
     resolved_design_revision = 0 if design_revision is None else design_revision
     resolved_canonical_revision = (
-        resolved_design_revision
-        if canonical_revision is None
-        else canonical_revision
+        resolved_design_revision if canonical_revision is None else canonical_revision
     )
     if (
         not isinstance(resolved_design_revision, int)
@@ -663,9 +662,7 @@ def _capture_tool_evidence(
             else None
         ),
         expected_raw_sha256=(
-            str(tool["raw_sha256"])
-            if isinstance(tool.get("raw_sha256"), str)
-            else None
+            str(tool["raw_sha256"]) if isinstance(tool.get("raw_sha256"), str) else None
         ),
     )
 
@@ -687,17 +684,14 @@ def _public_rule_evidence(evidence: RuleEvidence) -> dict[str, Any]:
             "warning": evidence.warning_count,
             "findings": len(evidence.findings),
         },
+        "diagnostic_view": bounded_diagnostic_view(evidence.findings),
     }
 
 
 def _public_drc_delta(delta: DrcDelta) -> dict[str, Any]:
     value = delta.to_dict()
     stable_bindings = {
-        name: {
-            key: item
-            for key, item in binding.items()
-            if key != "raw_report_sha256"
-        }
+        name: {key: item for key, item in binding.items() if key != "raw_report_sha256"}
         for name, binding in (
             ("baseline_binding", value["baseline_binding"]),
             ("candidate_binding", value["candidate_binding"]),

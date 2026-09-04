@@ -36,6 +36,7 @@ from pcbdraft.verification.validation import validate_managed_project
 MAX_EXPORT_OUTPUT = 4 * 1024 * 1024
 MAX_RELEASE_FILES = 256
 MAX_RELEASE_BYTES = 512 * 1024 * 1024
+MAX_AUDIT_ARTIFACT_BYTES = 32 * 1024 * 1024
 REPRODUCIBLE_TIMESTAMP = "1980-01-01T00:00:00"
 AUDIT_ARTIFACT_PATHS = frozenset(
     {
@@ -931,7 +932,7 @@ def _inventory_exact(
             {
                 "path": relative,
                 "size": path.stat().st_size,
-                "sha256": sha256_file(path, max_bytes=16 * 1024 * 1024),
+                "sha256": sha256_file(path, max_bytes=MAX_AUDIT_ARTIFACT_BYTES),
             }
         )
     return records
@@ -952,7 +953,7 @@ def _verify_audit_artifacts(root: Path, value: Any) -> dict[str, dict[str, Any]]
             or relative in records
             or isinstance(size, bool)
             or not isinstance(size, int)
-            or not 0 <= size <= 16 * 1024 * 1024
+            or not 0 <= size <= MAX_AUDIT_ARTIFACT_BYTES
             or not isinstance(digest, str)
             or re.fullmatch(r"[0-9a-f]{64}", digest) is None
         ):
@@ -960,7 +961,7 @@ def _verify_audit_artifacts(root: Path, value: Any) -> dict[str, dict[str, Any]]
         path = _single_link_file(root / relative)
         if (
             path.stat().st_size != size
-            or sha256_file(path, max_bytes=16 * 1024 * 1024) != digest
+            or sha256_file(path, max_bytes=MAX_AUDIT_ARTIFACT_BYTES) != digest
         ):
             raise ValidationError(f"release audit artifact hash mismatch: {relative}")
         records[relative] = entry

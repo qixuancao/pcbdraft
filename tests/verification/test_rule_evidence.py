@@ -62,9 +62,7 @@ class CompleteRuleEvidenceTests(unittest.TestCase):
         )
 
     @staticmethod
-    def _error(
-        *, uuid: str, x: float, kind: str = "clearance"
-    ) -> dict[str, object]:
+    def _error(*, uuid: str, x: float, kind: str = "clearance") -> dict[str, object]:
         return {
             "severity": "error",
             "type": kind,
@@ -74,8 +72,12 @@ class CompleteRuleEvidenceTests(unittest.TestCase):
 
     def test_identical_multisets_pass_and_retain_errors(self) -> None:
         finding = self._error(uuid="object-1", x=1.0)
-        baseline = self._capture("baseline", [finding, finding], revision=1, content_hash="a" * 64)
-        candidate = self._capture("candidate", [finding, finding], revision=2, content_hash="b" * 64)
+        baseline = self._capture(
+            "baseline", [finding, finding], revision=1, content_hash="a" * 64
+        )
+        candidate = self._capture(
+            "candidate", [finding, finding], revision=2, content_hash="b" * 64
+        )
 
         delta = compare_drc_evidence(baseline, candidate)
 
@@ -88,8 +90,12 @@ class CompleteRuleEvidenceTests(unittest.TestCase):
     def test_one_fixed_error_is_recorded(self) -> None:
         retained = self._error(uuid="retained", x=1.0)
         fixed = self._error(uuid="fixed", x=2.0)
-        baseline = self._capture("baseline", [retained, fixed], revision=1, content_hash="a" * 64)
-        candidate = self._capture("candidate", [retained], revision=2, content_hash="b" * 64)
+        baseline = self._capture(
+            "baseline", [retained, fixed], revision=1, content_hash="a" * 64
+        )
+        candidate = self._capture(
+            "candidate", [retained], revision=2, content_hash="b" * 64
+        )
 
         delta = compare_drc_evidence(baseline, candidate)
 
@@ -193,7 +199,10 @@ class CompleteRuleEvidenceTests(unittest.TestCase):
     def test_bounded_diagnostics_do_not_truncate_machine_evidence(self) -> None:
         evidence = self._capture(
             "candidate",
-            [self._error(uuid=f"object-{index}", x=float(index)) for index in range(101)],
+            [
+                self._error(uuid=f"object-{index}", x=float(index))
+                for index in range(101)
+            ],
             revision=2,
             content_hash="b" * 64,
         )

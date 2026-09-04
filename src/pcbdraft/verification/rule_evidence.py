@@ -465,10 +465,10 @@ def compare_drc_evidence(
     fixed_warnings = _counter_items(baseline_warnings - candidate_warnings)
     waiver_set = set(waived_identities)
     waived_new = tuple(identity for identity in new_errors if identity in waiver_set)
-    unwaived_new = tuple(identity for identity in new_errors if identity not in waiver_set)
-    passed = not unwaived_new and (
-        warning_policy == "report_only" or not new_warnings
+    unwaived_new = tuple(
+        identity for identity in new_errors if identity not in waiver_set
     )
+    passed = not unwaived_new and (warning_policy == "report_only" or not new_warnings)
     return DrcDelta(
         comparable=True,
         passed=passed,
@@ -598,9 +598,7 @@ def _finding(value: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
                 diagnostic_items.append(_item_diagnostic(raw_item))
     if items:
         identity["items"] = sorted(items, key=_canonical_json)
-    if len(identity) == 1 or (
-        len(identity) == 2 and "context" in identity
-    ):
+    if len(identity) == 1 or (len(identity) == 2 and "context" in identity):
         fallback = value.get("description", value.get("message"))
         if isinstance(fallback, str):
             identity["description"] = fallback
@@ -692,12 +690,16 @@ def _declares_truncation(value: Any) -> bool:
     if isinstance(value, dict):
         for key, child in value.items():
             normalized = str(key).lower()
-            if normalized in {
-                "truncated",
-                "violations_truncated",
-                "output_truncated",
-                "report_truncated",
-            } and child is True:
+            if (
+                normalized
+                in {
+                    "truncated",
+                    "violations_truncated",
+                    "output_truncated",
+                    "report_truncated",
+                }
+                and child is True
+            ):
                 return True
             if normalized in {"complete", "evidence_complete"} and child is False:
                 return True
@@ -720,9 +722,7 @@ def _identity_counter(
 
 def _counter_items(counter: Counter[str]) -> tuple[str, ...]:
     return tuple(
-        identity
-        for identity in sorted(counter)
-        for _ in range(counter[identity])
+        identity for identity in sorted(counter) for _ in range(counter[identity])
     )
 
 

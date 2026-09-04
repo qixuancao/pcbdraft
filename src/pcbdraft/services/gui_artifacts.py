@@ -24,6 +24,11 @@ from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import load_json_limited, make_directory, read_bytes_limited
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.project import sha256_file
+from pcbdraft.verification.rule_evidence import (
+    EVIDENCE_FILE_LIMIT,
+    bounded_diagnostic_view,
+    load_rule_evidence,
+)
 
 _PROJECT_ID = re.compile(r"[a-z][a-z0-9-]{2,79}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
@@ -37,6 +42,7 @@ MAX_RELEASE_FILES = 256
 MAX_ZIP_SOURCE_BYTES = 256 * 1024 * 1024
 MAX_RETAINED_RECEIPTS = 100
 MAX_CHECK_DETAILS = 512
+MAX_GUI_FINDINGS = 100
 _GUI_READ_LOCK_TIMEOUT_SECONDS = 0.5
 
 _INDIVIDUAL_CHECK_IDS = {
@@ -152,8 +158,12 @@ class GUIArtifactService:
                 public.append(record.public())
         return {
             "schema": "pcbdraft-gui-artifacts",
-            "version": 1,
+            "version": 2,
             "project_id": project_id,
+            "design_revision": _non_negative_int(state.get("design_revision")),
+            "content_hash": _trusted_current_design_hash(
+                state, _non_negative_int(state.get("design_revision"))
+            ),
             "artifacts": public,
         }
 
@@ -569,13 +579,17 @@ class GUIArtifactService:
 
     def _validation(self, root: Path, state: Mapping[str, Any]) -> dict[str, Any]:
         current_revision = _non_negative_int(state.get("design_revision"))
+        current_hash = _trusted_current_design_hash(state, current_revision)
         summary = state.get("last_validation")
         base = {
             "schema": "pcbdraft-gui-validation",
-            "version": 1,
+            "version": 2,
             "design_revision": current_revision,
+            "content_hash": current_hash,
             "checked_at": "",
             "checks": [],
+            "findings": [],
+            "machine_evidence_complete": None,
             "counts": {"error": 0, "warning": 0, "unconnected": 0},
         }
         if summary is None:
@@ -613,6 +627,20 @@ class GUIArtifactService:
             *_validation_tool_checks(tool_runs),
             *_validation_checks(report.get("levels")),
         ]
+        findings, evidence_complete = self._complete_rule_diagnostics(
+            root,
+            summary,
+            current_revision=current_revision,
+            current_hash=current_hash,
+        )
+        if evidence_complete is False:
+            checks.append(
+                {
+                    "id": "complete_rule_evidence",
+                    "state": "unavailable",
+                    "outcome": "fail",
+                }
+            )
         counts = _validation_counts(tool_runs)
         stale = _is_stale(
             _non_negative_int(summary.get("source_design_revision")), current_revision
@@ -621,6 +649,8 @@ class GUIArtifactService:
             **base,
             "checked_at": _timestamp(summary.get("completed_at")),
             "checks": checks,
+            "findings": findings,
+            "machine_evidence_complete": evidence_complete,
             "counts": counts,
         }
         if stale:
@@ -630,6 +660,62 @@ class GUIArtifactService:
         if any(item["outcome"] == "fail" for item in checks):
             return {**result, "state": "failed"}
         return {**result, "state": "warning"}
+
+    def _complete_rule_diagnostics(
+        self,
+        root: Path,
+        summary: Mapping[str, Any],
+        *,
+        current_revision: int | None,
+        current_hash: str | None,
+    ) -> tuple[list[dict[str, Any]], bool | None]:
+        """Reverify complete evidence, then expose only a bounded UI projection."""
+
+        paths = (summary.get("erc_evidence"), summary.get("drc_evidence"))
+        if paths == (None, None):
+            return [], None
+        source_revision = _non_negative_int(summary.get("source_design_revision"))
+        source_hash = summary.get(
+            "design_content_hash", summary.get("source_content_hash")
+        )
+        if (
+            not all(isinstance(value, str) for value in paths)
+            or source_revision is None
+            or not _is_sha256(source_hash)
+            or source_revision != current_revision
+            or source_hash != current_hash
+        ):
+            return [], False
+        findings: list[dict[str, Any]] = []
+        try:
+            for kind, relative in zip(("erc", "drc"), paths, strict=True):
+                relative = cast(str, relative)
+                evidence_path = self._regular_file(
+                    root, relative, limit=EVIDENCE_FILE_LIMIT
+                )
+                evidence = load_rule_evidence(evidence_path)
+                if (
+                    evidence.kind != kind
+                    or not evidence.complete
+                    or evidence.design_revision != source_revision
+                    or evidence.design_content_hash != source_hash
+                ):
+                    return [], False
+                view = bounded_diagnostic_view(
+                    evidence.findings, limit=MAX_GUI_FINDINGS
+                )
+                for finding in view["findings"]:
+                    findings.append({"gate": kind, **finding})
+        except (AssertionError, OSError, PCBDraftError, TypeError, ValueError):
+            return [], False
+        findings.sort(
+            key=lambda item: (
+                0 if item.get("severity") == "error" else 1,
+                str(item.get("gate", "")),
+                str(item.get("fingerprint", "")),
+            )
+        )
+        return findings[:MAX_GUI_FINDINGS], True
 
     def _retained_individual_validation(
         self,
