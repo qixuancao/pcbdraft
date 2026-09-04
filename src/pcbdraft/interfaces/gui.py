@@ -948,18 +948,27 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
             raise ValidationError(
                 "external import request must be a JSON object"
             ) from exc
-        if not isinstance(body, dict) or set(body) != {"expected_revision"}:
+        if not isinstance(body, dict) or set(body) != {
+            "expected_revision",
+            "expected_preview_token",
+        }:
             raise ValidationError(
-                "external import requires exactly one expected_revision field"
+                "external import requires expected_revision and expected_preview_token"
             )
         revision = body.get("expected_revision")
         if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
             raise ValidationError("external import revision is invalid")
+        token = body.get("expected_preview_token")
+        if not isinstance(token, str) or re.fullmatch(r"[0-9a-f]{64}", token) is None:
+            raise ValidationError("external import preview token is invalid")
         callback = getattr(runtime.service, "import_external_kicad_revision", None)
         if not callable(callback):
             raise PCBDraftError("external KiCad import is unavailable")
         result = await run_in_threadpool(
-            callback, project_id, expected_revision=revision
+            callback,
+            project_id,
+            expected_revision=revision,
+            expected_preview_token=token,
         )
         await run_in_threadpool(runtime.events.poll, project_id)
         return JSONResponse(result, status_code=202)

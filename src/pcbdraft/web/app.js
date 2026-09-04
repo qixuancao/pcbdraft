@@ -523,17 +523,23 @@ async function refreshSnapshot({ quiet = false, resetStreamCursor = false, inval
 
 async function importExternalChange() {
   const change = state.externalChange;
-  if (!state.selectedProject || change?.importable !== true || !Number.isInteger(change.canonical_revision)) return;
+  if (!state.selectedProject || change?.importable !== true || !Number.isInteger(change.canonical_revision) || !/^[0-9a-f]{64}$/.test(change.review_token || "")) return;
+  const projectId = state.selectedProject;
+  const projectEpoch = state.projectEpoch;
   elements.importExternal.disabled = true;
   try {
     await api.post(
-      api.projectPath(state.selectedProject, "external-change/import"),
-      { expected_revision: change.canonical_revision },
+      api.projectPath(projectId, "external-change/import"),
+      { expected_revision: change.canonical_revision, expected_preview_token: change.review_token },
     );
+    if (projectEpoch !== state.projectEpoch) return;
     state.externalChange = null;
     await recoverEventStream();
   } catch (error) {
-    showToast(clean(error?.message, 500) || i18n.t("state.error"), "error");
+    if (projectEpoch === state.projectEpoch) {
+      showToast(clean(error?.message, 500) || i18n.t("state.error"), "error");
+      await refreshSnapshot({ quiet: true, invalidate: true });
+    }
   } finally {
     elements.importExternal.disabled = false;
   }

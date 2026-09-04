@@ -122,4 +122,31 @@ for (const status of ["queued", "running", "cancel_requested"]) {
   elements.input.value = "message";
   await elements.form.handlers.submit({ preventDefault() {} });
 }
+const importReply = deferred();
+let importRecovery = 0;
+let importedBody;
+const imports = {
+  state: { selectedProject: "board-a", projectEpoch: 1, externalChange: {
+    importable: true, canonical_revision: 7, review_token: "b".repeat(64),
+  } },
+  elements: { importExternal: node() },
+  api: {
+    projectPath: (id, suffix) => `${id}/${suffix}`,
+    post(path, body) { assert.equal(path, "board-a/external-change/import"); importedBody = body; return importReply.promise; },
+  },
+  recoverEventStream() { importRecovery++; },
+  refreshSnapshot() {}, clean: (x) => x, i18n: { t: (x) => x }, showToast() {},
+};
+vm.createContext(imports);
+vm.runInContext(section("async function importExternalChange()", "async function loadProjects("), imports);
+const importing = imports.importExternalChange();
+assert.equal(importedBody.expected_preview_token, "b".repeat(64));
+assert.equal(importedBody.expected_revision, 7);
+imports.state.projectEpoch++;
+imports.state.selectedProject = "board-b";
+imports.state.externalChange = { state: "current-b" };
+importReply.resolve({});
+await importing;
+assert.equal(importRecovery, 0);
+assert.equal(imports.state.externalChange.state, "current-b");
 console.log("FRONTEND_STATE_OK: SSE invalidation, project isolation, request coalescing and active jobs");

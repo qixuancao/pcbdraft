@@ -5716,6 +5716,7 @@ class ApplicationService:
             "importable": True,
             "drift": list(drift),
             "board_sha256": preview.board_sha256,
+            "review_token": preview.review_token,
             "change_set_id": preview.change_set.id if preview.change_set else None,
             "native_changes": list(preview.native_changes[:1_000]),
             "semantic_diff": preview.diff,
@@ -5726,11 +5727,18 @@ class ApplicationService:
         self,
         project_id: str,
         *,
+        expected_preview_token: str,
         expected_revision: int | None = None,
         timeout: float = 120.0,
     ) -> dict[str, Any]:
         """Explicitly import reviewed KiCad placement drift as a new revision."""
 
+        if not isinstance(expected_preview_token, str) or not re.fullmatch(
+            r"[0-9a-f]{64}", expected_preview_token
+        ):
+            raise ValidationError(
+                "external import requires a valid reviewed preview token"
+            )
         project = self._open(project_id)
         expected_revision = self._bind_expected_revision(
             project, expected_revision, operation="external KiCad import"
@@ -5756,6 +5764,10 @@ class ApplicationService:
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:
                 raise ValidationError("project changed before external KiCad import")
+            if preview.review_token != expected_preview_token:
+                raise ValidationError(
+                    "external KiCad files changed since review; refresh the preview"
+                )
             current.state["status"] = "importing_external"
             current.state["revision"] += 1
             current.state["updated_at"] = utc_timestamp()

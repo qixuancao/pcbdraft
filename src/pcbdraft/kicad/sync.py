@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import secrets
 from dataclasses import dataclass
@@ -45,6 +46,18 @@ class SyncPreview:
     def has_changes(self) -> bool:
         return self.change_set is not None
 
+    @property
+    def review_token(self) -> str:
+        """Bind approval to all native inputs used to build this preview."""
+        value = {
+            "board_sha256": self.board_sha256,
+            "manifest_sha256": self.manifest_sha256,
+            "tracked_hashes": self.tracked_hashes,
+        }
+        return hashlib.sha256(
+            json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest()
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema": "pcbdraft-kicad-sync-preview",
@@ -53,6 +66,7 @@ class SyncPreview:
             "board_sha256": self.board_sha256,
             "manifest_sha256": self.manifest_sha256,
             "tracked_hashes": dict(sorted(self.tracked_hashes.items())),
+            "review_token": self.review_token,
             "has_changes": self.has_changes,
             "native_changes": list(self.native_changes),
             "change_set": self.change_set.to_dict() if self.change_set else None,
@@ -77,6 +91,13 @@ def preview_kicad_import(
         if isinstance(project_value, ManagedProject)
         else open_managed_project(project_value)
     )
+    board_hash = sha256_file(project.board_path, max_bytes=128 * 1024 * 1024)
+    manifest_hash = sha256_file(project.manifest_path, max_bytes=MANAGED_MANIFEST_LIMIT)
+    tracked_hashes = {
+        name: sha256_file(project.root / relative, max_bytes=128 * 1024 * 1024)
+        for name, relative in project.manifest["files"].items()
+        if name != "manifest"
+    }
     resolved_graph = graph or project.graph
     drift = set(project.drift())
     allowed = {"board:hash_mismatch", "kicad_project:hash_mismatch"}
@@ -103,19 +124,12 @@ def preview_kicad_import(
     )
     baseline_board = project.manifest["native_snapshots"]["board"]
     changes = _board_pose_changes(baseline_board, current_board)
-    board_hash = sha256_file(project.board_path, max_bytes=128 * 1024 * 1024)
-    manifest_hash = sha256_file(project.manifest_path, max_bytes=MANAGED_MANIFEST_LIMIT)
-    tracked_hashes = {
-        name: sha256_file(project.root / relative, max_bytes=128 * 1024 * 1024)
-        for name, relative in project.manifest["files"].items()
-        if name != "manifest"
-    }
     if not changes:
         if "board:hash_mismatch" in drift:
             raise ValidationError(
                 "native board bytes changed, but no supported semantic placement edit was found"
             )
-        return SyncPreview(
+        preview = SyncPreview(
             project.root,
             board_hash,
             manifest_hash,
@@ -140,6 +154,8 @@ def preview_kicad_import(
             },
             (),
         )
+        _verify_preview_baseline(project, preview)
+        return preview
 
     component_by_reference = {
         component.reference: component for component in project.design.components
@@ -188,7 +204,7 @@ def preview_kicad_import(
         }
     )
     after = apply_change_set(project.design, change_set)
-    return SyncPreview(
+    preview = SyncPreview(
         project.root,
         board_hash,
         manifest_hash,
@@ -197,6 +213,8 @@ def preview_kicad_import(
         semantic_diff(project.design, after),
         tuple(changes),
     )
+    _verify_preview_baseline(project, preview)
+    return preview
 
 
 def apply_kicad_import(

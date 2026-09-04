@@ -165,3 +165,15 @@ F04–F07 已修复：外部修改事件触发快照失效；服务先取事件�
 34 项 GUI/API/前端定向测试通过（0.465 秒），其中包含用 Node 执行实际 JS
 函数的离线行为测试；Python Ruff/mypy、JS 语法与 diff 检查通过。
 没有运行 Browser E2E。
+
+## 第五轮：外部导入绑定已审阅预览
+
+F08 已修复：预览返回绑定 board、manifest 和全部 tracked-file hashes 的
+`review_token`，Web/API 导入必须同时携带该 token 与应用 revision。
+后台在更改应用状态之前比较预览身份；原有事务在 staging 前、发布锁内
+继续校验实际文件哈希。预览本身也先取哈希，再解析原生文件，最后复查，
+避免解析期间再次保存使展示内容与 token 不一致。
+
+39 项相关服务、哈希边界、GUI 和离线 JS 测试通过（0.551 秒）；三类预览
+输入变化均在状态/native mutation 前拒绝，解析中修改也被拒绝。3 个改动
+源文件的 mypy、相关 Ruff、JS 语法和 diff 检查通过。未运行完整原生导入验收。

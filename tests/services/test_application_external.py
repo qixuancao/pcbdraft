@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.kicad.sync import SyncPreview
 from pcbdraft.services.application import ApplicationService
 
 
@@ -51,10 +53,12 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
         return service, project_id, design_root
 
     @staticmethod
-    def _preview() -> SimpleNamespace:
-        return SimpleNamespace(
-            has_changes=True,
+    def _preview() -> SyncPreview:
+        return SyncPreview(
+            project_root=Path("/test-preview"),
             board_sha256="b" * 64,
+            manifest_sha256="c" * 64,
+            tracked_hashes={"board": "b" * 64, "schematic": "d" * 64},
             change_set=SimpleNamespace(id="kicad_import_reviewed"),
             native_changes=(
                 {
@@ -121,7 +125,9 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
                 ),
             ):
                 result = service.import_external_kicad_revision(
-                    project_id, expected_revision=4
+                    project_id,
+                    expected_revision=4,
+                    expected_preview_token=self._preview().review_token,
                 )
             self.assertEqual(result["state"]["revision"], 6)
             self.assertEqual(result["state"]["design_revision"], 3)
@@ -149,7 +155,11 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
                 ),
                 self.assertRaisesRegex(PCBDraftError, "staged import failed"),
             ):
-                service.import_external_kicad_revision(project_id, expected_revision=4)
+                service.import_external_kicad_revision(
+                    project_id,
+                    expected_revision=4,
+                    expected_preview_token=self._preview().review_token,
+                )
             state = json.loads(
                 (service.project_root(project_id) / "project.json").read_text(
                     encoding="utf-8"
@@ -158,6 +168,47 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
             self.assertEqual(state["revision"], 6)
             self.assertEqual(state["design_revision"], 2)
             self.assertEqual(state["status"], "interrupted")
+
+    def test_changed_review_inputs_are_rejected_before_state_or_native_mutation(
+        self,
+    ) -> None:
+        original = self._preview()
+        for changed in (
+            replace(original, board_sha256="e" * 64),
+            replace(original, manifest_sha256="e" * 64),
+            replace(
+                original,
+                tracked_hashes={**original.tracked_hashes, "schematic": "e" * 64},
+            ),
+        ):
+            with (
+                self.subTest(token=changed.review_token),
+                tempfile.TemporaryDirectory() as temporary,
+            ):
+                service, project_id, design_root = self._service(Path(temporary))
+                state_path = service.project_root(project_id) / "project.json"
+                baseline = state_path.read_bytes()
+                with (
+                    patch(
+                        "pcbdraft.services.application.open_managed_project",
+                        return_value=_Managed(
+                            design_root, "a" * 64, ("board:hash_mismatch",)
+                        ),
+                    ),
+                    patch(
+                        "pcbdraft.services.application.preview_kicad_import",
+                        return_value=changed,
+                    ),
+                    patch("pcbdraft.services.application.apply_kicad_import") as apply,
+                    self.assertRaisesRegex(PCBDraftError, "changed since review"),
+                ):
+                    service.import_external_kicad_revision(
+                        project_id,
+                        expected_revision=4,
+                        expected_preview_token=original.review_token,
+                    )
+                apply.assert_not_called()
+                self.assertEqual(state_path.read_bytes(), baseline)
 
 
 if __name__ == "__main__":

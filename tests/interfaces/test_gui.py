@@ -33,7 +33,7 @@ class _Service:
                 "binding_state": "bound",
             }
         ]
-        self.external_imports: list[tuple[str, int]] = []
+        self.external_imports: list[tuple[str, int, str]] = []
 
     def list_projects(self) -> list[dict[str, Any]]:
         return [
@@ -68,10 +68,12 @@ class _Service:
         }
 
     def import_external_kicad_revision(
-        self, project_id: str, *, expected_revision: int
+        self, project_id: str, *, expected_revision: int, expected_preview_token: str
     ) -> dict[str, Any]:
         self.open_project(project_id)
-        self.external_imports.append((project_id, expected_revision))
+        self.external_imports.append(
+            (project_id, expected_revision, expected_preview_token)
+        )
         return {"project": {"id": project_id}, "state": {"revision": 8}}
 
 
@@ -646,7 +648,7 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         status = await self.client.get("/api/projects/demo-board/external-change")
         imported = await self.client.post(
             "/api/projects/demo-board/external-change/import",
-            json={"expected_revision": 7},
+            json={"expected_revision": 7, "expected_preview_token": "b" * 64},
             headers=await self._mutation_headers(),
         )
         rejected = await self.client.post(
@@ -657,8 +659,16 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(status.status_code, 200)
         self.assertEqual(status.json()["state"], "clean")
         self.assertEqual(imported.status_code, 202)
-        self.assertEqual(self.service.external_imports, [("demo-board", 7)])
+        self.assertEqual(self.service.external_imports, [("demo-board", 7, "b" * 64)])
         self.assertEqual(rejected.status_code, 400)
+        for token in (None, "", "not-a-hash", ["b" * 64]):
+            rejected = await self.client.post(
+                "/api/projects/demo-board/external-change/import",
+                json={"expected_revision": 7, "expected_preview_token": token},
+                headers=await self._mutation_headers(),
+            )
+            self.assertEqual(rejected.status_code, 400)
+        self.assertEqual(len(self.service.external_imports), 1)
 
     async def test_security_headers_cover_static_and_api_responses(self) -> None:
         for path in ("/", "/api/projects"):
