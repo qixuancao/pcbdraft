@@ -2127,6 +2127,7 @@ def _public_tool_result(value: dict[str, Any]) -> dict[str, Any]:
         "status": value["status"],
         "failure": value["failure"],
         "report": value["report"],
+        "raw_report": value.get("raw_report"),
     }
 
 

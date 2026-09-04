@@ -521,6 +521,44 @@ def _compact_convergence(value: Any) -> dict[str, Any] | None:
     return result or None
 
 
+def _compact_diagnostics(value: Any) -> dict[str, Any] | None:
+    """Keep actionable check diagnostics in model receipts without unbounding them."""
+
+    if not isinstance(value, Mapping):
+        return None
+    result: dict[str, Any] = {}
+    counts = value.get("counts")
+    if isinstance(counts, Mapping):
+        compact_counts = {
+            key: counts.get(key)
+            for key in ("error", "warning", "total")
+            if isinstance(counts.get(key), int)
+            and not isinstance(counts.get(key), bool)
+        }
+        if compact_counts:
+            result["counts"] = compact_counts
+    for key in (
+        "violation_count_seen",
+        "remaining_violation_count",
+    ):
+        item = value.get(key)
+        if isinstance(item, int) and not isinstance(item, bool):
+            result[key] = item
+    for key in ("violations_truncated", "details_truncated"):
+        if isinstance(value.get(key), bool):
+            result[key] = value[key]
+    violations = value.get("violations")
+    if isinstance(violations, list):
+        result["violations"] = [
+            dict(item) for item in violations[:20] if isinstance(item, Mapping)
+        ]
+    for key in ("full_details_report", "raw_report"):
+        item = value.get(key)
+        if isinstance(item, str) and item:
+            result[key] = item[:512]
+    return result or None
+
+
 def _compact_error_text(value: object) -> str:
     """Keep an already-sanitized expected failure inside a normal receipt."""
 
@@ -589,6 +627,9 @@ def _model_summary(
             convergence = _compact_convergence(tool_result.get("convergence"))
             if convergence is not None:
                 result["convergence"] = convergence
+            diagnostics = _compact_diagnostics(tool_result.get("diagnostics"))
+            if diagnostics is not None:
+                result["diagnostics"] = diagnostics
             for key in ("state", "outcome", "production_ready"):
                 if tool_result.get(key) is not None:
                     result[key] = tool_result[key]

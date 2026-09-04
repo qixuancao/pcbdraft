@@ -1033,6 +1033,124 @@ class NativeConsistencyTests(unittest.TestCase):
                 )
                 self.assertFalse(projection.passed)
 
+    def test_empty_disconnected_net_allows_absent_native_projection(self) -> None:
+        connected = _native_design()
+        candidate_value = connected.to_dict()
+        next(item for item in candidate_value["nets"] if item["id"] == "net_out")[
+            "endpoints"
+        ] = []
+        candidate = Design.from_dict(candidate_value)
+        after_board = _delta_board(candidate)
+        after_board = replace(
+            after_board,
+            nets=tuple(name for name in after_board.nets if name != "OUT"),
+        )
+        arguments = {
+            "net_id": "net_out",
+            "component_id": "load_r",
+            "pin": "2",
+            "role": "signal",
+        }
+
+        report = compare_native_operation_delta(
+            "disconnect_pin",
+            arguments,
+            connected,
+            candidate,
+            _delta_board(connected),
+            after_board,
+            before_schematic=_delta_schematic(connected),
+            after_schematic=_delta_schematic(candidate),
+            graph=PartGraph.bundled().with_footprint_overrides(candidate),
+        )
+
+        self.assertTrue(report.passed, report.to_dict())
+        projection = next(
+            item for item in report.checks if item.name == "native_net_projection"
+        )
+        self.assertTrue(projection.passed)
+        self.assertEqual(
+            projection.expected,
+            "native_projection=not_applicable_empty_net,name=OUT",
+        )
+        self.assertIn("board_net=False", projection.observed)
+
+    def test_empty_disconnected_net_rejects_native_electrical_membership(
+        self,
+    ) -> None:
+        connected = _native_design()
+        candidate_value = connected.to_dict()
+        next(item for item in candidate_value["nets"] if item["id"] == "net_out")[
+            "endpoints"
+        ] = []
+        candidate = Design.from_dict(candidate_value)
+        graph = PartGraph.bundled().with_footprint_overrides(candidate)
+        after_board = replace(
+            _delta_board(candidate),
+            nets=tuple(name for name in _delta_board(candidate).nets if name != "OUT"),
+        )
+        after_schematic = _delta_schematic(candidate)
+        arguments = {
+            "net_id": "net_out",
+            "component_id": "load_r",
+            "pin": "2",
+            "role": "signal",
+        }
+        conflicts = (
+            (
+                "schematic_partition",
+                replace(
+                    after_schematic,
+                    partitions=(
+                        *after_schematic.partitions,
+                        NativePartition("aux", ("OUT",), ()),
+                    ),
+                ),
+                after_board,
+            ),
+            (
+                "board_pad",
+                after_schematic,
+                replace(
+                    after_board,
+                    pads=(
+                        *after_board.pads,
+                        NativeBoardPad(Endpoint("J99", "1"), "OUT", "aux", False),
+                    ),
+                ),
+            ),
+            (
+                "board_copper",
+                after_schematic,
+                replace(
+                    after_board,
+                    copper=(*after_board.copper, NativeCopper("segment", "OUT", 1.0)),
+                ),
+            ),
+        )
+
+        for label, conflicting_schematic, conflicting_board in conflicts:
+            with self.subTest(conflict=label):
+                report = compare_native_operation_delta(
+                    "disconnect_pin",
+                    arguments,
+                    connected,
+                    candidate,
+                    _delta_board(connected),
+                    conflicting_board,
+                    before_schematic=_delta_schematic(connected),
+                    after_schematic=conflicting_schematic,
+                    graph=graph,
+                )
+
+                self.assertFalse(report.passed, report.to_dict())
+                projection = next(
+                    item
+                    for item in report.checks
+                    if item.name == "native_net_projection"
+                )
+                self.assertFalse(projection.passed)
+
     def test_nonempty_added_net_requires_exact_native_projection(self) -> None:
         before_value = _native_design().to_dict()
         component = copy.deepcopy(before_value["components"][0])

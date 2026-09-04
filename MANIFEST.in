@@ -5,6 +5,7 @@ recursive-include docs *.md *.png *.svg
 recursive-include scripts *.sh *.py
 recursive-include tests *.py
 recursive-include src/pcbdraft/data *.json *.md
+recursive-include src/pcbdraft/web *.html *.css *.js
 recursive-include vendor/hermes *.py *.yaml *.yml *.json *.md *.txt
 include vendor/hermes/LICENSE
 prune artifacts

@@ -36,6 +36,16 @@ def positive_timeout(value: str) -> float:
     return timeout
 
 
+def tcp_port(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("port must be an integer") from exc
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    return port
+
+
 def invoked_program(argv0: str | None = None) -> str:
     """Return the supported launcher name, defaulting module use to the primary CLI."""
     name = Path(argv0 if argv0 is not None else sys.argv[0]).name
@@ -188,6 +198,26 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         action="store_true",
         dest="as_json",
         help="emit raw JSONL lines instead of a summary",
+    )
+    gui = subcommands.add_parser(
+        "gui", help="start the resident-capable local animated board interface"
+    )
+    gui.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="local interface to bind (default: 127.0.0.1)",
+    )
+    gui.add_argument(
+        "--port",
+        type=tcp_port,
+        default=9130,
+        help="local TCP port (default: 9130)",
+    )
+    gui.add_argument(
+        "--project",
+        dest="gui_project_id",
+        metavar="ID",
+        help="existing project to select when the GUI opens",
     )
     return parser
 
@@ -348,6 +378,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_doctor(report, False)
                 print("KiCad runtime and stock-library tables are ready.")
             return 0
+        if args.command == "gui":
+            from pcbdraft.interfaces.gui import run_gui
+
+            return run_gui(
+                host=args.host,
+                port=args.port,
+                project_id=args.gui_project_id,
+            )
         if args.command == "repository":
             repository = (
                 configure_repository(args.DIRECTORY)

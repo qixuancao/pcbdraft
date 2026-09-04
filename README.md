@@ -164,6 +164,38 @@ pcbdraft repository --json  # 查看当前位置
 该位置记录在与模型配置相同的平台配置目录下的 `repository.json`。切换仓库只影响
 之后打开和创建的 PCBDraft 项目；原仓库中的文件不会被移动或删除。
 
+### 本地 Web 工作台
+
+运行以下命令启动不依赖浏览器自动打开的本地 Web 界面：
+
+```bash
+pcbdraft gui
+pcbdraft gui --project <project-id> --host 127.0.0.1 --port 9130
+```
+
+然后手动打开终端显示的本地地址。工作台以已提交的板图为中心，提供项目搜索和
+状态筛选、器件/走线/过孔选择、图层快捷视图、对象检查器、验证状态、Agent 抽屉、
+命令面板、中英切换，以及主题、密度和布局记忆。验证结果会明确标识为通过、警告、
+失败、未运行或过期；不会把旧 revision 的结果显示为通过。
+
+若工程已保留完整、且收据 hash/size 可验证的制造产物，Inspector 会从固定服务器
+入口提供 BOM、Gerber/Drill ZIP、PnP、STEP 和原理图下载。浏览器不能提交文件路径
+或任意 artifact 名称；符号链接、路径穿越和收据不匹配会被拒绝。仅查看、下载和
+预览不会改变工程 revision 或 KiCad 文件；临时 ZIP/预览缓存位于用户缓存目录，
+不写入工程。静态资源和 API 使用相对路径，因此可将后端反向代理到 `/pcbdraft/`。
+Inspector 中的 “Open in KiCad” 只会打开当前所选仓库工程自己的 `.kicad_pcb`。
+部署就绪检查可访问 `GET /healthz` 或 `GET /pcbdraft/healthz`。
+
+KiCad 10 IPC 是可选的只读增强，不影响 GUI 的基本使用。需要时可安装官方绑定：
+
+```bash
+uv sync --extra kicad-ipc
+```
+
+IPC 需要已运行且在“偏好设置 → 插件”中启用 API server 的 KiCad；未安装绑定、
+KiCad 未打开或连接断开时，界面会明确显示 offline/unavailable 并继续使用 PCBDraft
+Design 与 `kicad-cli` 精确预览。
+
 直接描述电路板即可。用户没有指定层数时，PCBDraft 会根据小型原型的约束
 自动选择保守的初始方案，不要求用户理解叠层设计。
 

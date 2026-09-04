@@ -376,6 +376,65 @@ class HermesToolRegistrationTests(unittest.TestCase):
             self.assertNotIn('"events"', item)
             self.assertNotIn('"snapshot"', item)
 
+    def test_model_run_drc_receipt_keeps_actionable_diagnostics(self) -> None:
+        service = FakePCBService()
+        _set_service(service)
+        set_current_project_id("trusted-project-a")
+        permission = patch("pcbdraft.agent.hermes_tools._permission_mode", "workspace")
+        permission.start()
+        self.addCleanup(permission.stop)
+        service.next_tool_result = {
+            "operation": "run_drc",
+            "state": "completed",
+            "outcome": "fail",
+            "production_ready": False,
+            "diagnostics": {
+                "counts": {"error": 25, "warning": 0, "total": 25},
+                "violation_count_seen": 25,
+                "violations_truncated": True,
+                "details_truncated": True,
+                "remaining_violation_count": 5,
+                "violations": [
+                    {
+                        "severity": "error",
+                        "type": "unconnected_items",
+                        "message": "Missing connection between items",
+                        "items": [
+                            {
+                                "description": "F.Cu C1 pad 2 [/GND]",
+                                "pos": {"x": float(index), "y": 15.5},
+                            },
+                            {
+                                "description": "F.Cu U1 pad 2 [/GND]",
+                                "pos": {"x": 16.3625, "y": 17.5},
+                            },
+                        ],
+                    }
+                    for index in range(20)
+                ],
+                "full_details_report": "validation/run/check.json",
+                "raw_report": "validation/run/drc.raw.json",
+            },
+        }
+
+        result = _execute_tool(
+            DEFAULT_PCB_TOOL_REGISTRY.resolve("run_drc"),
+            {},
+            session_id="session-drc-diagnostics",
+        )
+
+        diagnostics = result["diagnostics"]
+        self.assertEqual(diagnostics["counts"]["error"], 25)
+        self.assertEqual(len(diagnostics["violations"]), 20)
+        self.assertTrue(diagnostics["details_truncated"])
+        self.assertEqual(diagnostics["remaining_violation_count"], 5)
+        self.assertEqual(diagnostics["violations"][0]["type"], "unconnected_items")
+        self.assertEqual(
+            diagnostics["violations"][0]["items"][1]["pos"],
+            {"x": 16.3625, "y": 17.5},
+        )
+        self.assertEqual(diagnostics["raw_report"], "validation/run/drc.raw.json")
+
     def test_stage_cache_is_bound_to_revisions_and_evidence_source(self) -> None:
         class RevisingService(FakePCBService):
             def __init__(self) -> None:

@@ -10,7 +10,6 @@ import re
 import secrets
 import shutil
 import tempfile
-import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -112,11 +111,8 @@ from pcbdraft.services.progress import (
     validate_product_terminal_receipt_id,
 )
 from pcbdraft.verification.gates import (
-    DrcDelta,
-    DrcEvidence,
-    compare_drc_evidence,
+    GATE_JSON_LIMIT,
     count_severities,
-    run_drc_evidence,
     structured_violations,
 )
 from pcbdraft.verification.release import (
@@ -193,19 +189,6 @@ _CONVERSATION_FIELDS = {
     "proposal",
     "decisions",
 }
-_PHYSICAL_PCB_OPERATIONS = frozenset(
-    {
-        "place_footprint",
-        "place_group",
-        "move_footprint",
-        "rotate_footprint",
-        "unplace_footprint",
-        "route_net",
-        "unroute_net",
-        "add_via",
-        "remove_via",
-    }
-)
 _NATIVE_DELTA_OPERATIONS = frozenset(NATIVE_OPERATION_POLICIES) - {
     "register_kicad_part"
 }
@@ -371,15 +354,6 @@ def _unavailable_consistency_report(candidate_revision: int) -> NativeConsistenc
             ),
         ),
     )
-
-
-def _drc_postcondition(delta: DrcDelta) -> dict[str, Any]:
-    return {
-        "name": "no_new_drc_errors",
-        "passed": delta.passed,
-        "comparable": delta.comparable,
-        "new_error_count": len(delta.new_error_fingerprints),
-    }
 
 
 def _native_delta_postconditions(
@@ -631,31 +605,33 @@ _FATAL_DRC_MARKERS = (
 )
 
 
-def _fatal_drc_count(structured: Mapping[str, Any]) -> int:
-    values = structured.get("violations")
-    if not isinstance(values, list):
-        return 0
-    return sum(
-        1
-        for item in values
-        if isinstance(item, Mapping)
-        and item.get("severity") == "error"
-        and isinstance(item.get("type"), str)
-        and any(marker in item["type"].lower() for marker in _FATAL_DRC_MARKERS)
-    )
+def _fatal_drc_count(document: Any) -> int:
+    """Count fatal DRC classes from the full native report, never its display cap."""
 
+    total = 0
 
-def _drc_progress_metrics(
-    evidence: DrcEvidence | None, source_revision: int
-) -> tuple[MetricValue, MetricValue, EvidenceCheck]:
-    if evidence is None or not evidence.available or evidence.gate.error_count is None:
-        unknown = MetricValue.unknown(source_revision)
-        return unknown, unknown, EvidenceCheck.unknown(source_revision)
-    return (
-        MetricValue.known(_fatal_drc_count(evidence.structured), source_revision),
-        MetricValue.known(evidence.gate.error_count, source_revision),
-        EvidenceCheck.known(evidence.gate.error_count == 0, source_revision),
-    )
+    def visit(value: Any) -> None:
+        nonlocal total
+        if isinstance(value, Mapping):
+            severity = value.get("severity")
+            violation_type = value.get("type")
+            if (
+                isinstance(severity, str)
+                and severity.lower() == "error"
+                and isinstance(violation_type, str)
+                and any(
+                    marker in violation_type.lower() for marker in _FATAL_DRC_MARKERS
+                )
+            ):
+                total += 1
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+
+    visit(document)
+    return total
 
 
 def _progress_vector(
@@ -963,6 +939,7 @@ class ApplicationService:
         *,
         provider_name: str = "auto",
         provider: IntentProvider | None = None,
+        recover_interrupted: bool = True,
     ) -> None:
         # A caller-provided workspace exists for isolated automation and tests.
         # Normal product launches always resolve the persisted PCB repository;
@@ -976,7 +953,8 @@ class ApplicationService:
             repository = current_repository()
         self._use_repository(repository)
         self.provider = provider or resolve_provider(provider_name)
-        self._recover_interrupted_projects()
+        if recover_interrupted:
+            self._recover_interrupted_projects()
 
     def set_repository(self, directory: str | Path) -> ProjectRepository:
         """Persist and start using a new normal project repository.
@@ -1580,7 +1558,6 @@ class ApplicationService:
                 "consistency_passed",
                 "intended_delta",
                 "native_delta",
-                "drc_delta",
                 "routing_failure",
                 "rollback_performed",
                 "rollback",
@@ -2088,7 +2065,6 @@ class ApplicationService:
                     {
                         "status": "applied",
                         "applied_at": utc_timestamp(),
-                        "manifest_hashes": published.manifest["hashes"],
                         "committed_revision": current.state["revision"],
                         "committed_design_revision": current.state["design_revision"],
                         "rollback": {
@@ -2123,7 +2099,6 @@ class ApplicationService:
                 receipt["failed_at"] = utc_timestamp()
                 receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
                 receipt.pop("applied_at", None)
-                receipt.pop("manifest_hashes", None)
                 receipt["committed_revision"] = None
                 receipt["committed_design_revision"] = None
                 receipt["error_code"] = _operation_failure_code(
@@ -2246,6 +2221,51 @@ class ApplicationService:
             "production_ready": False,
             "production_claimed": False,
         }
+        report = load_json_limited(result.report_path, GATE_JSON_LIMIT)
+        details = report.get("details", {}) if isinstance(report, dict) else {}
+        if isinstance(details, dict):
+            violations = details.get("violations")
+            issues = details.get("issues")
+            if isinstance(violations, list):
+                errors, warnings = count_severities(violations)
+                diagnostics = {
+                    "counts": {
+                        "error": errors,
+                        "warning": warnings,
+                        "total": errors + warnings,
+                    },
+                    **structured_violations(violations, max_violations=20),
+                    "full_details_report": summary["report"],
+                }
+                shown = diagnostics["violations"]
+                total_seen = diagnostics["violation_count_seen"]
+                diagnostics["details_truncated"] = diagnostics["violations_truncated"]
+                diagnostics["remaining_violation_count"] = max(
+                    0, total_seen - len(shown)
+                )
+                tool_run = report.get("tool_run") if isinstance(report, dict) else None
+                raw_report = (
+                    tool_run.get("raw_report")
+                    if isinstance(tool_run, Mapping)
+                    else None
+                )
+                if (
+                    isinstance(raw_report, str)
+                    and raw_report
+                    and Path(raw_report).name == raw_report
+                ):
+                    diagnostics["raw_report"] = (
+                        (result.report_path.parent / raw_report)
+                        .relative_to(project.root)
+                        .as_posix()
+                    )
+                summary["diagnostics"] = diagnostics
+            elif isinstance(issues, list):
+                summary["diagnostics"] = {
+                    "issue_count_seen": len(issues),
+                    "issues": issues[:20],
+                    "issues_truncated": len(issues) > 20,
+                }
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:
@@ -2465,7 +2485,7 @@ class ApplicationService:
                 ):
                     continue
                 report = load_json_limited(
-                    directory / str(receipt["report"]), APP_FILE_LIMIT
+                    directory / str(receipt["report"]), GATE_JSON_LIMIT
                 )
             except PCBDraftError:
                 # Malformed or partial evidence cannot become a known zero.
@@ -2490,9 +2510,7 @@ class ApplicationService:
                 continue
             metric = MetricValue.known(errors, design_revision)
             fatal = (
-                MetricValue.known(
-                    _fatal_drc_count({"violations": violations}), design_revision
-                )
+                MetricValue.known(_fatal_drc_count(violations), design_revision)
                 if kind == "run_drc"
                 else None
             )
@@ -2572,7 +2590,7 @@ class ApplicationService:
                 or report_name != f"{tool_kind}.json"
             ):
                 return unknown
-            document = load_json_limited(validation_root / report_name, APP_FILE_LIMIT)
+            document = load_json_limited(validation_root / report_name, GATE_JSON_LIMIT)
         except PCBDraftError:
             return unknown
         if not isinstance(document, Mapping) or not document:
@@ -2581,12 +2599,7 @@ class ApplicationService:
         metric = MetricValue.known(errors, design_revision)
         if kind == "run_erc":
             return metric, None, EvidenceCheck.known(errors == 0, design_revision)
-        structured = structured_violations(document)
-        fatal = (
-            MetricValue.unknown(design_revision)
-            if structured["violations_truncated"]
-            else MetricValue.known(_fatal_drc_count(structured), design_revision)
-        )
+        fatal = MetricValue.known(_fatal_drc_count(document), design_revision)
         return metric, fatal, EvidenceCheck.known(errors == 0, design_revision)
 
     @staticmethod
@@ -3005,7 +3018,6 @@ class ApplicationService:
         staged = transaction / "staged"
         before = transaction / "before"
         receipt_path = transaction / "receipt.json"
-        transaction_deadline = time.monotonic() + timeout
         route_net_id = str(arguments["net_id"]) if tool_name == "route_net" else None
         baseline_design_revision = int(project.state["design_revision"])
         candidate_design_revision = baseline_design_revision + 1
@@ -3319,110 +3331,6 @@ class ApplicationService:
                             if not item.passed
                         ),
                     )
-            if tool_name in _PHYSICAL_PCB_OPERATIONS:
-                stage = "drc"
-                before_drc = run_drc_evidence(
-                    input_file=authoritative.board_path,
-                    output_dir=transaction / "drc-before",
-                    deadline=transaction_deadline,
-                    redactions={str(authoritative.root): "<before-design>"},
-                )
-                after_drc = run_drc_evidence(
-                    input_file=staged_project.board_path,
-                    output_dir=transaction / "drc-after",
-                    deadline=transaction_deadline,
-                    redactions={str(staged_project.root): "<candidate-design>"},
-                )
-                drc_delta = compare_drc_evidence(before_drc, after_drc)
-                atomic_write_json(transaction / "drc-delta.json", drc_delta.to_dict())
-                receipt["artifact"]["drc_before"] = "drc-before/evidence.json"
-                receipt["artifact"]["drc_after"] = "drc-after/evidence.json"
-                receipt["artifact"]["drc_delta"] = "drc-delta.json"
-                receipt["drc_delta"] = {
-                    "comparable": drc_delta.comparable,
-                    "passed": drc_delta.passed,
-                    "before_error_count": drc_delta.before_error_count,
-                    "after_error_count": drc_delta.after_error_count,
-                    "new_error_count": len(drc_delta.new_error_fingerprints),
-                    "failure_kind": drc_delta.failure_kind,
-                }
-                receipt["postconditions"].append(_drc_postcondition(drc_delta))
-                before_fatal, before_error_drc, scoped_before_drc_check = (
-                    _drc_progress_metrics(before_drc, baseline_design_revision)
-                )
-                after_fatal, after_error_drc, scoped_after_drc_check = (
-                    _drc_progress_metrics(after_drc, candidate_design_revision)
-                )
-                before_progress = _progress_vector(
-                    authoritative.design,
-                    before_graph,
-                    baseline_design_revision,
-                    consistency=before_consistency,
-                    board=before_board,
-                    fatal_drc=before_fatal,
-                    error_drc=before_error_drc,
-                    erc_error=before_erc,
-                    routing_failure_count=self._routing_failure_count(
-                        project,
-                        baseline_design_revision,
-                        convergence_state_key,
-                    ),
-                )
-                before_stage = derive_stage(
-                    before_progress,
-                    _progress_stage_evidence(
-                        authoritative.design,
-                        baseline_design_revision,
-                        requirements_frozen=authoritative.requirements_path.is_file(),
-                        consistency=before_consistency,
-                        progress=before_progress,
-                        erc_check=before_erc_check,
-                        drc_check=scoped_before_drc_check,
-                    ),
-                )
-                after_progress = _progress_vector(
-                    candidate,
-                    graph,
-                    candidate_design_revision,
-                    consistency=consistency,
-                    board=candidate_board,
-                    fatal_drc=after_fatal,
-                    error_drc=after_error_drc,
-                    erc_error=before_erc.for_revision(candidate_design_revision),
-                    routing_failure_count=0,
-                )
-                after_stage = derive_stage(
-                    after_progress,
-                    _progress_stage_evidence(
-                        candidate,
-                        candidate_design_revision,
-                        requirements_frozen=staged_project.requirements_path.is_file(),
-                        consistency=consistency,
-                        progress=after_progress,
-                        erc_check=before_erc_check.for_revision(
-                            candidate_design_revision
-                        ),
-                        drc_check=scoped_after_drc_check,
-                    ),
-                )
-                _attach_progress(
-                    receipt,
-                    before_progress,
-                    after_progress,
-                    before_stage,
-                    after_stage,
-                )
-                atomic_write_json(receipt_path, receipt)
-                if not drc_delta.comparable:
-                    raise _PCBOperationPostconditionError(
-                        "drc_unavailable",
-                        "native DRC comparison was unavailable",
-                    )
-                if not drc_delta.passed:
-                    raise _PCBOperationPostconditionError(
-                        "new_drc_error",
-                        "physical PCB operation introduced new DRC errors",
-                    )
         except BaseException as exc:
             receipt["status"] = "failed"
             receipt["failed_at"] = utc_timestamp()
@@ -3533,7 +3441,6 @@ class ApplicationService:
                     {
                         "status": "applied",
                         "applied_at": utc_timestamp(),
-                        "manifest_hashes": published.manifest["hashes"],
                         "committed_revision": current.state["revision"],
                         "committed_design_revision": current.state["design_revision"],
                         "rollback": {
@@ -3568,7 +3475,6 @@ class ApplicationService:
                 receipt["failed_at"] = utc_timestamp()
                 receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
                 receipt.pop("applied_at", None)
-                receipt.pop("manifest_hashes", None)
                 receipt["committed_revision"] = None
                 receipt["committed_design_revision"] = None
                 receipt["error_code"] = _operation_failure_code(

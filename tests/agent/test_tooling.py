@@ -471,6 +471,8 @@ class PCBToolingTests(unittest.TestCase):
             {
                 "inspect_design",
                 "inspect_transaction",
+                "search_parts",
+                "describe_part",
                 "update_component",
                 "connect_group",
                 "move_footprint",
@@ -497,6 +499,14 @@ class PCBToolingTests(unittest.TestCase):
             ).encode("utf-8")
         )
         self.assertLess(routing_bytes, full_bytes * 0.6)
+
+        footprint_sync_names = {
+            spec.name
+            for spec in DEFAULT_PCB_TOOL_REGISTRY.projected_specs(
+                "footprint_net_sync", project_bound=True
+            )
+        }
+        self.assertIn("run_drc", footprint_sync_names)
 
         unknown_names = {
             spec.name

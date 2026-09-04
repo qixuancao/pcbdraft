@@ -1021,6 +1021,42 @@ class ApplicationConversationTests(unittest.TestCase):
             self.assertEqual(current.value, 0)
             self.assertEqual(stale.status.value, "unknown")
 
+    def test_aggregate_drc_progress_uses_full_report_beyond_display_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            validation = Path(temporary)
+            receipt = {
+                "schema": "pcbdraft-validation-receipt",
+                "version": 1,
+                "status": "complete",
+                "design_content_hash": "design-hash",
+                "source_design_revision": 4,
+                "tool_runs": {
+                    "drc": {
+                        "status": "completed",
+                        "failure": None,
+                        "normalized_report": "drc.json",
+                    }
+                },
+            }
+            document = {
+                "violations": [
+                    {"severity": "error", "type": "clearance"} for _index in range(101)
+                ]
+            }
+            atomic_write_json(validation / "receipt.json", receipt)
+            atomic_write_json(validation / "drc.json", document)
+
+            errors, fatal, check = ApplicationService._aggregate_check_progress(
+                validation, "design-hash", "run_drc", 4
+            )
+
+            self.assertEqual(errors.status.value, "known")
+            self.assertEqual(errors.value, 101)
+            assert fatal is not None
+            self.assertEqual(fatal.status.value, "known")
+            self.assertEqual(fatal.value, 101)
+            self.assertFalse(check.current_pass(4))
+
     def test_secrets_are_redacted_before_provider_and_storage(self) -> None:
         sentinel = "test-provider-secret-value-123456789"
         with tempfile.TemporaryDirectory() as temporary:

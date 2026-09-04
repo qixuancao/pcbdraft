@@ -28,7 +28,6 @@ from pcbdraft.kicad.routing import (
 )
 from pcbdraft.model.providers import IntentProvider
 from pcbdraft.services.application import ApplicationService
-from pcbdraft.verification.gates import DrcEvidence, GateResult
 from tests.support.design_factory import minimal_design_dict
 
 
@@ -340,32 +339,6 @@ def _passing_consistency(revision: int = 1) -> NativeConsistencyReport:
         "evaluated",
         "not_evaluated",
         (),
-    )
-
-
-def _drc_evidence(*fingerprints: str, available: bool = True) -> DrcEvidence:
-    gate = GateResult(
-        name="drc",
-        tool_status="ok" if available else "tool_failed",
-        exit_code=0 if available else None,
-        error_count=len(fingerprints) if available else None,
-        warning_count=0 if available else None,
-        raw_report="drc.json",
-        raw_report_sha256=None,
-        argv=[],
-        duration_seconds=0.01,
-        failure_kind=None if available else "injected_failure",
-    )
-    return DrcEvidence(
-        gate,
-        {
-            "available": available,
-            "violations": [],
-            "violation_count_seen": len(fingerprints),
-            "violations_truncated": False,
-            "ignored_checks": [],
-        },
-        tuple(sorted(fingerprints)),
     )
 
 
@@ -699,13 +672,12 @@ class FlatPCBServiceTests(unittest.TestCase):
             self.assertTrue(native_delta["passed"])
             self.assertNotEqual(design, before)
 
-    def test_place_group_commits_one_revision_with_one_scoped_drc_gate(self) -> None:
+    def test_place_group_commits_without_per_write_drc(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             service, project_id, _before = _seed_managed_project(
                 Path(temp), design=_group_design()
             )
             materialize = Mock(side_effect=_materialize_project)
-            drc = Mock(side_effect=(_drc_evidence(), _drc_evidence()))
             with (
                 patch(
                     "pcbdraft.services.application.open_managed_project",
@@ -725,7 +697,10 @@ class FlatPCBServiceTests(unittest.TestCase):
                 ),
                 patch(
                     "pcbdraft.services.application.run_drc_evidence",
-                    drc,
+                    side_effect=AssertionError(
+                        "physical writes must not invoke run_drc_evidence"
+                    ),
+                    create=True,
                 ),
             ):
                 result = service.apply_pcb_operation(
@@ -745,7 +720,6 @@ class FlatPCBServiceTests(unittest.TestCase):
             self.assertEqual(components["load_r2"].placement.x_mm, 14.0)
             self.assertEqual(components["load_r2"].placement.side, "back")
             materialize.assert_called_once()
-            self.assertEqual(drc.call_count, 2)
             self.assertEqual(
                 result["tool_result"]["transaction_scope"],
                 {"kind": "place_group", "entry_count": 2},
@@ -758,6 +732,10 @@ class FlatPCBServiceTests(unittest.TestCase):
             )
             self.assertEqual(native_delta["policy"], "footprint_transform_group")
             self.assertTrue(native_delta["passed"])
+            receipt = load_json_limited(transaction / "receipt.json", 1024 * 1024)
+            self.assertNotIn("drc_delta", receipt)
+            self.assertNotIn("drc_before", receipt["artifact"])
+            self.assertNotIn("drc_after", receipt["artifact"])
 
     def test_group_prevalidation_rejects_invalid_middle_entry_without_mutation(
         self,
@@ -1328,6 +1306,7 @@ class FlatPCBServiceTests(unittest.TestCase):
                 registration_receipt_path, 1024 * 1024
             )
             self.assertEqual(registration_receipt["version"], 2)
+            self.assertNotIn("manifest_hashes", registration_receipt)
             self.assertEqual(
                 registration_receipt["native_scope"],
                 "catalog_plus_native_rematerialization",
@@ -1629,6 +1608,7 @@ class FlatPCBServiceTests(unittest.TestCase):
             )
             self.assertEqual(receipt["status"], "applied")
             self.assertEqual(receipt["version"], 2)
+            self.assertNotIn("manifest_hashes", receipt)
             self.assertTrue(receipt["consistency_passed"])
             self.assertTrue(native.consistency_passed)
             self.assertEqual(receipt["candidate_revision"], 1)
@@ -1917,122 +1897,6 @@ class FlatPCBServiceTests(unittest.TestCase):
             self.assertEqual(receipt["error_code"], "native_commit_failed")
             self.assertEqual(receipt["routing_failure"]["code"], "native_commit_failed")
 
-    def test_physical_write_rejects_only_new_drc_errors(self) -> None:
-        for after, should_pass in (("same", True), ("new", False)):
-            with self.subTest(after=after), tempfile.TemporaryDirectory() as temp:
-                service, project_id, before = _seed_managed_project(Path(temp))
-                original = service._open(project_id)
-                evidence = (
-                    _drc_evidence("existing"),
-                    _drc_evidence(
-                        "existing", *("introduced",) if after == "new" else ()
-                    ),
-                )
-                contexts = (
-                    patch(
-                        "pcbdraft.services.application.open_managed_project",
-                        side_effect=lambda path: _managed(Path(path)),
-                    ),
-                    patch(
-                        "pcbdraft.services.application.load_generation_request",
-                        return_value=object(),
-                    ),
-                    patch(
-                        "pcbdraft.services.application.materialize_managed_design",
-                        side_effect=_materialize_project,
-                    ),
-                    patch(
-                        "pcbdraft.services.application.inspect_native_consistency",
-                        return_value=_passing_consistency(),
-                    ),
-                    patch(
-                        "pcbdraft.services.application.run_drc_evidence",
-                        side_effect=evidence,
-                    ),
-                )
-                with contexts[0], contexts[1], contexts[2], contexts[3], contexts[4]:
-                    if should_pass:
-                        service.apply_pcb_operation(
-                            project_id,
-                            "move_footprint",
-                            {"component_id": "load_r", "x_mm": 12.0, "y_mm": 11.0},
-                            timeout=12.0,
-                            expected_revision=0,
-                        )
-                    else:
-                        with self.assertRaisesRegex(
-                            ValidationError, "introduced new DRC errors"
-                        ):
-                            service.apply_pcb_operation(
-                                project_id,
-                                "move_footprint",
-                                {
-                                    "component_id": "load_r",
-                                    "x_mm": 12.0,
-                                    "y_mm": 11.0,
-                                },
-                                timeout=12.0,
-                                expected_revision=0,
-                            )
-                restored = service._open(project_id)
-                if should_pass:
-                    self.assertEqual(restored.state["revision"], 1)
-                else:
-                    self.assertEqual(restored.state, original.state)
-                    self.assertEqual(_managed(restored.design_root).design, before)
-                    transaction = next((restored.root / "transactions").iterdir())
-                    receipt = load_json_limited(
-                        transaction / "receipt.json", 1024 * 1024
-                    )
-                    self.assertEqual(receipt["error_code"], "new_drc_error")
-                    self.assertEqual(receipt["drc_delta"]["new_error_count"], 1)
-
-    def test_physical_write_fails_closed_when_drc_is_unavailable(self) -> None:
-        with tempfile.TemporaryDirectory() as temp:
-            service, project_id, before = _seed_managed_project(Path(temp))
-            original = service._open(project_id)
-            with (
-                patch(
-                    "pcbdraft.services.application.open_managed_project",
-                    side_effect=lambda path: _managed(Path(path)),
-                ),
-                patch(
-                    "pcbdraft.services.application.load_generation_request",
-                    return_value=object(),
-                ),
-                patch(
-                    "pcbdraft.services.application.materialize_managed_design",
-                    side_effect=_materialize_project,
-                ),
-                patch(
-                    "pcbdraft.services.application.inspect_native_consistency",
-                    return_value=_passing_consistency(),
-                ),
-                patch(
-                    "pcbdraft.services.application.run_drc_evidence",
-                    side_effect=(
-                        _drc_evidence(available=False),
-                        _drc_evidence("existing"),
-                    ),
-                ),
-                self.assertRaisesRegex(ValidationError, "comparison was unavailable"),
-            ):
-                service.apply_pcb_operation(
-                    project_id,
-                    "move_footprint",
-                    {"component_id": "load_r", "x_mm": 12.0, "y_mm": 11.0},
-                    timeout=12.0,
-                    expected_revision=0,
-                )
-
-            restored = service._open(project_id)
-            self.assertEqual(restored.state, original.state)
-            self.assertEqual(_managed(restored.design_root).design, before)
-            transaction = next((restored.root / "transactions").iterdir())
-            receipt = load_json_limited(transaction / "receipt.json", 1024 * 1024)
-            self.assertEqual(receipt["error_code"], "drc_unavailable")
-            self.assertFalse(receipt["drc_delta"]["comparable"])
-
     def test_native_delta_operation_families_commit_or_roll_back(self) -> None:
         cases = (
             (
@@ -2139,10 +2003,6 @@ class FlatPCBServiceTests(unittest.TestCase):
                             "pcbdraft.services.application.inspect_native_consistency",
                             return_value=_passing_consistency(),
                         ),
-                        patch(
-                            "pcbdraft.services.application.run_drc_evidence",
-                            side_effect=(_drc_evidence(), _drc_evidence()),
-                        ),
                         delta_context,
                     ):
                         if should_commit:
@@ -2178,6 +2038,82 @@ class FlatPCBServiceTests(unittest.TestCase):
                         self.assertEqual(_managed(restored.design_root).design, before)
                         self.assertEqual(receipt["error_code"], "native_delta_failed")
                         self.assertTrue(receipt["rollback"]["live_unchanged"])
+
+    def test_disconnect_empty_net_commits_with_native_projection_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            service, project_id, before = _seed_managed_project(Path(temp))
+            candidate_value = before.to_dict()
+            next(item for item in candidate_value["nets"] if item["id"] == "net_out")[
+                "endpoints"
+            ] = []
+            candidate = Design.from_dict(candidate_value)
+            arguments = {
+                "net_id": "net_out",
+                "component_id": "load_r",
+                "pin": "2",
+                "role": "signal",
+            }
+
+            with (
+                patch(
+                    "pcbdraft.services.application.open_managed_project",
+                    side_effect=lambda path: _managed(Path(path)),
+                ),
+                patch(
+                    "pcbdraft.services.application.load_generation_request",
+                    return_value=object(),
+                ),
+                patch(
+                    "pcbdraft.services.application.materialize_managed_design",
+                    side_effect=_materialize_project,
+                ),
+                patch(
+                    "pcbdraft.services.application.inspect_native_consistency",
+                    return_value=_passing_consistency(),
+                ),
+            ):
+                result = service.apply_pcb_operation(
+                    project_id,
+                    "disconnect_pin",
+                    arguments,
+                    timeout=12.0,
+                    expected_revision=0,
+                )
+
+            restored = service._open(project_id)
+            transaction = next((restored.root / "transactions").iterdir())
+            receipt = load_json_limited(transaction / "receipt.json", 1024 * 1024)
+            projection = next(
+                item
+                for item in receipt["postconditions"]
+                if item["name"] == "native_net_projection"
+            )
+
+            self.assertEqual(result["tool_result"]["operation"], "disconnect_pin")
+            self.assertEqual(restored.state["revision"], 1)
+            self.assertEqual(restored.state["design_revision"], 1)
+            self.assertEqual(receipt["status"], "applied")
+            self.assertEqual(receipt["operation"], "disconnect_pin")
+            self.assertEqual(
+                receipt["transaction_scope"],
+                {"kind": "disconnect_pin", "entry_count": 1},
+            )
+            self.assertTrue(receipt["native_delta"]["passed"])
+            self.assertEqual(receipt["native_delta"]["policy"], "connectivity")
+            self.assertEqual(receipt["committed_revision"], 1)
+            self.assertEqual(receipt["committed_design_revision"], 1)
+            self.assertEqual(receipt["rollback"]["state"], "committed")
+            self.assertFalse(receipt["rollback"]["live_unchanged"])
+            self.assertTrue(projection["passed"])
+            self.assertEqual(
+                projection["expected"],
+                "native_projection=not_applicable_empty_net,name=OUT",
+            )
+            self.assertIn("board_net=False", projection["observed"])
+            self.assertIn("schematic_partitions=0", projection["observed"])
+            self.assertIn("pads=0", projection["observed"])
+            self.assertIn("copper=0", projection["observed"])
+            self.assertEqual(_managed(restored.design_root).design, candidate)
 
     def test_remaining_native_operation_families_commit_or_roll_back(self) -> None:
         component = {
@@ -2757,6 +2693,112 @@ class FlatPCBServiceTests(unittest.TestCase):
                 ApplicationService._flat_semantic_operation(
                     f"update_{collection}", {"value": missing}, design
                 )
+
+    def test_explicit_drc_keeps_complete_evidence_with_bounded_diagnostics(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            service, project_id, design = _seed_managed_project(Path(temp))
+            revision = int(service._open(project_id).state["revision"])
+
+            def run_check(
+                _managed_project: object,
+                _kind: str,
+                *,
+                output: Path,
+                timeout: float,
+            ) -> SimpleNamespace:
+                del timeout
+                output.mkdir(parents=True)
+                violations = [
+                    {
+                        "severity": "error",
+                        "type": "unconnected_items",
+                        "description": f"Missing connection {index}",
+                        "items": [
+                            {
+                                "description": "F.Cu C1 pad 2 [/GND]",
+                                "uuid": f"c1-{index}",
+                                "pos": {"x": float(index), "y": 15.5},
+                            },
+                            {
+                                "description": "F.Cu U1 pad 2 [/GND]",
+                                "uuid": f"u1-{index}",
+                                "pos": {"x": 16.3625, "y": 17.5},
+                            },
+                        ],
+                    }
+                    for index in range(25)
+                ]
+                report = output / "check.json"
+                atomic_write_json(
+                    report,
+                    {
+                        "schema": "pcbdraft-individual-check",
+                        "check": "run_drc",
+                        "state": "completed",
+                        "outcome": "fail",
+                        "details": {"failure": None, "violations": violations},
+                        "tool_run": {"raw_report": "drc.raw.json"},
+                    },
+                )
+                atomic_write_json(
+                    output / "receipt.json",
+                    {
+                        "schema": "pcbdraft-individual-check-receipt",
+                        "status": "complete",
+                    },
+                )
+                return SimpleNamespace(
+                    report_path=report,
+                    report_sha256="a" * 64,
+                    state="completed",
+                    outcome="fail",
+                    design_content_hash=design.content_hash(),
+                )
+
+            with (
+                patch(
+                    "pcbdraft.services.application.open_managed_project",
+                    side_effect=lambda path: _managed(Path(path)),
+                ),
+                patch(
+                    "pcbdraft.services.application.run_individual_check",
+                    side_effect=run_check,
+                ),
+            ):
+                result = service.run_pcb_check(
+                    project_id,
+                    "run_drc",
+                    timeout=12.0,
+                    expected_revision=revision,
+                )
+
+            self.assertEqual(result["tool_result"]["outcome"], "fail")
+            diagnostics = result["tool_result"]["diagnostics"]
+            self.assertEqual(
+                diagnostics["counts"], {"error": 25, "warning": 0, "total": 25}
+            )
+            self.assertEqual(diagnostics["violation_count_seen"], 25)
+            self.assertEqual(len(diagnostics["violations"]), 20)
+            self.assertTrue(diagnostics["violations_truncated"])
+            self.assertTrue(diagnostics["details_truncated"])
+            self.assertEqual(diagnostics["remaining_violation_count"], 5)
+            self.assertEqual(
+                diagnostics["full_details_report"], result["tool_result"]["report"]
+            )
+            self.assertTrue(diagnostics["raw_report"].endswith("/drc.raw.json"))
+            self.assertEqual(
+                diagnostics["violations"][0]["message"], "Missing connection 0"
+            )
+            self.assertEqual(
+                diagnostics["violations"][0]["items"][0]["description"],
+                "F.Cu C1 pad 2 [/GND]",
+            )
+            self.assertEqual(
+                diagnostics["violations"][0]["items"][1]["pos"],
+                {"x": 16.3625, "y": 17.5},
+            )
 
     def test_individual_checks_do_not_dispatch_aggregate_validation(self) -> None:
         service = object.__new__(ApplicationService)

@@ -21,6 +21,7 @@ from pcbdraft.kicad.routing import (
     RoutingKeepout,
     RoutingPad,
     RoutingResult,
+    _split_segments_at_vias,
 )
 
 
@@ -41,6 +42,18 @@ def _router(**overrides: Any) -> GridRouter:
 
 
 class RoutingTests(unittest.TestCase):
+    def test_track_is_split_at_same_net_via_center(self) -> None:
+        segment = RouteSegment("N", 0, 10.0, 2.0, 2.0, 2.0, 0.25)
+        via = RouteVia("N", 6.0, 2.0, 0.6, 0.3, 0, 1)
+
+        self.assertEqual(
+            _split_segments_at_vias((segment,), (via,)),
+            (
+                RouteSegment("N", 0, 10.0, 2.0, 6.0, 2.0, 0.25),
+                RouteSegment("N", 0, 6.0, 2.0, 2.0, 2.0, 0.25),
+            ),
+        )
+
     def test_straight_route_is_deterministic(self) -> None:
         pads = (
             RoutingPad("a", "N", 2, 2, 0.5, 0.5, (0,)),

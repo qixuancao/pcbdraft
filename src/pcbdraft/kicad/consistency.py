@@ -1208,22 +1208,7 @@ def compare_native_operation_delta(
         else:
             if candidate_net is None:
                 raise ValidationError(f"net is absent: {net_id}")
-            expected_schematic_endpoints = _net_schematic_endpoints(
-                candidate_design, net_id
-            )
-            expected_board_endpoints = _net_board_endpoints(
-                candidate_design, net_id, resolved_graph
-            )
-            expected_copper = any(
-                item.net == net_id for item in candidate_design.native_intent.routes
-            ) or any(item.net == net_id for item in candidate_design.native_intent.vias)
-            empty_net_add = (
-                operation == "add_net"
-                and not expected_schematic_endpoints
-                and not expected_board_endpoints
-                and not expected_copper
-            )
-            if empty_net_add:
+            if _semantic_net_is_empty(candidate_design, net_id, resolved_graph):
                 target_passed = _empty_native_net_projection_is_compatible(
                     candidate_net.name,
                     after_schematic,
@@ -1530,6 +1515,17 @@ def _net_board_endpoints(
             continue
         result.add(Endpoint(component.reference, pin.footprint_pad))
     return result
+
+
+def _semantic_net_is_empty(design: Design, net_id: str, graph: PartGraph) -> bool:
+    """Identify a candidate net with no semantic endpoints or copper intent."""
+
+    return (
+        not _net_schematic_endpoints(design, net_id)
+        and not _net_board_endpoints(design, net_id, graph)
+        and not any(item.net == net_id for item in design.native_intent.routes)
+        and not any(item.net == net_id for item in design.native_intent.vias)
+    )
 
 
 def _native_net_matches(

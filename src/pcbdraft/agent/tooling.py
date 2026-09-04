@@ -1020,9 +1020,8 @@ _INSPECTION_TOOL_NAMES = frozenset(
         "inspect_transaction",
     }
 )
-_PROJECT_CATALOG_TOOL_NAMES = frozenset(
-    {"search_parts", "describe_part", "register_kicad_part"}
-)
+_PROJECT_CATALOG_READ_TOOL_NAMES = frozenset({"search_parts", "describe_part"})
+_PROJECT_CATALOG_WRITE_TOOL_NAMES = frozenset({"register_kicad_part"})
 _EARLY_DESIGN_TOOL_NAMES = frozenset(
     {
         "add_block",
@@ -1144,7 +1143,14 @@ def _flat_stage_contract(
         return cast(frozenset[EvidenceStage], _EARLY_DESIGN_STAGES), frozenset(
             {"library"}
         )
-    if name in _PROJECT_CATALOG_TOOL_NAMES:
+    # A failed native check can legitimately require an already-catalogued
+    # virtual/non-BOM part.  Keep the discovery path available during repair,
+    # while keeping part registration confined to early design work.
+    if name in _PROJECT_CATALOG_READ_TOOL_NAMES:
+        return cast(frozenset[EvidenceStage], _EVIDENCE_STAGES), frozenset(
+            {"library", "semantic"}
+        )
+    if name in _PROJECT_CATALOG_WRITE_TOOL_NAMES:
         return cast(frozenset[EvidenceStage], _EARLY_DESIGN_STAGES), frozenset(
             {"library", "semantic"}
         )
@@ -1172,7 +1178,7 @@ def _flat_stage_contract(
         elif name == "run_erc":
             stages = _ERC_STAGES
         else:
-            stages = _ROUTING_STAGES
+            stages = _PLACEMENT_STAGES
         return cast(frozenset[EvidenceStage], stages), frozenset({"verification"})
     if name in _PREVIEW_TOOL_NAMES:
         stages = _ERC_STAGES if name == "render_schematic" else _PLACEMENT_STAGES

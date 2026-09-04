@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
+  <title>PCBDraft 工作台</title>
+  <link rel="stylesheet" href="./assets/app.css">
+</head>
+<body>
+  <a class="skip-link" href="#board-workspace">跳到板图</a>
+  <noscript><p class="noscript">此工作台需要 JavaScript 才能加载已提交的 PCB 投影。</p></noscript>
+  <div id="app-shell" class="app-shell" data-density="comfortable">
+    <header class="topbar">
+      <div class="brand" aria-label="PCBDraft">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div><strong data-i18n="app.title">PCBDraft 工作台</strong><span data-i18n="app.subtitle">本地 PCB 设计工作区</span></div>
+      </div>
+      <label class="top-project" for="project-select"><span data-i18n="top.project">项目</span><select id="project-select" aria-label="项目" data-i18n-aria="top.project"></select></label>
+      <div class="top-actions">
+        <button id="command-button" class="toolbar-button" type="button" data-i18n="top.command">命令</button>
+        <button id="rail-toggle" class="icon-button" type="button" data-i18n-title="rail.projects" data-i18n-aria="action.toggleRail" aria-label="切换项目栏" title="项目">☰</button>
+        <button id="inspector-toggle" class="icon-button" type="button" data-i18n-title="inspector.title" data-i18n-aria="action.toggleInspector" aria-label="切换检查器" title="检查器">▤</button>
+        <label class="sr-only" for="theme-select" data-i18n="top.theme">主题</label>
+        <select id="theme-select" class="compact-select" aria-label="主题" data-i18n-aria="top.theme"><option value="system" data-i18n="option.system">跟随系统</option><option value="dark" data-i18n="option.dark">深色</option><option value="light" data-i18n="option.light">浅色</option></select>
+        <label class="sr-only" for="locale-select" data-i18n="top.locale">语言</label>
+        <select id="locale-select" class="compact-select" aria-label="语言" data-i18n-aria="top.locale"><option value="zh-CN">中文</option><option value="en">EN</option></select>
+        <label class="sr-only" for="density-select" data-i18n="top.density">密度</label>
+        <select id="density-select" class="compact-select" aria-label="密度" data-i18n-aria="top.density"><option value="comfortable" data-i18n="option.comfortable">舒适</option><option value="compact" data-i18n="option.compact">紧凑</option></select>
+      </div>
+    </header>
+
+    <div class="workbench-grid">
+      <aside id="project-rail" class="project-rail panel" aria-labelledby="project-rail-heading">
+        <header class="panel-title-row"><h1 id="project-rail-heading" data-i18n="rail.projects">项目</h1><button id="rail-collapse" class="icon-button" type="button" aria-expanded="true" aria-controls="project-rail" aria-label="切换项目栏" data-i18n-aria="action.toggleRail">‹</button></header>
+        <label class="sr-only" for="project-search" data-i18n="rail.search">搜索项目或 ID</label>
+        <input id="project-search" type="search" maxlength="160" autocomplete="off" data-i18n-placeholder="rail.search" placeholder="搜索项目或 ID">
+        <label class="sr-only" for="project-status-filter" data-i18n="rail.status">状态</label>
+        <select id="project-status-filter" class="rail-filter" aria-label="状态" data-i18n-aria="rail.status"><option value="all" data-i18n="rail.all">全部</option><option value="generating" data-i18n="rail.generating">生成中</option><option value="ready" data-i18n="rail.ready">已生成</option><option value="attention" data-i18n="rail.attention">需检查</option></select>
+        <div id="project-recent-wrap" class="rail-recent-wrap"><h2 data-i18n="rail.recent">最近使用</h2><div id="project-recent" class="project-list"></div></div>
+        <div id="project-list" class="project-list" role="listbox" aria-label="项目" data-i18n-aria="rail.projects"></div>
+        <div id="rail-resize" class="panel-resize panel-resize-end" role="separator" aria-orientation="vertical" aria-valuemin="220" aria-valuemax="320" aria-valuenow="280" tabindex="0" aria-label="调整项目栏宽度" data-i18n-aria="resize.rail"></div>
+      </aside>
+
+      <main id="board-workspace" class="board-workspace" aria-label="PCB 板图工作区" data-i18n-aria="board.workspace">
+        <header class="workspace-toolbar">
+          <div class="toolbar-group"><button id="fit-board" class="icon-button" type="button" data-i18n-title="board.fit" title="适合画布">F</button><button id="zoom-out" class="icon-button" type="button" data-i18n-title="board.zoomOut" title="缩小">−</button><button id="zoom-in" class="icon-button" type="button" data-i18n-title="board.zoomIn" title="放大">+</button><button id="actual-size" class="icon-button" type="button" data-i18n-title="board.actual" title="100%">0</button><button id="center-selection" class="toolbar-button" type="button" data-i18n="board.center">居中选择</button></div>
+          <label class="layer-control" for="layer-preset"><span data-i18n="board.layers">图层视图</span><select id="layer-preset"><option value="all" data-i18n="board.all">全部</option><option value="front" data-i18n="board.front">正面</option><option value="back" data-i18n="board.back">背面</option><option value="assembly" data-i18n="board.assembly">装配</option><option value="routing" data-i18n="board.routing">布线</option></select></label>
+          <div id="layer-toggles" class="layer-toggles" role="group" aria-label="图层" data-i18n-aria="board.layers"><button type="button" data-layer-toggle="front" data-i18n-title="board.layerFront" title="正面铜">F</button><button type="button" data-layer-toggle="back" data-i18n-title="board.layerBack" title="背面铜">B</button><button type="button" data-layer-toggle="vias" data-i18n-title="board.layerVias" title="过孔">V</button><button type="button" data-layer-toggle="footprints" data-i18n-title="board.layerFootprints" title="器件">P</button><button type="button" data-layer-toggle="labels" data-i18n-title="board.layerLabels" title="标签">L</button><button type="button" data-layer-toggle="unrouted" data-i18n-title="board.layerUnrouted" title="未布线">U</button></div>
+          <div class="workspace-indicators"><span id="stream-indicator" class="status-dot"><i></i><span>—</span></span><span id="ipc-indicator" class="status-dot"><i></i><span>—</span></span></div>
+        </header>
+        <div id="board-stage" class="board-stage">
+          <svg id="board-svg" viewBox="-5 -5 90 60" tabindex="0" role="img" aria-label="已提交 PCB 板图" data-i18n-aria="board.canvas">
+            <g id="grid-plane" aria-hidden="true"></g>
+            <g id="board-fill-layer" data-scene-layer="board"></g>
+            <g id="outline-layer" data-scene-layer="outline"></g>
+            <g id="front-layer" data-scene-layer="front"></g>
+            <g id="back-layer" data-scene-layer="back"></g>
+            <g id="via-layer" data-scene-layer="vias"></g>
+            <g id="footprint-layer" data-scene-layer="footprints"></g>
+            <g id="label-layer" data-scene-layer="labels"></g>
+            <g id="unrouted-layer" data-scene-layer="unrouted"></g>
+          </svg>
+          <div id="board-empty" class="board-empty" data-i18n="board.empty">选择一个项目以查看已提交的板图。</div>
+          <div id="busy-banner" class="busy-banner" hidden data-i18n="board.busy">项目正在写入，保留上一个已提交画面。</div>
+          <div id="board-tooltip" class="board-tooltip" hidden></div>
+        </div>
+      </main>
+
+      <aside id="inspector-panel" class="inspector-panel panel" aria-labelledby="inspector-heading">
+        <header class="panel-title-row"><h1 id="inspector-heading" data-i18n="inspector.title">检查器</h1><button id="inspector-collapse" class="icon-button" type="button" aria-expanded="true" aria-controls="inspector-panel" aria-label="切换检查器" data-i18n-aria="action.toggleInspector">›</button></header>
+        <div id="inspector-tabs" class="inspector-tabs" role="tablist" aria-label="检查器" data-i18n-aria="inspector.title">
+          <button id="overview-tab" role="tab" type="button" aria-controls="overview-pane" aria-selected="true" data-inspector-tab="overview" data-i18n="inspector.overview">概览</button>
+          <button id="object-tab" role="tab" type="button" aria-controls="object-pane" aria-selected="false" data-inspector-tab="object" data-i18n="inspector.object">对象</button>
+          <button id="validation-tab" role="tab" type="button" aria-controls="validation-pane" aria-selected="false" data-inspector-tab="validation" data-i18n="inspector.validation">验证</button>
+          <button id="fabrication-tab" role="tab" type="button" aria-controls="fabrication-pane" aria-selected="false" data-inspector-tab="fabrication" data-i18n="inspector.fabrication">制造</button>
+          <button id="preview-tab" role="tab" type="button" aria-controls="preview-pane" aria-selected="false" data-inspector-tab="preview" data-i18n="inspector.preview">预览</button>
+        </div>
+        <section id="overview-pane" class="inspector-pane" role="tabpanel" data-inspector-pane="overview"><div class="hash-row"><span id="content-hash">—</span><button id="copy-hash" class="small-button" type="button" disabled data-i18n="chat.copy">复制</button></div><dl id="overview-facts" class="fact-list"></dl></section>
+        <section id="object-pane" class="inspector-pane" role="tabpanel" data-inspector-pane="object" hidden><h2 id="object-title" data-i18n="inspector.none">尚未选择对象</h2><dl id="object-facts" class="fact-list"></dl></section>
+        <section id="validation-pane" class="inspector-pane" role="tabpanel" data-inspector-pane="validation" hidden><div id="validation-card" class="validation-card"><strong id="validation-state" data-state="not_run" data-i18n="validation.notRun">未运行</strong><button id="refresh-validation" class="small-button" type="button" data-i18n="action.refresh">刷新</button></div><dl id="validation-facts" class="fact-list"></dl><ul id="validation-checks" class="check-list"></ul></section>
+        <section id="fabrication-pane" class="inspector-pane" role="tabpanel" data-inspector-pane="fabrication" hidden><div id="artifact-list" class="artifact-list"></div></section>
+        <section id="preview-pane" class="inspector-pane" role="tabpanel" data-inspector-pane="preview" hidden><div class="preview-card"><h2 data-i18n="preview.board">KiCad 板图 SVG</h2><img id="exact-board-preview" alt="KiCad PCB SVG" data-i18n-alt="preview.boardAlt" referrerpolicy="no-referrer" hidden><p id="board-preview-empty" data-i18n="board.empty">选择一个项目以查看已提交的板图。</p></div><div class="preview-card"><h2 data-i18n="preview.schematic">原理图</h2><img id="schematic-preview" alt="Schematic SVG" data-i18n-alt="preview.schematicAlt" referrerpolicy="no-referrer" hidden><p id="schematic-preview-empty" data-i18n="fabrication.missing">未生成</p></div><div class="preview-card"><h2 data-i18n="preview.3d">3D</h2><img id="exact-3d-preview" alt="KiCad 3D board" data-i18n-alt="preview.board3dAlt" referrerpolicy="no-referrer" hidden><div class="preview-actions"><button id="load-3d-preview" class="small-button" type="button" data-i18n="preview.render3d">渲染 3D</button><button id="open-in-kicad" class="small-button" type="button" data-i18n="preview.openKicad">在 KiCad 中打开</button></div></div></section>
+        <div id="inspector-resize" class="panel-resize panel-resize-start" role="separator" aria-orientation="vertical" aria-valuemin="300" aria-valuemax="460" aria-valuenow="360" tabindex="0" aria-label="调整检查器宽度" data-i18n-aria="resize.inspector"></div>
+      </aside>
+    </div>
+
+    <section id="agent-drawer" class="agent-drawer panel is-collapsed" aria-labelledby="agent-heading">
+      <div id="drawer-resize" class="drawer-resize" role="separator" aria-orientation="horizontal" aria-valuemin="180" aria-valuemax="720" aria-valuenow="300" tabindex="0" aria-label="调整 Agent 抽屉高度" data-i18n-aria="resize.drawer"></div>
+      <header class="drawer-header"><div><h1 id="agent-heading" data-i18n="drawer.agent">Agent</h1><span id="turn-state" class="status-chip" data-i18n="state.idle">空闲</span></div><button id="drawer-toggle" class="toolbar-button" type="button" aria-expanded="false" aria-controls="agent-drawer" data-i18n="drawer.open">展开 Agent 抽屉</button></header>
+      <div id="drawer-tabs" class="drawer-tabs" role="tablist" aria-label="Agent" data-i18n-aria="drawer.agent"><button id="conversation-tab" role="tab" type="button" aria-controls="conversation-pane" aria-selected="true" data-drawer-tab="conversation" data-i18n="drawer.conversation">对话</button><button id="activity-tab" role="tab" type="button" aria-controls="activity-pane" aria-selected="false" data-drawer-tab="activity" data-i18n="drawer.activity">活动</button></div>
+      <section id="conversation-pane" role="tabpanel"><div id="chat-log" class="chat-log" aria-live="polite"></div><p id="chat-empty" class="chat-empty" data-i18n="chat.empty">安全的最终回复会显示在这里。</p></section>
+      <section id="activity-pane" role="tabpanel" hidden><div class="activity-filters"><select id="activity-type-filter" aria-label="活动类型" data-i18n-aria="activity.type"><option value="all" data-i18n="option.all">全部</option><option value="agent" data-i18n="option.agent">Agent</option><option value="tool" data-i18n="option.tool">工具</option><option value="pcb">PCB</option></select><select id="activity-state-filter" aria-label="活动状态" data-i18n-aria="activity.state"><option value="all" data-i18n="option.all">全部</option><option value="info" data-i18n="option.info">信息</option><option value="error" data-i18n="option.error">错误</option></select></div><ul id="activity-list" class="activity-list"></ul><p id="activity-empty" class="chat-empty" data-i18n="activity.empty">尚无安全活动事件。</p></section>
+      <form id="message-form" class="composer"><label class="sr-only" for="message-input" data-i18n="chat.label">发送给 PCBDraft 的消息</label><textarea id="message-input" rows="2" maxlength="16000" required disabled data-i18n-placeholder="chat.placeholder" placeholder="描述下一项 PCB 变更…"></textarea><div class="composer-actions"><span id="composer-hint">Ctrl/Cmd + Enter</span><button id="stop-turn" class="small-button" type="button" disabled data-i18n="chat.stop">停止</button><button id="send-message" class="primary-button" type="submit" disabled data-i18n="chat.send">发送</button></div></form>
+    </section>
+
+    <footer id="status-bar" class="status-bar" aria-live="polite"><span id="status-project">—</span><span id="status-revision">—</span><span id="status-board">—</span><span id="status-nets">—</span><span id="status-routes">—</span><span id="status-vias">—</span><span id="status-unrouted">—</span></footer>
+  </div>
+  <div id="command-palette" class="command-dialog" role="dialog" aria-modal="true" aria-labelledby="command-heading" aria-hidden="true" hidden><section class="command-surface"><header><h1 id="command-heading" data-i18n="command.title">命令面板</h1><button id="command-close" class="icon-button" type="button" data-i18n="action.close">关闭</button></header><label class="sr-only" for="command-search" data-i18n="command.search">搜索命令…</label><input id="command-search" type="search" autocomplete="off" data-i18n-placeholder="command.search" placeholder="搜索命令…"><div id="command-list" class="command-list"></div></section></div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="./assets/app.js"></script>
+</body>
+</html>

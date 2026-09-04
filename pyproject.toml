@@ -78,6 +78,10 @@ dev = [
     "pip-audit==2.10.1",
     "ruff==0.16.2",
 ]
+kicad-ipc = [
+    # Official KiCad IPC bindings; the installed module is named `kipy`.
+    "kicad-python==0.7.1",
+]
 
 [project.scripts]
 pcbdraft = "pcbdraft.interfaces.cli:main"
@@ -96,6 +100,9 @@ pcbdraft = [
     "data/**/*.md",
     "data/**/*.yml",
     "data/vendor/hermes/LICENSE",
+    "web/*.html",
+    "web/*.css",
+    "web/*.js",
 ]
 
 [tool.ruff.lint]

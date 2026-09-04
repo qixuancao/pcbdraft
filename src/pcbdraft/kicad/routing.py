@@ -97,6 +97,72 @@ class RouteVia:
     to_layer: int
 
 
+def _split_segments_at_vias(
+    segments: Iterable[RouteSegment], vias: Iterable[RouteVia]
+) -> tuple[RouteSegment, ...]:
+    """Terminate same-net tracks at every via center they cross."""
+
+    via_values = tuple(vias)
+    result: list[RouteSegment] = []
+    for segment in segments:
+        delta_x = segment.x2_mm - segment.x1_mm
+        delta_y = segment.y2_mm - segment.y1_mm
+        length_squared = delta_x * delta_x + delta_y * delta_y
+        if length_squared <= 1e-18:
+            result.append(segment)
+            continue
+        split_points: dict[tuple[float, float], float] = {}
+        for via in via_values:
+            if (
+                via.net != segment.net
+                or not via.from_layer <= segment.layer <= via.to_layer
+            ):
+                continue
+            point = (via.x_mm, via.y_mm)
+            position = (
+                (point[0] - segment.x1_mm) * delta_x
+                + (point[1] - segment.y1_mm) * delta_y
+            ) / length_squared
+            if not 1e-9 < position < 1.0 - 1e-9:
+                continue
+            if (
+                _point_segment_distance(
+                    point,
+                    (segment.x1_mm, segment.y1_mm),
+                    (segment.x2_mm, segment.y2_mm),
+                )
+                > 1e-9
+            ):
+                continue
+            split_points[point] = position
+        start = (segment.x1_mm, segment.y1_mm)
+        for point, _position in sorted(split_points.items(), key=lambda item: item[1]):
+            result.append(
+                RouteSegment(
+                    segment.net,
+                    segment.layer,
+                    start[0],
+                    start[1],
+                    point[0],
+                    point[1],
+                    segment.width_mm,
+                )
+            )
+            start = point
+        result.append(
+            RouteSegment(
+                segment.net,
+                segment.layer,
+                start[0],
+                start[1],
+                segment.x2_mm,
+                segment.y2_mm,
+                segment.width_mm,
+            )
+        )
+    return tuple(result)
+
+
 @dataclass(frozen=True, order=True)
 class RoutingFailure:
     """Bounded, machine-readable reason why one route could not be completed."""
@@ -517,8 +583,10 @@ class GridRouter:
                 failures.extend(errors)
                 diagnostics.extend(error.diagnostic for error in errors)
 
-        final_segments = tuple(sorted(set(all_segments)))
         final_vias = tuple(sorted(set(all_vias)))
+        final_segments = tuple(
+            sorted(set(_split_segments_at_vias(all_segments, final_vias)))
+        )
         return RoutingResult(
             segments=final_segments,
             vias=final_vias,
