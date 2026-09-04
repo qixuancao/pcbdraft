@@ -29,6 +29,18 @@ class BidirectionalSyncTests(unittest.TestCase):
             generated = generate_managed_project(
                 RequirementsSpec.from_dict(controller_requirements_dict()), root
             )
+            native_board = generated.project.manifest["native_snapshots"]["board"]
+            native_diode = next(
+                item for item in native_board["components"] if item["reference"] == "D1"
+            )
+            self.assertRegex(native_diode["uuid"], r"^[0-9a-f-]{36}$")
+            self.assertGreater(native_diode["bbox"]["width_mm"], 0)
+            self.assertTrue(
+                all(
+                    pad["uuid"] and pad["width_mm"] > 0 and pad["height_mm"] > 0
+                    for pad in native_diode["pads"]
+                )
+            )
             self.assertFalse(preview_kicad_import(generated.project).has_changes)
             script = """
 import pcbnew, sys

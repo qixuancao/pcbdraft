@@ -31,7 +31,7 @@ from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.managed import ManagedProject, open_managed_project
 
 LIVE_SCENE_SCHEMA = "pcbdraft-live-board-scene"
-LIVE_SCENE_VERSION = 1
+LIVE_SCENE_VERSION = 2
 LIVE_DIFF_SCHEMA = "pcbdraft-live-board-diff"
 LIVE_DIFF_VERSION = 1
 MAX_PREVIEW_RECEIPT_BYTES = 128 * 1024
@@ -49,6 +49,7 @@ class SceneLimits:
     """Hard response limits applied before a scene can leave the backend."""
 
     max_footprints: int = 500
+    max_pads: int = 10_000
     max_routes: int = 20_000
     max_vias: int = 10_000
     max_unrouted_nets: int = 2_000
@@ -60,6 +61,7 @@ class SceneLimits:
     def __post_init__(self) -> None:
         values = (
             self.max_footprints,
+            self.max_pads,
             self.max_routes,
             self.max_vias,
             self.max_unrouted_nets,
@@ -386,6 +388,20 @@ def _draft_scene(view: Mapping[str, Any]) -> dict[str, Any]:
         "routes": [],
         "vias": [],
         "unrouted_nets": [],
+        "spatial_index": {
+            "footprints": [],
+            "pads": [],
+            "routes": [],
+            "vias": [],
+            "unrouted": [],
+        },
+        "canvas": {
+            "primary": {"kind": "kicad_svg", "state": "unavailable"},
+            "fallback": {
+                "kind": "approximate_projection",
+                "label": "近似预览 / approximate preview",
+            },
+        },
         "status": _status_projection(view, design_available=False),
     }
 
@@ -420,6 +436,22 @@ def _project_scene(
         "routes": routes,
         "vias": vias,
         "unrouted_nets": unrouted,
+        "spatial_index": _spatial_index(footprints, routes, vias, unrouted),
+        "canvas": {
+            "primary": {
+                "kind": "kicad_svg",
+                "state": "available_on_request",
+                "canonical_revision": _counter(state.get("revision"), "state revision"),
+                "design_revision": _counter(
+                    state.get("design_revision"), "design revision"
+                ),
+                "content_hash": content_hash,
+            },
+            "fallback": {
+                "kind": "approximate_projection",
+                "label": "近似预览 / approximate preview",
+            },
+        },
         "status": _status_projection(view, design_available=True),
     }
     scene["status"]["counts"] = {
@@ -459,6 +491,11 @@ def _board_projection(
         raise ValidationError("live scene exceeds its board outline limit")
     outline = [
         {
+            **(
+                {"id": _bounded_text(row["uuid"], "outline UUID", 128)}
+                if isinstance(row, Mapping) and isinstance(row.get("uuid"), str)
+                else {}
+            ),
             "x1_mm": _number(_mapping(row, "outline row").get("x1_mm"), "outline x1"),
             "y1_mm": _number(_mapping(row, "outline row").get("y1_mm"), "outline y1"),
             "x2_mm": _number(_mapping(row, "outline row").get("x2_mm"), "outline x2"),
@@ -531,6 +568,7 @@ def _footprint_projection(
     poses = {pose.component: pose for pose in design.native_intent.footprint_poses}
     connectivity = _footprint_connectivity(design)
     result: list[dict[str, Any]] = []
+    pad_total = 0
     for component in sorted(components, key=lambda item: item.id):
         native_row = by_reference.get(component.reference)
         placement = component.placement
@@ -564,9 +602,42 @@ def _footprint_projection(
         if footprint is None:
             part = managed.graph.get(component.part_id)
             footprint = part.footprint
+        native_uuid = (
+            _bounded_text(native_row.get("uuid"), "native footprint UUID", 128)
+            if native_row is not None and isinstance(native_row.get("uuid"), str)
+            else None
+        )
+        bounds: dict[str, float] | None = None
+        bounds_source = "unavailable"
+        if native_row is not None and isinstance(native_row.get("bbox"), Mapping):
+            native_bounds = _mapping(native_row.get("bbox"), "native footprint bounds")
+            bounds = {
+                "x_mm": _number(native_bounds.get("x_mm"), "footprint bounds x"),
+                "y_mm": _number(native_bounds.get("y_mm"), "footprint bounds y"),
+                "width_mm": _positive_number(
+                    native_bounds.get("width_mm"), "footprint bounds width"
+                ),
+                "height_mm": _positive_number(
+                    native_bounds.get("height_mm"), "footprint bounds height"
+                ),
+            }
+            bounds_source = "native_kicad"
+        elif x_mm is not None and y_mm is not None:
+            bounds = {
+                "x_mm": x_mm - 2.0,
+                "y_mm": y_mm - 1.5,
+                "width_mm": 4.0,
+                "height_mm": 3.0,
+            }
+            bounds_source = "approximate_fallback"
+        pad_geometry = _native_pad_projection(design, component.id, native_row)
+        pad_total += len(pad_geometry)
+        if pad_total > limits.max_pads:
+            raise ValidationError("live scene exceeds its pad limit")
         result.append(
             {
                 "id": component.id,
+                "uuid": native_uuid,
                 "reference": component.reference,
                 "label": component.reference,
                 "value": component.value,
@@ -579,10 +650,59 @@ def _footprint_projection(
                 "fixed": bool(fallback.fixed) if fallback is not None else False,
                 "placed": x_mm is not None and y_mm is not None,
                 "pads": connectivity.get(component.id, {}).get("pads", []),
+                "pad_geometry": pad_geometry,
                 "nets": connectivity.get(component.id, {}).get("nets", []),
+                "bounds": bounds,
+                "bounds_source": bounds_source,
             }
         )
     return result
+
+
+def _native_pad_projection(
+    design: Design,
+    component_id: str,
+    native_row: Mapping[str, Any] | None,
+) -> list[dict[str, Any]]:
+    if native_row is None:
+        return []
+    raw_pads = native_row.get("pads", [])
+    if not isinstance(raw_pads, list):
+        raise ValidationError("native footprint pads must be an array")
+    net_mappings = _native_copper_net_mappings(design)
+    result: list[dict[str, Any]] = []
+    for raw in raw_pads:
+        pad = _mapping(raw, "native pad")
+        required_geometry = ("x_mm", "y_mm", "width_mm", "height_mm")
+        if not all(name in pad for name in required_geometry):
+            # Older retained manifests did not capture pad geometry. The exact
+            # SVG remains authoritative and no coordinates are invented here.
+            continue
+        native_net = _bounded_text(
+            pad.get("net", ""), "native pad net", 128, empty=True
+        )
+        net_id, net_name = _resolve_native_copper_net(native_net, net_mappings)
+        layers = _array(pad.get("layers", []), "native pad layers")
+        result.append(
+            {
+                "id": f"{component_id}:{_bounded_text(pad.get('number'), 'pad number', 64)}",
+                "uuid": (
+                    _bounded_text(pad.get("uuid"), "native pad UUID", 128)
+                    if isinstance(pad.get("uuid"), str)
+                    else None
+                ),
+                "number": _bounded_text(pad.get("number"), "pad number", 64),
+                "component_id": component_id,
+                "net": net_id,
+                "net_name": net_name,
+                "x_mm": _number(pad.get("x_mm"), "pad x"),
+                "y_mm": _number(pad.get("y_mm"), "pad y"),
+                "width_mm": _positive_number(pad.get("width_mm"), "pad width"),
+                "height_mm": _positive_number(pad.get("height_mm"), "pad height"),
+                "layers": [_bounded_text(layer, "pad layer", 64) for layer in layers],
+            }
+        )
+    return sorted(result, key=lambda item: (item["number"], item["id"]))
 
 
 def _footprint_connectivity(design: Design) -> dict[str, dict[str, list[Any]]]:
@@ -633,6 +753,11 @@ def _copper_projection(
                 raise ValidationError("native route references an unavailable layer")
             routes.append(
                 {
+                    "uuid": (
+                        _bounded_text(row.get("uuid"), "native route UUID", 128)
+                        if isinstance(row.get("uuid"), str)
+                        else None
+                    ),
                     "net": net_id,
                     "net_name": semantic_net_name,
                     "layer_index": layer_index,
@@ -655,6 +780,11 @@ def _copper_projection(
                 raise ValidationError("native via diameter does not exceed its drill")
             vias.append(
                 {
+                    "uuid": (
+                        _bounded_text(row.get("uuid"), "native via UUID", 128)
+                        if isinstance(row.get("uuid"), str)
+                        else None
+                    ),
                     "net": net_id,
                     "net_name": semantic_net_name,
                     "x_mm": _number(row.get("x_mm"), "via x"),
@@ -876,6 +1006,86 @@ def _logical_layers(count: int) -> list[str]:
     if count == 1:
         return ["F.Cu"]
     return ["F.Cu", *(f"In{index}.Cu" for index in range(1, count - 1)), "B.Cu"]
+
+
+def _spatial_index(
+    footprints: list[dict[str, Any]],
+    routes: list[dict[str, Any]],
+    vias: list[dict[str, Any]],
+    unrouted: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Return a bounded cross-location index without inventing geometry."""
+
+    footprint_index = [
+        {
+            "id": item["id"],
+            "uuid": item.get("uuid"),
+            "reference": item["reference"],
+            "bounds": item.get("bounds"),
+            "bounds_source": item.get("bounds_source"),
+        }
+        for item in footprints
+    ]
+    pads = [
+        dict(pad)
+        for footprint in footprints
+        for pad in footprint.get("pad_geometry", [])
+        if isinstance(pad, dict)
+    ]
+    route_index = [
+        {
+            "id": item["id"],
+            "uuid": item.get("uuid"),
+            "net": item.get("net"),
+            "bounds": {
+                "x_mm": min(item["x1_mm"], item["x2_mm"]),
+                "y_mm": min(item["y1_mm"], item["y2_mm"]),
+                "width_mm": abs(item["x2_mm"] - item["x1_mm"]),
+                "height_mm": abs(item["y2_mm"] - item["y1_mm"]),
+            },
+        }
+        for item in routes
+    ]
+    via_index = [
+        {
+            "id": item["id"],
+            "uuid": item.get("uuid"),
+            "net": item.get("net"),
+            "bounds": {
+                "x_mm": item["x_mm"] - item["diameter_mm"] / 2,
+                "y_mm": item["y_mm"] - item["diameter_mm"] / 2,
+                "width_mm": item["diameter_mm"],
+                "height_mm": item["diameter_mm"],
+            },
+        }
+        for item in vias
+    ]
+    unrouted_index: list[dict[str, Any]] = []
+    for item in unrouted:
+        endpoints = item.get("endpoints", [])
+        if not isinstance(endpoints, list) or not endpoints:
+            continue
+        xs = [point["x_mm"] for point in endpoints]
+        ys = [point["y_mm"] for point in endpoints]
+        unrouted_index.append(
+            {
+                "id": item["id"],
+                "net": item["id"],
+                "bounds": {
+                    "x_mm": min(xs),
+                    "y_mm": min(ys),
+                    "width_mm": max(xs) - min(xs),
+                    "height_mm": max(ys) - min(ys),
+                },
+            }
+        )
+    return {
+        "footprints": footprint_index,
+        "pads": pads,
+        "routes": route_index,
+        "vias": via_index,
+        "unrouted": unrouted_index,
+    }
 
 
 def _stable_rows(prefix: str, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

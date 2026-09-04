@@ -124,6 +124,7 @@ def _load_job(path):
             "title",
             "board_path",
             "include_connectivity",
+            "include_spatial",
         },
     )
     if job["schema"] != "pcbdraft-pcbnew-job" or job["version"] != 1:
@@ -134,6 +135,8 @@ def _load_job(path):
         job["include_connectivity"], bool
     ):
         raise TypeError("include_connectivity must be boolean")
+    if "include_spatial" in job and not isinstance(job["include_spatial"], bool):
+        raise TypeError("include_spatial must be boolean")
     _text(job["design_id"], "design_id", 128)
     return job
 
@@ -415,6 +418,7 @@ def inspect_board_job(job):
     actual_layers = _actual_layers(board.GetCopperLayerCount())
     logical_layer = {layer: index for index, layer in enumerate(actual_layers)}
     include_connectivity = bool(job.get("include_connectivity", False))
+    include_spatial = bool(job.get("include_spatial", False))
     connectivity = _inspect_board_connectivity(board) if include_connectivity else None
     connectivity_by_pad = (
         {
@@ -440,7 +444,7 @@ def inspect_board_job(job):
                 "number": number,
                 "net": str(pad.GetNetname()),
             }
-            if include_connectivity:
+            if include_connectivity or include_spatial:
                 position = pad.GetPosition()
                 pad_row.update(
                     {
@@ -452,60 +456,82 @@ def inspect_board_job(job):
                             if pad.IsOnLayer(layer)
                         ],
                         "no_connect": bool(pad.IsNoConnectPad()),
-                        "connectivity_component": connectivity_by_pad[
-                            (str(footprint.GetReference()), number)
-                        ],
                     }
                 )
+            if include_spatial:
+                pad_bbox = pad.GetBoundingBox()
+                pad_row.update(
+                    {
+                        "uuid": pad.m_Uuid.AsStdString(),
+                        "width_mm": _mm(pad_bbox.GetWidth()),
+                        "height_mm": _mm(pad_bbox.GetHeight()),
+                    }
+                )
+            if include_connectivity:
+                pad_row["connectivity_component"] = connectivity_by_pad[
+                    (str(footprint.GetReference()), number)
+                ]
             pads.append(pad_row)
         pads.sort(key=lambda item: str(item["number"]))
-        components.append(
-            {
-                "reference": str(footprint.GetReference()),
-                "value": str(footprint.GetValue()),
-                "footprint": footprint.GetFPID().GetUniStringLibId(),
-                "schematic_path": footprint.GetPath().AsString(),
-                "x_mm": _mm(footprint.GetPosition().x),
-                "y_mm": _mm(footprint.GetPosition().y),
-                "rotation_deg": round(
-                    float(footprint.GetOrientationDegrees()) % 360, 9
-                ),
-                "side": "back" if footprint.IsFlipped() else "front",
-                "properties": dict(sorted(properties.items())),
-                "pads": pads,
-            }
-        )
+        component: dict[str, object] = {
+            "reference": str(footprint.GetReference()),
+            "value": str(footprint.GetValue()),
+            "footprint": footprint.GetFPID().GetUniStringLibId(),
+            "schematic_path": footprint.GetPath().AsString(),
+            "x_mm": _mm(footprint.GetPosition().x),
+            "y_mm": _mm(footprint.GetPosition().y),
+            "rotation_deg": round(float(footprint.GetOrientationDegrees()) % 360, 9),
+            "side": "back" if footprint.IsFlipped() else "front",
+            "properties": dict(sorted(properties.items())),
+            "pads": pads,
+        }
+        if include_spatial:
+            footprint_bbox = footprint.GetBoundingBox(False, False)
+            component.update(
+                {
+                    "uuid": footprint.m_Uuid.AsStdString(),
+                    "bbox": {
+                        "x_mm": _mm(footprint_bbox.GetX()),
+                        "y_mm": _mm(footprint_bbox.GetY()),
+                        "width_mm": _mm(footprint_bbox.GetWidth()),
+                        "height_mm": _mm(footprint_bbox.GetHeight()),
+                    },
+                }
+            )
+        components.append(component)
     tracks = []
     for item in board.Tracks():
         if isinstance(item, pcbnew.PCB_VIA):
             start_layer = item.TopLayer()
             stop_layer = item.BottomLayer()
-            tracks.append(
-                {
-                    "kind": "via",
-                    "net": str(item.GetNetname()),
-                    "x_mm": _mm(item.GetPosition().x),
-                    "y_mm": _mm(item.GetPosition().y),
-                    "width_mm": _mm(item.GetWidth()),
-                    "drill_mm": _mm(item.GetDrillValue()),
-                    "from_layer": logical_layer[start_layer],
-                    "to_layer": logical_layer[stop_layer],
-                }
-            )
+            track: dict[str, object] = {
+                "kind": "via",
+                "net": str(item.GetNetname()),
+                "x_mm": _mm(item.GetPosition().x),
+                "y_mm": _mm(item.GetPosition().y),
+                "width_mm": _mm(item.GetWidth()),
+                "drill_mm": _mm(item.GetDrillValue()),
+                "from_layer": logical_layer[start_layer],
+                "to_layer": logical_layer[stop_layer],
+            }
+            if include_spatial:
+                track["uuid"] = item.m_Uuid.AsStdString()
+            tracks.append(track)
         elif isinstance(item, pcbnew.PCB_TRACK):
-            tracks.append(
-                {
-                    "kind": "segment",
-                    "net": str(item.GetNetname()),
-                    "x1_mm": _mm(item.GetStart().x),
-                    "y1_mm": _mm(item.GetStart().y),
-                    "x2_mm": _mm(item.GetEnd().x),
-                    "y2_mm": _mm(item.GetEnd().y),
-                    "width_mm": _mm(item.GetWidth()),
-                    "layer": str(board.GetLayerName(item.GetLayer())),
-                    "layer_index": logical_layer[item.GetLayer()],
-                }
-            )
+            track = {
+                "kind": "segment",
+                "net": str(item.GetNetname()),
+                "x1_mm": _mm(item.GetStart().x),
+                "y1_mm": _mm(item.GetStart().y),
+                "x2_mm": _mm(item.GetEnd().x),
+                "y2_mm": _mm(item.GetEnd().y),
+                "width_mm": _mm(item.GetWidth()),
+                "layer": str(board.GetLayerName(item.GetLayer())),
+                "layer_index": logical_layer[item.GetLayer()],
+            }
+            if include_spatial:
+                track["uuid"] = item.m_Uuid.AsStdString()
+            tracks.append(track)
         else:
             raise TypeError("board contains an unsupported track object")
     zones = []
@@ -537,14 +563,15 @@ def inspect_board_job(job):
             or drawing.GetShape() != pcbnew.SHAPE_T_SEGMENT
         ):
             raise TypeError("board contains an unsupported Edge.Cuts object")
-        outline.append(
-            {
-                "x1_mm": _mm(drawing.GetStart().x),
-                "y1_mm": _mm(drawing.GetStart().y),
-                "x2_mm": _mm(drawing.GetEnd().x),
-                "y2_mm": _mm(drawing.GetEnd().y),
-            }
-        )
+        outline_row: dict[str, object] = {
+            "x1_mm": _mm(drawing.GetStart().x),
+            "y1_mm": _mm(drawing.GetStart().y),
+            "x2_mm": _mm(drawing.GetEnd().x),
+            "y2_mm": _mm(drawing.GetEnd().y),
+        }
+        if include_spatial:
+            outline_row["uuid"] = drawing.m_Uuid.AsStdString()
+        outline.append(outline_row)
     settings = board.GetDesignSettings()
     nets = sorted(
         name
@@ -556,7 +583,7 @@ def inspect_board_job(job):
         "version": 1,
         "mode": "inspect_board",
         "kicad_version": pcbnew.GetBuildVersion(),
-        "components": sorted(components, key=lambda item: item["reference"]),
+        "components": sorted(components, key=lambda item: str(item["reference"])),
         "nets": nets,
         "tracks": sorted(tracks, key=lambda item: json.dumps(item, sort_keys=True)),
         "zones": sorted(zones, key=lambda item: json.dumps(item, sort_keys=True)),

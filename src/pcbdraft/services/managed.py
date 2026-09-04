@@ -385,7 +385,10 @@ def materialize_managed_design(
                 "native_snapshots": {
                     "schematic": inspect_native_schematic(schematic.path),
                     "board": inspect_native_board(
-                        design, pcb.path, system_python=system_python
+                        design,
+                        pcb.path,
+                        system_python=system_python,
+                        include_spatial=True,
                     ),
                     "project": inspect_native_project(pcb.project_path),
                 },

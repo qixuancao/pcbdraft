@@ -96,7 +96,10 @@ def preview_kicad_import(
     if current_project != baseline_project:
         raise ValidationError("native KiCad project rules/settings changed")
     current_board = inspect_native_board(
-        project.design, project.board_path, system_python=system_python
+        project.design,
+        project.board_path,
+        system_python=system_python,
+        include_spatial=True,
     )
     baseline_board = project.manifest["native_snapshots"]["board"]
     changes = _board_pose_changes(baseline_board, current_board)
@@ -390,13 +393,35 @@ def _board_pose_changes(
     if set(before) != set(after):
         raise ValidationError("native board component set changed")
     pose_fields = {"x_mm", "y_mm", "rotation_deg", "side"}
+    derived_spatial_fields = {"bbox"}
+    derived_pad_fields = {
+        "uuid",
+        "x_mm",
+        "y_mm",
+        "width_mm",
+        "height_mm",
+        "layers",
+        "no_connect",
+        "connectivity_component",
+    }
+
+    def topology(row: dict[str, Any]) -> dict[str, Any]:
+        result = {
+            key: value
+            for key, value in row.items()
+            if key not in pose_fields | derived_spatial_fields | {"uuid", "pads"}
+        }
+        result["pads"] = [
+            {key: value for key, value in pad.items() if key not in derived_pad_fields}
+            for pad in row.get("pads", [])
+        ]
+        return result
+
     changes = []
     for reference in sorted(before):
         old = before[reference]
         new = after[reference]
-        if {key: value for key, value in old.items() if key not in pose_fields} != {
-            key: value for key, value in new.items() if key not in pose_fields
-        }:
+        if topology(old) != topology(new):
             raise ValidationError(
                 f"native board contains unsupported topology/part edit at {reference}"
             )

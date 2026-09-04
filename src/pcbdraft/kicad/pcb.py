@@ -136,6 +136,7 @@ def inspect_native_board(
     *,
     system_python: str | Path | None = None,
     include_connectivity: bool = False,
+    include_spatial: bool = False,
 ) -> dict[str, Any]:
     """Return a bounded semantic snapshot of an existing native KiCad board."""
     source = Path(board_path).resolve(strict=True)
@@ -148,6 +149,8 @@ def inspect_native_board(
     }
     if include_connectivity:
         job["include_connectivity"] = True
+    if include_spatial:
+        job["include_spatial"] = True
     with tempfile.TemporaryDirectory(prefix="pcbdraft-board-inspect-") as temporary:
         result_path = Path(temporary) / "board-inspection.json"
         result = _run_worker(

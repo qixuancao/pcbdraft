@@ -53,6 +53,7 @@ def _native_snapshot() -> dict[str, Any]:
         "kicad_version": "10.0.5",
         "components": [
             {
+                "uuid": "11111111-1111-1111-1111-111111111111",
                 "reference": "R1",
                 "value": "4.7k",
                 "footprint": "Resistor_SMD:R_0603_1608Metric",
@@ -60,9 +61,22 @@ def _native_snapshot() -> dict[str, Any]:
                 "y_mm": 8.0,
                 "rotation_deg": 90.0,
                 "side": "front",
-                "pads": [],
+                "bbox": {"x_mm": 7.8, "y_mm": 7.1, "width_mm": 2.4, "height_mm": 1.8},
+                "pads": [
+                    {
+                        "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                        "number": "1",
+                        "net": "3V3",
+                        "x_mm": 8.4,
+                        "y_mm": 8.0,
+                        "width_mm": 0.8,
+                        "height_mm": 0.9,
+                        "layers": ["F.Cu", "F.Mask"],
+                    }
+                ],
             },
             {
+                "uuid": "22222222-2222-2222-2222-222222222222",
                 "reference": "R2",
                 "value": "4.7k",
                 "footprint": "Resistor_SMD:R_0603_1608Metric",
@@ -70,6 +84,7 @@ def _native_snapshot() -> dict[str, Any]:
                 "y_mm": 14.0,
                 "rotation_deg": 0.0,
                 "side": "back",
+                "bbox": {"x_mm": 14.8, "y_mm": 13.1, "width_mm": 2.4, "height_mm": 1.8},
                 "pads": [],
             },
         ],
@@ -77,6 +92,7 @@ def _native_snapshot() -> dict[str, Any]:
         "tracks": [
             {
                 "kind": "segment",
+                "uuid": "33333333-3333-3333-3333-333333333333",
                 "net": "3V3",
                 "x1_mm": 9.0,
                 "y1_mm": 8.0,
@@ -88,6 +104,7 @@ def _native_snapshot() -> dict[str, Any]:
             },
             {
                 "kind": "via",
+                "uuid": "44444444-4444-4444-4444-444444444444",
                 "net": "3V3",
                 "x_mm": 12.0,
                 "y_mm": 11.0,
@@ -99,7 +116,13 @@ def _native_snapshot() -> dict[str, Any]:
         ],
         "zones": [],
         "outline": [
-            {"x1_mm": 0.0, "y1_mm": 0.0, "x2_mm": 20.0, "y2_mm": 0.0},
+            {
+                "uuid": "50000000-0000-0000-0000-000000000001",
+                "x1_mm": 0.0,
+                "y1_mm": 0.0,
+                "x2_mm": 20.0,
+                "y2_mm": 0.0,
+            },
             {"x1_mm": 20.0, "y1_mm": 0.0, "x2_mm": 20.0, "y2_mm": 20.0},
             {"x1_mm": 20.0, "y1_mm": 20.0, "x2_mm": 0.0, "y2_mm": 20.0},
             {"x1_mm": 0.0, "y1_mm": 20.0, "x2_mm": 0.0, "y2_mm": 0.0},
@@ -282,6 +305,21 @@ class LiveSceneTests(unittest.TestCase):
             self.assertEqual(scene["footprints"][0]["nets"][0]["name"], "3V3")
             self.assertEqual(scene["status"]["counts"]["nets"], 2)
             self.assertEqual(scene["footprints"][0]["x_mm"], 9.0)
+            self.assertEqual(
+                scene["footprints"][0]["uuid"],
+                "11111111-1111-1111-1111-111111111111",
+            )
+            self.assertEqual(scene["footprints"][0]["bounds_source"], "native_kicad")
+            self.assertEqual(scene["footprints"][0]["bounds"]["width_mm"], 2.4)
+            self.assertEqual(
+                scene["footprints"][0]["pad_geometry"][0]["uuid"],
+                "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            )
+            self.assertEqual(scene["spatial_index"]["pads"][0]["net"], "net_3v3")
+            self.assertEqual(scene["canvas"]["primary"]["kind"], "kicad_svg")
+            self.assertEqual(
+                scene["canvas"]["primary"]["content_hash"], scene["content_hash"]
+            )
             self.assertEqual(len(scene["routes"]), 1)
             self.assertEqual(len(scene["vias"]), 1)
             self.assertEqual(len(scene["unrouted_nets"][0]["lines"]), 1)
