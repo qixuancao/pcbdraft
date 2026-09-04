@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess
 import unittest
 from contextlib import redirect_stderr
 from html.parser import HTMLParser
@@ -26,6 +28,23 @@ class _AssetParser(HTMLParser):
 
 
 class GUIFrontendTests(unittest.TestCase):
+    @unittest.skipUnless(
+        shutil.which("node"), "Node.js is needed for offline JS behavior tests"
+    )
+    def test_frontend_async_state_behavior(self) -> None:
+        fixture = Path(__file__).with_name("frontend_state_fixture.mjs")
+        executable = shutil.which("node")
+        assert executable is not None
+        result = subprocess.run(
+            [executable, str(fixture)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("FRONTEND_STATE_OK", result.stdout)
+
     @classmethod
     def setUpClass(cls) -> None:
         root = Path(__file__).resolve().parents[2]
@@ -141,7 +160,7 @@ class GUIFrontendTests(unittest.TestCase):
             self.script, re.compile(r"DISCONNECTED_POLL_MAX_MS\s*=\s*30000")
         )
         self.assertIn("snapshotInFlight: null", self.script)
-        self.assertIn("if (running)", self.script)
+        self.assertIn("running.projectId === projectId", self.script)
         self.assertIn("return running.promise;", self.script)
         self.assertIn("function scheduleDisconnectedPolling()", self.script)
         self.assertIn("if (state.eventStreamHealthy", self.script)

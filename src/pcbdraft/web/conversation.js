@@ -141,6 +141,13 @@ export function createConversation({ elements, api, t, onToast }) {
   let projectId = "";
   let session = normalizeSession({});
   let events = [];
+  let projectVersion = 0;
+  let loadVersion = 0;
+  let sendPending = false;
+
+  function isActive() {
+    return ["queued", "running", "cancel_requested", "starting", "stopping"].includes(session.status);
+  }
 
   function renderMessages() {
     const fragment = document.createDocumentFragment();
@@ -167,9 +174,9 @@ export function createConversation({ elements, api, t, onToast }) {
     elements.chatLog.replaceChildren(fragment);
     elements.chatEmpty.hidden = session.messages.length > 0;
     elements.turnState.textContent = localizedState(session.status, t);
-    const active = ["starting", "running", "stopping"].includes(session.status);
+    const active = isActive();
     elements.stop.disabled = !projectId || !active;
-    elements.send.disabled = !projectId || active;
+    elements.send.disabled = !projectId || active || sendPending;
     elements.input.disabled = !projectId;
   }
 
@@ -197,37 +204,51 @@ export function createConversation({ elements, api, t, onToast }) {
 
   async function refreshSession() {
     if (!projectId) return;
+    const version = ++loadVersion;
+    const selected = projectId;
     try {
-      session = normalizeSession(await api.get(api.projectPath(projectId, "session")));
+      const payload = await api.get(api.projectPath(selected, "session"));
+      if (version !== loadVersion || selected !== projectId) return;
+      session = normalizeSession(payload);
       renderMessages();
     } catch (_error) {
-      onToast(t("state.error"), "error");
+      if (version === loadVersion) onToast(t("state.error"), "error");
     }
   }
 
   async function send(event) {
     event.preventDefault();
     const value = clean(elements.input.value, 16 * 1024);
-    if (!projectId || !value) return;
+    if (!projectId || !value || isActive() || sendPending) return;
+    const selected = projectId;
+    const version = projectVersion;
+    sendPending = true;
     elements.send.disabled = true;
     try {
-      await api.post(api.projectPath(projectId, "messages"), { text: value });
-      elements.input.value = "";
+      await api.post(api.projectPath(selected, "messages"), { text: value });
+      if (version !== projectVersion) return;
+      if (elements.input.value === value) elements.input.value = "";
       await refreshSession();
     } catch (_error) {
-      onToast(t("state.error"), "error");
+      if (version === projectVersion) onToast(t("state.error"), "error");
     } finally {
-      renderMessages();
+      if (version === projectVersion) {
+        sendPending = false;
+        renderMessages();
+      }
     }
   }
 
   async function stop() {
     if (!projectId) return;
+    const selected = projectId;
+    const version = projectVersion;
     try {
-      await api.post(api.projectPath(projectId, "stop"), {});
+      await api.post(api.projectPath(selected, "stop"), {});
+      if (version !== projectVersion) return;
       await refreshSession();
     } catch (_error) {
-      onToast(t("state.error"), "error");
+      if (version === projectVersion) onToast(t("state.error"), "error");
     }
   }
 
@@ -250,6 +271,9 @@ export function createConversation({ elements, api, t, onToast }) {
 
   return {
     setProject(id) {
+      projectVersion += 1;
+      loadVersion += 1;
+      sendPending = false;
       projectId = typeof id === "string" ? id : "";
       session = normalizeSession({});
       events = [];
@@ -258,6 +282,7 @@ export function createConversation({ elements, api, t, onToast }) {
       return refreshSession();
     },
     setSession(payload) {
+      loadVersion += 1;
       session = normalizeSession(payload);
       renderMessages();
     },

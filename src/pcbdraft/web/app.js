@@ -92,6 +92,7 @@ const state = {
   fallbackDelay: DISCONNECTED_POLL_MIN_MS,
   streamRecovery: null,
   snapshotInFlight: null,
+  projectEpoch: 0,
   primaryView: "2d",
   primary3dBinding: "",
   externalChange: null,
@@ -404,6 +405,7 @@ function startEvents() {
     updateIndicator(elements.stream, "live", "good");
   });
   source.addEventListener("update", (event) => {
+    if (state.eventSource !== source) return;
     try {
       const value = JSON.parse(event.data);
       const sequence = Number(value.sequence);
@@ -417,8 +419,8 @@ function startEvents() {
       state.eventCursor = sequence;
       state.eventStreamId = streamId;
       conversation.addEvent(value);
-      if (["scene.committed", "generation.complete", "validation.complete", "job.complete", "job.failed"].includes(value.kind)) {
-        refreshSnapshot({ quiet: true });
+      if (["scene.committed", "generation.complete", "validation.complete", "job.complete", "job.failed", "external_revision.detected", "external_revision.imported"].includes(value.kind)) {
+        refreshSnapshot({ quiet: true, invalidate: true });
       }
     } catch (_error) {
       state.eventStreamHealthy = false;
@@ -452,25 +454,34 @@ function scheduleDisconnectedPolling() {
 }
 
 function recoverEventStream() {
-  if (state.streamRecovery) return state.streamRecovery;
   const projectId = state.selectedProject;
+  const projectEpoch = state.projectEpoch;
+  if (state.streamRecovery?.projectEpoch === projectEpoch) return state.streamRecovery.promise;
   stopEvents();
   updateIndicator(elements.stream, "reconnecting", "warn");
-  state.streamRecovery = refreshSnapshot({ quiet: true, resetStreamCursor: true })
+  const recovery = { projectId, projectEpoch, promise: null };
+  recovery.promise = refreshSnapshot({ quiet: true, resetStreamCursor: true })
     .finally(() => {
-      state.streamRecovery = null;
-      if (projectId === state.selectedProject) startEvents();
+      if (state.streamRecovery === recovery) state.streamRecovery = null;
+      if (projectId === state.selectedProject && projectEpoch === state.projectEpoch) startEvents();
     });
-  return state.streamRecovery;
+  state.streamRecovery = recovery;
+  return recovery.promise;
 }
 
-async function refreshSnapshot({ quiet = false, resetStreamCursor = false } = {}) {
+async function refreshSnapshot({ quiet = false, resetStreamCursor = false, invalidate = false } = {}) {
   if (!state.selectedProject) return null;
-  const running = state.snapshotInFlight;
-  if (running) return running.promise;
   const projectId = state.selectedProject;
+  const projectEpoch = state.projectEpoch;
+  const running = state.snapshotInFlight;
+  if (running && running.projectId === projectId && running.projectEpoch === projectEpoch) {
+    running.resetStreamCursor ||= resetStreamCursor;
+    running.refreshAgain ||= invalidate;
+    return running.promise;
+  }
+  const request = { projectId, projectEpoch, resetStreamCursor, refreshAgain: false, promise: null };
   const promise = api.get(api.projectPath(projectId, "snapshot")).then((payload) => {
-    if (projectId !== state.selectedProject) return null;
+    if (projectId !== state.selectedProject || projectEpoch !== state.projectEpoch) return null;
     const busy = payload?.busy === true;
     const externalChange = payload?.external_change;
     state.externalChange = externalChange && typeof externalChange === "object" ? externalChange : null;
@@ -489,7 +500,7 @@ async function refreshSnapshot({ quiet = false, resetStreamCursor = false } = {}
     if (updated && scene) inspector.setScene(scene, payload?.ipc);
     if (updated && scene && previous && (previous.designRevision !== scene.designRevision || previous.contentHash !== scene.contentHash)) showPrimary2d();
     if (payload?.session) conversation.setSession(payload.session);
-    if (resetStreamCursor && Number.isInteger(payload?.stream?.last_sequence)) {
+    if (request.resetStreamCursor && Number.isInteger(payload?.stream?.last_sequence)) {
       state.eventCursor = payload.stream.last_sequence;
       state.eventStreamId = clean(payload.stream.stream_id, 64);
     }
@@ -497,12 +508,16 @@ async function refreshSnapshot({ quiet = false, resetStreamCursor = false } = {}
     updateIndicator(elements.ipc, ipcState, ipcState === "online" ? "good" : "warn");
     return payload;
   }).catch((_error) => {
-    if (!quiet) showToast(i18n.t("state.error"), "error");
+    if (!quiet && projectEpoch === state.projectEpoch) showToast(i18n.t("state.error"), "error");
     return null;
   }).finally(() => {
-    if (state.snapshotInFlight?.projectId === projectId) state.snapshotInFlight = null;
+    if (state.snapshotInFlight === request) state.snapshotInFlight = null;
+    if (request.refreshAgain && projectEpoch === state.projectEpoch) {
+      return refreshSnapshot({ quiet: true, resetStreamCursor: request.resetStreamCursor });
+    }
   });
-  state.snapshotInFlight = { projectId, promise };
+  request.promise = promise;
+  state.snapshotInFlight = request;
   return promise;
 }
 
@@ -540,6 +555,10 @@ async function openProject(projectId) {
   if (isMobileLayout() && currentMobileOverlay() === "rail") setMobileOverlay(null);
   stopEvents();
   state.selectedProject = projectId;
+  const projectEpoch = ++state.projectEpoch;
+  state.externalChange = null;
+  elements.importExternal.hidden = true;
+  conversation.setProject("");
   state.eventCursor = 0;
   state.eventStreamId = "";
   state.fallbackDelay = DISCONNECTED_POLL_MIN_MS;
@@ -556,11 +575,12 @@ async function openProject(projectId) {
   // loading.  Those reads share the project lock and must not make the initial
   // snapshot look like an authoritative write is still in progress.
   await refreshSnapshot({ resetStreamCursor: true });
+  if (projectEpoch !== state.projectEpoch) return;
   await Promise.all([
     inspector.setProject(projectId),
     conversation.setProject(projectId),
   ]);
-  startEvents();
+  if (projectEpoch === state.projectEpoch) startEvents();
 }
 
 function cycle(field, options) {

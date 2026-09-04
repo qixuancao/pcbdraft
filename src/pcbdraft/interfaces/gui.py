@@ -922,8 +922,11 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
 
     async def snapshot(project_id: str) -> dict[str, Any]:
         project_id = _safe_project_id(project_id)
+        # Capture a lower bound first. Updates racing the snapshot remain
+        # replayable, even if this occasionally replays an already visible scene.
+        cursor = await run_in_threadpool(runtime.events.cursor, project_id)
         value = await run_in_threadpool(runtime.snapshot, project_id)
-        value["stream"] = await run_in_threadpool(runtime.events.cursor, project_id)
+        value["stream"] = cursor
         return value
 
     async def validation(project_id: str) -> dict[str, Any]:

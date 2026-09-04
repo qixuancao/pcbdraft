@@ -154,3 +154,14 @@ warning 的不完整检查，都不能产生 completed/pass 或 complete/zero-er
 29 项相关 GUI、report contract、rule evidence、gate 与命令身份测试通过
 （0.520 秒），4 个改动源文件的 mypy、改动文件 Ruff 和 diff 检查通过。
 没有执行完整 KiCad 验收或全量测试。
+
+## 第四轮：Web 状态与事件一致性
+
+F04–F07 已修复：外部修改事件触发快照失效；服务先取事件游标再读快照，
+确保竞态提交仍可重放；前端按项目与切换代次合并请求，旧事件流/旧会话请求
+不再覆盖当前项目。读取中的新失效事件会追加一次刷新，合并请求保留游标
+重置要求。queued/running/cancel_requested 都禁止重复发送，键盘入口同样检查。
+
+34 项 GUI/API/前端定向测试通过（0.465 秒），其中包含用 Node 执行实际 JS
+函数的离线行为测试；Python Ruff/mypy、JS 语法与 diff 检查通过。
+没有运行 Browser E2E。

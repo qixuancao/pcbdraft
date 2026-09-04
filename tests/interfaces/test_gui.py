@@ -436,6 +436,31 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.json()["binding"]["content_hash"], "a" * 64)
         self.assertRegex(snapshot.json()["stream"]["stream_id"], r"^[0-9a-f]{32}$")
 
+    async def test_snapshot_cursor_keeps_a_racing_commit_replayable(self) -> None:
+        runtime = self.app.state.pcbdraft
+        original = runtime.live_view.snapshot
+
+        def snapshot_then_commit(project_id, *, timeout=0.0):
+            old = original(project_id, timeout=timeout)
+            runtime.live_view.scene.update(
+                state_revision=8, design_revision=4, content_hash="b" * 64
+            )
+            return old
+
+        with mock.patch.object(
+            runtime.live_view, "snapshot", side_effect=snapshot_then_commit
+        ):
+            response = await self.client.get("/api/projects/demo-board/snapshot")
+        payload = response.json()
+        replay = await self.client.get(
+            "/api/projects/demo-board/events",
+            params={"after": payload["stream"]["last_sequence"], "once": "1"},
+        )
+        self.assertTrue(
+            payload["scene"]["state_revision"] == 8 or "event: update" in replay.text,
+            "a commit absent from the snapshot must remain replayable",
+        )
+
     async def test_all_requests_reject_an_unsafe_host(self) -> None:
         response = await self.client.get(
             "/api/projects", headers={"Host": "evil.example"}
