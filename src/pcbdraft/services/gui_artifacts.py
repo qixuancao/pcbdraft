@@ -18,7 +18,7 @@ from collections.abc import Iterator, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import load_json_limited, make_directory, read_bytes_limited
@@ -356,11 +356,16 @@ class GUIArtifactService:
         ):
             raise ValidationError("artifact receipt is invalid")
         export = receipt.get("export")
-        key = _INDIVIDUAL_EXPORT_KEYS.get(export) if isinstance(export, str) else None
+        if not isinstance(export, str):
+            raise ValidationError("artifact receipt is invalid")
+        key = _INDIVIDUAL_EXPORT_KEYS.get(export)
         if key is None:
             raise ValidationError("artifact receipt is invalid")
         completed_at = _timestamp(receipt.get("completed_at"))
         if not completed_at:
+            raise ValidationError("artifact receipt is invalid")
+        design_hash = receipt.get("design_content_hash")
+        if not isinstance(design_hash, str):
             raise ValidationError("artifact receipt is invalid")
         inventory = self._inventory(release_root, receipt.get("artifacts"))
         sources = self._individual_export_sources(export, inventory)
@@ -368,7 +373,7 @@ class GUIArtifactService:
         stale = _individual_evidence_is_stale(
             source_revision,
             current_revision,
-            receipt["design_content_hash"],
+            design_hash,
             trusted_design_hash,
         )
         record = self._record(
@@ -768,6 +773,7 @@ class GUIArtifactService:
                 raise ValidationError("artifact receipt is invalid")
         elif outcome == "pass":
             raise ValidationError("artifact receipt is invalid")
+        content_hash = cast(str, content_hash)
         source_revision = _non_negative_int(receipt.get("source_design_revision"))
         return {
             "state": state,
@@ -914,10 +920,14 @@ class GUIArtifactService:
             prefix=".pcbdraft-gui-", suffix=".zip", dir=project_dir
         )
         os.close(descriptor)
-        temporary: Path | None = Path(temporary_name)
+        temporary_path = Path(temporary_name)
+        cleanup_temporary = True
         try:
             with zipfile.ZipFile(
-                temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9
+                temporary_path,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
             ) as archive:
                 for source, name in descriptors:
                     info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
@@ -928,18 +938,18 @@ class GUIArtifactService:
                         info, read_bytes_limited(source.path, MAX_ARTIFACT_BYTES)
                     )
             if (
-                temporary.stat().st_size <= 0
-                or temporary.stat().st_size > MAX_ZIP_SOURCE_BYTES
+                temporary_path.stat().st_size <= 0
+                or temporary_path.stat().st_size > MAX_ZIP_SOURCE_BYTES
             ):
                 raise ValidationError("artifact receipt is invalid")
-            os.replace(temporary, target)
-            temporary = None
+            os.replace(temporary_path, target)
+            cleanup_temporary = False
         except (OSError, PCBDraftError, zipfile.BadZipFile) as exc:
             raise ValidationError("artifact receipt is invalid") from exc
         finally:
-            if temporary is not None and temporary.exists():
+            if cleanup_temporary and temporary_path.exists():
                 try:
-                    temporary.unlink()
+                    temporary_path.unlink()
                 except OSError:
                     pass
         return target
@@ -1099,6 +1109,9 @@ def _validation_checks(value: Any) -> list[dict[str, str]]:
             isinstance(item, str) and item for item in (identifier, state, outcome)
         ):
             continue
+        identifier = cast(str, identifier)
+        state = cast(str, state)
+        outcome = cast(str, outcome)
         result.append(
             {
                 "id": identifier[:32],

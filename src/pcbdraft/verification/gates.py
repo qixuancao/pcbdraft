@@ -155,9 +155,9 @@ def structured_violations(
                                 "type",
                                 "layer",
                             ):
-                                bounded = _bounded_scalar(item.get(key))
-                                if bounded is not None:
-                                    compact[key] = bounded
+                                scalar = _bounded_scalar(item.get(key))
+                                if scalar is not None:
+                                    compact[key] = scalar
                             if "description" in compact:
                                 compact["message"] = compact["description"]
                             position = item.get("pos")

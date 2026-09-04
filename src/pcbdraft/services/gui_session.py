@@ -211,6 +211,8 @@ class GuiSessionManager:
                 raise PCBDraftError("could not start the GUI agent worker") from exc
             self._handles[(project_id, turn_id)] = process
             active = state["active"]
+            if not isinstance(active, dict):  # pragma: no cover - assigned above
+                raise PCBDraftError("GUI session worker state was lost")
             active["pid"] = process.pid
             active["pid_started"] = self._process_create_time(process.pid)
             active["status"] = "running"
