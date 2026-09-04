@@ -23,8 +23,13 @@ class _Service:
                 "level": "info",
                 "message": "Committed geometry is ready",
                 "created_at": "2026-08-30T00:00:00Z",
+                "canonical_revision": 7,
+                "design_revision": 3,
+                "design_content_hash": "a" * 64,
+                "binding_state": "bound",
             }
         ]
+        self.external_imports: list[tuple[str, int]] = []
 
     def list_projects(self) -> list[dict[str, Any]]:
         return [
@@ -47,6 +52,23 @@ class _Service:
     def events(self, project_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         self.open_project(project_id)
         return [value for value in self.activity if value["sequence"] > after]
+
+    def external_kicad_change_status(self, project_id: str) -> dict[str, Any]:
+        self.open_project(project_id)
+        return {
+            "state": "clean",
+            "requires_import": False,
+            "canonical_revision": 7,
+            "design_revision": 3,
+            "content_hash": "a" * 64,
+        }
+
+    def import_external_kicad_revision(
+        self, project_id: str, *, expected_revision: int
+    ) -> dict[str, Any]:
+        self.open_project(project_id)
+        self.external_imports.append((project_id, expected_revision))
+        return {"project": {"id": project_id}, "state": {"revision": 8}}
 
 
 class _LiveView:
@@ -383,9 +405,12 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("/must/not/leak", projects.text)
         self.assertEqual(snapshot.status_code, 200)
+        self.assertEqual(snapshot.json()["version"], 2)
         self.assertFalse(snapshot.json()["busy"])
         self.assertEqual(snapshot.json()["scene"]["geometry_revision"], 2)
         self.assertEqual(snapshot.json()["ipc"]["status"], "offline")
+        self.assertEqual(snapshot.json()["binding"]["content_hash"], "a" * 64)
+        self.assertRegex(snapshot.json()["stream"]["stream_id"], r"^[0-9a-f]{32}$")
 
     async def test_all_requests_reject_an_unsafe_host(self) -> None:
         response = await self.client.get(
@@ -508,7 +533,7 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
             if line.startswith("id: ")
         ]
         self.assertEqual(first.status_code, 200)
-        self.assertGreaterEqual(len(ids), 3)
+        self.assertGreaterEqual(len(ids), 2)
         self.assertNotIn("private user text", first.text)
         self.assertNotIn("must not leak", first.text)
         self.assertNotIn("secret", first.text)

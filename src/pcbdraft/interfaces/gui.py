@@ -330,18 +330,47 @@ class GUIEventBroker:
                 self._append(state, self._safe_event(value, source="project"))
                 changed = True
 
-            session_events = self.sessions.events(
-                project_id, after=state.session_cursor
-            )
-            for value in session_events:
-                sequence = value.get("sequence") if isinstance(value, dict) else None
-                if not isinstance(sequence, int) or sequence <= state.session_cursor:
-                    continue
-                state.session_cursor = sequence
-                self._append(state, self._safe_event(value, source="agent"))
-                changed = True
-
-            scene = self.live_view.snapshot(project_id, timeout=0.0)
+            external_change: Mapping[str, Any] | None = None
+            try:
+                scene = self.live_view.snapshot(project_id, timeout=0.0)
+            except PCBDraftError:
+                callback = getattr(self.service, "external_kicad_change_status", None)
+                candidate = callback(project_id) if callable(callback) else None
+                if not isinstance(candidate, Mapping) or not candidate.get(
+                    "requires_import"
+                ):
+                    raise
+                external_change = candidate
+                scene = None
+            if external_change is not None:
+                token = ":".join(
+                    (
+                        "external",
+                        str(external_change.get("canonical_revision", 0)),
+                        str(external_change.get("board_sha256", "unknown")),
+                        str(external_change.get("state", "unknown")),
+                    )
+                )
+                if token != state.scene_token:
+                    state.scene_token = token
+                    self._append(
+                        state,
+                        {
+                            "kind": "external_revision.detected",
+                            "message": "External native changes require explicit review and import",
+                            "level": "warning",
+                            "created_at": utc_timestamp(),
+                            "source": "scene",
+                            "scene_token": token,
+                            "canonical_revision": external_change.get(
+                                "canonical_revision"
+                            ),
+                            "design_revision": external_change.get("design_revision"),
+                            "content_hash": external_change.get("content_hash"),
+                            "binding_state": "bound",
+                        },
+                    )
+                    changed = True
             if scene is not None:
                 token = ":".join(
                     (
@@ -394,22 +423,59 @@ class GUIRuntime:
     last_scenes: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     def snapshot(self, project_id: str) -> dict[str, Any]:
-        scene = self.live_view.snapshot(project_id, timeout=0.0)
+        external_change: dict[str, Any] | None = None
+        status_callback = getattr(self.service, "external_kicad_change_status", None)
+        if callable(status_callback):
+            external_change = status_callback(project_id)
+        blocked_by_external = bool(
+            external_change and external_change.get("requires_import")
+        )
+        try:
+            scene = (
+                None
+                if blocked_by_external
+                else self.live_view.snapshot(project_id, timeout=0.0)
+            )
+        except PCBDraftError:
+            if external_change is None or not external_change.get("requires_import"):
+                raise
+            scene = None
         busy = scene is None
         if scene is not None:
             self.last_scenes[project_id] = scene
         else:
             scene = self.last_scenes.get(project_id)
-        if scene is None:
-            raise PCBDraftError("project is busy and no committed scene is cached yet")
-        ipc = self.ipc.poll(scene)
+        ipc = (
+            self.ipc.poll(scene)
+            if scene is not None and not blocked_by_external
+            else {
+                "status": {
+                    "state": "blocked_external_change"
+                    if blocked_by_external
+                    else "temporarily_unavailable",
+                    "message": "External native changes require explicit import"
+                    if blocked_by_external
+                    else "Committed scene is temporarily unavailable",
+                    "read_only": True,
+                }
+            }
+        )
+        binding_source: Mapping[str, Any] = scene or external_change or {}
         return {
             "schema": "pcbdraft-gui-snapshot",
-            "version": 1,
+            "version": 2,
             "busy": busy,
             "scene": scene,
             "ipc": ipc,
             "session": self.sessions.session(project_id),
+            "external_change": external_change,
+            "binding": {
+                "canonical_revision": binding_source.get(
+                    "state_revision", binding_source.get("canonical_revision")
+                ),
+                "design_revision": binding_source.get("design_revision"),
+                "content_hash": binding_source.get("content_hash"),
+            },
         }
 
 
@@ -583,6 +649,7 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
     live_view: Any | None = None,
     previews: Any | None = None,
     ipc: Any | None = None,
+    ipc_enabled: bool = False,
     sessions: Any | None = None,
     artifacts: Any | None = None,
     kicad_opener: Callable[[str], dict[str, Any]] | None = None,
@@ -612,7 +679,7 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
     live_view = live_view or LiveViewService(service)
     previews = previews or ExactPreviewCache(service, cache_root=cache)
     artifacts = artifacts or GUIArtifactService(service, cache_root=cache / "artifacts")
-    ipc = ipc or KiCadIPCCompanion()
+    ipc = ipc if ipc is not None else KiCadIPCCompanion(enabled=ipc_enabled)
     sessions = sessions or GuiSessionManager(service, cache_root=cache)
     broker = GUIEventBroker(service, live_view, sessions, cache)
     runtime = GUIRuntime(
@@ -728,6 +795,36 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
         return await run_in_threadpool(
             runtime.artifacts.validation, _safe_project_id(project_id)
         )
+
+    async def external_change(project_id: str) -> dict[str, Any]:
+        callback = getattr(runtime.service, "external_kicad_change_status", None)
+        if not callable(callback):
+            raise PCBDraftError("external KiCad change inspection is unavailable")
+        return await run_in_threadpool(callback, _safe_project_id(project_id))
+
+    async def import_external_change(request: Request, project_id: str) -> JSONResponse:
+        project_id = _safe_project_id(project_id)
+        try:
+            body = await request.json()
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ValidationError(
+                "external import request must be a JSON object"
+            ) from exc
+        if not isinstance(body, dict) or set(body) != {"expected_revision"}:
+            raise ValidationError(
+                "external import requires exactly one expected_revision field"
+            )
+        revision = body.get("expected_revision")
+        if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+            raise ValidationError("external import revision is invalid")
+        callback = getattr(runtime.service, "import_external_kicad_revision", None)
+        if not callable(callback):
+            raise PCBDraftError("external KiCad import is unavailable")
+        result = await run_in_threadpool(
+            callback, project_id, expected_revision=revision
+        )
+        await run_in_threadpool(runtime.events.poll, project_id)
+        return JSONResponse(result, status_code=202)
 
     async def artifact_manifest(project_id: str) -> dict[str, Any]:
         return await run_in_threadpool(
@@ -911,6 +1008,20 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
     )
     _add_route(
         app,
+        "/api/projects/{project_id}/external-change",
+        external_change,
+        methods=["GET"],
+        name="external-change",
+    )
+    _add_route(
+        app,
+        "/api/projects/{project_id}/external-change/import",
+        import_external_change,
+        methods=["POST"],
+        name="external-change-import",
+    )
+    _add_route(
+        app,
         "/api/projects/{project_id}/validation",
         validation,
         methods=["GET"],
@@ -999,7 +1110,11 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
 
 
 def run_gui(
-    *, host: str = "127.0.0.1", port: int = 9130, project_id: str | None = None
+    *,
+    host: str = "127.0.0.1",
+    port: int = 9130,
+    project_id: str | None = None,
+    kicad_ipc: bool = False,
 ) -> int:
     """Run the resident server without requiring or opening a browser."""
 
@@ -1007,7 +1122,9 @@ def run_gui(
         raise ValidationError("GUI port must be between 1 and 65535")
     if _bind_host_name(host) is None:
         raise ValidationError("GUI host must be a loopback address or localhost")
-    app = create_gui_app(initial_project=project_id, bind_host=host)
+    app = create_gui_app(
+        initial_project=project_id, bind_host=host, ipc_enabled=kicad_ipc
+    )
     shown_host = f"[{host}]" if ":" in host else host
     print(f"PCBDraft GUI: http://{shown_host}:{port}/")
     uvicorn.run(app, host=host, port=port, log_level="info")
