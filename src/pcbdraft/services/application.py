@@ -75,6 +75,7 @@ from pcbdraft.kicad.routing import (
     RoutingFailureError,
 )
 from pcbdraft.kicad.schematic import inspect_native_schematic
+from pcbdraft.kicad.sync import apply_kicad_import, preview_kicad_import
 from pcbdraft.model.providers import (
     MAX_USER_MESSAGE_BYTES,
     IntentProvider,
@@ -83,6 +84,7 @@ from pcbdraft.model.providers import (
 )
 from pcbdraft.services.doctor import doctor_report
 from pcbdraft.services.managed import (
+    IR_NAME,
     EmptyDesignRequest,
     load_generation_request,
     materialize_managed_design,
@@ -163,6 +165,7 @@ _TRANSIENT_STATES = {
     "validating",
     "releasing",
     "applying_change",
+    "importing_external",
 }
 _STATE_FIELDS = {
     "schema",
@@ -2559,9 +2562,7 @@ class ApplicationService:
             if directory.is_symlink() or not directory.is_dir():
                 continue
             try:
-                receipt = load_json_limited(
-                    directory / "receipt.json", APP_FILE_LIMIT
-                )
+                receipt = load_json_limited(directory / "receipt.json", APP_FILE_LIMIT)
             except PCBDraftError:
                 continue
             if (
@@ -5487,6 +5488,15 @@ class ApplicationService:
     ) -> None:
         state["event_sequence"] += 1
         sequence = state["event_sequence"]
+        content_hash: str | None = None
+        ir_path = root / "design" / IR_NAME
+        if ir_path.is_file() and not ir_path.is_symlink():
+            try:
+                content_hash = Design.from_dict(
+                    load_json_limited(ir_path, 16 * 1024 * 1024)
+                ).content_hash()
+            except PCBDraftError:
+                content_hash = None
         atomic_write_json(
             root / "events" / f"{sequence:08d}.json",
             {
@@ -5497,6 +5507,10 @@ class ApplicationService:
                 "level": level,
                 "message": _sanitize_secret_text(message)[:2048],
                 "created_at": utc_timestamp(),
+                "canonical_revision": state.get("revision"),
+                "design_revision": state.get("design_revision"),
+                "design_content_hash": content_hash,
+                "binding_state": ("bound" if content_hash is not None else "no_design"),
             },
         )
 
@@ -5657,6 +5671,166 @@ class ApplicationService:
             ),
         }
 
+    def external_kicad_change_status(self, project_id: str) -> dict[str, Any]:
+        """Detect native-file drift without treating desktop state as authoritative."""
+
+        project = self._open(project_id)
+        if project.design_root.is_symlink() or not project.design_root.is_dir():
+            return {
+                "state": "no_design",
+                "requires_import": False,
+                "canonical_revision": project.state["revision"],
+                "design_revision": project.state["design_revision"],
+                "content_hash": None,
+            }
+        managed = open_managed_project(project.design_root)
+        drift = managed.drift()
+        binding = {
+            "canonical_revision": project.state["revision"],
+            "design_revision": project.state["design_revision"],
+            "content_hash": managed.design.content_hash(),
+        }
+        if not drift:
+            return {
+                "state": "clean",
+                "requires_import": False,
+                "drift": [],
+                **binding,
+            }
+        try:
+            preview = preview_kicad_import(managed)
+        except PCBDraftError as exc:
+            return {
+                "state": "unsupported_external_change",
+                "requires_import": True,
+                "importable": False,
+                "drift": list(drift),
+                "limitation": _sanitize_secret_text(str(exc))[:1024],
+                **binding,
+            }
+        if not preview.has_changes:
+            return {
+                "state": "unsupported_external_change",
+                "requires_import": True,
+                "importable": False,
+                "drift": list(drift),
+                "limitation": "native bytes changed without a supported semantic placement revision",
+                **binding,
+            }
+        return {
+            "state": "review_required",
+            "requires_import": True,
+            "importable": True,
+            "drift": list(drift),
+            "board_sha256": preview.board_sha256,
+            "change_set_id": preview.change_set.id if preview.change_set else None,
+            "native_changes": list(preview.native_changes[:1_000]),
+            "semantic_diff": preview.diff,
+            **binding,
+        }
+
+    def import_external_kicad_revision(
+        self,
+        project_id: str,
+        *,
+        expected_revision: int | None = None,
+        timeout: float = 120.0,
+    ) -> dict[str, Any]:
+        """Explicitly import reviewed KiCad placement drift as a new revision."""
+
+        project = self._open(project_id)
+        expected_revision = self._bind_expected_revision(
+            project, expected_revision, operation="external KiCad import"
+        )
+        if project.state["status"] not in {
+            "generated",
+            "validated",
+            "validation_failed",
+            "released",
+            "release_failed",
+            "interrupted",
+        }:
+            raise ValidationError("project is not eligible for external KiCad import")
+        if project.state["active_transaction"] is not None:
+            raise ValidationError("project already has a staged semantic change")
+        managed = open_managed_project(project.design_root)
+        preview = preview_kicad_import(managed)
+        if not preview.has_changes or preview.change_set is None:
+            raise ValidationError("no supported external KiCad revision is available")
+        source_design_revision = int(project.state["design_revision"])
+        source_hash = managed.design.content_hash()
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed before external KiCad import")
+            current.state["status"] = "importing_external"
+            current.state["revision"] += 1
+            current.state["updated_at"] = utc_timestamp()
+            self._event(
+                current.state,
+                current.root,
+                "external_revision.import_started",
+                "Importing a reviewed external KiCad placement revision",
+            )
+            self._write_records(current.root, current.state, current.conversation)
+            expected_revision = int(current.state["revision"])
+        try:
+            transaction = apply_kicad_import(preview, timeout=timeout)
+            imported = open_managed_project(project.design_root)
+            imported.assert_synchronized()
+        except BaseException as exc:
+            self._record_failure(
+                project_id,
+                expected_revision,
+                "interrupted",
+                "external_revision.import_failed",
+                str(exc),
+            )
+            raise
+        with ResourceLock(project.root, self.locks_root):
+            current = self._open(project_id)
+            if current.state["revision"] != expected_revision:
+                raise ValidationError("project changed while external KiCad import ran")
+            current.state["status"] = "generated"
+            current.state["revision"] += 1
+            current.state["design_revision"] += 1
+            current.state["updated_at"] = utc_timestamp()
+            current.state["last_validation"] = None
+            current.state["last_preview"] = None
+            current.state["last_release"] = None
+            message = (
+                "Reviewed KiCad placement changes were imported as an explicit external "
+                "revision. Run final validation before release."
+            )
+            self._append_message(
+                current.conversation,
+                "assistant",
+                "external_revision",
+                message,
+                data={
+                    "source_design_revision": source_design_revision,
+                    "source_content_hash": source_hash,
+                    "design_content_hash": imported.design.content_hash(),
+                    "transaction": transaction.name,
+                },
+            )
+            self._event(
+                current.state,
+                current.root,
+                "external_revision.imported",
+                message,
+            )
+            self._write_records(current.root, current.state, current.conversation)
+        result = self.open_project(project_id)
+        result["external_revision"] = {
+            "state": "imported",
+            "source_design_revision": source_design_revision,
+            "design_revision": result["state"]["design_revision"],
+            "content_hash": imported.design.content_hash(),
+            "transaction": transaction.name,
+        }
+        return result
+
     def validate_project(
         self,
         project_id: str,
@@ -5739,6 +5913,8 @@ class ApplicationService:
             "production_claimed": False,
             "source_design_revision": source_design_revision,
             "source_content_hash": managed.design.content_hash(),
+            "design_content_hash": managed.design.content_hash(),
+            "completed_at": utc_timestamp(),
             "erc_evidence": result.erc_evidence_path.relative_to(
                 project.root
             ).as_posix(),
@@ -6638,7 +6814,9 @@ class ApplicationService:
         try:
             baseline_path.resolve(strict=False).relative_to(project.root.resolve())
         except ValueError as exc:
-            raise ValidationError("release DRC baseline path is outside the project") from exc
+            raise ValidationError(
+                "release DRC baseline path is outside the project"
+            ) from exc
         release_id = new_run_id()
         output = project.root / "releases" / release_id
         with ResourceLock(project.root, self.locks_root):

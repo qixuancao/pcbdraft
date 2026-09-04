@@ -219,6 +219,11 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         metavar="ID",
         help="existing project to select when the GUI opens",
     )
+    gui.add_argument(
+        "--kicad-ipc",
+        action="store_true",
+        help="enable the optional read-only KiCad desktop companion (default: off)",
+    )
     return parser
 
 
@@ -385,6 +390,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 project_id=args.gui_project_id,
+                kicad_ipc=args.kicad_ipc,
             )
         if args.command == "repository":
             repository = (

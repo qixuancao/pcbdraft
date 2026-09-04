@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import unittest
+from types import SimpleNamespace
 
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.kicad.support import (
     assert_supported_kicad_version,
     evaluate_kicad_version,
+    probe_kicad_capabilities,
 )
 
 
@@ -41,6 +43,37 @@ class KiCadSupportTests(unittest.TestCase):
         self.assertIn("compatible", result.reason or "")
         accepted = assert_supported_kicad_version("KiCad 10.0.99")
         self.assertEqual(accepted.parsed_version, "10.0.99")
+
+    def test_capabilities_are_probed_independently(self) -> None:
+        calls: list[tuple[str, ...]] = []
+
+        def runner(argv: list[str], **_kwargs: object) -> SimpleNamespace:
+            calls.append(tuple(argv[1:]))
+            output = {
+                ("pcb", "export", "svg", "--help"): "--fit-page-to-board --mode-single",
+                ("pcb", "render", "--help"): "--quality --side",
+                ("sch", "erc", "--help"): "--format --exit-code-violations",
+                ("pcb", "drc", "--help"): "--format",
+            }[tuple(argv[1:])]
+            return SimpleNamespace(
+                stdout=output,
+                stderr="",
+                returncode=0,
+                timed_out=False,
+                output_limited=False,
+            )
+
+        capabilities = probe_kicad_capabilities("/opt/kicad-cli", runner=runner)
+        self.assertTrue(capabilities["pcb_export_svg"]["available"])
+        self.assertTrue(capabilities["pcb_render_3d"]["available"])
+        self.assertTrue(capabilities["erc_json"]["available"])
+        self.assertFalse(capabilities["drc_json"]["available"])
+        self.assertEqual(len(calls), 4)
+
+    def test_missing_cli_degrades_each_capability_without_launching(self) -> None:
+        capabilities = probe_kicad_capabilities(None)
+        self.assertTrue(capabilities)
+        self.assertTrue(all(not row["available"] for row in capabilities.values()))
 
 
 if __name__ == "__main__":

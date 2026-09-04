@@ -18,7 +18,7 @@ from pcbdraft.kicad.runtime import (
     kicad_user_config_directory,
     library_table_status,
 )
-from pcbdraft.kicad.support import evaluate_kicad_version
+from pcbdraft.kicad.support import evaluate_kicad_version, probe_kicad_capabilities
 from pcbdraft.services.provider_connection import connection_status
 
 VERSION_TIMEOUT = 10.0
@@ -89,6 +89,9 @@ def doctor_report() -> dict[str, Any]:
     kicad = tools["kicad-cli"]
     support = evaluate_kicad_version(kicad.get("version") or "")
     kicad["support"] = support.to_dict()
+    kicad["capabilities"] = probe_kicad_capabilities(
+        kicad.get("path") if kicad.get("available") else None
+    )
     core_ok = (
         tools["kicad-cli"]["available"]
         and tools["pcbnew-python"]["available"]

@@ -207,6 +207,7 @@ class KiCadIPCMappingTests(unittest.TestCase):
             return _OfficialBoard()
 
         companion = KiCadIPCCompanion(
+            enabled=True,
             connector=connector,
             poll_interval=0.5,
             clock=lambda: now[0],
@@ -226,18 +227,26 @@ class KiCadIPCMappingTests(unittest.TestCase):
         self.assertEqual(calls[0], 2)
 
     def test_offline_and_missing_optional_package_are_graceful(self) -> None:
-        offline = KiCadIPCCompanion(connector=lambda: None).poll(_base_scene())
+        offline = KiCadIPCCompanion(enabled=True, connector=lambda: None).poll(
+            _base_scene()
+        )
         self.assertEqual(offline["status"]["state"], "offline")
         self.assertNotIn("scene", offline)
 
         missing = ModuleNotFoundError("No module named 'kipy'", name="kipy")
         with patch("pcbdraft.kicad.ipc.importlib.import_module", side_effect=missing):
-            unavailable = KiCadIPCCompanion().poll(_base_scene())
+            unavailable = KiCadIPCCompanion(enabled=True).poll(_base_scene())
         self.assertEqual(unavailable["status"]["state"], "unavailable")
 
     def test_poll_interval_below_kicad_notification_bound_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValidationError, "between 0.5 and 60"):
             KiCadIPCCompanion(poll_interval=0.49)
+
+    def test_companion_defaults_off_for_headless_health(self) -> None:
+        result = KiCadIPCCompanion(
+            connector=lambda: (_ for _ in ()).throw(AssertionError("must not connect"))
+        ).poll(_base_scene())
+        self.assertEqual(result["status"]["state"], "disabled")
 
 
 if __name__ == "__main__":

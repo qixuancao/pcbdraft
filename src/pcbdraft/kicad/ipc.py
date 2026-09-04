@@ -37,7 +37,7 @@ class KiCadIPCCompanion:
     def __init__(
         self,
         *,
-        enabled: bool = True,
+        enabled: bool = False,
         poll_interval: float = 1.0,
         connector: Callable[[], Any] | None = None,
         clock: Callable[[], float] = time.monotonic,
