@@ -374,6 +374,8 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(download.status_code, 200)
         self.assertIn("text/csv", download.headers["content-type"])
         self.assertIn("attachment", download.headers["content-disposition"])
+        self.assertEqual(download.headers["x-pcbdraft-revision"], "3")
+        self.assertEqual(download.headers["x-pcbdraft-content-hash"], "a" * 64)
         self.assertEqual(traversal.status_code, 404)
 
     async def test_healthz_is_bounded_and_available_at_both_mount_paths(self) -> None:
@@ -545,6 +547,14 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resumed.status_code, 200)
         self.assertEqual(resumed.text, "")
 
+        reset = await self.client.get(
+            "/api/projects/demo-board/events?once=1",
+            headers={"Last-Event-ID": str(ids[-1] + 100)},
+        )
+        self.assertEqual(reset.status_code, 200)
+        self.assertIn("stream.reset_required", reset.text)
+        self.assertIn('"binding_state":"bound"', reset.text)
+
     async def test_artifacts_are_fixed_routes_and_3d_is_generated_only_by_post(
         self,
     ) -> None:
@@ -563,9 +573,45 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(board.status_code, 200)
         self.assertIn("image/svg+xml", board.headers["content-type"])
+        self.assertEqual(board.headers["x-pcbdraft-revision"], "3")
+        self.assertEqual(board.headers["x-pcbdraft-content-hash"], "a" * 64)
+        self.assertEqual(board.headers["x-pcbdraft-geometry"], "exact-kicad-svg")
         self.assertEqual(missing_3d.status_code, 404)
         self.assertEqual(unknown.status_code, 404)
         self.assertEqual(generated.status_code, 202, generated.text)
+        self.assertEqual(generated.json()["design_revision"], 3)
+        self.assertEqual(generated.json()["content_hash"], "a" * 64)
+
+        bound = await self.client.get(
+            f"/api/projects/demo-board/artifacts/board.svg?revision=3&content_hash={'a' * 64}"
+        )
+        stale = await self.client.get(
+            f"/api/projects/demo-board/artifacts/board.svg?revision=2&content_hash={'b' * 64}"
+        )
+        partial = await self.client.get(
+            "/api/projects/demo-board/artifacts/board.svg?revision=3"
+        )
+        self.assertEqual(bound.status_code, 200)
+        self.assertEqual(stale.status_code, 409)
+        self.assertEqual(partial.status_code, 400)
+
+    async def test_external_change_import_is_explicit_and_revision_bound(self) -> None:
+        status = await self.client.get("/api/projects/demo-board/external-change")
+        imported = await self.client.post(
+            "/api/projects/demo-board/external-change/import",
+            json={"expected_revision": 7},
+            headers=await self._mutation_headers(),
+        )
+        rejected = await self.client.post(
+            "/api/projects/demo-board/external-change/import",
+            json={},
+            headers=await self._mutation_headers(),
+        )
+        self.assertEqual(status.status_code, 200)
+        self.assertEqual(status.json()["state"], "clean")
+        self.assertEqual(imported.status_code, 202)
+        self.assertEqual(self.service.external_imports, [("demo-board", 7)])
+        self.assertEqual(rejected.status_code, 400)
 
     async def test_security_headers_cover_static_and_api_responses(self) -> None:
         for path in ("/", "/api/projects"):

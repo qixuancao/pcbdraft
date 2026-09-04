@@ -180,9 +180,9 @@ def _open_project_in_kicad(
 
 @dataclass
 class _StreamState:
+    stream_id: str = field(default_factory=lambda: secrets.token_hex(16))
     next_sequence: int = 1
     application_cursor: int = 0
-    session_cursor: int = 0
     scene_token: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -219,6 +219,12 @@ class GUIEventBroker:
         if path.is_file() and not path.is_symlink():
             try:
                 value = load_json_limited(path, 2 * 1024 * 1024)
+                if (
+                    not isinstance(value, dict)
+                    or value.get("schema") != "pcbdraft-gui-event-stream"
+                    or value.get("version") != 2
+                ):
+                    raise ValidationError("GUI event cache schema is obsolete")
                 events = value.get("events") if isinstance(value, dict) else None
                 if isinstance(events, list):
                     safe_events = [
@@ -236,7 +242,11 @@ class GUIEventBroker:
                     state.application_cursor = max(
                         0, int(value.get("application_cursor", 0))
                     )
-                    state.session_cursor = max(0, int(value.get("session_cursor", 0)))
+                    stream_id = value.get("stream_id")
+                    if isinstance(stream_id, str) and re.fullmatch(
+                        r"[0-9a-f]{32}", stream_id
+                    ):
+                        state.stream_id = stream_id
                     token = value.get("scene_token")
                     state.scene_token = token if isinstance(token, str) else None
             except (OSError, PCBDraftError, TypeError, ValueError):
@@ -256,10 +266,10 @@ class GUIEventBroker:
             path,
             {
                 "schema": "pcbdraft-gui-event-stream",
-                "version": 1,
+                "version": 2,
+                "stream_id": state.stream_id,
                 "next_sequence": state.next_sequence,
                 "application_cursor": state.application_cursor,
-                "session_cursor": state.session_cursor,
                 "scene_token": state.scene_token,
                 "events": state.events[-MAX_STREAM_EVENTS:],
             },
@@ -291,6 +301,28 @@ class GUIEventBroker:
             "level": level,
             "created_at": str(value.get("created_at", utc_timestamp()))[:64],
             "source": source,
+            "canonical_revision": (
+                value.get("canonical_revision")
+                if isinstance(value.get("canonical_revision"), int)
+                else None
+            ),
+            "design_revision": (
+                value.get("design_revision")
+                if isinstance(value.get("design_revision"), int)
+                else None
+            ),
+            "content_hash": (
+                value.get("design_content_hash")
+                if isinstance(value.get("design_content_hash"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", value["design_content_hash"])
+                else None
+            ),
+            "binding_state": (
+                "bound"
+                if isinstance(value.get("design_content_hash"), str)
+                and re.fullmatch(r"[0-9a-f]{64}", value["design_content_hash"])
+                else "legacy_unbound"
+            ),
         }
         for key in ("tool", "turn_id", "state"):
             item = value.get(key)
@@ -308,6 +340,7 @@ class GUIEventBroker:
     @staticmethod
     def _append(state: _StreamState, value: dict[str, Any]) -> None:
         value["sequence"] = state.next_sequence
+        value["stream_id"] = state.stream_id
         state.next_sequence += 1
         state.events.append(value)
         del state.events[:-MAX_STREAM_EVENTS]
@@ -393,6 +426,10 @@ class GUIEventBroker:
                             "source": "scene",
                             "scene_token": token,
                             "previous_scene_token": previous,
+                            "canonical_revision": scene.get("state_revision"),
+                            "design_revision": scene.get("design_revision"),
+                            "content_hash": scene.get("content_hash"),
+                            "binding_state": "bound",
                         },
                     )
                     changed = True
@@ -404,7 +441,67 @@ class GUIEventBroker:
         if sequence < 0:
             raise ValidationError("event cursor must be non-negative")
         events = self.poll(project_id)
+        with self._lock:
+            state = self._load(project_id)
+            oldest = int(events[0]["sequence"]) if events else state.next_sequence
+            latest = state.next_sequence - 1
+            if sequence > latest or (sequence > 0 and sequence < oldest - 1):
+                if sequence > latest:
+                    state.next_sequence = sequence + 1
+                self._append(
+                    state,
+                    {
+                        "kind": "stream.reset_required",
+                        "message": "Event cursor cannot be resumed; fetch a complete snapshot",
+                        "level": "warning",
+                        "created_at": utc_timestamp(),
+                        "source": "stream",
+                        **self._scene_binding(project_id),
+                    },
+                )
+                self._persist(project_id, state)
+                return [state.events[-1]]
         return [event for event in events if int(event["sequence"]) > sequence]
+
+    def cursor(self, project_id: str) -> dict[str, Any]:
+        self.poll(project_id)
+        with self._lock:
+            state = self._load(project_id)
+            return {
+                "stream_id": state.stream_id,
+                "last_sequence": state.next_sequence - 1,
+                "oldest_sequence": (
+                    state.events[0]["sequence"] if state.events else None
+                ),
+            }
+
+    def _scene_binding(self, project_id: str) -> dict[str, Any]:
+        try:
+            scene = self.live_view.snapshot(project_id, timeout=0.0)
+        except PCBDraftError:
+            callback = getattr(self.service, "external_kicad_change_status", None)
+            status = callback(project_id) if callable(callback) else None
+            if isinstance(status, Mapping) and status.get("requires_import"):
+                return {
+                    "canonical_revision": status.get("canonical_revision"),
+                    "design_revision": status.get("design_revision"),
+                    "content_hash": status.get("content_hash"),
+                    "binding_state": "external_change_pending",
+                }
+            raise
+        if scene is None:
+            return {
+                "canonical_revision": None,
+                "design_revision": None,
+                "content_hash": None,
+                "binding_state": "temporarily_unavailable",
+            }
+        return {
+            "canonical_revision": scene.get("state_revision"),
+            "design_revision": scene.get("design_revision"),
+            "content_hash": scene.get("content_hash"),
+            "binding_state": "bound",
+        }
 
 
 @dataclass
@@ -523,6 +620,37 @@ def _origin_matches_host(origin: str, host: str) -> bool:
 def _route_paths(suffix: str) -> Iterable[str]:
     for prefix in _PREFIXES:
         yield f"{prefix}{suffix}"
+
+
+def _artifact_binding(
+    request: Request, scene: Mapping[str, Any] | None
+) -> tuple[int, str]:
+    if scene is None:
+        raise PCBDraftError("committed artifact binding is temporarily unavailable")
+    revision = scene.get("design_revision")
+    content_hash = scene.get("content_hash")
+    if (
+        isinstance(revision, bool)
+        or not isinstance(revision, int)
+        or revision < 0
+        or not isinstance(content_hash, str)
+        or re.fullmatch(r"[0-9a-f]{64}", content_hash) is None
+    ):
+        raise PCBDraftError("selected project has no committed artifact binding")
+    requested_revision = request.query_params.get("revision")
+    requested_hash = request.query_params.get("content_hash")
+    if (requested_revision is None) != (requested_hash is None):
+        raise ValidationError(
+            "artifact revision and content hash must be supplied together"
+        )
+    if requested_revision is not None:
+        try:
+            parsed_revision = int(requested_revision)
+        except ValueError as exc:
+            raise ValidationError("artifact revision is invalid") from exc
+        if parsed_revision != revision or requested_hash != content_hash:
+            raise PCBDraftError("requested artifact binding is stale")
+    return revision, content_hash
 
 
 def _add_route(
@@ -789,7 +917,10 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
         }
 
     async def snapshot(project_id: str) -> dict[str, Any]:
-        return await run_in_threadpool(runtime.snapshot, _safe_project_id(project_id))
+        project_id = _safe_project_id(project_id)
+        value = await run_in_threadpool(runtime.snapshot, project_id)
+        value["stream"] = await run_in_threadpool(runtime.events.cursor, project_id)
+        return value
 
     async def validation(project_id: str) -> dict[str, Any]:
         return await run_in_threadpool(
@@ -832,10 +963,34 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
         )
 
     def fixed_artifact_download(key: str) -> Callable[..., Any]:
-        async def download(project_id: str) -> FileResponse:
-            artifact = await run_in_threadpool(
-                runtime.artifacts.download, _safe_project_id(project_id), key
+        async def download(request: Request, project_id: str) -> FileResponse:
+            project_id = _safe_project_id(project_id)
+            scene = await run_in_threadpool(
+                runtime.live_view.snapshot, project_id, timeout=0.0
             )
+            revision, content_hash = _artifact_binding(request, scene)
+            manifest = await run_in_threadpool(runtime.artifacts.manifest, project_id)
+            entries = (
+                manifest.get("artifacts") if isinstance(manifest, Mapping) else None
+            )
+            record = next(
+                (
+                    item
+                    for item in entries or []
+                    if isinstance(item, Mapping) and item.get("key") == key
+                ),
+                None,
+            )
+            if not isinstance(record, Mapping) or record.get("state") != "ready":
+                raise PCBDraftError("artifact is not bound to the current design")
+            artifact = await run_in_threadpool(
+                runtime.artifacts.download, project_id, key
+            )
+            current = await run_in_threadpool(
+                runtime.live_view.snapshot, project_id, timeout=0.0
+            )
+            if _artifact_binding(request, current) != (revision, content_hash):
+                raise PCBDraftError("project changed while artifact was resolved")
             return FileResponse(
                 artifact.path,
                 media_type=artifact.media_type,
@@ -843,7 +998,10 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
                 headers={
                     "Content-Disposition": (
                         f'attachment; filename="{artifact.filename}"'
-                    )
+                    ),
+                    "ETag": f'"{content_hash}"',
+                    "X-PCBDraft-Revision": str(revision),
+                    "X-PCBDraft-Content-Hash": content_hash,
                 },
             )
 
@@ -922,8 +1080,12 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
         await run_in_threadpool(runtime.events.poll, project_id)
         return JSONResponse(result, status_code=202)
 
-    async def board_svg(project_id: str) -> FileResponse:
+    async def board_svg(request: Request, project_id: str) -> FileResponse:
         project_id = _safe_project_id(project_id)
+        scene = await run_in_threadpool(
+            runtime.live_view.snapshot, project_id, timeout=0.0
+        )
+        revision, content_hash = _artifact_binding(request, scene)
         artifact = await run_in_threadpool(
             runtime.previews.artifact,
             project_id,
@@ -935,15 +1097,31 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
             raise PCBDraftError(
                 "exact PCB SVG is unavailable while the project is busy"
             )
+        current = await run_in_threadpool(
+            runtime.live_view.snapshot, project_id, timeout=0.0
+        )
+        if _artifact_binding(request, current) != (revision, content_hash):
+            raise PCBDraftError("project changed while exact PCB SVG was generated")
         return FileResponse(
             artifact,
             media_type="image/svg+xml",
             filename="board.svg",
-            headers={"Content-Disposition": 'inline; filename="board.svg"'},
+            headers={
+                "Content-Disposition": 'inline; filename="board.svg"',
+                "Cache-Control": "private, no-cache",
+                "ETag": f'"{content_hash}"',
+                "X-PCBDraft-Revision": str(revision),
+                "X-PCBDraft-Content-Hash": content_hash,
+                "X-PCBDraft-Geometry": "exact-kicad-svg",
+            },
         )
 
-    async def board_3d(project_id: str) -> Response:
+    async def board_3d(request: Request, project_id: str) -> Response:
         project_id = _safe_project_id(project_id)
+        scene = await run_in_threadpool(
+            runtime.live_view.snapshot, project_id, timeout=0.0
+        )
+        revision, content_hash = _artifact_binding(request, scene)
         artifact = await run_in_threadpool(
             runtime.previews.artifact, project_id, "board_3d", generate=False
         )
@@ -956,7 +1134,14 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
             artifact,
             media_type="image/png",
             filename="board-top.png",
-            headers={"Content-Disposition": 'inline; filename="board-top.png"'},
+            headers={
+                "Content-Disposition": 'inline; filename="board-top.png"',
+                "Cache-Control": "private, no-cache",
+                "ETag": f'"{content_hash}"',
+                "X-PCBDraft-Revision": str(revision),
+                "X-PCBDraft-Content-Hash": content_hash,
+                "X-PCBDraft-Geometry": "kicad-cli-render",
+            },
         )
 
     async def generate_3d(request: Request, project_id: str) -> JSONResponse:
@@ -976,10 +1161,19 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
         )
         if artifact is None:
             raise PCBDraftError("3D preview is unavailable while the project is busy")
+        scene = await run_in_threadpool(
+            runtime.live_view.snapshot, project_id, timeout=0.0
+        )
+        revision, content_hash = _artifact_binding(request, scene)
         return JSONResponse(
             {
                 "ready": True,
-                "url": f"api/projects/{project_id}/artifacts/board-3d.png",
+                "url": (
+                    f"api/projects/{project_id}/artifacts/board-3d.png"
+                    f"?revision={revision}&content_hash={content_hash}"
+                ),
+                "design_revision": revision,
+                "content_hash": content_hash,
             },
             status_code=202,
         )

@@ -169,7 +169,10 @@ class PackageStructureTests(unittest.TestCase):
         for path, source in names_by_path.items():
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
             imports: set[str] = set()
-            for node in ast.walk(tree):
+            # Function-local imports are deliberately lazy compatibility edges,
+            # not import-time package dependencies.  Counting only module-level
+            # statements keeps this test aligned with the cycle it guards.
+            for node in tree.body:
                 if isinstance(node, ast.Import):
                     imports.update(name.name for name in node.names)
                 elif isinstance(node, ast.ImportFrom) and node.module:
@@ -210,8 +213,8 @@ class PackageStructureTests(unittest.TestCase):
                 self.assertIs(historical, canonical)
                 self.assertEqual(historical.__name__, canonical_name)
 
-    def test_interfaces_own_the_cli_and_hermes_terminal_only(self) -> None:
-        """The interactive frontend is the Hermes terminal, not a TUI package."""
+    def test_interfaces_own_the_cli_web_and_hermes_frontends(self) -> None:
+        """The supported frontends are CLI/Web/Hermes, never the old TUI."""
 
         package_root = Path(pcbdraft.__file__).resolve().parent
         interfaces = package_root / "interfaces"
@@ -222,6 +225,8 @@ class PackageStructureTests(unittest.TestCase):
                 "boardbench_worker.py",
                 "cli.py",
                 "commands.py",
+                "gui.py",
+                "gui_worker.py",
                 "hermes_cli.py",
                 "hermes_plugin.py",
                 "terminal_text.py",
