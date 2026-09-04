@@ -25,11 +25,7 @@ from pcbdraft.agent.repair import (
     normalize_repair_feedback,
     validation_feedback,
 )
-from pcbdraft.agent.tooling import (
-    PCBToolExecutor,
-    ToolCall,
-    call_from_view,
-)
+from pcbdraft.agent.tooling import PCBToolExecutor, ToolCall, call_from_view
 from pcbdraft.core.errors import PCBDraftError
 
 

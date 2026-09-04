@@ -5,7 +5,7 @@ terminal.  That runtime ships ~50 built-in slash commands for messaging,
 voice, kanban, billing, and other non-PCB concerns; this module owns the
 pruned surface PCBDraft actually delivers:
 
-* :data:`KEPT_HERMES_COMMANDS` — the Hermes built-ins PCBDraft keeps;
+* :data:`BUILTIN_COMMANDS` — the Hermes built-ins PCBDraft keeps;
 * :data:`PCBDRAFT_COMMANDS` / :data:`HANDLERS` — PCBDraft-owned commands
   (``/new``, ``/projects``, ``/project``, ``/open`` and the PCB workflow
   commands) backed by :class:`~pcbdraft.services.application.ApplicationService`
@@ -21,7 +21,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from pcbdraft.agent.hermes_tools import (
+from pcbdraft.agent.tool_bindings import (
     get_current_project_id,
     get_service,
     refresh_service_provider,
@@ -36,15 +36,15 @@ from pcbdraft.services.provider_connection import (
 )
 
 __all__ = (
+    "BUILTIN_COMMANDS",
     "HANDLERS",
-    "KEPT_HERMES_COMMANDS",
     "PCBDRAFT_CATEGORY",
     "PCBDRAFT_COMMANDS",
     "apply_command_surface",
 )
 
 #: Hermes built-ins retained in the PCBDraft terminal surface.
-KEPT_HERMES_COMMANDS = frozenset(
+BUILTIN_COMMANDS = frozenset(
     {"status", "model", "goal", "stop", "retry", "undo", "quit", "help", "clear"}
 )
 
@@ -310,12 +310,12 @@ def apply_command_surface() -> None:
     commands.py`` and never edits that file.
     """
 
-    from hermes_cli import commands
+    from pcbdraft.interfaces.tui import commands
 
     kept = [
         command
         for command in commands.COMMAND_REGISTRY
-        if command.name in KEPT_HERMES_COMMANDS
+        if command.name in BUILTIN_COMMANDS
     ]
     owned = [
         commands.CommandDef(

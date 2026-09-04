@@ -100,9 +100,9 @@ __all__ = ("PCB_SOUL_MD", "write_soul")
 def write_soul(text: str | None = None) -> Path:
     """Write the PCBDraft agent persona into the Hermes home directory."""
 
-    from pcbdraft.core.hermes_paths import hermes_home
+    from pcbdraft.core.runtime_paths import runtime_home
 
-    target = hermes_home() / "SOUL.md"
+    target = runtime_home() / "SOUL.md"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(text if text is not None else PCB_SOUL_MD, encoding="utf-8")
     return target

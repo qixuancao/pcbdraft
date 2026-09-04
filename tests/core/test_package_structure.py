@@ -26,6 +26,7 @@ class PackageStructureTests(unittest.TestCase):
             "kicad",
             "model",
             "services",
+            "tools",
             "verification",
         }
         self.assertEqual(
@@ -213,8 +214,8 @@ class PackageStructureTests(unittest.TestCase):
                 self.assertIs(historical, canonical)
                 self.assertEqual(historical.__name__, canonical_name)
 
-    def test_interfaces_own_the_cli_web_and_hermes_frontends(self) -> None:
-        """The supported frontends are CLI/Web/Hermes, never the old TUI."""
+    def test_interfaces_own_the_native_cli_web_and_terminal(self) -> None:
+        """The native terminal is grouped with its interface components."""
 
         package_root = Path(pcbdraft.__file__).resolve().parent
         interfaces = package_root / "interfaces"
@@ -227,15 +228,11 @@ class PackageStructureTests(unittest.TestCase):
                 "commands.py",
                 "gui.py",
                 "gui_worker.py",
-                "hermes_cli.py",
-                "hermes_plugin.py",
+                "terminal.py",
                 "terminal_text.py",
             },
         )
-        self.assertFalse(
-            (interfaces / "tui").exists(),
-            "the old Textual frontend must not remain in the package",
-        )
+        self.assertTrue((interfaces / "tui" / "app.py").is_file())
 
     def test_package_discovery_excludes_historical_distribution_names(self) -> None:
         repository = Path(pcbdraft.__file__).resolve().parents[2]

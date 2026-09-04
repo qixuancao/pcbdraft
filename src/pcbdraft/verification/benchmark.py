@@ -29,7 +29,7 @@ from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.requirements import RequirementsSpec, compile_requirements
 from pcbdraft.domain.semantic_rules import RuleFinding, evaluate_semantic_rules
 from pcbdraft.kicad.pcb import inspect_footprints
-from pcbdraft.model.providers import HermesIntentProvider
+from pcbdraft.model.providers import NativeIntentProvider
 
 CORPUS_SCHEMA = "pcbdraft-error-corpus"
 CORPUS_VERSION = 1
@@ -640,7 +640,7 @@ def _run_model_benchmark(
     runs: int,
     timeout: float,
 ) -> dict[str, Any]:
-    provider = HermesIntentProvider.from_config()
+    provider = NativeIntentProvider.from_config()
     if provider is None:
         return {
             "state": "unavailable",

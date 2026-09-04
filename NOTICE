@@ -1,7 +1,15 @@
 PCBDraft
 Copyright 2026 PCBDraft contributors
 
-The runtime source and documentation are licensed under Apache License 2.0.
+PCBDraft-authored runtime source and documentation are licensed under Apache
+License 2.0, except where another license is identified below.
+
+The conversation engine, terminal, provider/authentication and general tool
+modules incorporate and modify source from Hermes Agent, copyright (c) 2025
+Nous Research, under the MIT License. These components are maintained directly
+in the PCBDraft packages. The complete license is included at
+src/pcbdraft/data/licenses/Nous-Research-MIT.txt. Git history records the source
+migration from vendor/hermes and subsequent changes.
 
 Bundled records under src/pcbdraft/data/ are independently authored data
 dedicated under CC0-1.0; see src/pcbdraft/data/LICENSE.md.
@@ -9,8 +17,8 @@ dedicated under CC0-1.0; see src/pcbdraft/data/LICENSE.md.
 The runtime depends on kicad-sch-api 0.5.6, distributed separately under the MIT
 License. See https://github.com/circuit-synth/kicad-sch-api.
 
-The terminal interface depends on Textual, distributed separately under the MIT
-License. See https://github.com/Textualize/textual.
+The terminal interface depends on prompt_toolkit, distributed separately under
+the BSD 3-Clause License. See https://github.com/prompt-toolkit/python-prompt-toolkit.
 
 Generated example designs use symbols, footprints, and model references from the
 official KiCad libraries. Those libraries are CC-BY-SA 4.0 with an exception for

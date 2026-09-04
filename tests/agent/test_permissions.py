@@ -9,11 +9,7 @@ from pcbdraft.agent.permissions import (
     PermissionBroker,
     ToolPermissionError,
 )
-from pcbdraft.agent.tooling import (
-    DEFAULT_PCB_TOOL_REGISTRY,
-    PCBToolExecutor,
-    ToolCall,
-)
+from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY, PCBToolExecutor, ToolCall
 from pcbdraft.core.errors import ValidationError
 
 

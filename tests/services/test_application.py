@@ -15,10 +15,7 @@ from unittest.mock import patch
 from pcbdraft.agent.design import CircuitPlan
 from pcbdraft.agent.orchestrator import AgentOrchestrator
 from pcbdraft.agent.permissions import PermissionBroker
-from pcbdraft.agent.repair import (
-    generation_feedback,
-    validation_feedback_from_levels,
-)
+from pcbdraft.agent.repair import generation_feedback, validation_feedback_from_levels
 from pcbdraft.agent.turns import TurnStatus
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json

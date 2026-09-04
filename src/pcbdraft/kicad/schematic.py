@@ -13,10 +13,7 @@ from itertools import pairwise
 from pathlib import Path
 
 from kicad_sch_api import Schematic
-from kicad_sch_api.core.pin_utils import (
-    get_component_pin_info,
-    list_component_pins,
-)
+from kicad_sch_api.core.pin_utils import get_component_pin_info, list_component_pins
 
 from pcbdraft import __version__
 from pcbdraft.core.errors import PCBDraftError, ValidationError

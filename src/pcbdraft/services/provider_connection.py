@@ -15,8 +15,8 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 from pcbdraft.core.errors import PCBDraftError
-from pcbdraft.core.hermes_paths import hermes_home, install_vendor_path
 from pcbdraft.core.io import atomic_write_bytes, make_directory, read_bytes_limited
+from pcbdraft.core.runtime_paths import runtime_home
 
 ConnectionOutcome = Literal["configured", "changed", "cancelled", "unavailable"]
 ConnectionState = Literal[
@@ -93,8 +93,7 @@ class ConnectionStatus:
 def activate_provider_runtime() -> None:
     """Bind imports and state to the packaged runtime and PCBDraft-owned home."""
 
-    install_vendor_path()
-    home = hermes_home()
+    home = runtime_home()
     if home.is_symlink():
         raise PCBDraftError("model connection home must not be a symbolic link")
     home = make_directory(home)
@@ -105,15 +104,15 @@ def activate_provider_runtime() -> None:
         )
     shared_auth = make_directory(shared_auth)
     # Always replace generic Hermes paths inherited from a standalone install.
-    os.environ["HERMES_HOME"] = str(home)
-    os.environ["HERMES_SHARED_AUTH_DIR"] = str(shared_auth)
-    os.environ["HERMES_HOME_MODE"] = "0700"
+    os.environ["PCBDRAFT_RUNTIME_HOME"] = str(home)
+    os.environ["PCBDRAFT_RUNTIME_SHARED_AUTH_DIR"] = str(shared_auth)
+    os.environ["PCBDRAFT_RUNTIME_HOME_MODE"] = "0700"
 
 
 def _snapshot_connection_state() -> tuple[_FileSnapshot, ...]:
     """Capture the bounded provider files that a Hermes setup flow may mutate."""
 
-    home = hermes_home()
+    home = runtime_home()
     snapshots: list[_FileSnapshot] = []
     for relative in _CONNECTION_STATE_PATHS:
         path = home / relative
@@ -164,7 +163,7 @@ def _restore_connection_state(snapshots: tuple[_FileSnapshot, ...]) -> None:
             continue
         atomic_write_bytes(snapshot.path, snapshot.data, mode=snapshot.mode)
     try:
-        from hermes_cli.config import invalidate_env_cache
+        from pcbdraft.model.configuration import invalidate_env_cache
 
         invalidate_env_cache()
     except ImportError:
@@ -175,7 +174,7 @@ def _config_signature() -> tuple[int, int, int] | None:
     """Return an atomic-write-sensitive signature for Hermes config.yaml."""
 
     try:
-        details = (hermes_home() / "config.yaml").stat()
+        details = (runtime_home() / "config.yaml").stat()
     except FileNotFoundError:
         return None
     except OSError as exc:
@@ -189,9 +188,12 @@ def provider_identities() -> tuple[str, ...]:
     """Return the concrete identities used by the Hermes provider picker."""
 
     activate_provider_runtime()
-    from hermes_cli.config import get_compatible_custom_providers, load_config_readonly
-    from hermes_cli.models import CANONICAL_PROVIDERS
-    from hermes_cli.providers import custom_provider_slug
+    from pcbdraft.model.catalog import CANONICAL_PROVIDERS
+    from pcbdraft.model.configuration import (
+        get_compatible_custom_providers,
+        load_config_readonly,
+    )
+    from pcbdraft.model.provider_config import custom_provider_slug
 
     config = load_config_readonly()
     identities = [entry.slug for entry in CANONICAL_PROVIDERS]
@@ -208,8 +210,8 @@ def provider_identities() -> tuple[str, ...]:
 
 
 def _auth_kind(provider: str) -> str | None:
-    from hermes_cli.auth import PROVIDER_REGISTRY
-    from providers import get_provider_profile
+    from pcbdraft.model.auth import PROVIDER_REGISTRY
+    from pcbdraft.model.provider_profiles import get_provider_profile
 
     definition = PROVIDER_REGISTRY.get(provider)
     if definition is not None:
@@ -339,7 +341,7 @@ def _reauthentication_override(enabled: bool) -> Iterator[None]:
     if not enabled:
         yield
         return
-    from hermes_cli import auth, model_setup_flows
+    from pcbdraft.model import auth, model_setup_flows
 
     original_state = auth.get_provider_auth_state
     original_choice = model_setup_flows._prompt_auth_credentials_choice
@@ -356,7 +358,7 @@ def connection_status(*, verify: bool = True) -> ConnectionStatus:
     """Read the active Hermes model and optionally verify runtime resolution."""
 
     activate_provider_runtime()
-    from hermes_cli.config import load_config_readonly
+    from pcbdraft.model.configuration import load_config_readonly
 
     config = load_config_readonly()
     raw_model = config.get("model")
@@ -390,7 +392,7 @@ def connection_status(*, verify: bool = True) -> ConnectionStatus:
             state="ready",
         )
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from pcbdraft.model.runtime_provider import resolve_runtime_provider
 
         runtime = resolve_runtime_provider(requested=provider, target_model=model)
         usable = bool(runtime.get("provider"))
@@ -424,11 +426,11 @@ def connect(options: ConnectionOptions | None = None) -> ConnectionStatus:
 
     selected = options or ConnectionOptions()
     activate_provider_runtime()
-    from pcbdraft.model.hermes_config import write_hermes_config
+    from pcbdraft.model.settings import write_runtime_config
 
-    write_hermes_config()
-    from hermes_cli.config import read_raw_config
-    from hermes_cli.main import select_provider_and_model
+    write_runtime_config()
+    from pcbdraft.interfaces.tui.main import select_provider_and_model
+    from pcbdraft.model.configuration import read_raw_config
 
     before = read_raw_config()
     snapshots = _snapshot_connection_state()

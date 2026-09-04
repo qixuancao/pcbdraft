@@ -19,11 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.core.io import (
-    atomic_write_json,
-    make_directory,
-    read_text_limited,
-)
+from pcbdraft.core.io import atomic_write_json, make_directory, read_text_limited
 from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 
@@ -224,7 +220,11 @@ class _WorkerEventWriter:
 def _install_safe_observer(writer: _WorkerEventWriter) -> Any:
     """Register narrow callbacks that cannot receive raw Hermes payloads."""
 
-    from hermes_cli.plugins import PluginContext, PluginManifest, get_plugin_manager
+    from pcbdraft.agent.extensions.manager import (
+        PluginContext,
+        PluginManifest,
+        get_plugin_manager,
+    )
 
     context = PluginContext(
         PluginManifest(
@@ -277,25 +277,22 @@ def _install_safe_observer(writer: _WorkerEventWriter) -> Any:
 def _load_runtime() -> _WorkerRuntime:
     """Load only the current PCBDraft/vendored-Hermes product path."""
 
-    from pcbdraft.agent.hermes_tools import _set_service, set_current_project_id
-    from pcbdraft.interfaces.hermes_cli import (
-        _force_model_turn_limit,
-        activate,
-    )
+    from pcbdraft.agent.tool_bindings import _set_service, set_current_project_id
+    from pcbdraft.interfaces.terminal import activate
     from pcbdraft.services.application import ApplicationService
     from pcbdraft.services.provider_connection import connection_status
 
     def run_agent(prompt: str) -> str:
-        from gateway.session_context import declare_stateless_channel
-        from hermes_cli.oneshot import _run_agent
+        from pcbdraft.agent.session_context import declare_stateless_channel
+        from pcbdraft.interfaces.tui.oneshot import _run_agent
 
         declare_stateless_channel()
-        with _force_model_turn_limit(MODEL_TURN_LIMIT):
-            response, _result = _run_agent(
-                prompt,
-                toolsets=["pcbdraft"],
-                use_config_toolsets=False,
-            )
+        response, _result = _run_agent(
+            prompt,
+            toolsets=["pcbdraft"],
+            max_iterations=MODEL_TURN_LIMIT,
+            use_config_toolsets=False,
+        )
         return response
 
     return _WorkerRuntime(
@@ -339,9 +336,9 @@ def run_worker(
     os.environ.update(
         {
             "PCBDRAFT_DEBUG_TRACE": "0",
-            "HERMES_YOLO_MODE": "1",
-            "HERMES_ACCEPT_HOOKS": "1",
-            "HERMES_SINGLE_QUERY_SESSION": "1",
+            "PCBDRAFT_RUNTIME_YOLO_MODE": "1",
+            "PCBDRAFT_RUNTIME_ACCEPT_HOOKS": "1",
+            "PCBDRAFT_RUNTIME_SINGLE_QUERY_SESSION": "1",
             "PCBDRAFT_PCB_TOOL_CALL_LIMIT": "500",
             "NO_COLOR": "1",
         }

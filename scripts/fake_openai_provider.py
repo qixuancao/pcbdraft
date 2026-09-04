@@ -10,9 +10,11 @@ import threading
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
+from typing import ClassVar
 
 E2E_API_KEY = "pcbdraft-local-e2e-key"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024

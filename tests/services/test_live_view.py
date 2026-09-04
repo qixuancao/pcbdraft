@@ -14,11 +14,7 @@ from pcbdraft.core.locking import ResourceLock
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.kicad.previews import PreviewBundle
-from pcbdraft.services.live_view import (
-    ExactPreviewCache,
-    LiveViewService,
-    SceneLimits,
-)
+from pcbdraft.services.live_view import ExactPreviewCache, LiveViewService, SceneLimits
 from tests.support.design_factory import minimal_design_dict
 
 

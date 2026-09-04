@@ -10,47 +10,40 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
+from collections.abc import Sequence
 from pathlib import Path
 
-from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import portable_record_path
 from pcbdraft.core.runs import utc_timestamp
-from pcbdraft.verification.boardbench import (
-    BoardBenchCampaign,
-    BoardBenchCorpus,
-    load_campaign,
-    load_corpus,
-    load_report,
-    load_run,
-    load_score,
-)
+from pcbdraft.verification.boardbench import BoardBenchCampaign
+from pcbdraft.verification.boardbench import BoardBenchCorpus
+from pcbdraft.verification.boardbench import load_campaign
+from pcbdraft.verification.boardbench import load_corpus
+from pcbdraft.verification.boardbench import load_report
+from pcbdraft.verification.boardbench import load_run
+from pcbdraft.verification.boardbench import load_score
 from pcbdraft.verification.boardbench_diff import capture_correction
-from pcbdraft.verification.boardbench_evaluator import EVALUATOR_VERSION, evaluate_run
-from pcbdraft.verification.boardbench_evidence import (
-    create_review_templates,
-    import_hardware,
-    import_review,
-    import_selection,
-)
-from pcbdraft.verification.boardbench_preflight import (
-    formal_comparison_launch_record,
-    load_comparison_manifest,
-    write_formal_comparison_launch,
-)
-from pcbdraft.verification.boardbench_report import (
-    aggregate_report,
-    create_publication_bundle,
-    load_campaign_evidence,
-    seal_campaign,
-    write_report,
-)
-from pcbdraft.verification.boardbench_runner import (
-    DEFAULT_WALL_TIMEOUT_SECONDS,
-    create_campaign,
-    initialize_run_receipts,
-    run_campaign,
-)
+from pcbdraft.verification.boardbench_evaluator import EVALUATOR_VERSION
+from pcbdraft.verification.boardbench_evaluator import evaluate_run
+from pcbdraft.verification.boardbench_evidence import create_review_templates
+from pcbdraft.verification.boardbench_evidence import import_hardware
+from pcbdraft.verification.boardbench_evidence import import_review
+from pcbdraft.verification.boardbench_evidence import import_selection
+from pcbdraft.verification.boardbench_preflight import formal_comparison_launch_record
+from pcbdraft.verification.boardbench_preflight import load_comparison_manifest
+from pcbdraft.verification.boardbench_preflight import write_formal_comparison_launch
+from pcbdraft.verification.boardbench_report import aggregate_report
+from pcbdraft.verification.boardbench_report import create_publication_bundle
+from pcbdraft.verification.boardbench_report import load_campaign_evidence
+from pcbdraft.verification.boardbench_report import seal_campaign
+from pcbdraft.verification.boardbench_report import write_report
+from pcbdraft.verification.boardbench_runner import DEFAULT_WALL_TIMEOUT_SECONDS
+from pcbdraft.verification.boardbench_runner import create_campaign
+from pcbdraft.verification.boardbench_runner import initialize_run_receipts
+from pcbdraft.verification.boardbench_runner import run_campaign
 from pcbdraft.verification.boardbench_v2 import load_run_v2
 
 Handler = Callable[[argparse.Namespace], int]

@@ -13,7 +13,7 @@ from pcbdraft import PRIMARY_CLI, PRODUCT_NAME, __version__
 from pcbdraft.core.debug_trace import trace_enabled, trace_path
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.repository import configure_repository, current_repository
-from pcbdraft.interfaces.hermes_cli import launch_cli
+from pcbdraft.interfaces.terminal import launch_cli
 from pcbdraft.services.doctor import doctor_report, setup_runtime
 from pcbdraft.services.provider_connection import (
     ConnectionOptions,
@@ -82,7 +82,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
             f"{PRODUCT_NAME}: generate native KiCad projects from reviewable circuit plans."
         ),
         epilog=(
-            "Run without a subcommand to launch the Hermes terminal with its "
+            "Run without a subcommand to launch the native terminal with its "
             "closed, flat PCB toolset."
         ),
     )
@@ -96,7 +96,7 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         "--provider",
         choices=(
             "auto",
-            "hermes",
+            "native",
         ),
         default="auto",
         help="terminal planning provider",
@@ -346,10 +346,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             # persistent product repository).
             if args.workspace:
                 os.environ["PCBDRAFT_HOME"] = args.workspace
-            from pcbdraft.agent.hermes_tools import (
-                get_service,
-                set_current_project_id,
-            )
+            from pcbdraft.agent.tool_bindings import get_service, set_current_project_id
 
             if args.project_id:
                 view = get_service().open_project(args.project_id)

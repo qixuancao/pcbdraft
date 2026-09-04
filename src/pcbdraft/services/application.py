@@ -16,21 +16,14 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.agent.compiler import compile_agent_plan, planner_symbol_context
-from pcbdraft.agent.plan import (
-    AgentDesignRequest,
-    CircuitPlan,
-)
+from pcbdraft.agent.plan import AgentDesignRequest, CircuitPlan
 from pcbdraft.agent.repair import (
     normalize_repair_feedback,
     user_revision_feedback,
     validation_feedback_from_levels,
 )
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.core.io import (
-    atomic_write_json,
-    load_json_limited,
-    make_directory,
-)
+from pcbdraft.core.io import atomic_write_json, load_json_limited, make_directory
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.repository import (

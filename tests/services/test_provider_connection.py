@@ -13,15 +13,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from pcbdraft.core.errors import PCBDraftError
-from pcbdraft.core.hermes_paths import install_vendor_path
 from pcbdraft.interfaces.cli import main
-from pcbdraft.interfaces.hermes_cli import launch_cli
-from pcbdraft.model.hermes_config import write_hermes_config
+from pcbdraft.interfaces.terminal import launch_cli
 from pcbdraft.model.providers import (
-    HermesIntentProvider,
+    NativeIntentProvider,
     ProviderContext,
     resolve_provider,
 )
+from pcbdraft.model.settings import write_runtime_config
 from pcbdraft.services.provider_connection import (
     ConnectionOptions,
     ConnectionStatus,
@@ -44,14 +43,14 @@ class ProviderConnectionTests(unittest.TestCase):
             ),
         ):
             activate_provider_runtime()
-            from hermes_cli.models import CANONICAL_PROVIDERS
+            from pcbdraft.model.catalog import CANONICAL_PROVIDERS
 
             self.assertEqual(
                 provider_identities(),
                 tuple(entry.slug for entry in CANONICAL_PROVIDERS),
             )
 
-    def test_product_home_ignores_standalone_hermes_home_and_sentinel(self) -> None:
+    def test_product_home_ignores_standalone_runtime_home_and_sentinel(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             standalone = root / "home" / ".hermes"
@@ -70,15 +69,16 @@ class ProviderConnectionTests(unittest.TestCase):
                 clear=False,
             ):
                 activate_provider_runtime()
-                write_hermes_config()
+                write_runtime_config()
                 status_value = connection_status(verify=False)
                 self.assertFalse(status_value.configured)
                 self.assertEqual(status_value.state, "unconfigured")
-                self.assertEqual(os.environ["HERMES_HOME"], str(product))
+                self.assertEqual(os.environ["PCBDRAFT_RUNTIME_HOME"], str(product))
                 self.assertEqual(
-                    os.environ["HERMES_SHARED_AUTH_DIR"], str(product / "shared")
+                    os.environ["PCBDRAFT_RUNTIME_SHARED_AUTH_DIR"],
+                    str(product / "shared"),
                 )
-                self.assertEqual(os.environ["HERMES_HOME_MODE"], "0700")
+                self.assertEqual(os.environ["PCBDRAFT_RUNTIME_HOME_MODE"], "0700")
             self.assertEqual(sentinel.read_bytes(), b"standalone-state")
             self.assertEqual(stat.S_IMODE(product.stat().st_mode), 0o700)
             self.assertEqual(stat.S_IMODE((product / "shared").stat().st_mode), 0o700)
@@ -100,7 +100,7 @@ class ProviderConnectionTests(unittest.TestCase):
 
             def select(_args=None, *, args=None) -> None:
                 del _args, args
-                from hermes_cli.config import read_raw_config, save_config
+                from pcbdraft.model.configuration import read_raw_config, save_config
 
                 config = read_raw_config()
                 config["model"] = {
@@ -111,7 +111,10 @@ class ProviderConnectionTests(unittest.TestCase):
                 }
                 save_config(config, strip_defaults=False)
 
-            with patch("hermes_cli.main.select_provider_and_model", side_effect=select):
+            with patch(
+                "pcbdraft.interfaces.tui.main.select_provider_and_model",
+                side_effect=select,
+            ):
                 result = connect()
             self.assertEqual(result.outcome, "changed")
             self.assertTrue(result.usable)
@@ -128,14 +131,16 @@ class ProviderConnectionTests(unittest.TestCase):
                 os.environ,
                 {
                     "PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product"),
-                    "HERMES_SHARED_AUTH_DIR": str(Path(temporary) / "standalone"),
+                    "PCBDRAFT_RUNTIME_SHARED_AUTH_DIR": str(
+                        Path(temporary) / "standalone"
+                    ),
                 },
                 clear=False,
             ),
         ):
             activate_provider_runtime()
-            write_hermes_config()
-            product = Path(os.environ["HERMES_HOME"])
+            write_runtime_config()
+            product = Path(os.environ["PCBDRAFT_RUNTIME_HOME"])
             existing = {
                 product / "config.yaml": (product / "config.yaml").read_bytes(),
                 product / ".env": b"API_KEY=old-secret\n",
@@ -175,7 +180,8 @@ class ProviderConnectionTests(unittest.TestCase):
                 raise KeyboardInterrupt
 
             with patch(
-                "hermes_cli.main.select_provider_and_model", side_effect=partial_write
+                "pcbdraft.interfaces.tui.main.select_provider_and_model",
+                side_effect=partial_write,
             ):
                 result = connect()
             self.assertEqual(result.outcome, "cancelled")
@@ -194,8 +200,8 @@ class ProviderConnectionTests(unittest.TestCase):
             ),
         ):
             activate_provider_runtime()
-            write_hermes_config()
-            product = Path(os.environ["HERMES_HOME"])
+            write_runtime_config()
+            product = Path(os.environ["PCBDRAFT_RUNTIME_HOME"])
 
             def auth_then_cancel(_args=None, *, args=None) -> None:
                 del _args, args
@@ -204,7 +210,7 @@ class ProviderConnectionTests(unittest.TestCase):
                 )
 
             with patch(
-                "hermes_cli.main.select_provider_and_model",
+                "pcbdraft.interfaces.tui.main.select_provider_and_model",
                 side_effect=auth_then_cancel,
             ):
                 result = connect()
@@ -223,14 +229,16 @@ class ProviderConnectionTests(unittest.TestCase):
         ):
             root = Path(temporary)
             activate_provider_runtime()
-            write_hermes_config()
+            write_runtime_config()
             external = root / "external-auth"
             external.mkdir()
-            (Path(os.environ["HERMES_HOME"]) / "auth").symlink_to(
+            (Path(os.environ["PCBDRAFT_RUNTIME_HOME"]) / "auth").symlink_to(
                 external, target_is_directory=True
             )
             with (
-                patch("hermes_cli.main.select_provider_and_model") as wizard,
+                patch(
+                    "pcbdraft.interfaces.tui.main.select_provider_and_model"
+                ) as wizard,
                 self.assertRaisesRegex(PCBDraftError, "symbolic-link directory"),
             ):
                 connect()
@@ -282,8 +290,8 @@ class ProviderConnectionTests(unittest.TestCase):
             ),
         ):
             activate_provider_runtime()
-            write_hermes_config()
-            from hermes_cli.config import read_raw_config, save_config
+            write_runtime_config()
+            from pcbdraft.model.configuration import read_raw_config, save_config
 
             config = read_raw_config()
             config["model"] = {"provider": "zai", "default": "glm-4.5"}
@@ -292,7 +300,7 @@ class ProviderConnectionTests(unittest.TestCase):
                 with (
                     self.subTest(expected=expected),
                     patch(
-                        "hermes_cli.runtime_provider.resolve_runtime_provider",
+                        "pcbdraft.model.runtime_provider.resolve_runtime_provider",
                         side_effect=error,
                     ),
                 ):
@@ -324,7 +332,7 @@ class ProviderConnectionTests(unittest.TestCase):
             started = time.monotonic()
             with (
                 patch(
-                    "hermes_cli.main.select_provider_and_model",
+                    "pcbdraft.interfaces.tui.main.select_provider_and_model",
                     side_effect=ignored_timeout,
                 ),
                 self.assertRaisesRegex(PCBDraftError, "timed out"),
@@ -351,7 +359,7 @@ class ProviderConnectionTests(unittest.TestCase):
                     observed.append(exc)
 
             with patch(
-                "hermes_cli.main.select_provider_and_model",
+                "pcbdraft.interfaces.tui.main.select_provider_and_model",
                 side_effect=lambda *args, **kwargs: wizard_called.set(),
             ):
                 worker = threading.Thread(target=invoke)
@@ -376,7 +384,7 @@ class ProviderConnectionTests(unittest.TestCase):
                 clear=False,
             ),
             patch(
-                "hermes_cli.main.select_provider_and_model",
+                "pcbdraft.interfaces.tui.main.select_provider_and_model",
                 side_effect=InvalidKeyError("rejected sk-secret"),
             ),
             self.assertRaisesRegex(PCBDraftError, "rejected the credential") as raised,
@@ -394,7 +402,7 @@ class ProviderConnectionTests(unittest.TestCase):
             ),
         ):
             activate_provider_runtime()
-            from hermes_cli import auth, model_setup_flows
+            from pcbdraft.model import auth, model_setup_flows
 
             observed: dict[str, object] = {}
 
@@ -406,7 +414,7 @@ class ProviderConnectionTests(unittest.TestCase):
                 observed["choice"] = model_setup_flows._prompt_auth_credentials_choice(
                     "MiniMax"
                 )
-                from hermes_cli.config import read_raw_config, save_config
+                from pcbdraft.model.configuration import read_raw_config, save_config
 
                 config = read_raw_config()
                 config["model"] = {
@@ -426,7 +434,10 @@ class ProviderConnectionTests(unittest.TestCase):
                     "_prompt_auth_credentials_choice",
                     return_value="reuse",
                 ) as choice_reader,
-                patch("hermes_cli.main.select_provider_and_model", side_effect=select),
+                patch(
+                    "pcbdraft.interfaces.tui.main.select_provider_and_model",
+                    side_effect=select,
+                ),
             ):
                 result = connect(ConnectionOptions(timeout=0.5, reauthenticate=True))
                 self.assertIs(auth.get_provider_auth_state, state_reader)
@@ -450,8 +461,8 @@ class ProviderConnectionTests(unittest.TestCase):
             ),
         ):
             activate_provider_runtime()
-            write_hermes_config()
-            from hermes_cli.config import read_raw_config, save_config
+            write_runtime_config()
+            from pcbdraft.model.configuration import read_raw_config, save_config
 
             config = read_raw_config()
             config["custom_providers"] = [
@@ -473,9 +484,9 @@ class ProviderConnectionTests(unittest.TestCase):
                 )
 
             with (
-                patch("hermes_cli.auth.resolve_provider", return_value=None),
+                patch("pcbdraft.model.auth.resolve_provider", return_value=None),
                 patch(
-                    "hermes_cli.main._prompt_provider_choice",
+                    "pcbdraft.interfaces.tui.main._prompt_provider_choice",
                     side_effect=cancel_picker,
                 ),
             ):
@@ -504,19 +515,18 @@ class ProviderConnectionTests(unittest.TestCase):
             False, False, None, None, None, None, outcome="cancelled"
         )
         with (
-            patch("pcbdraft.interfaces.hermes_cli.activate"),
+            patch("pcbdraft.interfaces.terminal.activate"),
             patch(
-                "pcbdraft.interfaces.hermes_cli.connection_status", return_value=missing
+                "pcbdraft.interfaces.terminal.connection_status", return_value=missing
             ),
-            patch("pcbdraft.interfaces.hermes_cli.connect", return_value=cancelled),
+            patch("pcbdraft.interfaces.terminal.connect", return_value=cancelled),
             patch("sys.stdin.isatty", return_value=True),
         ):
             self.assertEqual(launch_cli([]), 1)
 
 
-class HermesIntentProviderTests(unittest.TestCase):
+class NativeIntentProviderTests(unittest.TestCase):
     def test_interpret_uses_selected_hermes_provider_and_safe_artifacts(self) -> None:
-        install_vendor_path()
         value = {
             "request_summary": "sensor board",
             "design_name": "sensor",
@@ -548,9 +558,9 @@ class HermesIntentProviderTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            provider = HermesIntentProvider("openai-codex", "gpt-5-codex")
+            provider = NativeIntentProvider("openai-codex", "gpt-5-codex")
             with patch(
-                "agent.auxiliary_client.call_llm", return_value=response
+                "pcbdraft.model.auxiliary_client.call_llm", return_value=response
             ) as call:
                 result = provider.interpret(
                     ProviderContext("make a sensor", "sensor", {}),
@@ -579,12 +589,11 @@ class HermesIntentProviderTests(unittest.TestCase):
             return_value=selected,
         ):
             provider = resolve_provider("auto")
-        self.assertIsInstance(provider, HermesIntentProvider)
+        self.assertIsInstance(provider, NativeIntentProvider)
         assert provider is not None
         self.assertEqual(provider.provider_id, "anthropic")
 
     def test_provider_failure_receipt_is_classified_and_secret_free(self) -> None:
-        install_vendor_path()
 
         class InvalidKeyError(Exception):
             status_code = 401
@@ -597,10 +606,10 @@ class HermesIntentProviderTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as temporary:
             run_dir = Path(temporary) / "run"
-            provider = HermesIntentProvider("zai", "glm-test")
+            provider = NativeIntentProvider("zai", "glm-test")
             with (
                 patch(
-                    "agent.auxiliary_client.call_llm",
+                    "pcbdraft.model.auxiliary_client.call_llm",
                     side_effect=InvalidKeyError("rejected sk-secret"),
                 ),
                 self.assertRaisesRegex(
@@ -626,7 +635,6 @@ class HermesIntentProviderTests(unittest.TestCase):
     def test_representative_provider_classes_share_the_normalized_call_boundary(
         self,
     ) -> None:
-        install_vendor_path()
         response = SimpleNamespace(
             choices=[
                 SimpleNamespace(
@@ -663,11 +671,11 @@ class HermesIntentProviderTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with patch(
-                "agent.auxiliary_client.call_llm", return_value=response
+                "pcbdraft.model.auxiliary_client.call_llm", return_value=response
             ) as call:
                 for index, provider_id in enumerate(providers):
                     with self.subTest(provider=provider_id):
-                        provider = HermesIntentProvider(provider_id, "board-model")
+                        provider = NativeIntentProvider(provider_id, "board-model")
                         value = provider._structured(
                             "Return ok",
                             "provider_contract",
@@ -682,11 +690,13 @@ class HermesIntentProviderTests(unittest.TestCase):
 
 class HermesVendorContractTests(unittest.TestCase):
     def test_provider_adapter_contract_is_present(self) -> None:
-        install_vendor_path()
-        from agent.auxiliary_client import call_llm, extract_content_or_reasoning
-        from hermes_cli.main import select_provider_and_model
-        from hermes_cli.models import CANONICAL_PROVIDERS
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from pcbdraft.interfaces.tui.main import select_provider_and_model
+        from pcbdraft.model.auxiliary_client import (
+            call_llm,
+            extract_content_or_reasoning,
+        )
+        from pcbdraft.model.catalog import CANONICAL_PROVIDERS
+        from pcbdraft.model.runtime_provider import resolve_runtime_provider
 
         self.assertTrue(CANONICAL_PROVIDERS)
         self.assertTrue(callable(select_provider_and_model))
@@ -695,14 +705,13 @@ class HermesVendorContractTests(unittest.TestCase):
         self.assertTrue(callable(extract_content_or_reasoning))
 
     def test_required_auth_and_transport_classes_remain_available(self) -> None:
-        install_vendor_path()
-        from agent.auxiliary_client import (
+        from pcbdraft.model.auth import PROVIDER_REGISTRY, ZAI_ENDPOINTS
+        from pcbdraft.model.auxiliary_client import (
             AnthropicAuxiliaryClient,
             BedrockAuxiliaryClient,
             CodexAuxiliaryClient,
         )
-        from agent.copilot_acp_client import CopilotACPClient
-        from hermes_cli.auth import PROVIDER_REGISTRY, ZAI_ENDPOINTS
+        from pcbdraft.model.copilot_acp_client import CopilotACPClient
 
         expected_auth_types = {
             "zai": "api_key",
@@ -728,8 +737,7 @@ class HermesVendorContractTests(unittest.TestCase):
         self.assertTrue(callable(CopilotACPClient))
 
     def test_glm_and_minimax_endpoint_and_refresh_contracts(self) -> None:
-        install_vendor_path()
-        from hermes_cli import auth
+        from pcbdraft.model import auth
 
         self.assertEqual(
             [entry[0] for entry in auth.ZAI_ENDPOINTS],
@@ -766,10 +774,9 @@ class HermesVendorContractTests(unittest.TestCase):
         refresh.assert_called_once_with(expired)
 
     def test_cloud_and_external_transport_routing_is_preserved(self) -> None:
-        install_vendor_path()
-        from agent import anthropic_adapter, bedrock_adapter, vertex_adapter
-        from agent import auxiliary_client as auxiliary
-        from hermes_cli import auth
+        import pcbdraft.model.auxiliary_client as auxiliary
+        from pcbdraft.agent import vertex_adapter
+        from pcbdraft.model import anthropic_adapter, auth, bedrock_adapter
 
         bedrock_client = object()
         with (
@@ -837,7 +844,7 @@ class HermesVendorContractTests(unittest.TestCase):
                 },
             ),
             patch(
-                "agent.copilot_acp_client.CopilotACPClient",
+                "pcbdraft.model.copilot_acp_client.CopilotACPClient",
                 return_value=acp_client,
             ) as acp_builder,
         ):

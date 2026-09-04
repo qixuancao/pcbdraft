@@ -10,7 +10,7 @@ from typing import Any
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import load_json_limited
-from pcbdraft.model.providers import HermesIntentProvider
+from pcbdraft.model.providers import NativeIntentProvider
 
 _RECEIPT_LIMIT = 64 * 1024
 
@@ -229,7 +229,7 @@ def invoke_model(
         raise ValidationError(f"unknown model mode: {mode}")
     schema = review_schema() if mode == "review" else patch_schema()
     prefix = "model-review" if mode == "review" else "model-patch"
-    provider = HermesIntentProvider.from_config()
+    provider = NativeIntentProvider.from_config()
     if provider is None:
         raise PCBDraftError("model provider is not configured; run `pcbdraft connect`")
     value = provider._structured(

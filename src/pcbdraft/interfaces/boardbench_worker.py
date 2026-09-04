@@ -148,12 +148,9 @@ def parse_request(argv: Sequence[str] | None = None) -> WorkerRequest:
 def _load_runtime() -> _WorkerRuntime:
     """Import product/Hermes integration only after run-local env is installed."""
 
-    from pcbdraft.agent.hermes_tools import (
-        get_service,
-        set_current_project_id,
-    )
+    from pcbdraft.agent.tool_bindings import get_service, set_current_project_id
     from pcbdraft.core.repository import configure_repository
-    from pcbdraft.interfaces.hermes_cli import launch_cli
+    from pcbdraft.interfaces.terminal import launch_cli
 
     return _WorkerRuntime(
         configure_repository=configure_repository,

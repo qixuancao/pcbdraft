@@ -353,18 +353,18 @@ def capture_environment(source_root: str | Path | None = None) -> RunnerEnvironm
     )
     _reject_symlink_components(raw_root, "source")
     root = raw_root.resolve()
-    from pcbdraft.model.hermes_config import write_hermes_config
+    from pcbdraft.model.settings import write_runtime_config
     from pcbdraft.services.provider_connection import (
         activate_provider_runtime,
         connection_status,
     )
 
     activate_provider_runtime()
-    write_hermes_config()
+    write_runtime_config()
     status = connection_status(verify=False)
     if not status.configured or not status.provider or not status.model:
         raise ValidationError("BoardBench requires one configured default model")
-    from hermes_cli.config import load_config_readonly
+    from pcbdraft.model.configuration import load_config_readonly
 
     raw_configuration = load_config_readonly()
     configuration = _secret_free_configuration(raw_configuration)

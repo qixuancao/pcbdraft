@@ -7,10 +7,7 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from pcbdraft.agent.orchestrator import (
-    AgentOrchestrator,
-    DeterministicPCBCallProducer,
-)
+from pcbdraft.agent.orchestrator import AgentOrchestrator, DeterministicPCBCallProducer
 from pcbdraft.agent.permissions import PermissionBroker
 from pcbdraft.agent.policy import ConversationStep, ProposedToolCall
 from pcbdraft.agent.runtime import AgentRuntime

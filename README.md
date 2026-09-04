@@ -12,7 +12,7 @@ ERC、DRC 和每一步的证据留在本地。
 ## 特性
 
 - 类似编程智能体的交互终端界面，支持中文自然语言输入；
-- 默认即自主 Agent：Hermes Agent 自己观察工程、选择工具、阅读真实结果并
+- 默认即自主 Agent：PCBDraft Agent 自己观察工程、选择工具、阅读真实结果并
   决定下一步，没有固定的 plan/generate/validate/repair/release 顺序；
 - 不要求用户预先决定层数、尺寸或全部器件；
 - 只使用本机安装的 KiCad 符号和封装；
@@ -115,7 +115,7 @@ source ~/.bashrc
 ```
 
 模型选择和认证信息保存在平台的 PCBDraft 用户配置目录下的
-私有 `hermes/` 子目录。该目录与独立安装的 Hermes 及其 `~/.hermes`
+私有 `runtime/` 子目录；已有的 PCBDraft `hermes/` 目录会继续使用。该目录与独立安装的 Hermes 及其 `~/.hermes`
 数据隔离。首次启动还会创建并
 记录统一的 PCB 项目仓库 `~/PCBDraft/`；以后无论从哪个目录执行 `pcbdraft`，
 新项目、KiCad 原理图、`.kicad_pcb`、检查记录和发布文件都会位于这个仓库的
@@ -138,11 +138,11 @@ uv run pcbdraft doctor --json
 ## 配置模型
 
 运行 `pcbdraft connect`，或在交互终端中输入 `/connect`、`/model`，
-可以连接、切换或重新认证当前内置 Hermes 版本发现的提供商。向导支持
+可以连接、切换或重新认证内置模型注册表中的提供商。向导支持
 API Key、浏览器/设备代码登录、云身份、本地端点、聚合服务和自定义端点；
 无浏览器的远程终端可使用 `pcbdraft connect --no-browser`。
 
-提供商认证、端点检测、令牌刷新和传输路由随 PCBDraft 打包的 Hermes
+提供商认证、端点检测、令牌刷新和传输路由由 PCBDraft 的原生模型模块
 运行时统一处理。PCBDraft 仍会对用于板卡规划的返回值执行本地 JSON Schema
 和领域校验。密钥和刷新令牌只保存在私有认证存储中，不会写入 PCB
 工程、对话记录、调试跟踪或模型运行收据。
@@ -202,14 +202,14 @@ Design 与 `kicad-cli` 精确预览。
 ## 默认工作方式：自主 Agent + 工具
 
 PCBDraft 默认不再按固定顺序驱动“规划→生成→验证→修复→发布”。默认模式是
-一个类似 Coding Agent 的循环：Hermes Agent 拿到一个持续存在的 PCB 目标
+一个类似 Coding Agent 的循环：PCBDraft Agent 拿到一个持续存在的 PCB 目标
 （standing goal），自己观察当前工程、选择下一个工具、阅读真实结果，再决定
 继续、修改、检查、回退还是结束。
 
 ```text
 用户持续目标
       ↓
-  Hermes Agent
+  PCBDraft Agent
   ↙    ↓    ↘
 查看   设计   修改
   ↘    ↓    ↙
@@ -221,7 +221,7 @@ PCBDraft 默认不再按固定顺序驱动“规划→生成→验证→修复�
       ↓
  事实与证据
       ↓
-  Hermes Agent
+  PCBDraft Agent
       ↓
 continue / done / blocked
 ```
@@ -249,7 +249,7 @@ continue / done / blocked
   和 `--project` 是可信的工程选择边界。已安装的符号/封装可在选工程前查询，
   当前工程的器件目录可用 `pcb_search_parts` / `pcb_describe_part` 查询；本机
   KiCad 已有但目录未收录的组合可用 `pcb_register_kicad_part` 原子登记。
-  成功切换工程后，终端会静默开始一个新的 Hermes 对话，旧工程的工具结果
+  成功切换工程后，终端会静默开始一个新的对话，旧工程的工具结果
   不会进入新工程的下一次模型请求。
 
 ### Goal Mode（持续目标）
@@ -286,7 +286,7 @@ remove、update、connect、place、route 或 via 工具逐项修改。旧版 IR
 Legacy durable Agent 回合仍由 `AgentOrchestrator`/`JobRunner` 驱动，
 其历史上的确定性后续工具策略（先由模型选一次工具、之后本地策略接管）保留
 为 legacy 兼容模式和显式快捷方式（`/validate`、`/confirm` 等）。它不再是
-默认 Hermes Agent 的控制器。持久化、恢复、预算和审批仍由
+默认 PCBDraft Agent 的控制器。持久化、恢复、预算和审批仍由
 `AgentOrchestrator`/`JobRunner` 负责；它们不决定 PCB 工程下一步。
 
 Legacy durable 路径中的每条消息都是一个可恢复的 Agent 回合。每次工具调用都会在
@@ -339,7 +339,7 @@ PCB 工具。
 | `/release` | 生成制造候选证据包 |
 | `/quit` | 退出交互终端 |
 
-`/help` 显示全部可用命令。与 PCB 无关的 Hermes 内置命令
+`/help` 显示全部可用命令。与 PCB 无关的命令
 （消息网关、语音、看板、计费、技能市场等）已从帮助、自动补全和分发中裁剪，
 交互终端只暴露 PCBDraft 需要的命令面。
 
@@ -381,7 +381,7 @@ L4/L6/L7 外部记录会被复制、哈希并校验结构，但不会被当作�
 | `pcbdraft/kicad/` | KiCad 原理图、PCB、布局、布线、预览与同步 |
 | `pcbdraft/services/` | 应用服务、任务、托管工程、事务和工作流 |
 | `pcbdraft/verification/` | 证据、验证、评审、基准和发布门禁 |
-| `pcbdraft/interfaces/` | CLI 与 Hermes 交互终端（命令面、终端启动、调试插件） |
+| `pcbdraft/interfaces/` | CLI、Web 与原生 TUI（命令、渲染、终端生命周期） |
 
 `tests/` 使用相同的职责目录，能够直接找到每层对应的测试。详细边界和
 新增代码的放置规则见 [项目结构说明](docs/PROJECT_STRUCTURE.md)。1.0 版本

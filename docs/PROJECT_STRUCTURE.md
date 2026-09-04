@@ -13,13 +13,15 @@ pcbdraft/
 │   ├── agent/          planning contracts, tool policy, ports, and durable turn orchestration
 │   ├── core/           errors, safe I/O, redaction, locks, processes, runs, and project paths
 │   ├── domain/         immutable PCB data and deterministic domain rules
-│   ├── interfaces/     CLI and the interactive Hermes-based terminal
+│   ├── interfaces/     CLI, local Web, and the native terminal
 │   │   ├── cli.py       subcommands (doctor/setup/repository/trace) and bare launch
-│   │   ├── hermes_cli.py  terminal startup, tool registration, plugin install
+│   │   ├── terminal.py    terminal startup and model-wizard lifecycle
+│   │   ├── tui/           rendering, prompt editing, commands, and terminal sessions
 │   │   ├── commands.py  pruned slash-command surface (PCB project commands)
-│   │   └── hermes_plugin.py  agent debug trace observer plugin body
+│   │   └── gui.py         local Web API
 │   ├── kicad/          native KiCad adapters and geometry algorithms
-│   ├── model/          model configuration, transport, and provider adapters
+│   ├── model/          configuration, authentication, transports, and provider profiles
+│   ├── tools/          tool registry, dispatch, and reusable tool implementations
 │   ├── services/       application use cases and transactional orchestration
 │   ├── verification/   evidence, gates, validation, BoardBench, benchmark, and release
 │   └── data/           immutable bundled catalogs and benchmark corpus
@@ -76,9 +78,8 @@ candidate/release decisions. Neither layer should contain presentation code.
 
 ### Interfaces
 
-`interfaces` owns the ``pcbdraft`` CLI and the interactive Hermes-based
-terminal. A bare ``pcbdraft`` launch starts the vendored Hermes
-``prompt_toolkit`` runtime; the PCBDraft slash commands (``/new``, ``/projects``,
+`interfaces` owns the ``pcbdraft`` CLI and the native ``prompt_toolkit`` terminal. A bare ``pcbdraft`` launch starts
+``interfaces.tui.app.TerminalApp``; the PCBDraft slash commands (``/new``, ``/projects``,
 ``/project``, ``/open`` and the PCB workflow commands) translate terminal input
 into ``ApplicationService`` calls. Interfaces may format results, but they must
 not duplicate engineering decisions or become an independent project store.
@@ -108,3 +109,13 @@ imports, compatibility aliases, and the slim ``interfaces`` module set.
 `scripts/clean.sh` is the single cleanup entrypoint for generated Python build
 products. Package discovery is explicitly limited to `pcbdraft*`, and release
 checks clean setuptools' persistent build directory before and after building.
+
+## Runtime source ownership
+
+`agent.loop` owns the reused conversation engine; `agent.tool_bindings` binds its
+tools to PCB authority; `agent.observability` contains built-in trace and write
+constraints. `agent.extensions` manages optional extensions. `model` owns provider
+authentication and wire protocols, and `services.session_db` owns transcripts.
+They are ordinary packaged modules, imported by their `pcbdraft.*` names in both
+editable installs and wheels. There is no separately injected runtime source tree.
+Third-party provenance and license text remain in `NOTICE` and `data/licenses`.

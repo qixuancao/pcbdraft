@@ -307,7 +307,7 @@ class BoardBenchRunnerTests(unittest.TestCase):
             )
             with (
                 mock.patch.object(sys, "path", [str(vendor_root), *sys.path]),
-                mock.patch("pcbdraft.model.hermes_config.write_hermes_config"),
+                mock.patch("pcbdraft.model.settings.write_runtime_config"),
                 mock.patch(
                     "pcbdraft.services.provider_connection.activate_provider_runtime"
                 ),
@@ -320,7 +320,7 @@ class BoardBenchRunnerTests(unittest.TestCase):
                     ),
                 ),
                 mock.patch(
-                    "hermes_cli.config.load_config_readonly",
+                    "pcbdraft.model.configuration.load_config_readonly",
                     return_value={
                         "model": {"default": "default-model", "max_tokens": 8192},
                         "agent": {"max_turns": 73},

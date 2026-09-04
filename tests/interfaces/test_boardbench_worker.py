@@ -175,7 +175,7 @@ class BoardBenchWorkerTests(unittest.TestCase):
             import sys
             from types import SimpleNamespace
 
-            import pcbdraft.interfaces.hermes_cli as adapter
+            import pcbdraft.interfaces.terminal as adapter
 
             adapter.activate()
             import hermes_cli.main as hermes_main

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Full local release acceptance: tests, packages, clean install, and Hermes E2E.
+# Full local release acceptance: tests, packages, clean install, and terminal E2E.
 set -euo pipefail
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -26,7 +26,7 @@ fi
 uv run python -m zipfile -t "$WHEEL"
 tar -tzf "$SDIST" >/dev/null
 uv run python -c \
-    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/constraints/build.txt", "/constraints/runtime.txt", "/scripts/hermes-e2e.py", "/scripts/fake_openai_provider.py"); assert all(any(name.endswith(item) for name in names) for item in required)' \
+    'import sys, tarfile; names=tarfile.open(sys.argv[1]).getnames(); required=("/constraints/build.txt", "/constraints/runtime.txt", "/scripts/terminal-e2e.py", "/scripts/fake_openai_provider.py"); assert all(any(name.endswith(item) for name in names) for item in required)' \
     "$SDIST"
 
 uv venv --python 3.11 "$CHECK_ROOT/venv"
@@ -38,9 +38,9 @@ uv pip install \
 "$CHECK_ROOT/venv/bin/python" -c \
     'from pcbdraft.verification.benchmark import load_corpus; assert len(load_corpus()[1]) == 90'
 
-uv run python scripts/hermes-e2e.py \
+uv run python scripts/terminal-e2e.py \
     --python "$CHECK_ROOT/venv/bin/python" \
     --require-installed \
-    --output "$CHECK_ROOT/hermes-e2e"
+    --output "$CHECK_ROOT/terminal-e2e"
 
-printf 'release check passed: wheel, sdist, clean install, and Hermes/KiCad E2E\n'
+printf 'release check passed: wheel, sdist, clean install, and terminal/KiCad E2E\n'

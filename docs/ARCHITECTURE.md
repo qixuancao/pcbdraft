@@ -16,7 +16,7 @@ execution are not:
     User Standing Goal
             |
             v
-       Hermes Agent
+       PCBDraft Agent
        /      |      \
    inspect  design  modify
        \      |      /
@@ -32,15 +32,15 @@ execution are not:
      Facts and Evidence
             |
             v
-       Hermes Agent
+       PCBDraft Agent
             |
             v
     continue / done / blocked
 
-- **Hermes** owns reasoning, conversation, and autonomous tool selection.
+- **agent.loop.AIAgent** owns reasoning, conversation, and autonomous tool selection.
   After every tool result the model may freely choose the next tool; there is
   no mandatory plan/generate/validate/repair/release sequence.
-- **GoalManager** (vendored Hermes `/goal`) owns standing-goal continuation
+- **GoalManager** (native `/goal`) owns standing-goal continuation
   and the done/continue/wait judgment. Goal state stays minimal: goal,
   status, turns_used, max_turns.
 - **AgentOrchestrator / JobRunner** own durable dispatch, persistence,
@@ -66,7 +66,7 @@ package root:
       kicad/         native KiCad generation, layout, routing, preview, and sync
       services/      application use cases, jobs, managed projects, transactions
       verification/  evidence, validation, review, benchmark, and release gates
-      interfaces/    the ``pcbdraft`` CLI and the interactive Hermes terminal
+      interfaces/    the ``pcbdraft`` CLI and the native interactive terminal
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,

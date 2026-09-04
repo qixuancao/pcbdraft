@@ -18,10 +18,7 @@ from typing import Any
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.domain.ir import canonical_json_bytes
-from pcbdraft.services.live_view import (
-    LIVE_SCENE_SCHEMA,
-    SceneLimits,
-)
+from pcbdraft.services.live_view import LIVE_SCENE_SCHEMA, SceneLimits
 
 IPC_MIN_POLL_INTERVAL_SECONDS = 0.5
 IPC_MAX_POLL_INTERVAL_SECONDS = 60.0

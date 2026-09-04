@@ -19,10 +19,7 @@ from pcbdraft.model.api import (
     OpenAIResponsesClient,
     ResponsesFunctionCall,
 )
-from pcbdraft.model.tool_calls import (
-    ConfiguredPCBCallProducer,
-    provider_agent_protocol,
-)
+from pcbdraft.model.tool_calls import ConfiguredPCBCallProducer, provider_agent_protocol
 
 
 def _view(*, status: str = "draft", revision: int = 0) -> dict[str, Any]:

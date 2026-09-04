@@ -21,11 +21,7 @@ from types import MappingProxyType
 from typing import Any, Self
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.core.io import (
-    atomic_write_json,
-    load_json_limited,
-    make_directory,
-)
+from pcbdraft.core.io import atomic_write_json, load_json_limited, make_directory
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.runs import new_run_id, utc_timestamp
 

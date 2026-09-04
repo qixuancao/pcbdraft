@@ -17,11 +17,7 @@ from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from jsonschema.exceptions import ValidationError as JSONSchemaValidationError
 
-from pcbdraft.agent.plan import (
-    AgentDesignRequest,
-    CircuitPlan,
-    circuit_plan_schema,
-)
+from pcbdraft.agent.plan import AgentDesignRequest, CircuitPlan, circuit_plan_schema
 from pcbdraft.agent.repair import normalize_repair_feedback
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, make_directory
@@ -520,8 +516,8 @@ class OpenAICompatibleIntentProvider:
         )
 
 
-class HermesIntentProvider:
-    """Structured PCB planning through Hermes' normalized provider runtime."""
+class NativeIntentProvider:
+    """Structured PCB planning through the native provider runtime."""
 
     supports_planning = True
 
@@ -530,7 +526,7 @@ class HermesIntentProvider:
         self.model = model
 
     @classmethod
-    def from_config(cls) -> HermesIntentProvider | None:
+    def from_config(cls) -> NativeIntentProvider | None:
         from pcbdraft.services.provider_connection import connection_status
 
         status = connection_status()
@@ -543,7 +539,7 @@ class HermesIntentProvider:
             "id": self.provider_id,
             "model": self.model,
             "available": True,
-            "planning": "Hermes provider runtime",
+            "planning": "native provider runtime",
         }
 
     def _structured(
@@ -577,7 +573,10 @@ class HermesIntentProvider:
         receipt_path = run_dir / f"{artifact_prefix}.receipt.json"
         atomic_write_json(schema_path, schema)
         try:
-            from agent.auxiliary_client import call_llm, extract_content_or_reasoning
+            from pcbdraft.model.auxiliary_client import (
+                call_llm,
+                extract_content_or_reasoning,
+            )
 
             response = call_llm(
                 task="pcbdraft_planning",
@@ -723,11 +722,9 @@ def resolve_provider(name: str = "auto") -> IntentProvider | None:
     """
 
     normalized = name.strip().casefold()
-    if normalized not in {"auto", "hermes"}:
+    if normalized not in {"auto", "native", "hermes"}:
         raise ValidationError(f"unknown provider: {name}")
-    provider = HermesIntentProvider.from_config()
-    if provider is None and normalized == "hermes":
-        raise PCBDraftError(
-            "Hermes model provider is not configured; run `pcbdraft connect`"
-        )
+    provider = NativeIntentProvider.from_config()
+    if provider is None and normalized in {"native", "hermes"}:
+        raise PCBDraftError("model provider is not configured; run `pcbdraft connect`")
     return provider

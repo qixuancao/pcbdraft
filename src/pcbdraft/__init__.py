@@ -50,7 +50,9 @@ def build_identity() -> dict[str, Any]:
 # Release 1.0 exposed most implementation modules directly below ``pcbdraft``.
 # The implementation now lives in responsibility-focused subpackages, while a
 # lazy import hook keeps those historical imports working for downstream users.
-from ._compat import install_moved_module_aliases as _install_moved_module_aliases
+from pcbdraft._compat import (
+    install_moved_module_aliases as _install_moved_module_aliases,
+)
 
 _install_moved_module_aliases()
 del _install_moved_module_aliases

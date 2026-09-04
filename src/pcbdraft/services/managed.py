@@ -14,11 +14,7 @@ from typing import Any, TypeAlias
 from pcbdraft import __version__
 from pcbdraft.agent.plan import AgentDesignRequest, CircuitPlan
 from pcbdraft.core.errors import ValidationError
-from pcbdraft.core.io import (
-    atomic_write_bytes,
-    atomic_write_json,
-    load_json_limited,
-)
+from pcbdraft.core.io import atomic_write_bytes, atomic_write_json, load_json_limited
 from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.project import canonical_project, sha256_file, validate_agent_tree
 from pcbdraft.domain.blocks import BlockRegistry
