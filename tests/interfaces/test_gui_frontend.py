@@ -49,13 +49,24 @@ class GUIFrontendTests(unittest.TestCase):
         self.assertEqual(defaults.host, "127.0.0.1")
         self.assertEqual(defaults.port, 9130)
         self.assertIsNone(defaults.gui_project_id)
+        self.assertFalse(defaults.kicad_ipc)
 
         selected = parser.parse_args(
-            ["gui", "--host", "localhost", "--port", "9131", "--project", "demo"]
+            [
+                "gui",
+                "--host",
+                "localhost",
+                "--port",
+                "9131",
+                "--project",
+                "demo",
+                "--kicad-ipc",
+            ]
         )
         self.assertEqual(selected.host, "localhost")
         self.assertEqual(selected.port, 9131)
         self.assertEqual(selected.gui_project_id, "demo")
+        self.assertTrue(selected.kicad_ipc)
 
         for invalid in ("0", "65536"):
             with (
@@ -84,6 +95,7 @@ class GUIFrontendTests(unittest.TestCase):
             host="127.0.0.2",
             port=9137,
             project_id="demo",
+            kicad_ipc=False,
         )
 
     def test_assets_and_runtime_urls_are_base_path_relative(self) -> None:
@@ -102,31 +114,59 @@ class GUIFrontendTests(unittest.TestCase):
             "state.eventCursor = Math.max(state.eventCursor, next.eventSequence);",
             self.script,
         )
-        self.assertIn("if (busy && !payload?.scene) return;", self.script)
+        self.assertNotIn("if (busy && !payload?.scene) return;", self.script)
+        self.assertIn("payload?.external_change", self.script)
+        self.assertIn(
+            "payload?.scene ? board.setScene(payload.scene) : false", self.script
+        )
         self.assertIn("new EventSource(url)", self.script)
         self.assertIn("state.eventCursor = sequence", self.script)
         self.assertIn("inspector.setScene(scene, payload?.ipc)", self.script)
 
-    def test_selected_project_quietly_polls_ipc_without_overlapping_snapshots(
+    def test_snapshot_fallback_runs_only_while_sse_is_disconnected_with_backoff(
         self,
     ) -> None:
-        self.assertRegex(self.script, re.compile(r"SNAPSHOT_POLL_MS\s*=\s*1000"))
+        self.assertNotIn("setInterval", self.script)
+        self.assertNotIn("startSnapshotPolling", self.script)
+        self.assertNotIn("SNAPSHOT_POLL_MS", self.script)
+        self.assertRegex(
+            self.script, re.compile(r"DISCONNECTED_POLL_MIN_MS\s*=\s*1000")
+        )
+        self.assertRegex(
+            self.script, re.compile(r"DISCONNECTED_POLL_MAX_MS\s*=\s*30000")
+        )
         self.assertIn("snapshotInFlight: null", self.script)
         self.assertIn("if (running)", self.script)
         self.assertIn("return running.promise;", self.script)
-        self.assertIn("startSnapshotPolling();", self.script)
-        self.assertGreaterEqual(self.script.count("stopSnapshotPolling();"), 2)
+        self.assertIn("function scheduleDisconnectedPolling()", self.script)
+        self.assertIn("if (state.eventStreamHealthy", self.script)
+        self.assertIn("Math.min(DISCONNECTED_POLL_MAX_MS, delay * 2)", self.script)
+        self.assertIn("stopDisconnectedPolling();", self.script)
         self.assertIn("refreshSnapshot({ quiet: true })", self.script)
+
+    def test_sse_gap_and_stream_reset_force_a_complete_resnapshot(self) -> None:
+        self.assertIn("sequence !== state.eventCursor + 1", self.script)
+        self.assertIn('value.kind === "stream.reset_required"', self.script)
+        self.assertIn("recoverEventStream();", self.script)
+        self.assertIn("resetStreamCursor: true", self.script)
+        self.assertIn("payload?.stream?.last_sequence", self.script)
 
     def test_frontend_exposes_required_board_and_turn_controls(self) -> None:
         required_ids = {
             "project-select",
             "activity-list",
             "board-svg",
+            "exact-board-layer",
+            "preview-precision",
+            "primary-3d-view",
+            "view-2d",
+            "view-3d",
             "front-layer",
             "back-layer",
             "via-layer",
             "footprint-layer",
+            "pad-layer",
+            "finding-layer",
             "label-layer",
             "unrouted-layer",
             "exact-board-preview",
@@ -147,6 +187,10 @@ class GUIFrontendTests(unittest.TestCase):
         self.assertIn("wheel", self.board_script)
         self.assertIn("route-draw", self._asset_text(self.root, "workbench.css"))
         self.assertIn("via-pop", self._asset_text(self.root, "workbench.css"))
+        self.assertIn("近似预览", self.html)
+        self.assertIn("locateFinding", self.board_script)
+        self.assertIn('url.searchParams.set("revision"', self.script)
+        self.assertIn('url.searchParams.set("content_hash"', self.script)
         self.assertIn(
             '"artifacts/board-3d"', self._asset_text(self.root, "inspector.js")
         )
@@ -155,17 +199,16 @@ class GUIFrontendTests(unittest.TestCase):
     def test_schematic_preview_requires_project_and_manifest_artifact(self) -> None:
         inspector = self._asset_text(self.root, "inspector.js")
         self.assertIn(
-            'const hasSchematic = Boolean(\n'
-            '      projectId && schematicArtifact && schematicArtifact.state !== "missing",\n'
-            "    );",
+            'const hasSchematic = Boolean(projectId && schematicArtifact?.state === "ready");',
             inspector,
         )
+        self.assertIn('item && state === "ready"', inspector)
 
     def test_preview_rendering_does_not_reload_unchanged_images(self) -> None:
         inspector = self._asset_text(self.root, "inspector.js")
         self.assertIn(
-            'if (available) {\n'
-            '      const boardUrl = previewUrl("board.svg");\n'
+            "if (available) {\n"
+            '      const boardUrl = previewUrl("board.svg", { bound: true });\n'
             "      if (elements.boardPreview.src !== boardUrl) {\n"
             "        elements.boardPreview.src = boardUrl;\n"
             "      }\n"
@@ -173,8 +216,8 @@ class GUIFrontendTests(unittest.TestCase):
             inspector,
         )
         self.assertIn(
-            'if (hasSchematic) {\n'
-            '      const schematicUrl = previewUrl("schematic.svg");\n'
+            "if (hasSchematic) {\n"
+            '      const schematicUrl = previewUrl("schematic.svg", { bound: true });\n'
             "      if (elements.schematicPreview.src !== schematicUrl) {\n"
             "        elements.schematicPreview.src = schematicUrl;\n"
             "      }\n"

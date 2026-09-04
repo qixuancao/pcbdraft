@@ -44,25 +44,31 @@
 
       <main id="board-workspace" class="board-workspace" aria-label="PCB 板图工作区" data-i18n-aria="board.workspace">
         <header class="workspace-toolbar">
-          <div class="toolbar-group"><button id="fit-board" class="icon-button" type="button" data-i18n-title="board.fit" title="适合画布">F</button><button id="zoom-out" class="icon-button" type="button" data-i18n-title="board.zoomOut" title="缩小">−</button><button id="zoom-in" class="icon-button" type="button" data-i18n-title="board.zoomIn" title="放大">+</button><button id="actual-size" class="icon-button" type="button" data-i18n-title="board.actual" title="100%">0</button><button id="center-selection" class="toolbar-button" type="button" data-i18n="board.center">居中选择</button></div>
+          <div class="toolbar-group"><button id="fit-board" class="icon-button" type="button" data-i18n-title="board.fit" title="适合画布">F</button><button id="zoom-out" class="icon-button" type="button" data-i18n-title="board.zoomOut" title="缩小">−</button><button id="zoom-in" class="icon-button" type="button" data-i18n-title="board.zoomIn" title="放大">+</button><button id="actual-size" class="icon-button" type="button" data-i18n-title="board.actual" title="100%">0</button><button id="center-selection" class="toolbar-button" type="button" data-i18n="board.center">居中选择</button><div class="view-switch" role="group" aria-label="2D / 3D"><button id="view-2d" type="button" aria-pressed="true">2D</button><button id="view-3d" type="button" aria-pressed="false">3D</button></div></div>
           <label class="layer-control" for="layer-preset"><span data-i18n="board.layers">图层视图</span><select id="layer-preset"><option value="all" data-i18n="board.all">全部</option><option value="front" data-i18n="board.front">正面</option><option value="back" data-i18n="board.back">背面</option><option value="assembly" data-i18n="board.assembly">装配</option><option value="routing" data-i18n="board.routing">布线</option></select></label>
           <div id="layer-toggles" class="layer-toggles" role="group" aria-label="图层" data-i18n-aria="board.layers"><button type="button" data-layer-toggle="front" data-i18n-title="board.layerFront" title="正面铜">F</button><button type="button" data-layer-toggle="back" data-i18n-title="board.layerBack" title="背面铜">B</button><button type="button" data-layer-toggle="vias" data-i18n-title="board.layerVias" title="过孔">V</button><button type="button" data-layer-toggle="footprints" data-i18n-title="board.layerFootprints" title="器件">P</button><button type="button" data-layer-toggle="labels" data-i18n-title="board.layerLabels" title="标签">L</button><button type="button" data-layer-toggle="unrouted" data-i18n-title="board.layerUnrouted" title="未布线">U</button></div>
           <div class="workspace-indicators"><span id="stream-indicator" class="status-dot"><i></i><span>—</span></span><span id="ipc-indicator" class="status-dot"><i></i><span>—</span></span></div>
         </header>
         <div id="board-stage" class="board-stage">
+          <span id="preview-precision" class="preview-precision approximate" data-i18n="board.approximate">近似预览</span>
           <svg id="board-svg" viewBox="-5 -5 90 60" tabindex="0" role="img" aria-label="已提交 PCB 板图" data-i18n-aria="board.canvas">
             <g id="grid-plane" aria-hidden="true"></g>
             <g id="board-fill-layer" data-scene-layer="board"></g>
+            <image id="exact-board-layer" class="exact-board-layer" preserveAspectRatio="none" hidden></image>
             <g id="outline-layer" data-scene-layer="outline"></g>
             <g id="front-layer" data-scene-layer="front"></g>
             <g id="back-layer" data-scene-layer="back"></g>
             <g id="via-layer" data-scene-layer="vias"></g>
             <g id="footprint-layer" data-scene-layer="footprints"></g>
+            <g id="pad-layer" data-scene-layer="footprints"></g>
             <g id="label-layer" data-scene-layer="labels"></g>
             <g id="unrouted-layer" data-scene-layer="unrouted"></g>
+            <g id="finding-layer" aria-hidden="true"></g>
+            <g id="ruler-layer" aria-hidden="true"></g>
           </svg>
+          <img id="primary-3d-view" class="primary-3d-view" alt="KiCad 3D board" data-i18n-alt="preview.board3dAlt" referrerpolicy="no-referrer" hidden>
           <div id="board-empty" class="board-empty" data-i18n="board.empty">选择一个项目以查看已提交的板图。</div>
-          <div id="busy-banner" class="busy-banner" hidden data-i18n="board.busy">项目正在写入，保留上一个已提交画面。</div>
+          <div id="busy-banner" class="busy-banner" hidden><span id="busy-message" data-i18n="board.busy">项目正在写入，保留上一个已提交画面。</span><button id="import-external-change" class="small-button" type="button" hidden data-i18n="board.importExternal">显式导入外部修订</button></div>
           <div id="board-tooltip" class="board-tooltip" hidden></div>
         </div>
       </main>

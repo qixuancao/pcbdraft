@@ -9,7 +9,8 @@ import { createPreferenceStore, rememberProject } from "./store.js";
 
 const APP_BASE = new URL(".", document.baseURI);
 const API_BASE = new URL("api/", APP_BASE);
-const SNAPSHOT_POLL_MS = 1000;
+const DISCONNECTED_POLL_MIN_MS = 1000;
+const DISCONNECTED_POLL_MAX_MS = 30000;
 const MOBILE_LAYOUT_QUERY = "(max-width: 1179px)";
 void API_BASE;
 
@@ -43,8 +44,17 @@ const elements = {
   locale: element("#locale-select"),
   density: element("#density-select"),
   board: element("#board-svg"),
+  exactBoard: element("#exact-board-layer"),
+  grid: element("#grid-plane"),
+  rulers: element("#ruler-layer"),
+  precision: element("#preview-precision"),
+  primary3d: element("#primary-3d-view"),
+  view2d: element("#view-2d"),
+  view3d: element("#view-3d"),
   boardEmpty: element("#board-empty"),
   boardBusy: element("#busy-banner"),
+  busyMessage: element("#busy-message"),
+  importExternal: element("#import-external-change"),
   boardTooltip: element("#board-tooltip"),
   fit: element("#fit-board"),
   zoomIn: element("#zoom-in"),
@@ -76,8 +86,15 @@ const state = {
   selectedProject: "",
   eventSource: null,
   eventCursor: 0,
-  refreshTimer: null,
+  eventStreamId: "",
+  eventStreamHealthy: false,
+  fallbackTimer: null,
+  fallbackDelay: DISCONNECTED_POLL_MIN_MS,
+  streamRecovery: null,
   snapshotInFlight: null,
+  primaryView: "2d",
+  primary3dBinding: "",
+  externalChange: null,
   toastTimer: null,
 };
 
@@ -233,16 +250,29 @@ function openInspectorTab(tab) {
   inspector.selectTab(tab);
 }
 
+function boundArtifactUrl(projectId, name, scene) {
+  const url = api.url(api.projectPath(projectId, `artifacts/${name}`));
+  url.searchParams.set("revision", String(scene.designRevision));
+  url.searchParams.set("content_hash", scene.contentHash);
+  return url.toString();
+}
+
 let inspector;
 const board = createBoardController({
   svg: elements.board,
   viewport: element("#board-stage"),
   tooltip: elements.boardTooltip,
+  exactLayer: elements.exactBoard,
+  precisionLabel: elements.precision,
+  gridGroup: elements.grid,
+  rulerGroup: elements.rulers,
   layerGroups: {
     board: element("#board-fill-layer"), outline: element("#outline-layer"), front: element("#front-layer"),
     back: element("#back-layer"), via: element("#via-layer"), footprint: element("#footprint-layer"),
-    label: element("#label-layer"), unrouted: element("#unrouted-layer"),
+    pad: element("#pad-layer"), label: element("#label-layer"), unrouted: element("#unrouted-layer"),
+    finding: element("#finding-layer"),
   },
+  exactUrl: (scene) => boundArtifactUrl(scene.projectId, "board.svg", scene),
   onSelection(next) {
     inspector?.setSelection(next);
   },
@@ -269,6 +299,9 @@ inspector = createInspector({
     board3d: element("#exact-3d-preview"), render3d: element("#load-3d-preview"), openKicad: element("#open-in-kicad"),
   },
   api, t: i18n.t, onToast: showToast,
+  onLocate(finding) {
+    if (!board.locateFinding(finding)) showToast(i18n.t("validation.locationUnavailable"), "warning");
+  },
 });
 
 const conversation = createConversation({
@@ -301,9 +334,58 @@ function renderStatus(scene) {
   elements.statusUnrouted.textContent = `${i18n.t("status.unrouted")}: ${scene.counts.unrouted}`;
 }
 
+function showPrimary2d() {
+  state.primaryView = "2d";
+  elements.board.hidden = false;
+  elements.primary3d.hidden = true;
+  elements.view2d.setAttribute("aria-pressed", "true");
+  elements.view3d.setAttribute("aria-pressed", "false");
+  board.refreshPrecision();
+}
+
+async function showPrimary3d() {
+  const projectId = state.selectedProject;
+  const scene = board.getScene();
+  if (!projectId || !scene?.contentHash) return;
+  elements.view3d.disabled = true;
+  elements.precision.textContent = i18n.t("preview.rendering");
+  try {
+    const result = await api.post(api.projectPath(projectId, "artifacts/board-3d"), {});
+    const current = board.getScene();
+    if (
+      projectId !== state.selectedProject
+      || !current
+      || result?.design_revision !== current.designRevision
+      || result?.content_hash !== current.contentHash
+    ) throw new Error("3D preview binding changed during render");
+    const binding = `${current.designRevision}:${current.contentHash}`;
+    elements.primary3d.src = boundArtifactUrl(projectId, "board-3d.png", current);
+    elements.primary3d.hidden = false;
+    elements.board.hidden = true;
+    state.primaryView = "3d";
+    state.primary3dBinding = binding;
+    elements.view2d.setAttribute("aria-pressed", "false");
+    elements.view3d.setAttribute("aria-pressed", "true");
+    elements.precision.textContent = i18n.t("board.exact3d");
+  } catch (error) {
+    showPrimary2d();
+    showToast(clean(error?.message, 500) || i18n.t("preview.unavailable"), "warning");
+  } finally {
+    elements.view3d.disabled = false;
+  }
+}
+
+elements.primary3d.addEventListener("error", () => {
+  if (state.primaryView !== "3d") return;
+  showPrimary2d();
+  showToast(i18n.t("preview.unavailable"), "warning");
+});
+
 function stopEvents() {
   if (state.eventSource) state.eventSource.close();
   state.eventSource = null;
+  state.eventStreamHealthy = false;
+  stopDisconnectedPolling();
 }
 
 function startEvents() {
@@ -314,35 +396,75 @@ function startEvents() {
   const source = new EventSource(url);
   state.eventSource = source;
   updateIndicator(elements.stream, "connecting", "warn");
-  source.addEventListener("open", () => updateIndicator(elements.stream, "live", "good"));
+  source.addEventListener("open", () => {
+    if (state.eventSource !== source) return;
+    state.eventStreamHealthy = true;
+    state.fallbackDelay = DISCONNECTED_POLL_MIN_MS;
+    stopDisconnectedPolling();
+    updateIndicator(elements.stream, "live", "good");
+  });
   source.addEventListener("update", (event) => {
     try {
       const value = JSON.parse(event.data);
       const sequence = Number(value.sequence);
-      if (Number.isInteger(sequence) && sequence > state.eventCursor) state.eventCursor = sequence;
+      const streamId = clean(value.stream_id, 64);
+      const hasGap = !Number.isInteger(sequence) || sequence !== state.eventCursor + 1;
+      const changedStream = Boolean(state.eventStreamId && streamId !== state.eventStreamId);
+      if (value.kind === "stream.reset_required" || hasGap || changedStream) {
+        recoverEventStream();
+        return;
+      }
+      state.eventCursor = sequence;
+      state.eventStreamId = streamId;
       conversation.addEvent(value);
-      if (value.kind === "scene.commit" || value.kind === "generation.complete" || value.kind === "validation.complete") {
+      if (["scene.committed", "generation.complete", "validation.complete", "job.complete", "job.failed"].includes(value.kind)) {
         refreshSnapshot({ quiet: true });
       }
     } catch (_error) {
+      state.eventStreamHealthy = false;
       updateIndicator(elements.stream, "reconnecting", "warn");
+      scheduleDisconnectedPolling();
     }
   });
-  source.addEventListener("error", () => updateIndicator(elements.stream, "reconnecting", "warn"));
+  source.addEventListener("error", () => {
+    if (state.eventSource !== source) return;
+    state.eventStreamHealthy = false;
+    updateIndicator(elements.stream, "reconnecting", "warn");
+    scheduleDisconnectedPolling();
+  });
 }
 
-function stopSnapshotPolling() {
-  if (state.refreshTimer) window.clearInterval(state.refreshTimer);
-  state.refreshTimer = null;
+function stopDisconnectedPolling() {
+  if (state.fallbackTimer) window.clearTimeout(state.fallbackTimer);
+  state.fallbackTimer = null;
 }
 
-function startSnapshotPolling() {
-  stopSnapshotPolling();
-  if (!state.selectedProject) return;
-  state.refreshTimer = window.setInterval(() => refreshSnapshot({ quiet: true }), SNAPSHOT_POLL_MS);
+function scheduleDisconnectedPolling() {
+  if (state.eventStreamHealthy || !state.selectedProject || state.fallbackTimer) return;
+  const delay = state.fallbackDelay;
+  state.fallbackTimer = window.setTimeout(async () => {
+    state.fallbackTimer = null;
+    if (state.eventStreamHealthy || !state.selectedProject) return;
+    await refreshSnapshot({ quiet: true });
+    state.fallbackDelay = Math.min(DISCONNECTED_POLL_MAX_MS, delay * 2);
+    scheduleDisconnectedPolling();
+  }, delay);
 }
 
-async function refreshSnapshot({ quiet = false } = {}) {
+function recoverEventStream() {
+  if (state.streamRecovery) return state.streamRecovery;
+  const projectId = state.selectedProject;
+  stopEvents();
+  updateIndicator(elements.stream, "reconnecting", "warn");
+  state.streamRecovery = refreshSnapshot({ quiet: true, resetStreamCursor: true })
+    .finally(() => {
+      state.streamRecovery = null;
+      if (projectId === state.selectedProject) startEvents();
+    });
+  return state.streamRecovery;
+}
+
+async function refreshSnapshot({ quiet = false, resetStreamCursor = false } = {}) {
   if (!state.selectedProject) return null;
   const running = state.snapshotInFlight;
   if (running) return running.promise;
@@ -350,14 +472,29 @@ async function refreshSnapshot({ quiet = false } = {}) {
   const promise = api.get(api.projectPath(projectId, "snapshot")).then((payload) => {
     if (projectId !== state.selectedProject) return null;
     const busy = payload?.busy === true;
-    if (busy && !payload?.scene) return;
-    const updated = board.setScene(payload?.scene);
+    const externalChange = payload?.external_change;
+    state.externalChange = externalChange && typeof externalChange === "object" ? externalChange : null;
+    const previous = board.getScene();
+    const updated = payload?.scene ? board.setScene(payload.scene) : false;
     const scene = board.getScene();
     elements.boardBusy.hidden = !busy;
+    const externalPending = state.externalChange?.requires_import === true;
+    elements.busyMessage.textContent = externalPending
+      ? clean(state.externalChange?.limitation, 500) || i18n.t("board.externalDetected")
+      : i18n.t("board.busy");
+    elements.importExternal.hidden = !(
+      externalPending && state.externalChange?.importable === true
+    );
     elements.boardEmpty.hidden = Boolean(scene);
     if (updated && scene) inspector.setScene(scene, payload?.ipc);
+    if (updated && scene && previous && (previous.designRevision !== scene.designRevision || previous.contentHash !== scene.contentHash)) showPrimary2d();
     if (payload?.session) conversation.setSession(payload.session);
-    updateIndicator(elements.ipc, payload?.ipc?.status || "offline", payload?.ipc?.available ? "good" : "warn");
+    if (resetStreamCursor && Number.isInteger(payload?.stream?.last_sequence)) {
+      state.eventCursor = payload.stream.last_sequence;
+      state.eventStreamId = clean(payload.stream.stream_id, 64);
+    }
+    const ipcState = clean(payload?.ipc?.status?.state || payload?.ipc?.status, 42) || "disabled";
+    updateIndicator(elements.ipc, ipcState, ipcState === "online" ? "good" : "warn");
     return payload;
   }).catch((_error) => {
     if (!quiet) showToast(i18n.t("state.error"), "error");
@@ -367,6 +504,24 @@ async function refreshSnapshot({ quiet = false } = {}) {
   });
   state.snapshotInFlight = { projectId, promise };
   return promise;
+}
+
+async function importExternalChange() {
+  const change = state.externalChange;
+  if (!state.selectedProject || change?.importable !== true || !Number.isInteger(change.canonical_revision)) return;
+  elements.importExternal.disabled = true;
+  try {
+    await api.post(
+      api.projectPath(state.selectedProject, "external-change/import"),
+      { expected_revision: change.canonical_revision },
+    );
+    state.externalChange = null;
+    await recoverEventStream();
+  } catch (error) {
+    showToast(clean(error?.message, 500) || i18n.t("state.error"), "error");
+  } finally {
+    elements.importExternal.disabled = false;
+  }
 }
 
 async function loadProjects(bootstrap = {}) {
@@ -383,21 +538,26 @@ async function loadProjects(bootstrap = {}) {
 async function openProject(projectId) {
   if (!projectById(projectId)) return;
   if (isMobileLayout() && currentMobileOverlay() === "rail") setMobileOverlay(null);
-  stopSnapshotPolling();
   stopEvents();
   state.selectedProject = projectId;
   state.eventCursor = 0;
+  state.eventStreamId = "";
+  state.fallbackDelay = DISCONNECTED_POLL_MIN_MS;
   const current = preferenceStore.get();
   preferenceStore.replace(rememberProject(current, projectId));
   rail.setSelected(projectId);
   rail.setRemembered(preferenceStore.get().recentProjects);
   renderProjectSelect();
   board.clear();
+  showPrimary2d();
   elements.boardEmpty.hidden = false;
   updateIndicator(elements.stream, "connecting", "warn");
-  await Promise.all([inspector.setProject(projectId), conversation.setProject(projectId), refreshSnapshot()]);
+  await Promise.all([
+    inspector.setProject(projectId),
+    conversation.setProject(projectId),
+    refreshSnapshot({ resetStreamCursor: true }),
+  ]);
   startEvents();
-  startSnapshotPolling();
 }
 
 function cycle(field, options) {
@@ -474,6 +634,9 @@ elements.zoomIn.addEventListener("click", () => board.zoomIn());
 elements.zoomOut.addEventListener("click", () => board.zoomOut());
 elements.actual.addEventListener("click", () => board.actualSize());
 elements.centerSelection.addEventListener("click", () => board.centerSelection());
+elements.importExternal.addEventListener("click", importExternalChange);
+elements.view2d.addEventListener("click", showPrimary2d);
+elements.view3d.addEventListener("click", showPrimary3d);
 elements.layerPreset.addEventListener("change", () => setLayerPreset(elements.layerPreset.value));
 for (const button of elements.layerToggles) {
   button.addEventListener("click", () => board.toggleLayer(button.dataset.layerToggle));
@@ -606,7 +769,7 @@ window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change",
 window.matchMedia(MOBILE_LAYOUT_QUERY).addEventListener("change", (event) => {
   if (!event.matches) setMobileOverlay(null);
 });
-window.addEventListener("beforeunload", () => { stopEvents(); stopSnapshotPolling(); });
+window.addEventListener("beforeunload", () => { stopEvents(); });
 
 async function bootstrap() {
   i18n.setLocale(preferenceStore.get().locale);

@@ -67,7 +67,7 @@ function copyText(value, onToast, t) {
   navigator.clipboard.writeText(value).then(() => onToast(t("chat.copied"), "info")).catch(() => undefined);
 }
 
-export function createInspector({ elements, api, t, onToast }) {
+export function createInspector({ elements, api, t, onToast, onLocate }) {
   let projectId = "";
   let scene = null;
   let selection = null;
@@ -143,6 +143,20 @@ export function createInspector({ elements, api, t, onToast }) {
         [t("object.size"), `${selection.diameter.toFixed(2)} mm`], [t("object.drill"), `${selection.drill.toFixed(2)} mm`],
         [t("object.layers"), `${selection.fromLayer}–${selection.toLayer}`],
       ]);
+    } else if (selection.kind === "pad") {
+      elements.objectTitle.textContent = `${selection.componentId || t("object.pad")} · ${selection.number || "—"}`;
+      addFacts(elements.objectFacts, [...common,
+        [t("object.net"), selection.netName || selection.net],
+        [t("object.position"), `${selection.x.toFixed(2)}, ${selection.y.toFixed(2)} mm`],
+        [t("object.size"), `${selection.width.toFixed(2)} × ${selection.height.toFixed(2)} mm`],
+        [t("object.layers"), selection.layers.join(", ")],
+      ]);
+    } else if (selection.kind === "finding") {
+      elements.objectTitle.textContent = selection.type || t("object.finding");
+      addFacts(elements.objectFacts, [...common,
+        [t("object.position"), `${selection.x.toFixed(2)}, ${selection.y.toFixed(2)} mm`],
+        [t("validation.finding"), selection.message],
+      ]);
     } else if (selection.kind === "unrouted") {
       elements.objectTitle.textContent = selection.name || selection.id || t("object.unrouted");
       addFacts(elements.objectFacts, [...common, [t("object.net"), selection.name || selection.id]]);
@@ -170,11 +184,22 @@ export function createInspector({ elements, api, t, onToast }) {
       row.textContent = `${label === key ? clean(check.id, 40) : label} · ${statusLabel(clean(check.outcome, 32), t)}`;
       fragment.append(row);
     }
+    for (const finding of Array.isArray(validation?.findings) ? validation.findings : []) {
+      const row = document.createElement("li");
+      row.className = `finding-row finding-${clean(finding.severity, 16) || "warning"}`;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "finding-locate";
+      button.textContent = `${clean(finding.gate, 8).toUpperCase()} · ${clean(finding.type, 80)} · ${clean(finding.message, 220)}`;
+      button.addEventListener("click", () => onLocate?.(finding));
+      row.append(button);
+      fragment.append(row);
+    }
     elements.validationChecks.replaceChildren(fragment);
   }
 
   function downloadUrl(key) {
-    return api.url(api.projectPath(projectId, `artifacts/${key}`)).toString();
+    return previewUrl(key, { bound: true });
   }
 
   function renderArtifacts() {
@@ -191,7 +216,7 @@ export function createInspector({ elements, api, t, onToast }) {
       const state = item?.state || "missing";
       note.textContent = state === "ready" ? `${item.file_count} · ${formatBytes(item.bytes)}` : state === "stale" ? t("fabrication.stale") : t("fabrication.missing");
       details.append(name, note);
-      const action = document.createElement(item && state !== "missing" ? "a" : "button");
+      const action = document.createElement(item && state === "ready" ? "a" : "button");
       action.className = "small-button";
       action.textContent = t("fabrication.download");
       if (action instanceof HTMLAnchorElement) {
@@ -206,8 +231,13 @@ export function createInspector({ elements, api, t, onToast }) {
     elements.artifactList.replaceChildren(fragment);
   }
 
-  function previewUrl(name) {
-    return api.url(api.projectPath(projectId, `artifacts/${name}`)).toString();
+  function previewUrl(name, { bound = false } = {}) {
+    const url = api.url(api.projectPath(projectId, `artifacts/${name}`));
+    if (bound && scene?.contentHash) {
+      url.searchParams.set("revision", String(scene.designRevision));
+      url.searchParams.set("content_hash", scene.contentHash);
+    }
+    return url.toString();
   }
 
   function renderPreview() {
@@ -215,20 +245,18 @@ export function createInspector({ elements, api, t, onToast }) {
     elements.boardPreview.hidden = !available;
     elements.boardPreviewEmpty.hidden = available;
     if (available) {
-      const boardUrl = previewUrl("board.svg");
+      const boardUrl = previewUrl("board.svg", { bound: true });
       if (elements.boardPreview.src !== boardUrl) {
         elements.boardPreview.src = boardUrl;
       }
     }
     const schematic = new Map((Array.isArray(artifacts?.artifacts) ? artifacts.artifacts : []).map((item) => [item.key, item]));
     const schematicArtifact = schematic.get("schematic.svg");
-    const hasSchematic = Boolean(
-      projectId && schematicArtifact && schematicArtifact.state !== "missing",
-    );
+    const hasSchematic = Boolean(projectId && schematicArtifact?.state === "ready");
     elements.schematicPreview.hidden = !hasSchematic;
     elements.schematicPreviewEmpty.hidden = hasSchematic;
     if (hasSchematic) {
-      const schematicUrl = previewUrl("schematic.svg");
+      const schematicUrl = previewUrl("schematic.svg", { bound: true });
       if (elements.schematicPreview.src !== schematicUrl) {
         elements.schematicPreview.src = schematicUrl;
       }
@@ -259,9 +287,13 @@ export function createInspector({ elements, api, t, onToast }) {
     elements.render3d.disabled = true;
     elements.render3d.textContent = t("preview.rendering");
     try {
-      await api.post(api.projectPath(projectId, "artifacts/board-3d"), {});
-      elements.board3d.src = previewUrl("board-3d.png");
+      const result = await api.post(api.projectPath(projectId, "artifacts/board-3d"), {});
+      if (!scene || result?.design_revision !== scene.designRevision || result?.content_hash !== scene.contentHash) {
+        throw new Error("3D preview binding changed during render");
+      }
+      elements.board3d.src = previewUrl("board-3d.png", { bound: true });
       elements.board3d.hidden = false;
+      return result;
     } catch (_error) {
       onToast(t("state.error"), "error");
     } finally {
