@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import re
 import threading
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Any
 
@@ -241,9 +243,57 @@ class _ProjectContextStore:
 _project_context = _ProjectContextStore()
 
 
+@dataclass(frozen=True)
+class ToolSession:
+    service: Any
+    projects: _ProjectContextStore
+    permissions: PermissionBroker
+    execute: Callable[[ToolCall], ToolResult] | None = None
+    owns_terminal_receipt: bool = True
+
+
+_tool_session: ContextVar[ToolSession | None] = ContextVar(
+    "pcbdraft_tool_session", default=None
+)
+
+
+@contextmanager
+def tool_session(
+    service: Any,
+    project_id: str,
+    *,
+    permissions: PermissionBroker,
+    execute: Callable[[ToolCall], ToolResult] | None = None,
+    owns_terminal_receipt: bool = True,
+) -> Iterator[None]:
+    """Bind one conversation's authority without changing another session."""
+    projects = _ProjectContextStore()
+    projects.select_trusted(project_id)
+    token = _tool_session.set(
+        ToolSession(service, projects, permissions, execute, owns_terminal_receipt)
+    )
+    try:
+        yield
+    finally:
+        _tool_session.reset(token)
+
+
+def _context_store() -> _ProjectContextStore:
+    scope = _tool_session.get()
+    return scope.projects if scope is not None else _project_context
+
+
+def owns_terminal_receipt() -> bool:
+    scope = _tool_session.get()
+    return scope is None or scope.owns_terminal_receipt
+
+
 def _service() -> Any:
     """Return one authoritative ApplicationService for this process."""
 
+    scope = _tool_session.get()
+    if scope is not None:
+        return scope.service
     global _service_cache
     if _service_cache is None:
         from pcbdraft.services.application import ApplicationService
@@ -278,13 +328,13 @@ def get_service() -> Any:
 def get_current_project_id() -> str | None:
     """Return the current trusted human PCB project selection, if any."""
 
-    return _project_context.trusted_project_id()
+    return _context_store().trusted_project_id()
 
 
 def get_session_project_id(session_id: str) -> str | None:
     """Return the project already used by one live Hermes session, if any."""
 
-    return _project_context.session_project(session_id)
+    return _context_store().session_project(session_id)
 
 
 def set_current_project_id(value: str | None) -> None:
@@ -294,13 +344,13 @@ def set_current_project_id(value: str | None) -> None:
     state always lives in the project records under the repository.
     """
 
-    _project_context.select_trusted(value)
+    _context_store().select_trusted(value)
 
 
 def reset_session_project_context(session_id: str) -> None:
     """Forget one ended Hermes session without changing human selection."""
 
-    _project_context.reset_session(session_id)
+    _context_store().reset_session(session_id)
 
 
 @dataclass(frozen=True)
@@ -361,18 +411,18 @@ def _evidence_stage(
         return None
     live_revision, design_revision = revisions
     if not refresh_evidence:
-        cached = _project_context.cached_stage(
+        cached = _context_store().cached_stage(
             session_id, project_id, live_revision, design_revision
         )
         if cached is not None:
             return cached
     inspector = getattr(_service(), "inspect_engineering_stage", None)
     if not callable(inspector):
-        _project_context.discard_stage(session_id)
+        _context_store().discard_stage(session_id)
         return None
     projected = inspector(project_id)
     if not isinstance(projected, Mapping):
-        _project_context.discard_stage(session_id)
+        _context_store().discard_stage(session_id)
         return None
     stage = projected.get("stage")
     evidence_source = projected.get("evidence_source")
@@ -385,9 +435,9 @@ def _evidence_stage(
         or not isinstance(evidence_source, str)
         or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9:._-]{0,255}", evidence_source) is None
     ):
-        _project_context.discard_stage(session_id)
+        _context_store().discard_stage(session_id)
         return None
-    cached = _project_context.cached_stage(
+    cached = _context_store().cached_stage(
         session_id,
         project_id,
         live_revision,
@@ -397,7 +447,7 @@ def _evidence_stage(
     if cached == stage:
         return cached
     typed_stage = stage  # narrowed by the fixed evidence-stage membership above
-    _project_context.retain_stage(
+    _context_store().retain_stage(
         session_id,
         project_id,
         live_revision,
@@ -415,7 +465,7 @@ def model_tool_projection(session_id: str) -> ModelToolProjection:
     bounded corrective subset.  The caller cannot supply or override a stage.
     """
 
-    project_id = _project_context.bound_project(session_id)
+    project_id = _context_store().bound_project(session_id)
     if project_id is None:
         return ModelToolProjection(
             None,
@@ -655,7 +705,31 @@ def _execute_tool(
     registry: PCBToolRegistry = DEFAULT_PCB_TOOL_REGISTRY
     arguments = registry.normalize_arguments(spec.name, arguments)
     executor = PCBToolExecutor(service, registry=registry)
-    permissions = PermissionBroker(_permission_mode)
+    scope = _tool_session.get()
+    permissions = scope.permissions if scope else PermissionBroker(_permission_mode)
+
+    if scope is not None and scope.execute is not None:
+        project_id = scope.projects.bound_project(session_id)
+        if project_id is None or spec.name == "create_project":
+            raise ToolPermissionError(
+                "this conversation is bound to its selected project"
+            )
+        call = call_from_view(
+            spec.name,
+            project_id,
+            source="model",
+            arguments=arguments,
+            view=service.open_project(project_id),
+        )
+        scoped_result = scope.execute(call)
+        return _model_summary(
+            spec,
+            scoped_result.view,
+            session_id=session_id,
+            include_binding=scope.projects.claim_binding_details(
+                session_id, project_id
+            ),
+        )
 
     if spec.name in _GLOBAL_LIBRARY_TOOLS:
         return {
@@ -675,7 +749,7 @@ def _execute_tool(
         verdict = permissions.decide(call, spec)
         if verdict.action != "allow":
             raise ToolPermissionError(verdict.reason)
-        view = _project_context.create_and_bind(
+        view = _context_store().create_and_bind(
             session_id,
             lambda: service.create_empty_project(arguments["name"]),
         )
@@ -683,7 +757,7 @@ def _execute_tool(
         project_id = project.get("id") if isinstance(project, Mapping) else None
         include_binding = bool(
             isinstance(project_id, str)
-            and _project_context.claim_binding_details(session_id, project_id)
+            and _context_store().claim_binding_details(session_id, project_id)
         )
         return _model_summary(
             spec,
@@ -692,7 +766,7 @@ def _execute_tool(
             include_binding=include_binding,
         )
 
-    current_project_id = _project_context.bound_project(session_id)
+    current_project_id = _context_store().bound_project(session_id)
     if not current_project_id:
         raise PCBDraftError(
             f"{spec.external_name} requires a current project; create one or select one with a trusted user command first"
@@ -706,7 +780,7 @@ def _execute_tool(
     )
     gateway = PCBToolGateway(executor, permissions)
     result: ToolResult = gateway.execute(call, timeout=DEFAULT_PCB_TOOL_TIMEOUT)
-    include_binding = _project_context.claim_binding_details(
+    include_binding = _context_store().claim_binding_details(
         session_id, current_project_id
     )
     return _model_summary(
@@ -772,13 +846,14 @@ def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], str]:
 def register_all_pcb_tools(*, permission_mode: PermissionMode = "workspace") -> None:
     """Register only concrete flat tools under the PCBDraft toolset."""
 
-    from pcbdraft.tools.registry import registry as hermes_registry
+    from pcbdraft.tools.registry import registry
 
     global _permission_mode
-    _permission_mode = permission_mode
+    if _tool_session.get() is None:
+        _permission_mode = permission_mode
 
     for spec in DEFAULT_PCB_TOOL_REGISTRY.specs:
-        hermes_registry.register(
+        registry.register(
             name=spec.external_name,
             toolset=_PCB_TOOLSET,
             schema={

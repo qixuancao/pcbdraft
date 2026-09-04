@@ -18,8 +18,9 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Self
+from typing import Any, Self, get_args
 
+from pcbdraft.agent.tooling import ToolEffect
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, load_json_limited, make_directory
 from pcbdraft.core.locking import ResourceLock
@@ -47,15 +48,7 @@ _PATH_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,255}")
 _HASH = re.compile(r"[0-9a-f]{64}")
 _TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z")
 _TOOL_SOURCES = frozenset({"runtime_policy", "model", "mcp", "user"})
-_TOOL_EFFECTS = frozenset(
-    {
-        "conversation_write",
-        "candidate_write",
-        "evidence_write",
-        "staged_write",
-        "authoritative_write",
-    }
-)
+_TOOL_EFFECTS = frozenset(get_args(ToolEffect))
 _TOOL_RISKS = frozenset({"low", "medium", "high"})
 
 

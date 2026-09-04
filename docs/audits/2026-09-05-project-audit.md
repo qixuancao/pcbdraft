@@ -124,3 +124,19 @@ node artifacts/audits/20260905-9d7f155/reproduce_frontend.mjs
 打包验证：在临时源码副本中使用隔离构建生成 wheel；解包后在排除源码
 路径的 Python 进程中验证 TUI、Agent 与 41 个提供商可导入。wheel 不含
 `vendor/` 或 `hermes_cli/` 副本。导入仍不修改 sys.path，也不创建旧顶层别名。
+
+## 第二轮：统一 Web 会话
+
+F02 已修复：Web 默认通过 `ConversationOrchestrator` 使用原生 `AIAgent`，与
+终端共用模型、认证和工具模块。工具逐次由模型选择，并经过持久化 dispatch、
+revision 和审批边界；跨轮历史保存到工程会话库。并发会话用 ContextVar
+隔离工程与权限，取消中断模型，审批续跑只执行一次尚未 dispatch 的调用。
+
+整合时另发现 F10：`AgentTurnStore` 的 effect 校验遗漏标准 `read` 类型，
+会拒绝记录只读工具。本轮改为直接取规范 `ToolEffect` 的成员，消除重复枚举。
+
+验证包括真实原生 Agent 向本机模拟模型发送工具 schema、消费 SSE 工具调用、
+执行一次检查、写入回复，以及第二轮读取历史。模拟服务只监听 loopback，
+测试阻止所有非 loopback 连接；没有调用真实模型或操作真实 PCB。另有定向
+并发工程、审批、取消及旧工具/终端回归。前期模拟器将能力探测当作对话请求、
+未支持 SSE 的失败已修正，不作为产品失败结论。

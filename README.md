@@ -281,9 +281,16 @@ remove、update、connect、place、route 或 via 工具逐项修改。旧版 IR
 - ERC/DRC 等检查结果只能来自真实执行，不能由模型伪造；
 - durable dispatch 之后结果不明时照旧 fail closed。
 
+### 原生会话与持久化作业
+
+终端与 Web 自然语言会话共用 `agent.loop.AIAgent`，模型在每次工具结果之后
+决定下一步。Web 的 `ConversationOrchestrator` 把每次工具调用、审批、回复
+写入持久化记录，并保留跨轮模型历史。工程、权限和服务实例绑定到各自会话，
+并发处理不同工程时不会借用终端当前选中的工程。
+
 ### Legacy 模式（durable job 路径）
 
-Legacy durable Agent 回合仍由 `AgentOrchestrator`/`JobRunner` 驱动，
+显式兼容任务和快捷操作仍由 `AgentOrchestrator`/`JobRunner` 驱动，
 其历史上的确定性后续工具策略（先由模型选一次工具、之后本地策略接管）保留
 为 legacy 兼容模式和显式快捷方式（`/validate`、`/confirm` 等）。它不再是
 默认 PCBDraft Agent 的控制器。持久化、恢复、预算和审批仍由
@@ -304,7 +311,7 @@ interrupted/outcome-unknown；模型选择的直接动作若未完成，也不�
 以及任何绑定不明的记录都会 fail closed，只保留可见的 cancelled/interrupted/failed
 审计结果，不会因为重启而获得更宽权限。
 
-原生路由请求会在发出前写入工程内的
+上述兼容模式的路由请求会在发出前写入工程内的
 `agent-turns/model-decisions/{turn_id}-router.json`。已完成的决策只会按原调用
 复用；已 dispatch 但结果不明，或已明确失败的决策，都不会自动再向模型
 POST，而是保守回到本地策略。该 journal 只记录工具选择边界，不能代替本地

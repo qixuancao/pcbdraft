@@ -433,12 +433,13 @@ def _on_session_end(
     from pcbdraft.agent.tool_bindings import (
         get_service,
         get_session_project_id,
+        owns_terminal_receipt,
         reset_session_project_context,
     )
     from pcbdraft.services.progress import ProcessStatus
 
     project_id = get_session_project_id(session_id)
-    if project_id is not None:
+    if project_id is not None and owns_terminal_receipt():
         normalized_reason = turn_exit_reason.lower()
         with _decision_lock:
             pcb_tool_budget_exhausted = session_id in _pcb_tool_budget_exhausted

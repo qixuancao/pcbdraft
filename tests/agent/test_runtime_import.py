@@ -39,3 +39,16 @@ with tempfile.TemporaryDirectory() as home:
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_native_model_loop_dispatches_and_retains_conversation_history(
+        self,
+    ) -> None:
+        result = subprocess.run(
+            [sys.executable, "-m", "tests.agent.native_conversation_fixture"],
+            capture_output=True,
+            text=True,
+            timeout=25,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("NATIVE_ROUNDTRIP_OK", result.stdout)

@@ -64,7 +64,11 @@ class GuiSessionManager:
                 "GUI subprocess workers were removed; use the canonical JobRunner"
             )
         self.service = service
-        self.jobs = jobs or JobRunner(service)
+        if jobs is None:
+            from pcbdraft.agent.conversations import ConversationOrchestrator
+
+            jobs = JobRunner(service, orchestrator=ConversationOrchestrator(service))
+        self.jobs = jobs
 
     def start(self, project_id: str, text: object) -> dict[str, Any]:
         """Admit one canonical permission-bound agent job."""

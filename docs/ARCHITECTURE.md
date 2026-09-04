@@ -44,8 +44,10 @@ execution are not:
   and the done/continue/wait judgment. Goal state stays minimal: goal,
   status, turns_used, max_turns.
 - **AgentOrchestrator / JobRunner** own durable dispatch, persistence,
-  recovery, and budgets for the legacy TUI job path. They do not decide PCB
-  engineering next steps.
+  recovery, and budgets. Web conversations use **ConversationOrchestrator**,
+  which journals the tools selected by the same AIAgent loop used in the terminal.
+  The historical deterministic producer is limited to compatibility jobs and
+  explicit shortcut turns.
 - **PCBToolRegistry / PCBToolExecutor** own tool authority, schemas, and
   fixed dispatch; **PermissionBroker** owns approval policy;
   **ApplicationService** owns authoritative project mutation;
@@ -87,17 +89,17 @@ The model sees one layer of concrete `pcb_*` operations exported from the
 canonical `PCBToolRegistry`. Project/inspection/library reads, semantic edits,
 native placement/routing, checks, renders, and exports each have a distinct
 closed schema. There is no model-facing macro and no `operation` router field.
-Hermes and MCP descriptors derive from the same immutable specs and share a
+PCBDraft and MCP descriptors derive from the same immutable specs and share a
 regression-tested schema fingerprint.
 
-Hermes binds each model session to the project selected by the trusted terminal
+PCBDraft binds each model session to the project selected by the trusted terminal
 boundary. Project enumeration and switching remain human commands rather than
 model tools. Installed symbol/footprint reads are machine-local facts and need no
 project cursor. Canonical part search/description is project-scoped, and explicit
 installed-KiCad part registration stages the catalog, semantic IR, and native
 project together. Tool-execution middleware returns a result for every provider
 call id but dispatches at most one `pcb_*` action from each model response.
-Trusted project changes rotate the existing Hermes session before another model
+Trusted project changes rotate the existing PCBDraft session before another model
 request, partitioning the prior project's transcript while retaining the
 persisted provider/model authority.
 
@@ -118,27 +120,20 @@ engineering fact, not a router for the next tool call.
 
 ## Product path
 
-          interactive terminal (default, Hermes)
-                        |
-                        v
-                 Hermes agent loop
-                        |
-              +--- durable JobRunner (legacy) ---+
-              |                                  |
-              v                                  v
-                  AgentOrchestrator <--> AgentTurnStore
-                  - durable Thread + Turn + ToolRun + Approval identities
-                  - persist intent before side effects
-                  - resume the same checkpoint after failure or restart
-                                       |
-                                       v
-                  Tool intent source
-                  - default Hermes agent: model re-selects the next tool
-                    after every result (no fixed sequence)
-                  - legacy mode: one initial model selection, then the
-                    deterministic producer for explicit shortcut turns
-                                       |
-                                       v
+          terminal                         local Web workbench
+             |                                    |
+             |                     JobRunner / ConversationOrchestrator
+             |                                    |
+             +------------- agent.loop.AIAgent ---+
+                               |
+                     model selects each tool
+                               |
+               per-conversation tool_session context
+               (project, permission policy, application service)
+                               |
+               Web: AgentTurnStore journals before dispatch
+                               |
+                               v
                   PermissionBroker: allow / ask / deny
                   - exact call + argument hash + baseline revision binding
                                        |
@@ -218,9 +213,10 @@ the start of a natural-language turn it permitted at most one native OpenAI
 Responses function-tool decision, and only when the selected provider used the
 built-in OpenAI preset, provider ID `openai`, and the exact `api.openai.com`
 hostname; every later operation in that turn used the deterministic producer.
-This hybrid routing is no longer the controller of the default Hermes agent —
-the model now re-selects tools after every result — but it still drives the
-durable TUI job path and explicit shortcut turns. All other providers,
+This hybrid routing is no longer the controller of the default PCBDraft agent —
+the model now re-selects tools after every result — but it still drives explicit
+compatibility jobs and shortcut turns. Web natural-language turns use the native
+conversation loop with durable dispatch. All other providers,
 including custom OpenAI-compatible endpoints, use that local-policy fallback
 for the legacy path even though they may still supply schema-constrained
 requirement interpretation and circuit planning.
@@ -254,19 +250,18 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-The interactive terminal (a bare `pcbdraft` launch) runs the vendored Hermes
-`prompt_toolkit` runtime as the only product frontend. Its PCBDraft slash
-commands (`/new`, `/projects`, `/project`, `/open`, plus the PCB workflow
-commands) translate terminal input into `ApplicationService` calls over the
-configured project repository. The legacy durable JobRunner path still submits
-explicit actions through Agent jobs over the same orchestrator and project
-store, but it is no longer a product frontend: this durable job path is the
-legacy compatibility mode — its producer follows the historical deterministic
-continuation, while the default Hermes agent re-selects every tool
-autonomously. Its default `workspace` permission policy continues requested
-project-local work without artificial pauses; a `review` policy can retain an
-exact call checkpoint and ask once immediately before a high-risk or
-authoritative-write tool.
+The terminal (`interfaces/tui`) and local Web workbench use the native
+`agent.loop.AIAgent` and shared model/authentication configuration. Terminal
+commands select projects through a trusted boundary; Web jobs bind their own
+project and permission context, including in propagated tool-worker contexts.
+`ConversationOrchestrator` records each model-selected Web tool before dispatch,
+retains model conversation history in the project session database, and writes
+assistant replies to the durable turn. Approval resumes the exact pending tool
+once and provides its receipt to the model; cancellation interrupts the model.
+The default `workspace` permission policy allows requested project-local work;
+`review` retains an exact checkpoint before authoritative writes.
+The deterministic producer remains only for compatibility jobs and explicit
+shortcut actions.
 Follow-up messages on a generated project are compiled into an isolated replacement,
 validated under `transactions/`, and only then atomically applied by policy.
 The terminal retains bounded tool history across recent turns; collapsed mode
@@ -283,10 +278,10 @@ inspect the retained project and submit a new turn.
 ## Goal Mode
 
 The default agent loop is a simple Ralph-style goal loop built on the vendored
-Hermes `GoalManager` (no PCBDraft-specific task system is added):
+PCBDraft `GoalManager` (no PCBDraft-specific task system is added):
 
 1. the user's PCB request becomes a standing goal (`/goal <objective>`);
-2. the Hermes agent runs one normal turn with the full tool surface;
+2. the PCBDraft agent runs one normal turn with the full tool surface;
 3. after the turn, a judge decides `done`, `continue`, or `wait`;
 4. on `continue`, a plain continuation message is appended to the same session
    — it restates the goal and asks the agent to inspect current project state
@@ -297,7 +292,7 @@ Hermes `GoalManager` (no PCBDraft-specific task system is added):
    completion.
 
 Goal state stays minimal — goal, status, turns_used, max_turns (plus the
-optional verification contract the vendored manager already supports). There is
+optional verification contract the native manager already supports). There is
 no WorkPlan, TaskGraph, milestone graph, or risk ledger.
 
 ## Generic request and plan
@@ -404,7 +399,7 @@ inspectable result, not a hidden substitution, a later stitching error that mask
 the cause, or a false success.
 
 The legacy TUI path may make at most two bounded repair attempts per turn; the
-default Hermes agent decides itself how many repair cycles are useful within the
+default PCBDraft agent decides itself how many repair cycles are useful within the
 generic turn/tool budgets. A repair provider
 receives a bounded JSON feedback record and must return a complete replacement
 <code>CircuitPlan</code>; it cannot patch native KiCad text. The replacement is

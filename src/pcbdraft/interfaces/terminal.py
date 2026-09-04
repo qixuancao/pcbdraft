@@ -9,12 +9,9 @@ import threading
 from typing import Any
 
 from pcbdraft.agent.permissions import PermissionMode
-from pcbdraft.agent.persona import write_soul
 from pcbdraft.core.errors import PCBDraftError, ValidationError
-from pcbdraft.model.settings import write_runtime_config
 from pcbdraft.services.provider_connection import (
     ConnectionOptions,
-    activate_provider_runtime,
     connect,
     connection_status,
     format_connection_status,
@@ -100,10 +97,9 @@ def register_pcb_tools(*, permission_mode: PermissionMode = "workspace") -> None
 
 def activate(*, permission_mode: PermissionMode = "workspace") -> None:
     """Initialize private settings, native tools, and lifecycle contracts."""
-    activate_provider_runtime()
-    write_runtime_config()
-    write_soul()
-    register_pcb_tools(permission_mode=permission_mode)
+    from pcbdraft.agent.conversations import initialize_runtime
+
+    initialize_runtime(permission_mode=permission_mode)
 
 
 def _launch_once(argv: list[str], model_turn_limit: int | None) -> int:
