@@ -7,9 +7,9 @@
 检查项，不能把告警数量直接解释为运行缺陷数量。未通过禁用规则或排除新包
 来隐藏这些问题；需要后续按模块修复，再通过 CI 的类型/覆盖率/原生验收。
 
-后续稳定化审查新增的 F12–F15 已完成整改和定向验证。F11 仍未清零；本轮
-只处理 deadline 模块的局部告警，没有重新运行或统计全库检查，也不扩大为
-全量发布验收。
+后续稳定化审查新增的 F12–F17 已完成整改和定向验证。F11 仍未清零；后续
+小检查点只处理 deadline 与模型归一化模块的局部告警，没有重新运行或统计
+全库检查，也不扩大为全量发布验收。
 
 下文“已做的验证”第一节记录的是迁移前基线；各轮整改状态与检查结果
 分别列在后面。原有实现的保留证据见[来源说明](../NATIVE_RUNTIME.md)和
@@ -284,9 +284,121 @@ uv run --frozen --no-sync python -m unittest -v tests.agent.test_deadline tests.
 
 共 28 项通过（3.677 秒）。这是对上述模块的组合重跑，不作为额外 28 项累加。
 
-F11 的下一小检查点可优先处理 `model_normalize.py` 最近一次结果中的 7 项：
-4 项 `BLE001`，以及各 1 项 `F401`、`F601`、`S110`。重复且同值的 Trinity
-映射键可直接清理；宽泛异常和静默回退涉及提供商模型 ID 的兼容逻辑，应先补
-输入输出行为测试，再逐分支收窄。`model_metadata.py` 的 `TC004` 对应刻意的
-`requests` 延迟导入，各运行路径先调用 `_ensure_requests`；不能机械改成顶层
-导入而破坏启动和导入性能约定。
+## 第十轮：模型名称归一化质量检查点
+
+`model_normalize.py` 的 7 项 Ruff 告警已清理：删除未使用的 `Optional` 导入
+和重复且同值的 Trinity 映射键；4 个宽异常分支逐项审查后，删除一层由内部
+helper 已完整保护的重复捕获，其余 3 个保留公开入口“best-effort、永不因目录
+查询失败而中断”的兼容契约，并增加带堆栈的 debug 记录。日志只包含提供商名
+或固定说明，不记录凭据和完整配置。Copilot 目录失败时仍使用原有通用回退，
+NVIDIA 目录修复仍只在后缀唯一匹配时添加 vendor 前缀。检查点：`a45e990`。
+
+新增 6 项离线行为测试，覆盖 aggregator 前缀、Anthropic/Copilot 点号规则、
+custom 透传，目录唯一/歧义/不存在，以及 alias、延迟目录导入和 Copilot 查询
+抛出运行时异常时的兼容回退。测试通过（0.001 秒）；两个改动文件的 Ruff、
+格式和 diff 检查通过。此处清理的是 7 项静态质量告警，不代表发现或修复了
+7 个功能缺陷，也没有据此更新 F11 的全库剩余数量。
+
+`model_metadata.py` 的 `TC004` 对应刻意的 `requests` 延迟导入，各运行路径先
+调用 `_ensure_requests`；不能机械改成顶层导入而破坏启动和导入性能约定。
+
+## 第十一轮：OpenAI-compatible HTTP 取消验收
+
+新增本机传输集成探针，使用正式 `ConversationOrchestrator`、`AIAgent` 和
+OpenAI-compatible HTTP/SSE 路径覆盖两个卡住窗口：主请求已经发出但服务端
+尚未返回 response headers，以及 `stream=true` 且收到首个 SSE 帧后服务端
+不再发送事件。两种情况下，发出取消后非 daemon 的 `run_turn` 线程均约
+0.2 秒退出；服务端观察到 peer EOF 并结束 handler，持久化回合为 cancelled，
+没有 tool run、工具执行或模型重试。检查点：`f9a61bc`。
+
+2 项完整定向测试通过（约 4.18 秒）；补充 `stream=true` 明确断言后只复验
+其中 mid-SSE 一项（2.177 秒），不重复计为第 3 项。改动测试文件的 Ruff、
+格式与 diff 检查通过。探针只证明 loopback OpenAI-compatible HTTP/SSE
+传输在这两个窗口能被取消，不能外推到其他 provider 或资源关闭路径。
+
+## 第十二轮：原生 Anthropic client 关闭所有权
+
+F16 已修复：完整生产 `AIAgent` 使用 Anthropic native transport 构造共享
+SDK client 后，旧的 `agent.close()` 只清理 request client 缓存，shared
+primary client 仍被 `_anthropic_client` 持有且 `is_closed=false`。这证明
+hard close 没有明确释放它拥有的该实例；没有据此声称每个回合都会永久泄漏
+真实 provider socket。
+
+现在 hard close 先取得并清除 shared client 引用，再调用 SDK `close()`；
+关闭异常写入 debug 诊断，但不会阻止后续会话消息清理和 Agent 自有
+SessionDB 清理。2 项离线测试使用完整生产 Agent 与真实 Anthropic SDK 构造
+（不发网络请求），覆盖释放、清引用、重复关闭，以及 SDK close 抛错后仍继续
+其他资源清理；全部通过（0.888 秒）。测试、格式、diff 与定向 Ruff 检查通过；
+loop 全规则 Ruff 的既有 298 项未增加。检查点：`497a8ee`。
+
+本轮没有改变跨线程 `release_clients` 的软淘汰语义，也没有验证真实外网 socket
+或全部 provider。
+
+## 第十三轮：iteration-limit summary 取消收尾
+
+F17 已修复：iteration-limit summary 原先的 Codex Responses 及普通
+OpenAI-compatible 分支绕过统一可中断请求边界，Anthropic 分支虽有 Relay
+包装也仍直接调用 provider；回合在达到上限后等待总结时，应用 watcher 的取消
+不能可靠终止该请求。现在首次总结及空响应重试都经 `_interruptible_api_call`
+按现有 api mode 分派。进入总结前和每次请求前均重检取消；`InterruptedError`
+不转成总结失败文本，Relay logical call 记录 cancelled，finalizer 把回合标为
+interrupted、`failed=false`，且不会调用 kanban 的预算耗尽记录。
+
+取消时只按对象身份删除本轮追加的 `MAX_ITERATIONS_SUMMARY_REQUEST`；收尾复核
+还修正了一个确定性缺口：当请求边界同时追加另一条同文本用户消息时，旧的
+“仅当合成提示仍是末项才 pop”会残留合成提示。现在删除精确对象，保留其他
+同文本消息。资源清理、会话持久化和 Agent close 继续执行；持久化内容保留原
+用户消息及已完成 tool result，不包含合成总结提示。正常总结及空响应重试、
+Codex Responses 和 Anthropic Messages 的既有 request shape 均有离线用例固定。
+
+首次验收时，8 项定向模块测试中 7 项离线用例通过；native loopback 探针因
+受限沙箱禁止创建 listener 而跳过，单独执行在 server 创建阶段得到
+`PermissionError: [Errno 1] Operation not permitted`，尚未进入模型 dispatch。
+此限制保留为历史记录。
+
+随后打开一次技术上允许外网的网络开关，但用户授权和本次测试行为仅限
+`127.0.0.1`/`localhost`，并执行：
+
+```sh
+NO_PROXY=127.0.0.1,localhost timeout 90s .venv/bin/python -m unittest -v tests.agent.test_iteration_summary tests.agent.test_conversations
+```
+
+命令退出 0；23 项于 4.065 秒全部通过、零跳过，native loopback 用例实际执行为
+`ok`。再直接运行 fixture，进程于 2.092 秒退出 0，并输出
+`NATIVE_ITERATION_SUMMARY_CANCEL_OK:elapsed=0.347:status=cancelled`。该标记只在
+正式 `ConversationOrchestrator` 回合已取消、请求连接观察到 peer EOF、server
+handler 与 conversation worker 均退出、预算耗尽记录未触发、任务资源清理、
+SessionDB 持久化及 Agent close 全部断言通过后产生。测试 stub 仅监听回环地址，
+没有访问真实模型或公网。本轮没有新增其他 provider、CI 或发布证据；第十一轮
+的两项 HTTP/SSE 结果仍是通用请求中断路径的现有证据。
+
+首次沙箱阶段曾尝试精确暂存六个收尾文件，但因 `.git` 只读而失败；本轮 Git
+checkpoint 由宿主普通用户在用户明确授权下对这六个文件创建，最终提交状态
+以 Git 实际记录为准，不在本文中编造 commit。
+
+## 第十四轮：既有 AP2112 板副本 smoke
+
+根会话在隔离目录完成真实 KiCad 工具链 smoke：
+`SMOKE_ROOT=/tmp/pcbdraft-real-board-smoke-20260905-Q8zIoy`，输入是现有 AP2112
+项目的只读复制，KiCad CLI 版本 10.0.6。当前
+`ApplicationService -> PCBToolExecutor` 顺序执行 `run_erc`、`run_drc`、
+`render_board`，总命令退出 0、约 4.8 秒，副本 revision 59 -> 62。
+
+- ERC：`validation/20260905T060318Z-95dedbcc/check.json`，outcome pass，
+  0 error/0 warning；原始报告为同目录 `erc.raw.json`。
+- DRC：`validation/20260905T060320Z-28b23e93/check.json`，outcome pass，
+  0 error/0 warning；原始报告为同目录 `drc.raw.json`。
+- 预览：`previews/20260905T060323Z-70c591dd/receipt.json`，其 `board.svg`
+  为 13,378 bytes，KiCad subprocess exit 0。
+
+用生产参数直接复验的实际命令如下，三者退出码均为 0：
+
+```sh
+kicad-cli sch erc --format json --severity-error --severity-warning --output $SMOKE_ROOT/direct-erc.json $SMOKE_ROOT/projects/ap2112-3v3-mvp-e8ec0d92/design/ap2112-3v3-mvp-e8ec0d92.kicad_sch
+kicad-cli pcb drc --format json --severity-error --severity-warning --output $SMOKE_ROOT/direct-drc.json --schematic-parity $SMOKE_ROOT/projects/ap2112-3v3-mvp-e8ec0d92/design/ap2112-3v3-mvp-e8ec0d92.kicad_pcb
+kicad-cli pcb export svg --output $SMOKE_ROOT/direct-board.svg --layers F.Cu,F.Mask,F.SilkS,Edge.Cuts --mode-single --fit-page-to-board --exclude-drawing-sheet $SMOKE_ROOT/projects/ap2112-3v3-mvp-e8ec0d92/design/ap2112-3v3-mvp-e8ec0d92.kicad_pcb
+```
+
+这是既有板副本的 ERC/DRC/预览 smoke，不是新模型生成、Smoke-10、BoardBench、
+长流、完整 CI、发布、物理硬件或订单/生产验证；不据此声称真实生成能力新增
+通过。

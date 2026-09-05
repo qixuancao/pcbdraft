@@ -2945,14 +2945,47 @@ def try_activate_fallback(agent, reason: FailoverReason | None = None) -> bool:
         return agent._try_activate_fallback(reason)  # try next in chain
 
 
+def _require_iteration_summary_not_interrupted(agent) -> None:
+    if getattr(agent, "_interrupt_requested", False):
+        raise InterruptedError("Agent interrupted before iteration-limit summary")
+
+
+def _run_interruptible_iteration_summary(
+    agent, request, managed_call, *, retry_count: int
+):
+    _require_iteration_summary_not_interrupted(agent)
+    return managed_call(
+        request,
+        agent._interruptible_api_call,
+        retry_count=retry_count,
+    )
+
+
+def _reraise_iteration_summary_interrupt(
+    error: Exception,
+    messages: list,
+    summary_message: dict,
+    outcome: list[str],
+) -> None:
+    if not isinstance(error, InterruptedError):
+        return
+    outcome[0] = "cancelled"
+    for index, message in enumerate(messages):
+        if message is summary_message:
+            del messages[index]
+            break
+    raise error
+
+
 def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     """Request a summary when max iterations are reached. Returns the final response text."""
+    _require_iteration_summary_not_interrupted(agent)
     agent._safe_print(
         f"⚠️  Reached maximum iterations ({agent.max_iterations}). Requesting summary..."
     )
 
     summary_api_request_id = f"iteration-summary:{uuid.uuid4()}"
-    summary_call_outcome = "failed"
+    summary_call_outcome = ["failed"]
 
     def _managed_summary_call(request, callback, *, retry_count: int):
         from pcbdraft.agent import relay_llm
@@ -2977,7 +3010,9 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
     from pcbdraft.agent.context_compressor import MAX_ITERATIONS_SUMMARY_REQUEST
 
     summary_request = MAX_ITERATIONS_SUMMARY_REQUEST
-    append_message(messages, {"role": "user", "content": summary_request})
+    summary_message = append_message(
+        messages, {"role": "user", "content": summary_request}
+    )
 
     try:
         # Build API messages, stripping internal-only fields
@@ -3108,7 +3143,9 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
         if agent.api_mode == "codex_responses":
             codex_kwargs = agent._build_api_kwargs(api_messages)
             codex_kwargs.pop("tools", None)
-            summary_response = agent._run_codex_stream(codex_kwargs)
+            summary_response = _run_interruptible_iteration_summary(
+                agent, codex_kwargs, _managed_summary_call, retry_count=0
+            )
             _ct_sum = agent._get_transport()
             _cnr_sum = _ct_sum.normalize_response(summary_response)
             final_response = (_cnr_sum.content or "").strip()
@@ -3192,23 +3229,16 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                     base_url=getattr(agent, "_anthropic_base_url", None),
                 )
                 _ant_kw = _merge_nous_portal_messages_extra_body(agent, _ant_kw)
-                summary_response = _managed_summary_call(
-                    _ant_kw,
-                    agent._anthropic_messages_create,
-                    retry_count=0,
+                summary_response = _run_interruptible_iteration_summary(
+                    agent, _ant_kw, _managed_summary_call, retry_count=0
                 )
                 _summary_result = _tsum.normalize_response(
                     summary_response, strip_tool_prefix=agent._is_anthropic_oauth
                 )
                 final_response = (_summary_result.content or "").strip()
             else:
-                summary_client = agent._ensure_primary_openai_client(
-                    reason="iteration_limit_summary"
-                )
-                summary_response = _managed_summary_call(
-                    summary_kwargs,
-                    lambda request: summary_client.chat.completions.create(**request),
-                    retry_count=0,
+                summary_response = _run_interruptible_iteration_summary(
+                    agent, summary_kwargs, _managed_summary_call, retry_count=0
                 )
                 _summary_result = agent._get_transport().normalize_response(
                     summary_response
@@ -3221,7 +3251,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                     r"<think>.*?</think>\s*", "", final_response, flags=re.DOTALL
                 ).strip()
             if final_response:
-                summary_call_outcome = "success"
+                summary_call_outcome[0] = "success"
                 append_message(
                     messages,
                     {"role": "assistant", "content": final_response},
@@ -3235,7 +3265,9 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
             if agent.api_mode == "codex_responses":
                 codex_kwargs = agent._build_api_kwargs(api_messages)
                 codex_kwargs.pop("tools", None)
-                retry_response = agent._run_codex_stream(codex_kwargs)
+                retry_response = _run_interruptible_iteration_summary(
+                    agent, codex_kwargs, _managed_summary_call, retry_count=1
+                )
                 _ct_retry = agent._get_transport()
                 _cnr_retry = _ct_retry.normalize_response(retry_response)
                 final_response = (_cnr_retry.content or "").strip()
@@ -3252,10 +3284,8 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                     base_url=getattr(agent, "_anthropic_base_url", None),
                 )
                 _ant_kw2 = _merge_nous_portal_messages_extra_body(agent, _ant_kw2)
-                retry_response = _managed_summary_call(
-                    _ant_kw2,
-                    agent._anthropic_messages_create,
-                    retry_count=1,
+                retry_response = _run_interruptible_iteration_summary(
+                    agent, _ant_kw2, _managed_summary_call, retry_count=1
                 )
                 _retry_result = _tretry.normalize_response(
                     retry_response, strip_tool_prefix=agent._is_anthropic_oauth
@@ -3275,13 +3305,8 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 if summary_extra_body:
                     summary_kwargs["extra_body"] = summary_extra_body
 
-                summary_client = agent._ensure_primary_openai_client(
-                    reason="iteration_limit_summary_retry"
-                )
-                summary_response = _managed_summary_call(
-                    summary_kwargs,
-                    lambda request: summary_client.chat.completions.create(**request),
-                    retry_count=1,
+                summary_response = _run_interruptible_iteration_summary(
+                    agent, summary_kwargs, _managed_summary_call, retry_count=1
                 )
                 _retry_result = agent._get_transport().normalize_response(
                     summary_response
@@ -3294,7 +3319,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                         r"<think>.*?</think>\s*", "", final_response, flags=re.DOTALL
                     ).strip()
                 if final_response:
-                    summary_call_outcome = "success"
+                    summary_call_outcome[0] = "success"
                     append_message(
                         messages,
                         {"role": "assistant", "content": final_response},
@@ -3309,6 +3334,9 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
                 )
 
     except Exception as e:
+        _reraise_iteration_summary_interrupt(
+            e, messages, summary_message, summary_call_outcome
+        )
         logger.warning("Failed to get summary response: %s", e)
         final_response = f"I reached the maximum iterations ({agent.max_iterations}) but couldn't summarize. Error: {str(e)}"
     finally:
@@ -3316,7 +3344,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
 
         relay_llm.complete_logical_call(
             summary_api_request_id,
-            outcome=summary_call_outcome,
+            outcome=summary_call_outcome[0],
         )
 
     return final_response

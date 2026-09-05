@@ -122,6 +122,13 @@ def _drop_verification_continuation_scaffolding(messages) -> None:
     ]
 
 
+def _request_iteration_limit_summary(agent, messages, api_call_count):
+    try:
+        return agent._handle_max_iterations(messages, api_call_count), False
+    except InterruptedError:
+        return None, True
+
+
 def finalize_turn(
     agent,
     *,
@@ -164,6 +171,7 @@ def finalize_turn(
 
     iteration_limit_fallback = False
     preserved_verification_fallback = False
+    summary_interrupted = False
     if continuation_budget_exhausted:
         # A verification/continuation gate deliberately withheld a composed
         # answer, then consumed the remaining budget before producing a newer
@@ -197,8 +205,16 @@ def finalize_turn(
                 f"\n⚠️  Iteration budget exhausted ({api_call_count}/{agent.max_iterations}) "
                 "— requesting summary..."
             )
-        final_response = agent._handle_max_iterations(messages, api_call_count)
-        iteration_limit_fallback = True
+        final_response, summary_interrupted = _request_iteration_limit_summary(
+            agent, messages, api_call_count
+        )
+        iteration_limit_fallback = not summary_interrupted
+        interrupted = interrupted or summary_interrupted
+        _turn_exit_reason = (
+            "interrupted_during_iteration_summary"
+            if summary_interrupted
+            else _turn_exit_reason
+        )
 
     if iteration_limit_fallback:
         # If running as a kanban worker, signal the dispatcher that the
@@ -218,7 +234,7 @@ def finalize_turn(
                 agent.max_iterations,
                 logger,
             )
-    elif budget_exhausted:
+    elif budget_exhausted and not summary_interrupted:
         # Bounded fallback (#87096): budget was exhausted but none of the
         # normal fallback paths were eligible (interrupted / failed /
         # anomalous exit_reason). If running as a kanban worker we must
