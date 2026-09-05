@@ -1051,7 +1051,9 @@ _ROUTING_TOOL_NAMES = frozenset({"route_net", "unroute_net", "add_via", "remove_
 _CHECK_TOOL_NAMES = frozenset(
     {"check_semantics", "check_connectivity", "run_erc", "run_drc"}
 )
-_PREVIEW_TOOL_NAMES = frozenset({"render_schematic", "render_board", "render_3d"})
+_PREVIEW_TOOL_NAMES = frozenset(
+    {"render_schematic", "render_board", "observe_board_region", "render_3d"}
+)
 _DELIVERY_TOOL_NAMES = frozenset(
     {"export_gerbers", "export_drill", "export_bom", "export_pick_place", "export_step"}
 )
@@ -1882,6 +1884,43 @@ PCB_TOOL_SPECS = (
         effect="authoritative_write",
         risk="high",
         arguments=(_ID("via_id", "Stable via identity"),),
+    ),
+    _flat_spec(
+        "observe_board_region",
+        "Crop exact pixels from the current revision-bound pcb_render_board PNG; "
+        "coordinates use the source image's top-left pixel origin and do not map to board millimetres",
+        arguments=(
+            ToolArgumentSpec(
+                "source_image_sha256",
+                str,
+                "Exact lowercase SHA-256 returned by the current pcb_render_board result",
+                {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            ),
+            ToolArgumentSpec(
+                "x_px",
+                int,
+                "Left edge in source-image pixels (origin top-left)",
+                {"type": "integer", "minimum": 0},
+            ),
+            ToolArgumentSpec(
+                "y_px",
+                int,
+                "Top edge in source-image pixels (origin top-left)",
+                {"type": "integer", "minimum": 0},
+            ),
+            ToolArgumentSpec(
+                "width_px",
+                int,
+                "Positive crop width in unscaled source-image pixels",
+                {"type": "integer", "minimum": 1},
+            ),
+            ToolArgumentSpec(
+                "height_px",
+                int,
+                "Positive crop height in unscaled source-image pixels",
+                {"type": "integer", "minimum": 1},
+            ),
+        ),
     ),
     *tuple(
         _flat_spec(name, description, effect="evidence_write")

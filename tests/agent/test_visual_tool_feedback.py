@@ -28,7 +28,15 @@ from pcbdraft.model.codex_responses_adapter import (
 
 def _png_bytes() -> bytes:
     output = io.BytesIO()
-    Image.new("RGB", (2, 2), (10, 20, 30)).save(output, format="PNG")
+    image = Image.new("RGB", (4, 3))
+    image.putdata(
+        [
+            (x * 40, y * 60, (x + y) * 20)
+            for y in range(image.height)
+            for x in range(image.width)
+        ]
+    )
+    image.save(output, format="PNG")
     return output.getvalue()
 
 
@@ -122,7 +130,7 @@ class _VisualPCBService:
             "events": [],
         }
         if rendered:
-            view["tool_result"] = {
+            render_result = {
                 "run_id": self.run_id,
                 "render": "render_board",
                 "root": f"previews/{self.run_id}",
@@ -136,6 +144,8 @@ class _VisualPCBService:
                     "board_render": self.image_relative,
                 },
             }
+            view["state"]["last_preview"] = copy.deepcopy(render_result)
+            view["tool_result"] = render_result
         return view
 
     def open_project(self, project_id: str) -> dict[str, Any]:
@@ -152,15 +162,22 @@ class _VisualPCBService:
         timeout: float,
         expected_revision: int,
     ) -> dict[str, Any]:
-        del arguments, timeout
-        if (project_id, tool_name, expected_revision) != (
-            self.project_id,
-            "render_board",
-            11,
-        ):
-            raise AssertionError((project_id, tool_name, expected_revision))
-        self._rendered = True
-        return copy.deepcopy(self._view(rendered=True))
+        del timeout
+        if tool_name == "render_board":
+            if (project_id, expected_revision) != (self.project_id, 11):
+                raise AssertionError((project_id, tool_name, expected_revision))
+            self._rendered = True
+            return copy.deepcopy(self._view(rendered=True))
+        if tool_name == "observe_board_region":
+            if project_id != self.project_id:
+                raise AssertionError((project_id, tool_name, expected_revision))
+            view = self._view(rendered=self._rendered)
+            view["tool_result"] = {
+                "operation": "observe_board_region",
+                **arguments,
+            }
+            return copy.deepcopy(view)
+        raise AssertionError((project_id, tool_name, expected_revision))
 
 
 class PCBVisualToolFeedbackTests(unittest.TestCase):
@@ -174,6 +191,30 @@ class PCBVisualToolFeedbackTests(unittest.TestCase):
         spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("render_board")
         with patch("pcbdraft.agent.tool_bindings._permission_mode", "workspace"):
             return _handler(spec)({}, session_id="visual-session")
+
+    def _observe(
+        self,
+        service: _VisualPCBService,
+        *,
+        source_image_sha256: str | None = None,
+        x_px: int = 1,
+        y_px: int = 0,
+        width_px: int = 2,
+        height_px: int = 2,
+    ) -> str | dict[str, Any]:
+        _set_service(service)
+        set_current_project_id(service.project_id)
+        spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("observe_board_region")
+        arguments = {
+            "source_image_sha256": source_image_sha256
+            or hashlib.sha256(service.image).hexdigest(),
+            "x_px": x_px,
+            "y_px": y_px,
+            "width_px": width_px,
+            "height_px": height_px,
+        }
+        with patch("pcbdraft.agent.tool_bindings._permission_mode", "workspace"):
+            return _handler(spec)(arguments, session_id="visual-session")
 
     def test_render_board_pixels_reach_responses_provider_with_revision_binding(
         self,
@@ -262,6 +303,116 @@ class PCBVisualToolFeedbackTests(unittest.TestCase):
             self.assertFalse(payload["success"])
             self.assertIn("path is unsafe", payload["error"])
 
+    def test_observe_board_region_returns_exact_current_png_crop(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = _VisualPCBService(Path(temporary))
+            render = self._call(service)
+            self.assertIsInstance(render, dict)
+
+            result = self._observe(service)
+
+            self.assertIsInstance(result, dict)
+            assert isinstance(result, dict)
+            summary = json.loads(result["content"][0]["text"])
+            self.assertEqual(summary["tool"], "pcb_observe_board_region")
+            self.assertEqual(summary["project_id"], service.project_id)
+            self.assertEqual(summary["revision"], 12)
+            self.assertEqual(summary["design_revision"], 7)
+            self.assertEqual(summary["design_content_hash"], service.content_hash)
+            self.assertEqual(summary["source_image_width"], 4)
+            self.assertEqual(summary["source_image_height"], 3)
+            self.assertEqual(
+                summary["source_image_kind"], "current-pcb-render-board-png"
+            )
+            self.assertEqual(summary["source_render_run_id"], service.run_id)
+            self.assertEqual(
+                summary["crop_box_px"],
+                {"left": 1, "top": 0, "right": 3, "bottom": 2},
+            )
+            self.assertEqual(summary["coordinate_system"]["origin"], "top-left")
+            self.assertEqual(
+                summary["coordinate_system"]["bounds"], "right-bottom-exclusive"
+            )
+            self.assertFalse(summary["pixel_to_board_mm_calibrated"])
+            self.assertFalse(summary["adds_detail"])
+            self.assertEqual(summary["image_width"], 2)
+            self.assertEqual(summary["image_height"], 2)
+            self.assertEqual(
+                summary["source_image_sha256"],
+                hashlib.sha256(service.image).hexdigest(),
+            )
+            self.assertEqual(summary["image_scope"], "live_tool_result_only")
+            self.assertTrue(summary["rerender_after_resume"])
+
+            image_url = result["content"][1]["image_url"]["url"]
+            crop_bytes = base64.b64decode(image_url.partition(",")[2], validate=True)
+            with Image.open(io.BytesIO(service.image)) as source:
+                expected_pixels = source.crop((1, 0, 3, 2)).tobytes()
+            with Image.open(io.BytesIO(crop_bytes)) as crop:
+                self.assertEqual(crop.size, (2, 2))
+                self.assertEqual(crop.tobytes(), expected_pixels)
+
+            history = make_tool_result_message(
+                "pcb_observe_board_region", result["content"], "call-region"
+            )
+            wire = _chat_messages_to_responses_input([history])
+            self.assertEqual(wire[0]["output"][1]["type"], "input_image")
+            self.assertEqual(wire[0]["output"][1]["image_url"], image_url)
+
+    def test_observe_board_region_rejects_missing_hash_and_invalid_regions(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service = _VisualPCBService(Path(temporary))
+
+            missing = self._observe(service)
+            self.assertIsInstance(missing, str)
+            self.assertIn("pcb_render_board", json.loads(missing)["error"])
+
+            self.assertIsInstance(self._call(service), dict)
+            cases = (
+                ("hash", {"source_image_sha256": "b" * 64}, "image hash"),
+                ("bounds", {"x_px": 3, "width_px": 2}, "bounds"),
+                ("zero", {"width_px": 0}, "strict schema"),
+            )
+            for label, overrides, expected_error in cases:
+                with self.subTest(label=label):
+                    result = self._observe(service, **overrides)
+                    self.assertIsInstance(result, str)
+                    self.assertIn(expected_error, json.loads(result)["error"])
+
+    def test_observe_board_region_rejects_stale_or_corrupt_current_render(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+
+            stale_service = _VisualPCBService(root / "stale")
+            self.assertIsInstance(self._call(stale_service), dict)
+            original_open = stale_service.open_project
+
+            def stale_open(project_id: str) -> dict[str, Any]:
+                view = original_open(project_id)
+                view["state"]["revision"] = 13
+                return view
+
+            with patch.object(stale_service, "open_project", side_effect=stale_open):
+                stale = self._observe(stale_service)
+            self.assertIsInstance(stale, str)
+            self.assertIn("stale", json.loads(stale)["error"])
+            self.assertIn("pcb_render_board", json.loads(stale)["error"])
+
+            corrupt_service = _VisualPCBService(root / "corrupt")
+            self.assertIsInstance(self._call(corrupt_service), dict)
+            board_png = (
+                corrupt_service.root
+                / "previews"
+                / corrupt_service.run_id
+                / "board-top.png"
+            )
+            board_png.write_bytes(b"not-a-png")
+            corrupt = self._observe(corrupt_service)
+            self.assertIsInstance(corrupt, str)
+            self.assertIn("pcb_render_board", json.loads(corrupt)["error"])
+
 
 class PCBVisualProviderCapabilityTests(unittest.TestCase):
     @staticmethod
@@ -290,48 +441,58 @@ class PCBVisualProviderCapabilityTests(unittest.TestCase):
 
     def test_render_board_fails_explicitly_for_non_visual_model(self) -> None:
         agent = self._agent()
-        with patch.object(agent, "_model_supports_vision", return_value=False):
-            content = agent._tool_result_content_for_active_model(
-                "pcb_render_board", self._result()
-            )
+        for tool_name in ("pcb_render_board", "pcb_observe_board_region"):
+            with (
+                self.subTest(tool_name=tool_name),
+                patch.object(agent, "_model_supports_vision", return_value=False),
+            ):
+                content = agent._tool_result_content_for_active_model(
+                    tool_name, self._result()
+                )
 
-        payload = json.loads(content)
-        self.assertFalse(payload["success"])
-        self.assertEqual(payload["error_code"], "visual_input_unsupported")
+                payload = json.loads(content)
+                self.assertFalse(payload["success"])
+                self.assertEqual(payload["error_code"], "visual_input_unsupported")
 
     def test_render_board_fails_when_provider_rejects_visual_tool_messages(
         self,
     ) -> None:
         agent = self._agent()
-        with (
-            patch.object(agent, "_model_supports_vision", return_value=True),
-            patch.object(
-                agent,
-                "_provider_supports_vision_tool_messages",
-                return_value=False,
-            ),
-        ):
-            content = agent._tool_result_content_for_active_model(
-                "pcb_render_board", self._result()
-            )
+        for tool_name in ("pcb_render_board", "pcb_observe_board_region"):
+            with (
+                self.subTest(tool_name=tool_name),
+                patch.object(agent, "_model_supports_vision", return_value=True),
+                patch.object(
+                    agent,
+                    "_provider_supports_vision_tool_messages",
+                    return_value=False,
+                ),
+            ):
+                content = agent._tool_result_content_for_active_model(
+                    tool_name, self._result()
+                )
 
-        payload = json.loads(content)
-        self.assertFalse(payload["success"])
-        self.assertEqual(payload["error_code"], "visual_tool_result_unsupported")
+                payload = json.loads(content)
+                self.assertFalse(payload["success"])
+                self.assertEqual(
+                    payload["error_code"], "visual_tool_result_unsupported"
+                )
 
     def test_provider_rejection_recovery_does_not_strip_board_pixels(self) -> None:
         agent = self._agent()
-        messages = [
-            make_tool_result_message(
-                "pcb_render_board", self._result()["content"], "call-render"
-            )
-        ]
-        before = copy.deepcopy(messages)
+        for tool_name in ("pcb_render_board", "pcb_observe_board_region"):
+            with self.subTest(tool_name=tool_name):
+                messages = [
+                    make_tool_result_message(
+                        tool_name, self._result()["content"], "call-render"
+                    )
+                ]
+                before = copy.deepcopy(messages)
 
-        changed = agent._try_strip_image_parts_from_tool_messages(messages)
+                changed = agent._try_strip_image_parts_from_tool_messages(messages)
 
-        self.assertFalse(changed)
-        self.assertEqual(messages, before)
+                self.assertFalse(changed)
+                self.assertEqual(messages, before)
 
 
 class PCBVisualWorkflowTests(unittest.TestCase):
@@ -438,7 +599,7 @@ class PCBVisualWorkflowTests(unittest.TestCase):
             "r1",
         )
         second_render = make_tool_result_message(
-            "pcb_render_board",
+            "pcb_observe_board_region",
             PCBVisualProviderCapabilityTests._result()["content"],
             "r2",
         )
@@ -474,6 +635,28 @@ class PCBVisualWorkflowTests(unittest.TestCase):
 
         self.assertIn("PNG", spec.description)
         self.assertIn("project/revision", spec.description)
+
+    def test_region_observation_is_discoverable_with_existing_object_queries(
+        self,
+    ) -> None:
+        specs = DEFAULT_PCB_TOOL_REGISTRY.projected_specs("routing", project_bound=True)
+        names = {spec.external_name for spec in specs}
+
+        self.assertTrue(
+            {
+                "pcb_observe_board_region",
+                "pcb_inspect_component",
+                "pcb_inspect_net",
+                "pcb_inspect_board",
+            }.issubset(names)
+        )
+        spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("observe_board_region")
+        self.assertTrue(spec.annotations.read_only)
+        self.assertIn("top-left pixel", spec.description)
+        self.assertIn("do not map to board millimetres", spec.description)
+        schema = spec.input_schema["properties"]
+        self.assertEqual(schema["source_image_sha256"]["pattern"], "^[0-9a-f]{64}$")
+        self.assertEqual(schema["width_px"]["minimum"], 1)
 
 
 if __name__ == "__main__":

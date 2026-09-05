@@ -215,7 +215,7 @@ class PCBToolingTests(unittest.TestCase):
     def test_registry_is_closed_and_declares_effect_and_risk(self) -> None:
         specs = {spec.name: spec for spec in DEFAULT_PCB_TOOL_REGISTRY.specs}
 
-        self.assertEqual(len(specs), 61)
+        self.assertEqual(len(specs), 62)
         self.assertTrue(
             {
                 "create_project",
@@ -232,6 +232,7 @@ class PCBToolingTests(unittest.TestCase):
                 "route_net",
                 "run_drc",
                 "render_board",
+                "observe_board_region",
                 "export_gerbers",
             }
             <= set(specs)
@@ -252,7 +253,7 @@ class PCBToolingTests(unittest.TestCase):
         self.assertEqual(specs["set_board_outline"].risk, "high")
         self.assertEqual(
             DEFAULT_PCB_TOOL_REGISTRY.schema_fingerprint(),
-            "fedb97b244203a8e5fe652d1b6741683d135935a59b2adf88f38fdda8f58dc45",
+            "69b07a1769d4857fff15d49d76684fd75e5c98e33516999a4131d29ad3a6ca00",
         )
         self.assertTrue(
             all(

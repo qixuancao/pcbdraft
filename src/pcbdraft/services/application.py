@@ -1342,6 +1342,20 @@ class ApplicationService:
             "inspect_transaction",
         }:
             return self._inspect_pcb_tool(project_id, tool_name, arguments)
+        if tool_name == "observe_board_region":
+            view = self.open_project(project_id)
+            state = view.get("state")
+            if (
+                not isinstance(state, Mapping)
+                or state.get("revision") != expected_revision
+            ):
+                raise ValidationError(
+                    "project changed before the board region could be observed"
+                )
+            return self._with_tool_result(
+                view,
+                {"operation": "observe_board_region", **arguments},
+            )
         if tool_name in {
             "search_symbols",
             "describe_symbol",

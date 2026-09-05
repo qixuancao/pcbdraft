@@ -541,20 +541,24 @@ def _trajectory_normalize_msg(msg: dict[str, Any]) -> dict[str, Any]:
 
 
 _PCB_RENDER_PIXELS_RETIRED_NOTICE = (
-    "[pcb_render_board pixels omitted from active history after a later PCB "
-    "tool result; call pcb_render_board again before making a current visual "
-    "claim]"
+    "[PCB board observation pixels omitted from active history after a later "
+    "PCB tool result; call pcb_render_board again before making a current "
+    "visual claim, then pcb_observe_board_region if a local view is needed]"
+)
+
+_PCB_BOARD_IMAGE_TOOL_NAMES = frozenset(
+    {"pcb_render_board", "pcb_observe_board_region"}
 )
 
 
 def _retire_pcb_render_board_images(messages: list) -> int:
     """Remove superseded board pixels while retaining their bound text receipt.
 
-    A fresh ``pcb_render_board`` result remains available for the immediately
-    following model request. Before any later ``pcb_*`` result is appended, the
-    executor calls this helper so stale board pixels cannot be mistaken for the
-    current revision and live request history stays bounded to one board image.
-    Images emitted by other tools are deliberately untouched.
+    A fresh whole-board or local-board result remains available for the
+    immediately following model request. Before any later ``pcb_*`` result is
+    appended, the executor calls this helper so stale board pixels cannot be
+    mistaken for the current revision and live request history stays bounded to
+    one board image. Images emitted by other tools are deliberately untouched.
     """
 
     retired = 0
@@ -562,7 +566,8 @@ def _retire_pcb_render_board_images(messages: list) -> int:
         if (
             not isinstance(message, dict)
             or message.get("role") != "tool"
-            or message.get("name", message.get("tool_name")) != "pcb_render_board"
+            or message.get("name", message.get("tool_name"))
+            not in _PCB_BOARD_IMAGE_TOOL_NAMES
             or not isinstance(message.get("content"), list)
         ):
             continue

@@ -165,13 +165,19 @@ PCBDRAFT_RUNTIME_AGENT_HELP_GUIDANCE = (
 
 PCBDRAFT_VISUAL_WORKFLOW_GUIDANCE = (
     "For visual, layout, or silkscreen work on a PCB project, call "
-    "pcb_render_board before making a visual judgment, use the structured PCB "
-    "engineering tools for any change, then call pcb_render_board again after "
-    "the edit and judge only the image from the latest revision. A board image "
-    "is bound to the project and revision reported in its text result; after "
-    "another pcb_* result, session restore, or a pixels-omitted marker, rerender "
-    "instead of claiming to see the old image. Do not render automatically for "
-    "purely textual or electrical questions that do not require visual evidence."
+    "pcb_render_board before making a visual judgment. When a closer view is "
+    "needed, choose an explicit pixel rectangle from that result and call "
+    "pcb_observe_board_region with its image_sha256; the crop is exact source "
+    "pixels, adds no detail, and has no pixel-to-board-millimetre calibration. "
+    "Use pcb_inspect_component, pcb_inspect_net, or pcb_inspect_board to obtain "
+    "stable engineering identities and millimetre positions instead of guessing "
+    "them from pixels, use the structured PCB engineering tools for any change, "
+    "then call pcb_render_board again after the edit and observe a new region if "
+    "needed. Judge only images from the latest revision. A board image is bound "
+    "to the project and revision reported in its text result; after another "
+    "pcb_* result, session restore, or a pixels-omitted marker, rerender instead "
+    "of claiming to see the old image. Do not render automatically for purely "
+    "textual or electrical questions that do not require visual evidence."
 )
 
 

@@ -63,6 +63,8 @@ _EXPLICIT_INSPECTION_ITEMS = 24
 # Keep a much larger but still provider-safe ceiling so an unexpectedly huge
 # artifact fails before base64 expansion can enter live conversation history.
 _MODEL_BOARD_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+_MODEL_BOARD_REGION_MAX_BYTES = 4 * 1024 * 1024
+_MODEL_BOARD_REGION_MAX_PIXELS = 4_000_000
 _PREVIEW_RECEIPT_MAX_BYTES = 128 * 1024
 _RUN_ID = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}")
 _CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
@@ -715,6 +717,8 @@ def _model_summary(
         result["binding"] = binding
     if spec.name == "render_board":
         return _board_render_feedback(_service(), view, result)
+    if spec.name == "observe_board_region":
+        return _board_region_feedback(_service(), view, result)
     return result
 
 
@@ -887,6 +891,184 @@ def _board_render_feedback(
             "design_revision": design_revision,
             "design_content_hash": content_hash,
             "image_sha256": actual_hash,
+        },
+    }
+
+
+def _board_region_feedback(
+    service: Any,
+    view: Mapping[str, Any],
+    summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Crop exact pixels from the current receipt-verified board render."""
+
+    state = view.get("state")
+    tool_result = view.get("tool_result")
+    if not isinstance(state, Mapping) or not isinstance(tool_result, Mapping):
+        raise ValidationError("PCB board region observation result is incomplete")
+    if tool_result.get("operation") != "observe_board_region":
+        raise ValidationError("PCB board region observation result is malformed")
+    last_preview = state.get("last_preview")
+    if not isinstance(last_preview, Mapping):
+        raise ValidationError(
+            "PCB board region observation requires a current pcb_render_board result; "
+            "call pcb_render_board first"
+        )
+    if last_preview.get("render") != "render_board":
+        raise ValidationError(
+            "current preview is not a board render; call pcb_render_board first"
+        )
+    revision = state.get("revision")
+    if isinstance(revision, bool) or not isinstance(revision, int):
+        raise ValidationError("PCB board region revision binding is malformed")
+
+    # Reuse the whole-board verifier rather than introducing another artifact
+    # path. last_preview is application-owned; callers can name only its hash
+    # and a pixel rectangle, never a filesystem location.
+    render_view = dict(view)
+    render_view["tool_result"] = {**last_preview, "revision": revision}
+    try:
+        verified = _board_render_feedback(
+            service,
+            render_view,
+            {"tool": "pcb_render_board", "project_id": summary.get("project_id")},
+        )
+    except ValidationError as exc:
+        raise ValidationError(
+            f"current board render is unavailable or stale; call pcb_render_board again ({exc})"
+        ) from exc
+
+    source_text = verified["content"][0]["text"]
+    source_summary = json.loads(source_text)
+    source_url = verified["content"][1]["image_url"]["url"]
+    try:
+        source_bytes = base64.b64decode(source_url.partition(",")[2], validate=True)
+    except (ValueError, TypeError) as exc:
+        raise ValidationError("verified PCB board PNG could not be decoded") from exc
+
+    requested_hash = tool_result.get("source_image_sha256")
+    source_hash = source_summary.get("image_sha256")
+    if requested_hash != source_hash:
+        raise ValidationError(
+            "source image hash does not match the current board render; use "
+            "image_sha256 from the latest pcb_render_board result"
+        )
+
+    x_px = tool_result.get("x_px")
+    y_px = tool_result.get("y_px")
+    width_px = tool_result.get("width_px")
+    height_px = tool_result.get("height_px")
+    if not all(
+        isinstance(value, int) and not isinstance(value, bool)
+        for value in (x_px, y_px, width_px, height_px)
+    ):
+        raise ValidationError("PCB board region coordinates are malformed")
+    x_px = int(x_px)
+    y_px = int(y_px)
+    width_px = int(width_px)
+    height_px = int(height_px)
+    source_width = source_summary.get("image_width")
+    source_height = source_summary.get("image_height")
+    if not isinstance(source_width, int) or not isinstance(source_height, int):
+        raise ValidationError("verified PCB board dimensions are malformed")
+    right_px = x_px + width_px
+    bottom_px = y_px + height_px
+    if (
+        x_px < 0
+        or y_px < 0
+        or width_px <= 0
+        or height_px <= 0
+        or right_px > source_width
+        or bottom_px > source_height
+    ):
+        raise ValidationError(
+            "PCB board region is outside source image bounds "
+            f"{source_width}x{source_height}"
+        )
+    if width_px * height_px > _MODEL_BOARD_REGION_MAX_PIXELS:
+        raise ValidationError(
+            "PCB board region exceeds the 4000000-pixel observation budget"
+        )
+
+    try:
+        with Image.open(io.BytesIO(source_bytes)) as source_image:
+            source_image.load()
+            region_image = source_image.crop((x_px, y_px, right_px, bottom_px))
+            output = io.BytesIO()
+            region_image.save(output, format="PNG")
+    except (OSError, SyntaxError, ValueError) as exc:
+        raise ValidationError("PCB board region could not be cropped") from exc
+    image_bytes = output.getvalue()
+    if not image_bytes or len(image_bytes) > _MODEL_BOARD_REGION_MAX_BYTES:
+        raise ValidationError(
+            "PCB board region exceeds the 4194304-byte PNG observation budget"
+        )
+    image_hash = hashlib.sha256(image_bytes).hexdigest()
+
+    model_summary = dict(summary)
+    model_summary.pop("binding", None)
+    model_summary.pop("result", None)
+    model_summary.update(
+        {
+            "source_revision": source_summary.get("source_revision"),
+            "source_render_run_id": last_preview.get("run_id"),
+            "source_image_kind": "current-pcb-render-board-png",
+            "source_preview_receipt": last_preview.get("receipt"),
+            "design_content_hash": source_summary.get("design_content_hash"),
+            "source_image_sha256": source_hash,
+            "source_image_bytes": source_summary.get("image_bytes"),
+            "source_image_width": source_width,
+            "source_image_height": source_height,
+            "crop_box_px": {
+                "left": x_px,
+                "top": y_px,
+                "right": right_px,
+                "bottom": bottom_px,
+            },
+            "coordinate_system": {
+                "units": "source-image-pixels",
+                "origin": "top-left",
+                "x_axis": "right",
+                "y_axis": "down",
+                "bounds": "right-bottom-exclusive",
+            },
+            "pixel_to_board_mm_calibrated": False,
+            "adds_detail": False,
+            "resampling": "none",
+            "image_sha256": image_hash,
+            "image_bytes": len(image_bytes),
+            "image_width": width_px,
+            "image_height": height_px,
+            "region_limits": {
+                "max_pixels": _MODEL_BOARD_REGION_MAX_PIXELS,
+                "max_png_bytes": _MODEL_BOARD_REGION_MAX_BYTES,
+            },
+            "image_scope": "live_tool_result_only",
+            "rerender_after_resume": True,
+        }
+    )
+    summary_text = json.dumps(
+        model_summary,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    image_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
+    return {
+        "_multimodal": True,
+        "content": [
+            {"type": "text", "text": summary_text},
+            {"type": "image_url", "image_url": {"url": image_url}},
+        ],
+        "text_summary": summary_text,
+        "meta": {
+            "project_id": model_summary.get("project_id"),
+            "revision": model_summary.get("revision"),
+            "design_revision": model_summary.get("design_revision"),
+            "design_content_hash": model_summary.get("design_content_hash"),
+            "source_image_sha256": source_hash,
+            "image_sha256": image_hash,
+            "crop_box_px": model_summary["crop_box_px"],
         },
     }
 

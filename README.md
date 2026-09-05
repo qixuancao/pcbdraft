@@ -256,16 +256,26 @@ continue / done / blocked
 
 打开工程后，可以直接提出“检查丝印是否遮挡焊盘”“看看布局是否有明显重叠”
 这类需要视觉判断的任务。模型会用 `pcb_render_board` 获取当前工程、当前 design
-revision 绑定的真实 PNG，先看图，再用封闭的结构化 PCB 工具精确修改；例如移动封装参考
-文字使用 `pcb_move_footprint_reference`。修改后模型必须重新调用
-`pcb_render_board`，只根据最新 revision 的图片确认结果。纯文字说明、器件属性或
-电气连接查询不需要因此自动渲染。
+revision 绑定的真实 PNG，先看整板。需要看清局部时，模型可从该结果自主选择一个
+像素矩形，并用结果中的 `image_sha256` 调用 `pcb_observe_board_region`；此工具只会
+裁剪当前工程 `last_preview` 固定 bundle 中经收据校验的 `board-top.png`，不接受文件
+路径。坐标原点是源图左上角，x 向右、y 向下，右/下边界不包含在裁剪中；返回结果会
+列出源图尺寸、裁剪框、源图/局部图哈希和 project/revision/design 绑定。局部图不做
+插值放大，不增加源图细节，也没有像素到板上毫米的投影标定。
+
+视觉判断之后，应使用 `pcb_inspect_component`、`pcb_inspect_net` 或
+`pcb_inspect_board` 获取稳定的 `component_id`、引脚/网络关系和板上毫米位置，再用
+封闭的结构化 PCB 工具精确修改；例如移动封装参考文字使用
+`pcb_move_footprint_reference`。修改会使旧 render 失效，模型必须重新调用
+`pcb_render_board`，如需局部确认再以新哈希调用 `pcb_observe_board_region`，只根据
+最新 revision 的图片确认结果。纯文字说明、器件属性或电气连接查询不需要因此
+自动渲染。
 
 板图像只在当前活跃模型请求中保留一张：后续任一 `pcb_*` 工具结果会移除旧图像
 像素但保留 revision、内容哈希和图片哈希摘要，并提示重新渲染。对话恢复或压缩后
 同样不会从历史摘要假装“看过图”，需要视觉判断时会获取新图。模型或提供商不支持
-图片工具结果、图片损坏、收据过期或路径越界时会明确失败，不会静默退回 OCR、SVG
-文本或无图推断。
+图片工具结果、没有当前整板 render、源图哈希不符、图片损坏、收据过期、裁剪越界或
+大小超预算时会明确失败，不会静默退回 OCR、SVG 文本或无图推断。
 
 当前能力是 PCBDraft 工程工具闭环，不是通用桌面 computer-use，也不授予模型任意
 本地图片、shell、Python 或原始 KiCad 文本访问权。渲染后的视觉确认和局部 DRC

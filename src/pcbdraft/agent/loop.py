@@ -7639,7 +7639,7 @@ class AIAgent:
             # we've already learned this lesson in-session, short-circuit to
             # a text summary so we don't burn a round-trip relearning it.
             if not self._provider_supports_vision_tool_messages():
-                if tool_name == "pcb_render_board":
+                if tool_name in {"pcb_render_board", "pcb_observe_board_region"}:
                     return self._visual_tool_result_error(
                         tool_name,
                         "visual_tool_result_unsupported",
@@ -7658,7 +7658,7 @@ class AIAgent:
             )
             no_list = getattr(self, "_no_list_tool_content_models", None)
             if no_list and key in no_list:
-                if tool_name == "pcb_render_board":
+                if tool_name in {"pcb_render_board", "pcb_observe_board_region"}:
                     return self._visual_tool_result_error(
                         tool_name,
                         "visual_tool_result_unsupported",
@@ -7675,7 +7675,7 @@ class AIAgent:
             return content
 
         summary = _multimodal_text_summary(result)
-        if tool_name == "pcb_render_board":
+        if tool_name in {"pcb_render_board", "pcb_observe_board_region"}:
             return self._visual_tool_result_error(
                 tool_name,
                 "visual_input_unsupported",
@@ -7763,13 +7763,14 @@ class AIAgent:
         if not isinstance(api_messages, list):
             return False
 
-        # pcb_render_board promises that the provider sees the receipt-bound
-        # pixels or receives a hard capability error.  Retrying after deleting
-        # those pixels would turn a visual observation into a false success.
+        # Board image tools promise that the provider sees receipt-bound pixels
+        # or receives a hard capability error. Retrying after deleting those
+        # pixels would turn a visual observation into a false success.
         if any(
             isinstance(msg, dict)
             and msg.get("role") == "tool"
-            and msg.get("name", msg.get("tool_name")) == "pcb_render_board"
+            and msg.get("name", msg.get("tool_name"))
+            in {"pcb_render_board", "pcb_observe_board_region"}
             and self._content_has_image_parts(msg.get("content"))
             for msg in api_messages
         ):
