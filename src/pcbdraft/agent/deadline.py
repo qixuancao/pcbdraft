@@ -65,6 +65,7 @@ from __future__ import annotations
 import asyncio
 import faulthandler
 import logging
+import math
 import os
 import subprocess
 import sys
@@ -72,7 +73,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -81,10 +82,10 @@ __all__ = [
     "BoundedResult",
     "DeadlineExpired",
     "clamp_timeout",
+    "kill_process_tree",
     "resolve_timeout",
     "run_bounded_async",
     "run_bounded_sync",
-    "kill_process_tree",
 ]
 
 # Upper bound for any timeout handed to platform wait primitives.
@@ -155,12 +156,22 @@ def clamp_timeout(timeout: float | None) -> float | None:
         return None
     try:
         value = float(timeout)
+    except OverflowError:
+        # YAML and Python can represent integers far beyond float's range.
+        # Preserve the documented sign semantics without treating an arbitrary
+        # custom __float__ failure as a valid, positive timeout.
+        if isinstance(timeout, int) and not isinstance(timeout, bool):
+            return MAX_SAFE_TIMEOUT_S if timeout > 0 else None
+        logger.warning(
+            "clamp_timeout: overflowing timeout %r; treating as unbounded", timeout
+        )
+        return None
     except (TypeError, ValueError):
         logger.warning(
             "clamp_timeout: non-numeric timeout %r; treating as unbounded", timeout
         )
         return None
-    if value != value:  # NaN
+    if math.isnan(value):
         logger.warning("clamp_timeout: NaN timeout; treating as unbounded")
         return None
     if value <= 0:
@@ -233,8 +244,11 @@ def resolve_timeout(
         if not isinstance(raw, bool):
             try:
                 value = float(raw)
-                if value == value:  # not NaN
+                if not math.isnan(value):
                     return clamp_timeout(value)
+            except OverflowError:
+                if isinstance(raw, int):
+                    return clamp_timeout(raw)
             except (TypeError, ValueError):
                 pass
         logger.warning(
@@ -268,8 +282,8 @@ def _consume_abandoned(task: asyncio.Future[Any]) -> None:
     try:
         if not task.cancelled():
             task.exception()
-    except Exception:
-        pass
+    except (asyncio.CancelledError, asyncio.InvalidStateError):
+        return
 
 
 async def _run_abandon_cleanup(on_abandon: Callable[[], Awaitable[Any]]) -> None:
@@ -453,7 +467,7 @@ def run_bounded_sync(
     def _worker() -> None:
         try:
             box["value"] = fn()
-        except BaseException as exc:  # re-raised in caller; must not vanish
+        except BaseException as exc:  # noqa: BLE001 - re-raised in the caller
             box["exc"] = exc
         finally:
             done.set()
