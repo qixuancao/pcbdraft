@@ -7639,6 +7639,12 @@ class AIAgent:
             # we've already learned this lesson in-session, short-circuit to
             # a text summary so we don't burn a round-trip relearning it.
             if not self._provider_supports_vision_tool_messages():
+                if tool_name == "pcb_render_board":
+                    return self._visual_tool_result_error(
+                        tool_name,
+                        "visual_tool_result_unsupported",
+                        "The active provider does not accept image content in tool results.",
+                    )
                 logger.debug(
                     "Tool %s: provider %s does not accept list-type tool "
                     "content — sending text summary",
@@ -7652,6 +7658,12 @@ class AIAgent:
             )
             no_list = getattr(self, "_no_list_tool_content_models", None)
             if no_list and key in no_list:
+                if tool_name == "pcb_render_board":
+                    return self._visual_tool_result_error(
+                        tool_name,
+                        "visual_tool_result_unsupported",
+                        "The active provider rejected image content in tool results earlier in this session.",
+                    )
                 logger.debug(
                     "Tool %s: model %s/%s known to reject list-type tool "
                     "content this session — sending text summary",
@@ -7663,6 +7675,12 @@ class AIAgent:
             return content
 
         summary = _multimodal_text_summary(result)
+        if tool_name == "pcb_render_board":
+            return self._visual_tool_result_error(
+                tool_name,
+                "visual_input_unsupported",
+                "The active model does not support image input; board pixels were not downgraded to text.",
+            )
         if tool_name == "computer_use":
             return json.dumps(
                 {
@@ -7684,6 +7702,20 @@ class AIAgent:
             self.model,
         )
         return summary
+
+    @staticmethod
+    def _visual_tool_result_error(tool_name: str, code: str, message: str) -> str:
+        return json.dumps(
+            {
+                "tool": tool_name,
+                "success": False,
+                "ok": False,
+                "error_code": code,
+                "error": message,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
 
     def _try_shrink_image_parts_in_messages(
         self,
@@ -7729,6 +7761,18 @@ class AIAgent:
         history or surface the original error.
         """
         if not isinstance(api_messages, list):
+            return False
+
+        # pcb_render_board promises that the provider sees the receipt-bound
+        # pixels or receives a hard capability error.  Retrying after deleting
+        # those pixels would turn a visual observation into a false success.
+        if any(
+            isinstance(msg, dict)
+            and msg.get("role") == "tool"
+            and msg.get("name", msg.get("tool_name")) == "pcb_render_board"
+            and self._content_has_image_parts(msg.get("content"))
+            for msg in api_messages
+        ):
             return False
 
         if remember_model:

@@ -164,7 +164,10 @@ def _generate_selected_previews(
     ]
     requested_commands = {
         "render_schematic": {"schematic_svg", "schematic_pdf"},
-        "render_board": {"board_svg"},
+        # The SVG remains the browser/UI artifact.  The top-side PNG is also
+        # retained so the model-facing pcb_render_board result can carry real
+        # pixels through the existing multimodal tool-result pipeline.
+        "render_board": {"board_svg", "board_render"},
         "render_3d": {"board_render"},
     }
     selected_names = set().union(*(requested_commands[kind] for kind in kinds))

@@ -1741,7 +1741,7 @@ def _component_job(
         ),
         "",
     )
-    return {
+    result = {
         "id": component.id,
         "reference": component.reference,
         "value": component.value,
@@ -1763,6 +1763,36 @@ def _component_job(
             "Trust": part.trust,
         },
     }
+    reference_text = component.attributes.get("footprint_reference")
+    if reference_text is not None:
+        if not isinstance(reference_text, dict) or set(reference_text) != {
+            "visible",
+            "x_mm",
+            "y_mm",
+        }:
+            raise ValidationError(
+                f"component {component.id} footprint reference pose is malformed"
+            )
+        if reference_text.get("visible") is not True:
+            raise ValidationError(
+                f"component {component.id} footprint reference must be visible"
+            )
+        for name in ("x_mm", "y_mm"):
+            value = reference_text.get(name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(float(value))
+            ):
+                raise ValidationError(
+                    f"component {component.id} footprint reference {name} must be finite"
+                )
+        result["reference_text"] = {
+            "visible": True,
+            "x_mm": float(reference_text["x_mm"]),
+            "y_mm": float(reference_text["y_mm"]),
+        }
+    return result
 
 
 def _placement(component: Component):

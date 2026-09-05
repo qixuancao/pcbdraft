@@ -397,6 +397,12 @@ def _native_board_projection_complete(
     complete_poses = len(projection.footprint_poses) == len(
         projection.components
     ) and pose_references == set(projection.components)
+    reference_text_references = {
+        item.reference for item in projection.reference_text_poses
+    }
+    complete_reference_text_poses = len(projection.reference_text_poses) == len(
+        projection.components
+    ) and reference_text_references == set(projection.components)
     required_board_rules = {
         "layers",
         "thickness_mm",
@@ -452,6 +458,7 @@ def _native_board_projection_complete(
     return (
         projection.status == "evaluated"
         and complete_poses
+        and complete_reference_text_poses
         and complete_board_rules
         and complete_components
         and complete_nets
@@ -3980,6 +3987,15 @@ class ApplicationService:
                     arguments.get("side", existing.side if existing else "front")
                 ),
                 "fixed": True,
+            }
+        elif tool_name == "move_footprint_reference":
+            component_id = str(arguments["component_id"])
+            if not any(item.id == component_id for item in design.components):
+                raise ValidationError(f"component is absent: {component_id}")
+            args = {
+                "component_id": component_id,
+                "x_mm": float(arguments["x_mm"]),
+                "y_mm": float(arguments["y_mm"]),
             }
         elif tool_name == "unplace_footprint":
             args = {"component_id": arguments["component_id"]}

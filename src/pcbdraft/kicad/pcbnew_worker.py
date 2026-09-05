@@ -485,6 +485,13 @@ def inspect_board_job(job):
             "properties": dict(sorted(properties.items())),
             "pads": pads,
         }
+        reference_field = footprint.Reference()
+        reference_position = reference_field.GetPosition()
+        component["reference_text"] = {
+            "visible": bool(reference_field.IsVisible()),
+            "x_mm": _mm(reference_position.x),
+            "y_mm": _mm(reference_position.y),
+        }
         if include_spatial:
             footprint_bbox = footprint.GetBoundingBox(False, False)
             component.update(
@@ -937,6 +944,7 @@ def build_job(job, output_path):
                 "description",
                 "properties",
             },
+            {"reference_text"},
         )
         component_id = _text(component["id"], "component.id", 128)
         if component_id in component_ids:
@@ -968,6 +976,21 @@ def build_job(job, output_path):
         # rotation after the side transition so native reinspection observes
         # exactly the requested pose on either side.
         footprint.SetOrientationDegrees(rotation)
+        reference_text = component.get("reference_text")
+        if reference_text is not None:
+            reference_text = _strict(
+                reference_text,
+                {"visible", "x_mm", "y_mm"},
+            )
+            if reference_text["visible"] is not True:
+                raise ValueError("component.reference_text.visible must be true")
+            footprint.Reference().SetVisible(True)
+            footprint.Reference().SetPosition(
+                pcbnew.VECTOR2I_MM(
+                    _number(reference_text["x_mm"], "reference_text.x_mm"),
+                    _number(reference_text["y_mm"], "reference_text.y_mm"),
+                )
+            )
         footprint.SetPath(
             pcbnew.KIID_PATH(_text(component["schematic_uuid"], "schematic_uuid", 36))
         )

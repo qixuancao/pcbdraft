@@ -49,6 +49,7 @@ NATIVE_OPERATION_POLICIES: Mapping[str, str] = {
     "place_footprint": "footprint_transform",
     "place_group": "footprint_transform_group",
     "move_footprint": "footprint_transform",
+    "move_footprint_reference": "reference_text_transform",
     "rotate_footprint": "footprint_transform",
     "unplace_footprint": "footprint_transform",
     "route_net": "routing",
@@ -355,6 +356,14 @@ class NativeFootprintPose:
 
 
 @dataclass(frozen=True, order=True)
+class NativeReferenceTextPose:
+    reference: str
+    visible: bool
+    x_mm: float
+    y_mm: float
+
+
+@dataclass(frozen=True, order=True)
 class NativeBoardComponent:
     reference: str
     value: str
@@ -391,6 +400,7 @@ class NativeBoardProjection:
     board_rules: tuple[tuple[str, str], ...] = ()
     component_artifacts: tuple[NativeBoardComponent, ...] = ()
     nets: tuple[str, ...] = ()
+    reference_text_poses: tuple[NativeReferenceTextPose, ...] = ()
 
     @classmethod
     def from_snapshot(cls, value: Any) -> NativeBoardProjection:
@@ -405,6 +415,7 @@ class NativeBoardProjection:
         components: list[str] = []
         pads: list[NativeBoardPad] = []
         footprint_poses: list[NativeFootprintPose] = []
+        reference_text_poses: list[NativeReferenceTextPose] = []
         component_artifacts: list[NativeBoardComponent] = []
         for component_index, component_value in enumerate(
             _array(snapshot.get("components"), "$board.components")
@@ -447,6 +458,30 @@ class NativeBoardProjection:
                         _number(component.get("rotation_deg"), f"{path}.rotation_deg")
                         % 360,
                         side,
+                    )
+                )
+            reference_text = component.get("reference_text")
+            if reference_text is not None:
+                reference_text = _object(reference_text, f"{path}.reference_text")
+                if set(reference_text) != {"visible", "x_mm", "y_mm"}:
+                    raise ValidationError(
+                        f"{path}.reference_text contains unsupported fields"
+                    )
+                reference_text_poses.append(
+                    NativeReferenceTextPose(
+                        reference,
+                        _boolean(
+                            reference_text.get("visible"),
+                            f"{path}.reference_text.visible",
+                        ),
+                        _number(
+                            reference_text.get("x_mm"),
+                            f"{path}.reference_text.x_mm",
+                        ),
+                        _number(
+                            reference_text.get("y_mm"),
+                            f"{path}.reference_text.y_mm",
+                        ),
                     )
                 )
             for pad_index, pad_value in enumerate(
@@ -496,6 +531,7 @@ class NativeBoardProjection:
                     is not None
                 )
             ),
+            tuple(sorted(reference_text_poses)),
         )
 
     def has_nonzero_copper(self, net: str) -> bool:
@@ -933,6 +969,42 @@ def compare_native_operation_delta(
                 actual_pose == expected_pose,
                 _pose_text(expected_pose),
                 _pose_text(actual_pose),
+            )
+        )
+    elif operation == "move_footprint_reference":
+        component_id = str(arguments.get("component_id", ""))
+        component = next(
+            (item for item in candidate_design.components if item.id == component_id),
+            None,
+        )
+        if component is None:
+            raise ValidationError(f"component is absent: {component_id}")
+        ignored_references.add(component.reference)
+        reference_text = component.attributes.get("footprint_reference")
+        if not isinstance(reference_text, Mapping):
+            raise ValidationError(
+                f"component footprint reference pose is absent: {component_id}"
+            )
+        expected_reference_text = NativeReferenceTextPose(
+            component.reference,
+            True,
+            _number(reference_text.get("x_mm"), "footprint_reference.x_mm"),
+            _number(reference_text.get("y_mm"), "footprint_reference.y_mm"),
+        )
+        actual_reference_text = next(
+            (
+                item
+                for item in after.reference_text_poses
+                if item.reference == component.reference
+            ),
+            None,
+        )
+        checks.append(
+            NativeDeltaCheck(
+                "native_footprint_reference_transform",
+                actual_reference_text == expected_reference_text,
+                _reference_text_pose_text(expected_reference_text),
+                _reference_text_pose_text(actual_reference_text),
             )
         )
     elif operation == "set_board_outline":
@@ -1688,6 +1760,15 @@ def _pose_text(value: NativeFootprintPose | None) -> str:
     )
 
 
+def _reference_text_pose_text(value: NativeReferenceTextPose | None) -> str:
+    if value is None:
+        return "missing"
+    return (
+        f"{value.reference}@{_format_number(value.x_mm)},"
+        f"{_format_number(value.y_mm)}/visible={str(value.visible).lower()}"
+    )
+
+
 def _expected_outline(design: Design) -> tuple[NativeOutlineSegment, ...]:
     points = (
         (0.0, 0.0),
@@ -1766,6 +1847,11 @@ def _unrelated_native_state(
         tuple(
             item
             for item in value.footprint_poses
+            if item.reference not in ignored_references
+        ),
+        tuple(
+            item
+            for item in value.reference_text_poses
             if item.reference not in ignored_references
         ),
         () if ignored_outline else value.outline,

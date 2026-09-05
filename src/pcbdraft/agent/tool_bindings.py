@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import io
 import json
+import os
 import re
+import stat
 import threading
+import warnings
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
+
+from PIL import Image
 
 from pcbdraft.agent.permissions import (
     PCBToolGateway,
@@ -27,7 +36,8 @@ from pcbdraft.agent.tooling import (
     ToolSpec,
     call_from_view,
 )
-from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.io import load_json_limited
 
 __all__ = (
     "get_current_project_id",
@@ -48,6 +58,14 @@ DEFAULT_PCB_TOOL_TIMEOUT = 600.0
 #: Explicit inspect responses are bounded independently of normal receipts.
 _EXPLICIT_INSPECTION_BYTES = 16 * 1024
 _EXPLICIT_INSPECTION_ITEMS = 24
+
+# Generated board renders are 1200x800 PNGs in the current KiCad pipeline.
+# Keep a much larger but still provider-safe ceiling so an unexpectedly huge
+# artifact fails before base64 expansion can enter live conversation history.
+_MODEL_BOARD_IMAGE_MAX_BYTES = 10 * 1024 * 1024
+_PREVIEW_RECEIPT_MAX_BYTES = 128 * 1024
+_RUN_ID = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}")
+_CONTENT_HASH = re.compile(r"[0-9a-f]{64}")
 
 _GLOBAL_LIBRARY_TOOLS = frozenset(
     {
@@ -695,7 +713,250 @@ def _model_summary(
             binding["design_root"] = design.get("root")
             binding["files"] = design.get("files")
         result["binding"] = binding
+    if spec.name == "render_board":
+        return _board_render_feedback(_service(), view, result)
     return result
+
+
+def _board_render_feedback(
+    service: Any,
+    view: Mapping[str, Any],
+    summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Attach one receipt-verified, revision-bound board PNG to the tool result."""
+
+    project = view.get("project")
+    state = view.get("state")
+    design = view.get("design")
+    tool_result = view.get("tool_result")
+    if not all(
+        isinstance(value, Mapping) for value in (project, state, design, tool_result)
+    ):
+        raise ValidationError("PCB board render result is incomplete")
+    project_id = project.get("id")
+    revision = state.get("revision")
+    design_revision = state.get("design_revision", project.get("design_revision"))
+    content_hash = design.get("content_hash")
+    source_revision = tool_result.get("source_revision")
+    source_design_revision = tool_result.get("source_design_revision")
+    result_revision = tool_result.get("revision")
+    run_id = tool_result.get("run_id")
+    if (
+        not isinstance(project_id, str)
+        or not project_id
+        or isinstance(revision, bool)
+        or not isinstance(revision, int)
+        or revision < 1
+        or isinstance(design_revision, bool)
+        or not isinstance(design_revision, int)
+        or design_revision < 0
+        or not isinstance(content_hash, str)
+        or _CONTENT_HASH.fullmatch(content_hash) is None
+        or isinstance(source_revision, bool)
+        or not isinstance(source_revision, int)
+        or source_revision < 0
+        or isinstance(source_design_revision, bool)
+        or not isinstance(source_design_revision, int)
+        or source_design_revision < 0
+        or isinstance(result_revision, bool)
+        or not isinstance(result_revision, int)
+        or not isinstance(run_id, str)
+        or _RUN_ID.fullmatch(run_id) is None
+    ):
+        raise ValidationError("PCB board render revision binding is malformed")
+    if (
+        tool_result.get("render") != "render_board"
+        or tool_result.get("design_content_hash") != content_hash
+        or source_design_revision != design_revision
+        or result_revision != revision
+        or source_revision + 1 != revision
+    ):
+        raise ValidationError(
+            "PCB board render is stale for the current project revision"
+        )
+
+    # Re-open through the authoritative service after rendering.  Another
+    # tool may have advanced the project between handler return and image
+    # materialization; in that case the old pixels must not be sent as current.
+    latest = service.open_project(project_id)
+    latest_project = latest.get("project") if isinstance(latest, Mapping) else None
+    latest_state = latest.get("state") if isinstance(latest, Mapping) else None
+    latest_design = latest.get("design") if isinstance(latest, Mapping) else None
+    if (
+        not isinstance(latest_project, Mapping)
+        or latest_project.get("id") != project_id
+        or not isinstance(latest_state, Mapping)
+        or latest_state.get("revision") != revision
+        or latest_state.get("design_revision", latest_project.get("design_revision"))
+        != design_revision
+        or not isinstance(latest_design, Mapping)
+        or latest_design.get("content_hash") != content_hash
+    ):
+        raise ValidationError("PCB board render became stale before visual feedback")
+
+    expected_root = f"previews/{run_id}"
+    expected_receipt = f"{expected_root}/receipt.json"
+    expected_image = f"{expected_root}/board-top.png"
+    files = tool_result.get("files")
+    if (
+        tool_result.get("root") != expected_root
+        or tool_result.get("receipt") != expected_receipt
+        or not isinstance(files, Mapping)
+        or files.get("board_render") != expected_image
+    ):
+        raise ValidationError("PCB visual artifact does not match its preview bundle")
+
+    project_root = Path(service.project_root(project_id))
+    try:
+        if project_root.is_symlink() or not project_root.is_dir():
+            raise ValidationError("PCB project root is unsafe")
+        project_root = project_root.resolve(strict=True)
+        preview_candidate = project_root / "previews" / run_id
+        preview_info = preview_candidate.lstat()
+        if preview_candidate.is_symlink() or not stat.S_ISDIR(preview_info.st_mode):
+            raise ValidationError("PCB preview bundle path is unsafe")
+        preview_root = preview_candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise ValidationError("PCB preview bundle is unavailable") from exc
+    if preview_root.parent != project_root / "previews" or not preview_root.is_dir():
+        raise ValidationError("PCB preview bundle path is unsafe")
+
+    receipt_path = preview_root / "receipt.json"
+    image_path = preview_root / "board-top.png"
+    receipt = _load_preview_receipt(receipt_path)
+    inventory = receipt.get("files")
+    image_inventory = (
+        inventory.get("board_render") if isinstance(inventory, Mapping) else None
+    )
+    if (
+        receipt.get("schema") != "pcbdraft-preview-bundle"
+        or receipt.get("version") != 1
+        or receipt.get("renders") != ["render_board"]
+        or receipt.get("design_content_hash") != content_hash
+        or not isinstance(image_inventory, Mapping)
+        or image_inventory.get("path") != "board-top.png"
+    ):
+        raise ValidationError("PCB preview receipt is invalid or stale")
+
+    image_bytes = _read_preview_png(image_path)
+    expected_size = image_inventory.get("bytes")
+    expected_hash = image_inventory.get("sha256")
+    actual_hash = hashlib.sha256(image_bytes).hexdigest()
+    if (
+        isinstance(expected_size, bool)
+        or not isinstance(expected_size, int)
+        or expected_size != len(image_bytes)
+        or not isinstance(expected_hash, str)
+        or _CONTENT_HASH.fullmatch(expected_hash) is None
+        or expected_hash != actual_hash
+    ):
+        raise ValidationError("PCB board PNG does not match its preview receipt")
+    width, height = _validate_png(image_bytes)
+
+    model_summary = dict(summary)
+    model_summary.pop("binding", None)
+    model_summary.update(
+        {
+            "source_revision": source_revision,
+            "design_content_hash": content_hash,
+            "image_sha256": actual_hash,
+            "image_bytes": len(image_bytes),
+            "image_width": width,
+            "image_height": height,
+        }
+    )
+    summary_text = json.dumps(
+        model_summary,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    image_url = "data:image/png;base64," + base64.b64encode(image_bytes).decode("ascii")
+    return {
+        "_multimodal": True,
+        "content": [
+            {"type": "text", "text": summary_text},
+            {"type": "image_url", "image_url": {"url": image_url}},
+        ],
+        "text_summary": summary_text,
+        "meta": {
+            "project_id": project_id,
+            "revision": revision,
+            "design_revision": design_revision,
+            "design_content_hash": content_hash,
+            "image_sha256": actual_hash,
+        },
+    }
+
+
+def _load_preview_receipt(path: Path) -> Mapping[str, Any]:
+    try:
+        info = path.lstat()
+    except OSError as exc:
+        raise ValidationError("PCB preview receipt is missing") from exc
+    if path.is_symlink() or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise ValidationError("PCB preview receipt path is unsafe")
+    value = load_json_limited(path, _PREVIEW_RECEIPT_MAX_BYTES)
+    if not isinstance(value, Mapping):
+        raise ValidationError("PCB preview receipt is malformed")
+    return value
+
+
+def _read_preview_png(path: Path) -> bytes:
+    """Read exactly one fixed bundle member without following a final symlink."""
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ValidationError("PCB board PNG is missing or unsafe") from exc
+    try:
+        info = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_size <= 0
+            or info.st_size > _MODEL_BOARD_IMAGE_MAX_BYTES
+        ):
+            raise ValidationError("PCB board PNG size or file type is unsafe")
+        chunks: list[bytes] = []
+        remaining = info.st_size
+        while remaining:
+            chunk = os.read(descriptor, min(remaining, 1024 * 1024))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        image_bytes = b"".join(chunks)
+    finally:
+        os.close(descriptor)
+    if len(image_bytes) != info.st_size:
+        raise ValidationError("PCB board PNG changed while it was read")
+    return image_bytes
+
+
+def _validate_png(data: bytes) -> tuple[int, int]:
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(data)) as image:
+                if image.format != "PNG":
+                    raise ValidationError("PCB board render is not a valid PNG")
+                width, height = image.size
+                image.verify()
+    except ValidationError:
+        raise
+    except (
+        Image.DecompressionBombError,
+        Image.DecompressionBombWarning,
+        OSError,
+        SyntaxError,
+        ValueError,
+    ) as exc:
+        raise ValidationError("PCB board render is not a valid PNG") from exc
+    if width <= 0 or height <= 0:
+        raise ValidationError("PCB board render is not a valid PNG")
+    return width, height
 
 
 def _execute_tool(
@@ -793,11 +1054,13 @@ def _execute_tool(
     )
 
 
-def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], str]:
-    def handle(args: dict[str, Any], **kwargs: Any) -> str:
+def _handler(spec: ToolSpec) -> Callable[[dict[str, Any]], Any]:
+    def handle(args: dict[str, Any], **kwargs: Any) -> Any:
         session_id = str(kwargs.get("session_id") or "")
         try:
             summary = _execute_tool(spec, dict(args or {}), session_id=session_id)
+            if summary.get("_multimodal") is True:
+                return summary
             return json.dumps(summary, ensure_ascii=False)
         except PCBDraftError as exc:
             transaction_id = getattr(exc, "transaction_id", None)

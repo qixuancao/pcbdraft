@@ -44,6 +44,7 @@ SUPPORTED_OPERATIONS = {
     "assign_footprint",
     "set_board_outline",
     "place_footprint",
+    "move_footprint_reference",
     "unplace_footprint",
     "route_net",
     "unroute_net",
@@ -733,6 +734,7 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
     if op in {
         "set_board_outline",
         "place_footprint",
+        "move_footprint_reference",
         "unplace_footprint",
         "route_net",
         "unroute_net",
@@ -770,6 +772,33 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
                 {"x_mm": float(width), "y_mm": float(height)},
                 {"x_mm": 0.0, "y_mm": float(height)},
             ]
+            return
+
+        if op == "move_footprint_reference":
+            component_id = _required_id(args, "component_id")
+            component = _find(
+                _collection(document, "components"), component_id, kind="component"
+            )
+            _expect(component, expected, label=f"components.{component_id}")
+            if component is None:
+                raise ValidationError(f"component is absent: {component_id}")
+            coordinates: dict[str, float] = {}
+            for name in ("x_mm", "y_mm"):
+                value = args.get(name)
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (int, float))
+                    or not math.isfinite(float(value))
+                ):
+                    raise ValidationError(f"args.{name} must be finite")
+                coordinates[name] = float(value)
+            attributes = component.setdefault("attributes", {})
+            if not isinstance(attributes, dict):
+                raise ValidationError("component attributes are malformed")
+            attributes["footprint_reference"] = {
+                "visible": True,
+                **coordinates,
+            }
             return
 
         if op in {"place_footprint", "unplace_footprint"}:

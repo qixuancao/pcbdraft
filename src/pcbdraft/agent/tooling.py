@@ -1042,6 +1042,7 @@ _PLACEMENT_TOOL_NAMES = frozenset(
         "place_footprint",
         "place_group",
         "move_footprint",
+        "move_footprint_reference",
         "rotate_footprint",
         "unplace_footprint",
     }
@@ -1078,6 +1079,7 @@ _UNKNOWN_STAGE_CORRECTIVE_TOOL_NAMES = frozenset(
         "place_footprint",
         "place_group",
         "move_footprint",
+        "move_footprint_reference",
         "rotate_footprint",
         "unplace_footprint",
         "route_net",
@@ -1794,6 +1796,17 @@ PCB_TOOL_SPECS = (
             _ID("component_id", "Stable component identity"),
             _NUMBER("x_mm", "X coordinate in millimetres"),
             _NUMBER("y_mm", "Y coordinate in millimetres"),
+        ),
+    ),
+    _flat_spec(
+        "move_footprint_reference",
+        "Move one footprint reference label to an absolute board position",
+        effect="authoritative_write",
+        risk="high",
+        arguments=(
+            _ID("component_id", "Stable component identity"),
+            _NUMBER("x_mm", "Reference X coordinate in millimetres"),
+            _NUMBER("y_mm", "Reference Y coordinate in millimetres"),
         ),
     ),
     _flat_spec(
