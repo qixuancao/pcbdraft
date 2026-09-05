@@ -2,10 +2,14 @@
 
 当前状态：首轮 F01–F09 和整合时发现的 F10 已有修复及定向验证；
 原生化重构已按阶段提交，但还不能通过完整 CI 或作为发布完成证据。
-**F11（P1，未解决）：吸收后的全库 Ruff 检查失败，当前 11,498 项告警。**
+**F11（P1，未解决）：最近一次吸收后的全库 Ruff 检查有 11,498 项告警。**
 告警主要来自复用代码的宽泛异常处理、旧注解、未使用导入及 subprocess
 检查项，不能把告警数量直接解释为运行缺陷数量。未通过禁用规则或排除新包
 来隐藏这些问题；需要后续按模块修复，再通过 CI 的类型/覆盖率/原生验收。
+
+后续稳定化审查新增的 F12–F15 已完成整改和定向验证。F11 仍未清零；本轮
+只处理 deadline 模块的局部告警，没有重新运行或统计全库检查，也不扩大为
+全量发布验收。
 
 下文“已做的验证”第一节记录的是迁移前基线；各轮整改状态与检查结果
 分别列在后面。原有实现的保留证据见[来源说明](../NATIVE_RUNTIME.md)和
@@ -217,3 +221,72 @@ PCB 终端命令处理归入 `interfaces/tui/project_commands.py`，删除已无
 完整 KiCad/TUI/Browser E2E、依赖审计、Python 版本矩阵或 release-check。
 本次没有因耗时中止的检查；过程中出现的定向检查失败已修正并重跑，
 F11 的全库静态检查失败明确保留，不计为通过。历史 BoardBench 结果没有重跑。
+
+## 第八轮：原生会话恢复稳定化
+
+本轮继续审查原生 `ConversationOrchestrator` 与应用作业之间的故障恢复边界。
+F12–F14 均有本地复现、实现修复和独立主审。
+
+- **F12 已修复：完成 receipt 后不再恢复旧模型。** FAILED、INTERRUPTED、
+  CANCELLED 旧回合已有 durable COMPLETED receipt 时拒绝重试；恢复到旧
+  RUNNING 状态时，无 active、遗留 PROPOSED 或 receipt reconcile 后得到的
+  COMPLETED 调用也会关闭旧 aggregate，并要求创建新回合。精确匹配、已批准
+  且尚未 dispatch 的调用只执行一次，直接把真实本地 receipt 交付给用户后
+  结束回合，不再次启动旧模型。正常运行中的相同只读调用仍可重复执行，避免
+  把安全屏障误作全局去重。检查点：`bd2a75d`、`269f5ee`。
+- **F13 已修复：恢复作业绑定创建它的控制器。** 作业 policy v2 持久化稳定
+  `controller_id`，恢复、retry 和 dispatch 均严格比较 native 与 legacy
+  控制器；同控制器可恢复，跨控制器和没有该标识的旧 v1 作业可读取但失败
+  关闭并要求新回合。检查点：`5809882`。
+- **F14 已修复：factory 返回后同步重检取消和截止。** 本地 fake 曾复现取消
+  在 `agent_factory` 尚未返回时到达，factory 返回后仍调用模型，最终才标为
+  cancelled；0.10 秒截止后到 0.302 秒，调用仍阻塞在 factory 且回合保持
+  running。现在普通模型分支在 factory 返回后、读取 history 或调用模型之前
+  同步重检；取消转为 CANCELLED，超时转为 FAILED，均不进入 model/history/
+  tool，并关闭已创建的 Agent 和会话库。审批分支直接执行精确匹配的已批准
+  调用，不创建模型。检查点：`269f5ee`。
+
+会话、原生导入与本机模拟模型、作业控制器三组分别运行：
+
+```sh
+uv run --frozen --no-sync python -m unittest -q tests.agent.test_conversations
+uv run --frozen --no-sync python -m unittest -q tests.agent.test_runtime_import
+uv run --frozen --no-sync python -m unittest -q tests.services.test_job_controller_recovery tests.services.test_application.ApplicationConversationTests.test_recovery_never_widens_mcp_job_permission_mode tests.services.test_application.ApplicationConversationTests.test_startup_fails_closed_for_legacy_queued_mutations tests.services.test_application.ApplicationConversationTests.test_legacy_agent_job_with_a_turn_is_cancelled_before_dispatch tests.services.test_application.ApplicationConversationTests.test_recovery_requires_exact_registry_and_tool_call_bounds tests.services.test_application.ApplicationConversationTests.test_malformed_active_job_envelope_blocks_startup_dispatch
+```
+
+三组依次为 15 项通过（0.400 秒）、2 项通过（3.053 秒）、10 项通过
+（0.240 秒）。F12–F14 对应改动文件的 Ruff、格式与 diff 检查通过；会话
+两文件的 mypy 也通过。以上组数分别记录，不把重复覆盖累计成额外测试。
+
+F14 只修复 factory **返回后**的误调度。同步 factory 本身没有可强杀的墙钟
+截止；真实模型 HTTP 卡住时能否在所有传输上可靠退出，以及 `agent.close()`
+或 watcher 中断阻塞时的清理时限，仍需独立验证。常用 HTTP 路径已有中断
+标记、轮询和 socket shutdown，但这不等于全部提供商和清理路径已经获得
+有界执行保证；本轮没有使用无法回收的后台 factory 线程伪装强制取消。
+
+## 第九轮：deadline 超大数值边界
+
+F15 已修复：`clamp_timeout(10**1000)`、`clamp_timeout(-(10**1000))` 以及
+来自 YAML 的同类超大整数此前会在 `float()` 转换时抛出 `OverflowError`。
+现在正超大整数收敛到平台安全上限 `31536000.0`，负超大整数遵循既有非正数
+无界语义返回 `None`；NaN、无效配置、环境变量和默认值的回退顺序保持不变。
+检查点：`9fd4513`。
+
+`tests.agent.test_deadline` 的 6 项边界测试通过（0.015 秒），定向 mypy、格式
+和 diff 检查通过。该模块的 Ruff 告警由 13 项降至 6 项；剩余项全部位于本轮
+未修改的 `kill_process_tree`，因此没有把整个改动文件宣称为全规则通过。
+
+最终组合回归运行：
+
+```sh
+uv run --frozen --no-sync python -m unittest -v tests.agent.test_deadline tests.agent.test_conversations tests.services.test_job_controller_recovery tests.agent.test_runtime_import
+```
+
+共 28 项通过（3.677 秒）。这是对上述模块的组合重跑，不作为额外 28 项累加。
+
+F11 的下一小检查点可优先处理 `model_normalize.py` 最近一次结果中的 7 项：
+4 项 `BLE001`，以及各 1 项 `F401`、`F601`、`S110`。重复且同值的 Trinity
+映射键可直接清理；宽泛异常和静默回退涉及提供商模型 ID 的兼容逻辑，应先补
+输入输出行为测试，再逐分支收窄。`model_metadata.py` 的 `TC004` 对应刻意的
+`requests` 延迟导入，各运行路径先调用 `_ensure_requests`；不能机械改成顶层
+导入而破坏启动和导入性能约定。
