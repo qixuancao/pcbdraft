@@ -31,8 +31,10 @@ Inspired by Clawdbot's ``normalizeAnthropicModelId`` pattern.
 
 from __future__ import annotations
 
+import logging
 import re
-from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Vendor prefix mapping
@@ -62,7 +64,6 @@ _VENDOR_PREFIXES: dict[str, str] = {
     "nemotron": "nvidia",
     "llama": "meta-llama",
     "step": "stepfun",
-    "trinity": "arcee-ai",
 }
 
 # Providers whose APIs consume vendor/model slugs.
@@ -271,6 +272,11 @@ def _normalize_provider_alias(provider_name: str) -> str:
 
         return normalize_provider(raw)
     except Exception:
+        logger.debug(
+            "Provider alias normalization unavailable for %r",
+            raw,
+            exc_info=True,
+        )
         return raw
 
 
@@ -405,6 +411,11 @@ def _repair_prefix_from_catalogue(model_name: str, provider: str) -> str:
     try:
         from pcbdraft.model.catalog import _PROVIDER_MODELS
     except Exception:
+        logger.debug(
+            "Provider model catalogue unavailable for %r",
+            provider,
+            exc_info=True,
+        )
         return model_name
 
     catalogue = _PROVIDER_MODELS.get(provider) or []
@@ -433,10 +444,7 @@ def suggest_prefixed_model_id(provider: str, model_name: str) -> str | None:
     name = (model_name or "").strip()
     if not name or "/" in name:
         return None
-    try:
-        canonical = _normalize_provider_alias(provider)
-    except Exception:
-        return None
+    canonical = _normalize_provider_alias(provider)
     repaired = _repair_prefix_from_catalogue(name, canonical)
     return repaired if repaired != name else None
 
@@ -557,7 +565,10 @@ def normalize_model_for_provider(model_input: str, target_provider: str) -> str:
         except Exception:
             # Fall through to the generic strip-vendor behaviour below
             # if the Copilot-specific path is unavailable for any reason.
-            pass
+            logger.debug(
+                "Copilot model normalization unavailable; using generic fallback",
+                exc_info=True,
+            )
 
     # --- Copilot / Copilot ACP / openai-codex fallback:
     #     strip matching provider prefix, keep dots ---
