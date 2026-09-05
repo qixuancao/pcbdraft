@@ -4720,7 +4720,20 @@ class AIAgent:
         except Exception:
             pass
 
-        # 6c. Close the Codex app-server session. The runtime already drops
+        # 6c. Close the shared Anthropic client created during agent startup.
+        # Request-local Anthropic clients have their own owner-thread lifecycle
+        # above; this primary client is owned by the agent itself. Clear the
+        # reference before closing so a failing SDK close cannot leave a stale,
+        # reusable client behind and a repeated close remains idempotent.
+        try:
+            anthropic_client = getattr(self, "_anthropic_client", None)
+            if anthropic_client is not None:
+                self._anthropic_client = None
+                anthropic_client.close()
+        except Exception:
+            logger.debug("Shared Anthropic client close failed", exc_info=True)
+
+        # 6d. Close the Codex app-server session. The runtime already drops
         # it on turn crash / retirement (agent/codex_runtime.py), but hard
         # teardown had no owner — a /new, /reset, or session expiry left the
         # app-server child process running until interpreter exit. Clear the
