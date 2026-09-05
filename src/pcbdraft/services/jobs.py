@@ -28,7 +28,10 @@ JOB_SCHEMA = "pcbdraft-application-job"
 LEGACY_JOB_VERSION = 1
 JOB_VERSION = 2
 AGENT_JOB_POLICY_SCHEMA = "pcbdraft-agent-job-policy"
-AGENT_JOB_POLICY_VERSION = 1
+LEGACY_AGENT_JOB_POLICY_VERSION = 1
+AGENT_JOB_POLICY_VERSION = 2
+LEGACY_CONTROLLER_ID = "pcbdraft.legacy-orchestrator.v1"
+NATIVE_CONTROLLER_ID = "pcbdraft.native-conversation.v1"
 MAX_PROJECT_JOBS = 2_000
 _ACTIONS = {
     "agent_message",
@@ -62,6 +65,7 @@ class JobRunner:
             raise ValidationError("application job workers must be between 1 and 4")
         self.service = service
         self.agent = orchestrator or AgentOrchestrator(service)
+        self.controller_identity = self._resolve_controller_identity(self.agent)
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="pcbdraft-job"
         )
@@ -424,28 +428,78 @@ class JobRunner:
         return {
             "schema": AGENT_JOB_POLICY_SCHEMA,
             "version": AGENT_JOB_POLICY_VERSION,
+            "controller_id": self.controller_identity,
             "permission_mode": self.agent.permissions.mode,
             "max_tool_calls": MAX_TOOL_CALLS_PER_TURN,
             "registry_sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
         }
 
     @staticmethod
+    def _validate_controller_identity(value: Any) -> None:
+        if (
+            not isinstance(value, str)
+            or not value
+            or len(value) > 128
+            or not value[0].isalpha()
+            or any(
+                character not in "abcdefghijklmnopqrstuvwxyz0123456789._-"
+                for character in value
+            )
+        ):
+            raise ValidationError("agent job controller identity is malformed")
+
+    @classmethod
+    def _resolve_controller_identity(cls, agent: Any) -> str:
+        """Return the stable recovery contract for one orchestration engine."""
+
+        explicit = getattr(agent, "job_controller_identity", None)
+        if explicit is not None:
+            cls._validate_controller_identity(explicit)
+            return explicit
+
+        # ConversationOrchestrator inherits AgentOrchestrator, so the native
+        # case must be checked first.  These explicit product contracts also
+        # cover subclasses without depending on class names or repr strings.
+        from pcbdraft.agent.conversations import ConversationOrchestrator
+
+        if isinstance(agent, ConversationOrchestrator):
+            return NATIVE_CONTROLLER_ID
+        if isinstance(agent, AgentOrchestrator):
+            return LEGACY_CONTROLLER_ID
+        raise ValidationError(
+            "application job controller must declare a stable controller identity"
+        )
+
+    @staticmethod
     def _validate_agent_policy(value: Any) -> None:
-        fields = {
+        base_fields = {
             "schema",
             "version",
             "permission_mode",
             "max_tool_calls",
             "registry_sha256",
         }
-        if not isinstance(value, dict) or set(value) != fields:
+        if not isinstance(value, dict):
             raise ValidationError("agent job policy binding is malformed")
+        version = value.get("version")
         if (
-            value["schema"] != AGENT_JOB_POLICY_SCHEMA
-            or isinstance(value["version"], bool)
-            or value["version"] != AGENT_JOB_POLICY_VERSION
+            isinstance(version, bool)
+            or not isinstance(version, int)
+            or version
+            not in {LEGACY_AGENT_JOB_POLICY_VERSION, AGENT_JOB_POLICY_VERSION}
         ):
             raise ValidationError("unsupported agent job policy binding")
+        fields = (
+            base_fields
+            if version == LEGACY_AGENT_JOB_POLICY_VERSION
+            else base_fields | {"controller_id"}
+        )
+        if set(value) != fields:
+            raise ValidationError("agent job policy binding is malformed")
+        if value["schema"] != AGENT_JOB_POLICY_SCHEMA:
+            raise ValidationError("unsupported agent job policy binding")
+        if version == AGENT_JOB_POLICY_VERSION:
+            JobRunner._validate_controller_identity(value["controller_id"])
         if value["permission_mode"] not in {"workspace", "review", "read_only"}:
             raise ValidationError("agent job permission binding is malformed")
         if (
@@ -478,7 +532,17 @@ class JobRunner:
         self._validate_agent_policy(persisted)
         if not isinstance(persisted, dict):
             raise ValidationError("agent job policy binding is malformed")
+        if persisted["version"] == LEGACY_AGENT_JOB_POLICY_VERSION:
+            raise ValidationError(
+                "agent job predates controller identity binding; its native or "
+                "legacy controller cannot be determined; submit a new turn"
+            )
         current = self._agent_policy_snapshot()
+        if persisted["controller_id"] != current["controller_id"]:
+            raise ValidationError(
+                f"agent job controller {persisted['controller_id']!r} differs from "
+                f"the current {current['controller_id']!r}; submit a new turn"
+            )
         if persisted["permission_mode"] != current["permission_mode"]:
             raise ValidationError(
                 "agent job permission mode differs from its admitting runtime; "
