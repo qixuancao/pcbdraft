@@ -11,6 +11,7 @@ import os
 import sys
 import threading
 from collections import OrderedDict
+from collections.abc import Collection
 from pathlib import Path
 from typing import List, Optional
 
@@ -161,6 +162,27 @@ PCBDRAFT_RUNTIME_AGENT_HELP_GUIDANCE = (
     "PCBDraft command help and project documentation when available. Base claims "
     "about capabilities on the tools exposed in the current conversation."
 )
+
+PCBDRAFT_VISUAL_WORKFLOW_GUIDANCE = (
+    "For visual, layout, or silkscreen work on a PCB project, call "
+    "pcb_render_board before making a visual judgment, use the structured PCB "
+    "engineering tools for any change, then call pcb_render_board again after "
+    "the edit and judge only the image from the latest revision. A board image "
+    "is bound to the project and revision reported in its text result; after "
+    "another pcb_* result, session restore, or a pixels-omitted marker, rerender "
+    "instead of claiming to see the old image. Do not render automatically for "
+    "purely textual or electrical questions that do not require visual evidence."
+)
+
+
+def pcb_visual_workflow_guidance(
+    valid_tool_names: Collection[str] | None,
+) -> str:
+    """Return board-vision guidance only when the render tool is available."""
+
+    has_board_render = bool(valid_tool_names and "pcb_render_board" in valid_tool_names)
+    return PCBDRAFT_VISUAL_WORKFLOW_GUIDANCE if has_board_render else ""
+
 
 MEMORY_GUIDANCE = (
     "You have persistent memory across sessions. Save durable facts using the memory "

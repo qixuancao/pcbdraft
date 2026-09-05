@@ -863,6 +863,8 @@ def _board_render_feedback(
             "image_bytes": len(image_bytes),
             "image_width": width,
             "image_height": height,
+            "image_scope": "live_tool_result_only",
+            "rerender_after_resume": True,
         }
     )
     summary_text = json.dumps(

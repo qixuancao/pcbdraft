@@ -1891,7 +1891,10 @@ PCB_TOOL_SPECS = (
             ("run_erc", "Run only KiCad electrical-rules checking"),
             ("run_drc", "Run only KiCad board design-rules checking"),
             ("render_schematic", "Render only schematic preview outputs"),
-            ("render_board", "Render only 2D board preview outputs"),
+            (
+                "render_board",
+                "Render a true PNG of the current board design with project/revision binding",
+            ),
             ("render_3d", "Render only the 3D board preview"),
             ("export_gerbers", "Export only Gerber fabrication layers"),
             ("export_drill", "Export only drill fabrication files"),

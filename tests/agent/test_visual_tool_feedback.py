@@ -193,6 +193,8 @@ class PCBVisualToolFeedbackTests(unittest.TestCase):
             self.assertEqual(summary["design_revision"], 7)
             self.assertEqual(summary["source_revision"], 11)
             self.assertEqual(summary["design_content_hash"], service.content_hash)
+            self.assertEqual(summary["image_scope"], "live_tool_result_only")
+            self.assertTrue(summary["rerender_after_resume"])
 
             image_url = result["content"][1]["image_url"]["url"]
             self.assertTrue(image_url.startswith("data:image/png;base64,"))
@@ -330,6 +332,148 @@ class PCBVisualProviderCapabilityTests(unittest.TestCase):
 
         self.assertFalse(changed)
         self.assertEqual(messages, before)
+
+
+class PCBVisualWorkflowTests(unittest.TestCase):
+    def test_workflow_guidance_is_conditional_on_board_render_tool(self) -> None:
+        from pcbdraft.agent.prompt_builder import pcb_visual_workflow_guidance
+
+        guidance = pcb_visual_workflow_guidance({"pcb_render_board"})
+
+        self.assertIn("visual, layout, or silkscreen", guidance)
+        self.assertIn("latest revision", guidance)
+        self.assertIn("purely textual or electrical", guidance)
+        self.assertEqual(pcb_visual_workflow_guidance({"pcb_run_drc"}), "")
+
+    def test_workflow_guidance_sees_render_behind_progressive_discovery(
+        self,
+    ) -> None:
+        from pcbdraft.agent.system_prompt import (
+            _pcb_visual_workflow_guidance_for_agent,
+        )
+
+        class _Agent:
+            valid_tool_names = {"tool_search", "tool_describe", "tool_call"}
+            enabled_toolsets = ["pcbdraft"]
+            disabled_toolsets = ["browser"]
+            quiet_mode = True
+
+        class _Runtime:
+            call_kwargs: dict[str, Any] | None = None
+            tool_name = "pcb_render_board"
+
+            def get_tool_definitions(self, **kwargs: Any) -> list[dict[str, Any]]:
+                self.call_kwargs = kwargs
+                return [
+                    {
+                        "type": "function",
+                        "function": {"name": self.tool_name},
+                    }
+                ]
+
+        runtime = _Runtime()
+        with patch("pcbdraft.agent.system_prompt._ra", return_value=runtime):
+            guidance = _pcb_visual_workflow_guidance_for_agent(_Agent())
+
+        self.assertIn("pcb_render_board", guidance)
+        self.assertEqual(
+            runtime.call_kwargs,
+            {
+                "enabled_toolsets": ["pcbdraft"],
+                "disabled_toolsets": ["browser"],
+                "quiet_mode": True,
+                "skip_tool_search_assembly": True,
+            },
+        )
+        runtime.tool_name = "read_file"
+        with patch("pcbdraft.agent.system_prompt._ra", return_value=runtime):
+            self.assertEqual(_pcb_visual_workflow_guidance_for_agent(_Agent()), "")
+
+    def test_retiring_board_render_keeps_summary_and_non_pcb_images(self) -> None:
+        from pcbdraft.agent.tool_dispatch_helpers import (
+            _retire_pcb_render_board_images,
+        )
+
+        messages = [
+            make_tool_result_message(
+                "pcb_render_board",
+                [
+                    {"type": "text", "text": '{"revision":12}'},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,AAAA"},
+                    },
+                ],
+                "call-render",
+            ),
+            make_tool_result_message(
+                "computer_use",
+                [
+                    {"type": "text", "text": "desktop observation"},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": "data:image/png;base64,BBBB"},
+                    },
+                ],
+                "call-computer",
+            ),
+        ]
+
+        retired = _retire_pcb_render_board_images(messages)
+
+        self.assertEqual(retired, 1)
+        board_content = messages[0]["content"]
+        self.assertEqual(board_content[0]["text"], '{"revision":12}')
+        self.assertIn("pixels omitted", board_content[1]["text"])
+        self.assertIn("pcb_render_board", board_content[1]["text"])
+        self.assertEqual(messages[1]["content"][1]["type"], "image_url")
+
+    def test_each_later_pcb_result_retires_previous_board_pixels(self) -> None:
+        from pcbdraft.agent.tool_executor import _append_tool_result_message
+
+        messages: list[dict[str, Any]] = []
+        first_render = make_tool_result_message(
+            "pcb_render_board",
+            PCBVisualProviderCapabilityTests._result()["content"],
+            "r1",
+        )
+        second_render = make_tool_result_message(
+            "pcb_render_board",
+            PCBVisualProviderCapabilityTests._result()["content"],
+            "r2",
+        )
+
+        _append_tool_result_message(messages, first_render)
+        _append_tool_result_message(messages, second_render)
+        self.assertEqual(
+            sum(
+                part.get("type") == "image_url"
+                for message in messages
+                for part in message["content"]
+                if isinstance(part, dict)
+            ),
+            1,
+        )
+
+        _append_tool_result_message(
+            messages,
+            make_tool_result_message("pcb_run_drc", '{"success":true}', "drc"),
+        )
+        self.assertFalse(
+            any(
+                part.get("type") == "image_url"
+                for message in messages
+                if isinstance(message.get("content"), list)
+                for part in message["content"]
+                if isinstance(part, dict)
+            )
+        )
+
+    def test_render_board_contract_describes_live_revision_bound_pixels(self) -> None:
+        spec = DEFAULT_PCB_TOOL_REGISTRY.resolve("render_board")
+
+        self.assertIn("PNG", spec.description)
+        self.assertIn("project/revision", spec.description)
 
 
 if __name__ == "__main__":

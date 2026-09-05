@@ -38,6 +38,7 @@ from pcbdraft.agent.tool_dispatch_helpers import (
     _is_multimodal_tool_result,
     _multimodal_text_summary,
     _plan_tool_batch_segments,
+    _retire_pcb_render_board_images,
     make_tool_result_message,
 )
 from pcbdraft.tools.budget_config import (
@@ -53,6 +54,15 @@ from pcbdraft.tools.tool_result_storage import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _append_tool_result_message(messages: list, tool_message: dict) -> None:
+    """Append a result, retiring any earlier board pixels for later PCB work."""
+
+    name = tool_message.get("name", tool_message.get("tool_name"))
+    if isinstance(name, str) and name.startswith("pcb_"):
+        _retire_pcb_render_board_images(messages)
+    messages.append(tool_message)
 
 
 def _ensure_file_checkpoint(
@@ -1088,13 +1098,14 @@ def execute_tool_calls_concurrent(
                 f"[Tool execution cancelled — {tc.function.name} was skipped "
                 "due to user interrupt]"
             )
-            messages.append(
+            _append_tool_result_message(
+                messages,
                 make_tool_result_message(
                     tc.function.name,
                     cancelled_result,
                     tc.id,
                     effect_disposition="none",
-                )
+                ),
             )
             _emit_terminal_post_tool_call(
                 agent,
@@ -1872,7 +1883,7 @@ def execute_tool_calls_concurrent(
             tc.id,
             effect_disposition=effect_disposition,
         )
-        messages.append(tool_message)
+        _append_tool_result_message(messages, tool_message)
         risk_metadata = tool_message.get("_tool_output_risk")
         if not _flush_session_db_after_tool_progress(
             agent,
@@ -1985,13 +1996,14 @@ def _append_cancelled_tool_results(messages: list, tool_calls, *, reason: str) -
     """
     for tc in tool_calls:
         name = getattr(getattr(tc, "function", None), "name", "") or "tool"
-        messages.append(
+        _append_tool_result_message(
+            messages,
             make_tool_result_message(
                 name,
                 f"[Tool execution cancelled — {name} was skipped due to {reason}]",
                 getattr(tc, "id", "") or "",
                 effect_disposition="none",
-            )
+            ),
         )
 
 
@@ -2037,13 +2049,14 @@ def execute_tool_calls_sequential(
                     f"[Tool execution cancelled — {skipped_name} was skipped "
                     "due to user interrupt]"
                 )
-                messages.append(
+                _append_tool_result_message(
+                    messages,
                     make_tool_result_message(
                         skipped_name,
                         cancelled_result,
                         skipped_tc.id,
                         effect_disposition="none",
-                    )
+                    ),
                 )
                 _emit_terminal_post_tool_call(
                     agent,
@@ -2081,12 +2094,13 @@ def execute_tool_calls_sequential(
                 error_type="invalid_tool_arguments",
                 error_message="Tool arguments must be a valid JSON object",
             )
-            messages.append(
+            _append_tool_result_message(
+                messages,
                 make_tool_result_message(
                     function_name,
                     malformed_args_result,
                     tool_call.id,
-                )
+                ),
             )
             if not _flush_session_db_after_tool_progress(
                 agent,
@@ -2995,7 +3009,7 @@ def execute_tool_calls_sequential(
             tool_call.id,
             effect_disposition="unknown" if _execution_timed_out else None,
         )
-        messages.append(tool_message)
+        _append_tool_result_message(messages, tool_message)
         risk_metadata = tool_message.get("_tool_output_risk")
         if not _flush_session_db_after_tool_progress(
             agent,
@@ -3082,13 +3096,14 @@ def execute_tool_calls_sequential(
             )
             for skipped_tc in assistant_message.tool_calls[i:]:
                 skipped_name = skipped_tc.function.name
-                messages.append(
+                _append_tool_result_message(
+                    messages,
                     make_tool_result_message(
                         skipped_name,
                         f"[Tool execution skipped — {skipped_name} was not started. User sent a new message]",
                         skipped_tc.id,
                         effect_disposition="none",
-                    )
+                    ),
                 )
                 if not _flush_session_db_after_tool_progress(
                     agent,

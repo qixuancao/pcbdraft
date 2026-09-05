@@ -540,6 +540,57 @@ def _trajectory_normalize_msg(msg: dict[str, Any]) -> dict[str, Any]:
     return msg
 
 
+_PCB_RENDER_PIXELS_RETIRED_NOTICE = (
+    "[pcb_render_board pixels omitted from active history after a later PCB "
+    "tool result; call pcb_render_board again before making a current visual "
+    "claim]"
+)
+
+
+def _retire_pcb_render_board_images(messages: list) -> int:
+    """Remove superseded board pixels while retaining their bound text receipt.
+
+    A fresh ``pcb_render_board`` result remains available for the immediately
+    following model request. Before any later ``pcb_*`` result is appended, the
+    executor calls this helper so stale board pixels cannot be mistaken for the
+    current revision and live request history stays bounded to one board image.
+    Images emitted by other tools are deliberately untouched.
+    """
+
+    retired = 0
+    for message in messages:
+        if (
+            not isinstance(message, dict)
+            or message.get("role") != "tool"
+            or message.get("name", message.get("tool_name")) != "pcb_render_board"
+            or not isinstance(message.get("content"), list)
+        ):
+            continue
+
+        content = message["content"]
+        kept = [
+            part
+            for part in content
+            if not (
+                isinstance(part, dict)
+                and part.get("type") in {"image", "image_url", "input_image"}
+            )
+        ]
+        removed = len(content) - len(kept)
+        if removed <= 0:
+            continue
+        if not any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and part.get("text") == _PCB_RENDER_PIXELS_RETIRED_NOTICE
+            for part in kept
+        ):
+            kept.append({"type": "text", "text": _PCB_RENDER_PIXELS_RETIRED_NOTICE})
+        message["content"] = kept
+        retired += removed
+    return retired
+
+
 def make_tool_result_message(
     name: str,
     content: Any,
@@ -742,5 +793,6 @@ __all__ = [
     "_extract_landed_file_mutation_paths",
     "_extract_error_preview",
     "_trajectory_normalize_msg",
+    "_retire_pcb_render_board_images",
     "make_tool_result_message",
 ]

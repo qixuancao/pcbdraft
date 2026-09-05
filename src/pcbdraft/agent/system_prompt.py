@@ -49,6 +49,7 @@ from pcbdraft.agent.prompt_builder import (
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
     drain_truncation_warnings,
+    pcb_visual_workflow_guidance,
 )
 from pcbdraft.agent.runtime_cwd import resolve_context_cwd
 from pcbdraft.core.runtime_environment import get_default_runtime_root, get_runtime_home
@@ -338,6 +339,35 @@ def _profile_name_for_home(home: Path) -> str:
         return "default"
 
 
+def _pcb_visual_workflow_guidance_for_agent(agent: Any) -> str:
+    """Resolve board-vision guidance across direct and deferred tool surfaces."""
+
+    visible_names = set(getattr(agent, "valid_tool_names", None) or set())
+    if "pcb_render_board" in visible_names:
+        return pcb_visual_workflow_guidance(visible_names)
+    if not {"tool_search", "tool_call"}.issubset(visible_names):
+        return ""
+
+    try:
+        scoped_defs = _ra().get_tool_definitions(
+            enabled_toolsets=getattr(agent, "enabled_toolsets", None),
+            disabled_toolsets=getattr(agent, "disabled_toolsets", None),
+            quiet_mode=True,
+            skip_tool_search_assembly=True,
+        )
+    except Exception as exc:
+        logger.debug("Could not resolve deferred tools for visual guidance: %s", exc)
+        return ""
+
+    scoped_names = {
+        function.get("name")
+        for definition in scoped_defs or []
+        if isinstance(definition, dict)
+        and isinstance((function := definition.get("function")), dict)
+    }
+    return pcb_visual_workflow_guidance(scoped_names)
+
+
 def build_system_prompt_parts(
     agent: Any, system_message: str | None = None
 ) -> dict[str, str]:
@@ -396,6 +426,10 @@ def build_system_prompt_parts(
 
     # Pointer to the hermes-agent skill + docs for user questions about Hermes itself.
     stable_parts.append(PCBDRAFT_RUNTIME_AGENT_HELP_GUIDANCE)
+
+    visual_workflow_guidance = _pcb_visual_workflow_guidance_for_agent(agent)
+    if visual_workflow_guidance:
+        stable_parts.append(visual_workflow_guidance)
 
     # Universal task-completion / no-fabrication guidance.  Applied to ALL
     # models regardless of tool_use_enforcement gating — the failure modes
