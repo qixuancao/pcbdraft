@@ -19,6 +19,7 @@ from pcbdraft.agent.tool_bindings import (
 )
 from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY
 from pcbdraft.agent.turns import ToolRunStatus, TurnStatus
+from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.services.gui_session import GuiSessionManager
 from tests.agent.test_tool_bindings import FakePCBService
 
@@ -215,6 +216,101 @@ class NativeConversationTests(unittest.TestCase):
         self.assertEqual(
             [call[2] for call in self.service.calls if call[0] == "execute"],
             ["unroute_net"],
+        )
+
+    def test_terminal_turn_with_completed_tool_cannot_replay_on_retry(self) -> None:
+        def exercise(terminal_status: TurnStatus) -> None:
+            with tempfile.TemporaryDirectory() as tmp:
+                service = ConversationService(Path(tmp))
+                agents: list[ScriptedAgent] = []
+
+                def write_then_stop(agent: ScriptedAgent, _prompt: str) -> None:
+                    handler = _handler(DEFAULT_PCB_TOOL_REGISTRY.resolve("unroute_net"))
+                    receipt = json.loads(
+                        handler({"net_id": "GND"}, session_id=agent.session_id)
+                    )
+                    self.assertTrue(receipt["success"], receipt)
+                    current = orchestrator.latest_turn("board-a")
+                    assert current is not None
+                    store = orchestrator.store("board-a")
+                    if terminal_status is TurnStatus.INTERRUPTED:
+                        store.interrupt_active(
+                            current.turn_id,
+                            "the process stopped after the tool receipt was committed",
+                        )
+                    elif terminal_status is TurnStatus.CANCELLED:
+                        store.cancel(
+                            current.turn_id, "cancelled after the durable receipt"
+                        )
+                    else:
+                        store.update(
+                            current.turn_id,
+                            TurnStatus.FAILED,
+                            error="failed after the durable receipt",
+                            stop_reason="failed after the durable receipt",
+                        )
+
+                def factory(*, session_id: str, session_db: Any) -> ScriptedAgent:
+                    del session_db
+                    agent = ScriptedAgent(session_id, write_then_stop)
+                    agents.append(agent)
+                    return agent
+
+                orchestrator = ConversationOrchestrator(service, agent_factory=factory)
+                turn = orchestrator.start_turn(
+                    "board-a", "完成一次写操作后模拟进程中断"
+                )
+                orchestrator.run_turn(
+                    "board-a",
+                    turn.turn_id,
+                    timeout=10,
+                    cancellation_requested=lambda: False,
+                )
+                stopped = orchestrator.store("board-a").load(turn.turn_id)
+                self.assertEqual(stopped.status, terminal_status)
+                self.assertEqual(stopped.tool_runs[0].status, ToolRunStatus.COMPLETED)
+                self.assertIsNotNone(stopped.tool_runs[0].result)
+
+                with self.assertRaisesRegex(PCBDraftError, "completed PCB tool"):
+                    orchestrator.run_turn(
+                        "board-a",
+                        stopped.turn_id,
+                        timeout=10,
+                        cancellation_requested=lambda: False,
+                    )
+                self.assertEqual(
+                    [call[2] for call in service.calls if call[0] == "execute"],
+                    ["unroute_net"],
+                )
+                retained = orchestrator.store("board-a").load(stopped.turn_id)
+                self.assertEqual(retained.status, terminal_status)
+                self.assertEqual(len(retained.tool_runs), 1)
+                self.assertEqual(len(agents), 1)
+
+        for terminal_status in (
+            TurnStatus.FAILED,
+            TurnStatus.INTERRUPTED,
+            TurnStatus.CANCELLED,
+        ):
+            with self.subTest(status=terminal_status.value):
+                exercise(terminal_status)
+
+    def test_running_turn_may_repeat_the_same_read_call(self) -> None:
+        def inspect_twice(agent: ScriptedAgent, prompt: str) -> None:
+            first = self.inspect(agent, prompt)
+            second = self.inspect(agent, prompt)
+            self.assertEqual(first["project_id"], "board-a")
+            self.assertEqual(second["project_id"], "board-a")
+
+        turn = self.run_turn(self.orchestrator(inspect_twice))
+        self.assertEqual(turn.status, TurnStatus.COMPLETED)
+        self.assertEqual(
+            [run.tool_name for run in turn.tool_runs],
+            ["pcb_inspect_project", "pcb_inspect_project"],
+        )
+        self.assertEqual(
+            [call[2] for call in self.service.calls if call[0] == "execute"],
+            ["inspect_project", "inspect_project"],
         )
 
     def test_cancellation_interrupts_a_running_model_and_closes_the_turn(self) -> None:

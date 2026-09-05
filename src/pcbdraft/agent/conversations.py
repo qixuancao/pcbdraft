@@ -120,11 +120,19 @@ class ConversationOrchestrator(AgentOrchestrator):
             raise PCBDraftError(
                 "an interrupted tool may have taken effect; inspect the project and submit a new turn"
             )
-        if record.status in {
+        retryable_statuses = {
             TurnStatus.FAILED,
             TurnStatus.INTERRUPTED,
             TurnStatus.CANCELLED,
-        }:
+        }
+        if record.status in retryable_statuses and any(
+            tool.status is ToolRunStatus.COMPLETED for tool in record.tool_runs
+        ):
+            raise PCBDraftError(
+                "this prior conversation has a completed PCB tool; "
+                "inspect the project and submit a new turn"
+            )
+        if record.status in retryable_statuses:
             record = store.resume(turn_id)
         elif record.status is TurnStatus.QUEUED:
             record = store.update(turn_id, TurnStatus.RUNNING)
