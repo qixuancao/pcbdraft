@@ -5226,98 +5226,20 @@ def _stepfun_base_url_for_region(region: str) -> str:
 
 
 def _run_anthropic_oauth_flow(save_env_value):
-    """Run the Claude OAuth setup-token flow. Returns True if credentials were saved."""
+    """Run PCBDraft's own Anthropic OAuth flow and persist its credentials."""
+    del save_env_value
     from pcbdraft.model.anthropic_adapter import (
-        is_claude_code_token_valid,
-        read_claude_code_credentials,
-        run_oauth_setup_token,
-    )
-    from pcbdraft.model.configuration import (
-        save_anthropic_oauth_token,
-        use_anthropic_claude_code_credentials,
+        run_hermes_oauth_login_pure,
+        save_hermes_oauth_credentials,
     )
 
-    def _activate_claude_code_credentials_if_available() -> bool:
-        try:
-            creds = read_claude_code_credentials()
-        except Exception:
-            creds = None
-        if creds and (
-            is_claude_code_token_valid(creds) or bool(creds.get("refreshToken"))
-        ):
-            use_anthropic_claude_code_credentials(save_fn=save_env_value)
-            print("  ✓ Claude Code credentials linked.")
-            from pcbdraft.core.runtime_environment import (
-                display_runtime_home as _dhh_fn,
-            )
-
-            print(
-                f"    Hermes will use Claude's credential store directly instead of copying a setup-token into {_dhh_fn()}/.env."
-            )
-            return True
+    credentials = run_hermes_oauth_login_pure()
+    if not credentials:
+        print("  Anthropic OAuth login cancelled or did not return credentials.")
         return False
-
-    try:
-        print()
-        print("  Running 'claude setup-token' — follow the prompts below.")
-        print("  A browser window will open for you to authorize access.")
-        print()
-        token = run_oauth_setup_token()
-        if token:
-            if _activate_claude_code_credentials_if_available():
-                return True
-            save_anthropic_oauth_token(token, save_fn=save_env_value)
-            print("  ✓ OAuth credentials saved.")
-            return True
-
-        # Subprocess completed but no token auto-detected — ask user to paste
-        print()
-        print("  If the setup-token was displayed above, paste it here:")
-        print()
-        from pcbdraft.interfaces.tui.secret_prompt import masked_secret_prompt
-
-        try:
-            manual_token = masked_secret_prompt(
-                "  Paste setup-token (or Enter to cancel): "
-            ).strip()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return False
-        if manual_token:
-            save_anthropic_oauth_token(manual_token, save_fn=save_env_value)
-            print("  ✓ Setup-token saved.")
-            return True
-
-        print("  ⚠ Could not detect saved credentials.")
-        return False
-
-    except FileNotFoundError:
-        # Claude CLI not installed — guide user through manual setup
-        print()
-        print("  The 'claude' CLI is required for OAuth login.")
-        print()
-        print("  To install and authenticate:")
-        print()
-        print("    1. Install Claude Code:  npm install -g @anthropic-ai/claude-code")
-        print("    2. Run:                  claude setup-token")
-        print("    3. Follow the browser prompts to authorize")
-        print("    4. Re-run:               hermes model")
-        print()
-        print("  Or paste an existing setup-token now (sk-ant-oat-...):")
-        print()
-        from pcbdraft.interfaces.tui.secret_prompt import masked_secret_prompt
-
-        try:
-            token = masked_secret_prompt("  Setup-token (or Enter to cancel): ").strip()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return False
-        if token:
-            save_anthropic_oauth_token(token, save_fn=save_env_value)
-            print("  ✓ Setup-token saved.")
-            return True
-        print("  Cancelled — install Claude Code and try again.")
-        return False
+    save_hermes_oauth_credentials(credentials)
+    print("  ✓ PCBDraft OAuth credentials saved.")
+    return True
 
 
 def cmd_login(args):

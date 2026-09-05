@@ -310,7 +310,7 @@ def owns_terminal_receipt() -> bool:
     return scope is None or scope.owns_terminal_receipt
 
 
-def _service() -> Any:
+def _service(*, recover_interrupted: bool = True) -> Any:
     """Return one authoritative ApplicationService for this process."""
 
     scope = _tool_session.get()
@@ -320,7 +320,7 @@ def _service() -> Any:
     if _service_cache is None:
         from pcbdraft.services.application import ApplicationService
 
-        _service_cache = ApplicationService()
+        _service_cache = ApplicationService(recover_interrupted=recover_interrupted)
     return _service_cache
 
 
@@ -341,10 +341,10 @@ def refresh_service_provider() -> None:
     _service_cache.provider = resolve_provider("auto")
 
 
-def get_service() -> Any:
+def get_service(*, recover_interrupted: bool = True) -> Any:
     """Return the authoritative ApplicationService for this process."""
 
-    return _service()
+    return _service(recover_interrupted=recover_interrupted)
 
 
 def get_current_project_id() -> str | None:

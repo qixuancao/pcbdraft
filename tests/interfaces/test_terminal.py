@@ -334,6 +334,80 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertEqual(get_current_project_id(), project_id)
         launch.assert_called_once_with([], permission_mode="workspace")
 
+    def test_read_only_project_start_does_not_recover_transient_state(self) -> None:
+        from pcbdraft.core.io import atomic_write_json
+        from pcbdraft.interfaces.cli import main
+
+        repository = self.root / "read-only-repository"
+        provider = SimpleNamespace(provider_id="test")
+        service = ApplicationService(
+            repository,
+            provider=provider,
+            recover_interrupted=False,
+        )
+        view = service.create_draft("只读启动")
+        project_id = str(view["project"]["id"])
+        project = service._open(project_id)
+        project.state["status"] = "generating"
+        atomic_write_json(project.root / "project.json", project.state)
+        before_project = (project.root / "project.json").read_bytes()
+        before_conversation = (project.root / "conversation.json").read_bytes()
+        before_events = sorted((project.root / "events").iterdir())
+
+        _set_service(None)
+        try:
+            with (
+                patch.dict(os.environ, {"PCBDRAFT_HOME": str(repository)}, clear=False),
+                patch(
+                    "pcbdraft.services.application.resolve_provider",
+                    return_value=provider,
+                ),
+                patch("pcbdraft.interfaces.cli.launch_cli", return_value=0) as launch,
+            ):
+                result = main(
+                    [
+                        "--workspace",
+                        str(repository),
+                        "--approval-mode",
+                        "read_only",
+                        "--project",
+                        project_id,
+                    ]
+                )
+        finally:
+            _set_service(self.service)
+
+        self.assertEqual(result, 0)
+        launch.assert_called_once_with([], permission_mode="read_only")
+        self.assertEqual((project.root / "project.json").read_bytes(), before_project)
+        self.assertEqual(
+            (project.root / "conversation.json").read_bytes(), before_conversation
+        )
+        self.assertEqual(sorted((project.root / "events").iterdir()), before_events)
+
+    def test_normal_service_start_still_recovers_transient_state(self) -> None:
+        from pcbdraft.core.io import atomic_write_json, load_json_limited
+
+        repository = self.root / "recovering-repository"
+        provider = SimpleNamespace(provider_id="test")
+        service = ApplicationService(
+            repository,
+            provider=provider,
+            recover_interrupted=False,
+        )
+        view = service.create_draft("正常恢复")
+        project_id = str(view["project"]["id"])
+        project = service._open(project_id)
+        project.state["status"] = "generating"
+        atomic_write_json(project.root / "project.json", project.state)
+
+        ApplicationService(repository, provider=provider)
+
+        recovered = load_json_limited(project.root / "project.json", 1024 * 1024)
+        self.assertEqual(recovered["status"], "interrupted")
+        self.assertEqual(recovered["revision"], 1)
+        self.assertEqual(recovered["event_sequence"], 1)
+
     def test_repl_connect_defers_wizard_until_after_terminal_exit(self) -> None:
         import pcbdraft.interfaces.tui.app as hermes_cli_module
 

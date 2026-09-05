@@ -2616,10 +2616,106 @@ class FlatPCBServiceTests(unittest.TestCase):
                 "convergence_history_invalid",
             )
 
-    def test_empty_project_publish_failure_removes_partial_identity(self) -> None:
+    def test_empty_project_final_publish_failure_removes_only_private_stage(
+        self,
+    ) -> None:
+        from pcbdraft.services import application as application_module
+
         with tempfile.TemporaryDirectory() as temp:
             provider = cast(IntentProvider, SimpleNamespace(provider_id="test"))
             service = ApplicationService(Path(temp), provider=provider)
+            published_before_replace: list[str] = []
+            takeover_targets: list[Path] = []
+            materialized = False
+            real_replace = application_module.os.replace
+
+            def materialize(
+                request: object,
+                design: Design,
+                output: Path,
+                **kwargs: object,
+            ) -> SimpleNamespace:
+                nonlocal materialized
+                del request, kwargs
+                materialized = True
+                output.mkdir(parents=True)
+                atomic_write_json(output / "mock-design.json", design.to_dict())
+                return SimpleNamespace(project=_managed(output))
+
+            def fail_final_replace(source: object, destination: object) -> None:
+                destination_path = Path(destination)
+                if destination_path.parent == service.projects_root:
+                    self.assertTrue(materialized)
+                    published_before_replace.extend(
+                        str(item["id"]) for item in service.list_projects()
+                    )
+                    destination_path.mkdir()
+                    (destination_path / "other-owner.txt").write_text(
+                        "preserve concurrent owner",
+                        encoding="utf-8",
+                    )
+                    takeover_targets.append(destination_path)
+                    raise PCBDraftError("injected final publication failure")
+                real_replace(source, destination)
+
+            with (
+                patch(
+                    "pcbdraft.services.application.materialize_managed_design",
+                    side_effect=materialize,
+                ),
+                patch.object(
+                    application_module.os,
+                    "replace",
+                    side_effect=fail_final_replace,
+                ),
+                self.assertRaisesRegex(
+                    PCBDraftError, "injected final publication failure"
+                ),
+            ):
+                service.create_empty_project("Empty")
+
+            self.assertEqual(published_before_replace, [])
+            self.assertEqual(len(takeover_targets), 1)
+            self.assertEqual(
+                (takeover_targets[0] / "other-owner.txt").read_text(encoding="utf-8"),
+                "preserve concurrent owner",
+            )
+            self.assertFalse(
+                any(
+                    child.name.startswith(".")
+                    for child in service.projects_root.iterdir()
+                )
+            )
+
+    def test_empty_project_materialize_failure_never_publishes_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            provider = cast(IntentProvider, SimpleNamespace(provider_id="test"))
+            service = ApplicationService(Path(temp), provider=provider)
+            published_during_materialize: list[str] = []
+
+            def fail_materialize(*_args: object, **_kwargs: object) -> None:
+                published_during_materialize.extend(
+                    str(item["id"]) for item in service.list_projects()
+                )
+                raise PCBDraftError("injected materialize failure")
+
+            with (
+                patch(
+                    "pcbdraft.services.application.materialize_managed_design",
+                    side_effect=fail_materialize,
+                ),
+                self.assertRaisesRegex(PCBDraftError, "injected materialize failure"),
+            ):
+                service.create_empty_project("Private until ready")
+
+            self.assertEqual(published_during_materialize, [])
+            self.assertEqual(list(service.projects_root.iterdir()), [])
+
+    def test_empty_project_publishes_once_after_private_materialization(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            provider = cast(IntentProvider, SimpleNamespace(provider_id="test"))
+            service = ApplicationService(Path(temp), provider=provider)
+            visible_during_materialize: list[str] = []
 
             def materialize(
                 request: object,
@@ -2628,6 +2724,9 @@ class FlatPCBServiceTests(unittest.TestCase):
                 **kwargs: object,
             ) -> SimpleNamespace:
                 del request, kwargs
+                visible_during_materialize.extend(
+                    str(item["id"]) for item in service.list_projects()
+                )
                 output.mkdir(parents=True)
                 atomic_write_json(output / "mock-design.json", design.to_dict())
                 return SimpleNamespace(project=_managed(output))
@@ -2637,18 +2736,20 @@ class FlatPCBServiceTests(unittest.TestCase):
                     "pcbdraft.services.application.materialize_managed_design",
                     side_effect=materialize,
                 ),
-                patch.object(
-                    service,
-                    "_write_records",
-                    side_effect=PCBDraftError("injected record publication failure"),
-                ),
-                self.assertRaisesRegex(
-                    PCBDraftError, "injected record publication failure"
+                patch(
+                    "pcbdraft.services.application.open_managed_project",
+                    side_effect=lambda path: _managed(Path(path)),
                 ),
             ):
-                service.create_empty_project("Empty")
+                view = service.create_empty_project("Published once")
 
-            self.assertEqual(list(service.projects_root.iterdir()), [])
+            self.assertEqual(visible_during_materialize, [])
+            self.assertEqual(view["state"]["status"], "generated")
+            self.assertEqual(view["state"]["revision"], 1)
+            children = list(service.projects_root.iterdir())
+            self.assertEqual(
+                [child.name for child in children], [view["project"]["id"]]
+            )
 
     def test_add_and_update_tools_do_not_act_as_upserts(self) -> None:
         value = _v2_design().to_dict()

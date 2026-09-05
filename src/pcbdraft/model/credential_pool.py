@@ -95,7 +95,7 @@ _TERMINAL_AUTH_REASONS = frozenset(
 # without losing recoverability — the user always has the option to re-add
 # via ``hermes auth add``.
 #
-# Singleton-seeded entries (``device_code``, ``claude_code``)
+# Singleton-seeded owned entries (for example, ``device_code``)
 # are NOT pruned because ``_seed_from_singletons`` would just re-create them
 # on the next ``load_pool()`` with the same stale singleton tokens, defeating
 # the cleanup.  They remain in the pool marked DEAD until an explicit re-auth
@@ -890,61 +890,6 @@ class CredentialPool:
             self._persist()
         return updated
 
-    def _sync_anthropic_entry_from_credentials_file(
-        self, entry: PooledCredential
-    ) -> PooledCredential:
-        """Sync a claude_code pool entry from ~/.claude/.credentials.json if tokens differ.
-
-        OAuth refresh tokens are single-use. When something external (e.g.
-        Claude Code CLI, or another profile's pool) refreshes the token, it
-        writes the new pair to ~/.claude/.credentials.json. The pool entry's
-        refresh token becomes stale. This method detects that and syncs.
-        """
-        if self.provider != "anthropic" or entry.source != "claude_code":
-            return entry
-        try:
-            from pcbdraft.model.anthropic_adapter import read_claude_code_credentials
-
-            creds = read_claude_code_credentials()
-            if not creds:
-                return entry
-            file_refresh = creds.get("refreshToken", "")
-            file_access = creds.get("accessToken", "")
-            file_expires = creds.get("expiresAt", 0)
-            # Sync when either token changed.  Access tokens can be re-issued
-            # without a new refresh token (silent re-issue path), so checking
-            # only refresh_token misses that case and leaves a stale
-            # access_token in the pool → 401 on every request until the pool
-            # entry's exhausted TTL expires.
-            entry_access = entry.access_token or ""
-            entry_refresh = entry.refresh_token or ""
-            if (file_access or file_refresh) and (
-                (file_access and file_access != entry_access)
-                or (file_refresh and file_refresh != entry_refresh)
-            ):
-                logger.debug(
-                    "Pool entry %s: syncing tokens from credentials file (tokens changed)",
-                    entry.id,
-                )
-                updated = replace(
-                    entry,
-                    access_token=file_access or entry.access_token,
-                    refresh_token=file_refresh or entry.refresh_token,
-                    expires_at_ms=file_expires or entry.expires_at_ms,
-                    last_status=None,
-                    last_status_at=None,
-                    last_error_code=None,
-                    last_error_reason=None,
-                    last_error_message=None,
-                    last_error_reset_at=None,
-                )
-                self._replace_entry(entry, updated)
-                self._persist()
-                return updated
-        except Exception as exc:
-            logger.debug("Failed to sync from credentials file: %s", exc)
-        return entry
-
     def _sync_codex_entry_from_auth_store(
         self, entry: PooledCredential
     ) -> PooledCredential:
@@ -1443,25 +1388,6 @@ class CredentialPool:
                     refresh_token=refreshed["refresh_token"],
                     expires_at_ms=refreshed["expires_at_ms"],
                 )
-                # Keep ~/.claude/.credentials.json in sync so that the
-                # fallback path (resolve_anthropic_token) and other profiles
-                # see the latest tokens.
-                if entry.source == "claude_code":
-                    try:
-                        from pcbdraft.model.anthropic_adapter import (
-                            _write_claude_code_credentials,
-                        )
-
-                        _write_claude_code_credentials(
-                            refreshed["access_token"],
-                            refreshed["refresh_token"],
-                            refreshed["expires_at_ms"],
-                        )
-                    except Exception as wexc:
-                        logger.debug(
-                            "Failed to write refreshed token to credentials file: %s",
-                            wexc,
-                        )
             elif self.provider == "openai-codex":
                 # Adopt fresher tokens from auth.json before spending the
                 # refresh_token — single-use tokens consumed by another Hermes
@@ -1513,59 +1439,6 @@ class CredentialPool:
             logger.debug(
                 "Credential refresh failed for %s/%s: %s", self.provider, entry.id, exc
             )
-            # For anthropic claude_code entries: the refresh token may have been
-            # consumed by another process. Check if ~/.claude/.credentials.json
-            # has a newer token pair and retry once.
-            if self.provider == "anthropic" and entry.source == "claude_code":
-                synced = self._sync_anthropic_entry_from_credentials_file(entry)
-                if synced.refresh_token != entry.refresh_token:
-                    logger.debug(
-                        "Retrying refresh with synced token from credentials file"
-                    )
-                    try:
-                        from pcbdraft.model.anthropic_adapter import (
-                            refresh_anthropic_oauth_pure,
-                        )
-
-                        refreshed = refresh_anthropic_oauth_pure(
-                            synced.refresh_token,
-                            use_json=synced.source.endswith("hermes_pkce"),
-                        )
-                        updated = replace(
-                            synced,
-                            access_token=refreshed["access_token"],
-                            refresh_token=refreshed["refresh_token"],
-                            expires_at_ms=refreshed["expires_at_ms"],
-                            last_status=STATUS_OK,
-                            last_status_at=None,
-                            last_error_code=None,
-                        )
-                        self._replace_entry(synced, updated)
-                        self._persist()
-                        try:
-                            from pcbdraft.model.anthropic_adapter import (
-                                _write_claude_code_credentials,
-                            )
-
-                            _write_claude_code_credentials(
-                                refreshed["access_token"],
-                                refreshed["refresh_token"],
-                                refreshed["expires_at_ms"],
-                            )
-                        except Exception as wexc:
-                            logger.debug(
-                                "Failed to write refreshed token to credentials file (retry path): %s",
-                                wexc,
-                            )
-                        return updated
-                    except Exception as retry_exc:
-                        logger.debug("Retry refresh also failed: %s", retry_exc)
-                elif not self._entry_needs_refresh(synced):
-                    # Credentials file had a valid (non-expired) token — use it directly
-                    logger.debug(
-                        "Credentials file has valid token, using without refresh"
-                    )
-                    return synced
             # For xai-oauth: same race as nous — another process may have
             # consumed the refresh token between our proactive sync and the
             # HTTP call.  Re-check auth.json and adopt the fresh tokens if
@@ -1976,18 +1849,6 @@ class CredentialPool:
             # can remain unhydrated; never lease or select it as an empty key.
             if entry.auth_type == AUTH_TYPE_API_KEY and not entry.runtime_api_key:
                 continue
-            # For anthropic claude_code entries, sync from the credentials file
-            # before any status/refresh checks. This picks up tokens refreshed
-            # by other processes (Claude Code CLI, other Hermes profiles).
-            if (
-                self.provider == "anthropic"
-                and entry.source == "claude_code"
-                and entry.last_status in {STATUS_EXHAUSTED, STATUS_DEAD}
-            ):
-                synced = self._sync_anthropic_entry_from_credentials_file(entry)
-                if synced is not entry:
-                    entry = synced
-                    cleared_any = True
             # For nous entries, sync from auth.json before status checks.
             # Another process may have successfully refreshed via
             # resolve_nous_runtime_credentials(), making this entry's
@@ -2681,10 +2542,8 @@ def _seed_from_singletons(
             return False
 
     if provider == "anthropic":
-        # Only auto-discover external credentials (Claude Code, Hermes PKCE)
-        # when the user has explicitly configured anthropic as their provider.
-        # Without this gate, auxiliary client fallback chains silently read
-        # ~/.claude/.credentials.json without user consent.  See PR #4210.
+        # Only seed credentials owned by PCBDraft's runtime. External Claude
+        # Code credentials are deliberately neither read nor copied.
         try:
             from pcbdraft.model.auth import is_provider_explicitly_configured
 
@@ -2736,15 +2595,9 @@ def _seed_from_singletons(
                 changed = True
             return changed, active_sources
 
-        from pcbdraft.model.anthropic_adapter import (
-            read_claude_code_credentials,
-            read_hermes_oauth_credentials,
-        )
+        from pcbdraft.model.anthropic_adapter import read_hermes_oauth_credentials
 
-        for source_name, creds in (
-            ("hermes_pkce", read_hermes_oauth_credentials()),
-            ("claude_code", read_claude_code_credentials()),
-        ):
+        for source_name, creds in (("hermes_pkce", read_hermes_oauth_credentials()),):
             if creds and creds.get("accessToken"):
                 if _is_suppressed(provider, source_name):
                     continue
@@ -3004,9 +2857,8 @@ def _seed_from_singletons(
         # Hermes owns its own Codex auth state — we do NOT auto-import from
         # ~/.codex/auth.json at pool-load time.  OAuth refresh tokens are
         # single-use, so sharing them with Codex CLI / VS Code causes
-        # refresh_token_reused race failures.  Users who want to adopt
-        # existing Codex CLI credentials get a one-time, explicit prompt
-        # via `hermes auth openai-codex`.
+        # refresh_token_reused race failures. Cross-CLI adoption is
+        # deliberately unsupported; users authenticate PCBDraft independently.
         if isinstance(tokens, dict) and tokens.get("access_token"):
             active_sources.add("device_code")
             custom_label = str(state.get("label") or "").strip()

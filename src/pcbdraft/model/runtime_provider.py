@@ -1646,7 +1646,7 @@ def _resolve_explicit_runtime(
             if not api_key:
                 raise AuthError(
                     "No Anthropic credentials found. Set ANTHROPIC_TOKEN or ANTHROPIC_API_KEY, "
-                    "run 'claude setup-token', or authenticate with 'claude /login'."
+                    "or run 'pcbdraft connect' to authenticate in PCBDraft."
                 )
         return {
             "provider": "anthropic",
@@ -2257,7 +2257,7 @@ def resolve_runtime_provider(
             if not token:
                 raise AuthError(
                     "No Anthropic credentials found. Set ANTHROPIC_TOKEN or ANTHROPIC_API_KEY, "
-                    "run 'claude setup-token', or authenticate with 'claude /login'."
+                    "or run 'pcbdraft connect' to authenticate in PCBDraft."
                 )
         return {
             "provider": "anthropic",

@@ -7,19 +7,14 @@ adapter — all provider-specific logic is isolated here.
 Auth supports:
   - Regular API keys (sk-ant-api*) → x-api-key header
   - OAuth setup-tokens (sk-ant-oat*) → Bearer auth + beta header
-  - Claude Code credentials (~/.claude.json or ~/.claude/.credentials.json) → Bearer auth
+  - PCBDraft-owned OAuth credentials → Bearer auth
 """
 
 import copy
 import json
 import logging
-import os
-import platform
-import secrets
-import stat
-import subprocess
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urlparse
 
 from pcbdraft.agent.secret_scope import get_secret as _get_secret
@@ -51,8 +46,7 @@ def _getenv(name: str, default: str = "") -> str:
 
 # NOTE: `import anthropic` is deliberately NOT at module top — the SDK pulls
 # ~220 ms of imports (anthropic.types, anthropic.lib.tools._beta_runner, etc.)
-# and the 3 usage sites (build_anthropic_client, build_anthropic_bedrock_client,
-# read_claude_code_credentials_from_keychain) are all on cold user-triggered
+# and its client-construction usage sites are all on cold user-triggered
 # paths. Access via the `_get_anthropic_sdk()` accessor below, which caches
 # the module after the first call and returns None on ImportError.
 _anthropic_sdk: Any = ...  # sentinel — None means "tried and missing"
@@ -1034,135 +1028,26 @@ def build_anthropic_bedrock_client(region: str):
 
 
 def _read_claude_code_credentials_from_keychain() -> dict[str, Any] | None:
-    """Read Claude Code OAuth credentials from the macOS Keychain.
-
-    Claude Code >=2.1.114 stores credentials in the macOS Keychain under the
-    service name "Claude Code-credentials" rather than (or in addition to)
-    the JSON file at ~/.claude/.credentials.json.
-
-    The password field contains a JSON string with the same claudeAiOauth
-    structure as the JSON file.
-
-    Returns dict with {accessToken, refreshToken?, expiresAt?} or None.
-    """
-    if platform.system() != "Darwin":
-        return None
-
-    try:
-        # Read the "Claude Code-credentials" generic password entry
-        result = subprocess.run(
-            [
-                "security",
-                "find-generic-password",
-                "-s",
-                "Claude Code-credentials",
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=5,
-            stdin=subprocess.DEVNULL,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        logger.debug("Keychain: security command not available or timed out")
-        return None
-
-    if result.returncode != 0:
-        logger.debug("Keychain: no entry found for 'Claude Code-credentials'")
-        return None
-
-    raw = result.stdout.strip()
-    if not raw:
-        return None
-
-    try:
-        data = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.debug("Keychain: credentials payload is not valid JSON")
-        return None
-
-    oauth_data = data.get("claudeAiOauth")
-    if oauth_data and isinstance(oauth_data, dict):
-        access_token = oauth_data.get("accessToken", "")
-        if access_token:
-            return {
-                "accessToken": access_token,
-                "refreshToken": oauth_data.get("refreshToken", ""),
-                "expiresAt": oauth_data.get("expiresAt", 0),
-                "source": "macos_keychain",
-            }
+    """Compatibility symbol; PCBDraft never reads Claude Code's Keychain."""
 
     return None
 
 
 def _read_claude_code_credentials_from_file() -> dict[str, Any] | None:
-    """Read Claude Code OAuth credentials from ~/.claude/.credentials.json.
+    """Compatibility symbol; PCBDraft never reads Claude Code's files."""
 
-    Returns dict with {accessToken, refreshToken?, expiresAt?, source} or None.
-    """
-    cred_path = Path.home() / ".claude" / ".credentials.json"
-    if not cred_path.exists():
-        return None
-    try:
-        data = json.loads(cred_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError, IOError) as e:
-        logger.debug("Failed to read ~/.claude/.credentials.json: %s", e)
-        return None
-
-    oauth_data = data.get("claudeAiOauth")
-    if not (oauth_data and isinstance(oauth_data, dict)):
-        return None
-    access_token = oauth_data.get("accessToken", "")
-    if not access_token:
-        return None
-    return {
-        "accessToken": access_token,
-        "refreshToken": oauth_data.get("refreshToken", ""),
-        "expiresAt": oauth_data.get("expiresAt", 0),
-        "source": "claude_code_credentials_file",
-    }
+    return None
 
 
 def read_claude_code_credentials() -> dict[str, Any] | None:
-    """Read refreshable Claude Code OAuth credentials.
+    """Return no external Claude Code credentials.
 
-    Reads from two possible sources and reconciles them:
-      1. macOS Keychain (Darwin only) — "Claude Code-credentials" entry
-      2. ~/.claude/.credentials.json file
-
-    Selection rules when both are present:
-      - If exactly one is non-expired, prefer that one. (Handles the case
-        where Claude Code refreshes one source but not the other — observed
-        in the wild on Claude Code 2.1.x.)
-      - Otherwise, prefer the source with the later ``expiresAt`` so that
-        any subsequent refresh uses the most recent ``refreshToken``.
-
-    This intentionally excludes ~/.claude.json primaryApiKey. Opencode's
-    subscription flow is OAuth/setup-token based with refreshable credentials,
-    and native direct Anthropic provider usage should follow that path rather
-    than auto-detecting Claude's first-party managed key.
-
-    Returns dict with {accessToken, refreshToken?, expiresAt?, source} or None.
+    PCBDraft direct providers keep their authentication lifecycle separate
+    from Claude Code. This compatibility symbol remains for vendored callers,
+    but it never probes the Keychain or ``~/.claude``.
     """
-    kc_creds = _read_claude_code_credentials_from_keychain()
-    file_creds = _read_claude_code_credentials_from_file()
 
-    if kc_creds and file_creds:
-        kc_valid = is_claude_code_token_valid(kc_creds)
-        file_valid = is_claude_code_token_valid(file_creds)
-        if kc_valid and not file_valid:
-            return kc_creds
-        if file_valid and not kc_valid:
-            return file_creds
-        # Both valid or both expired: prefer the later expiresAt so the
-        # downstream refresh path uses the freshest refresh_token.
-        kc_exp = kc_creds.get("expiresAt", 0) or 0
-        file_exp = file_creds.get("expiresAt", 0) or 0
-        return kc_creds if kc_exp >= file_exp else file_creds
-
-    return kc_creds or file_creds
+    return None
 
 
 def is_claude_code_token_valid(creds: dict[str, Any]) -> bool:
@@ -1251,58 +1136,13 @@ def refresh_anthropic_oauth_pure(
 
 
 def _refresh_oauth_token(creds: dict[str, Any]) -> str | None:
-    """Attempt to refresh an expired Claude Code OAuth token.
+    """Refuse to refresh credentials owned by Claude Code."""
 
-    Claude Code's OAuth refresh tokens are single-use: a successful refresh
-    rotates the pair and invalidates the old refresh token. Claude Code itself
-    also refreshes on its own schedule (IDE/CLI activity), so by the time
-    Hermes notices an expired token, Claude Code may have already rotated it.
-    POSTing our now-stale refresh token in that window races Claude Code and
-    fails with ``invalid_grant``.
-
-    So before refreshing, re-read the live credential sources. If Claude Code
-    has already produced a valid token, adopt it and skip the POST entirely.
-    Only fall back to refreshing ourselves when no fresh credential is found.
-    """
-    # Claude Code may have already refreshed — adopt its token rather than
-    # racing it with our (possibly already-rotated) refresh token. Only adopt
-    # when the live re-read produced a DIFFERENT token with a real future
-    # expiry: re-adopting the same credential we were just handed would be a
-    # no-op, and a 0/absent ``expiresAt`` means "managed key / unknown expiry"
-    # (see is_claude_code_token_valid) which must NOT be treated as a fresh
-    # refresh here.
-    current = read_claude_code_credentials()
-    if current:
-        current_token = current.get("accessToken", "")
-        current_exp = current.get("expiresAt", 0) or 0
-        if (
-            current_token
-            and current_token != creds.get("accessToken", "")
-            and current_exp > 0
-            and is_claude_code_token_valid(current)
-        ):
-            logger.debug("Adopted Claude Code's already-refreshed OAuth token")
-            return current_token
-
-    refresh_token = (current or {}).get("refreshToken", "") or creds.get(
-        "refreshToken", ""
+    del creds
+    logger.debug(
+        "External Claude Code credential refresh is disabled; reconnect in PCBDraft"
     )
-    if not refresh_token:
-        logger.debug("No refresh token available — cannot refresh")
-        return None
-
-    try:
-        refreshed = refresh_anthropic_oauth_pure(refresh_token, use_json=False)
-        _write_claude_code_credentials(
-            refreshed["access_token"],
-            refreshed["refresh_token"],
-            refreshed["expires_at_ms"],
-        )
-        logger.debug("Successfully refreshed Claude Code OAuth token")
-        return refreshed["access_token"]
-    except Exception as e:
-        logger.debug("Failed to refresh Claude Code token: %s", e)
-        return None
+    return None
 
 
 def _write_claude_code_credentials(
@@ -1312,65 +1152,9 @@ def _write_claude_code_credentials(
     *,
     scopes: list | None = None,
 ) -> None:
-    """Write refreshed credentials back to ~/.claude/.credentials.json.
+    """Compatibility symbol; PCBDraft never writes Claude Code's files."""
 
-    The optional *scopes* list (e.g. ``["user:inference", "user:profile", ...]``)
-    is persisted so that Claude Code's own auth check recognises the credential
-    as valid.  Claude Code >=2.1.81 gates on the presence of ``"user:inference"``
-    in the stored scopes before it will use the token.
-    """
-    cred_path = Path.home() / ".claude" / ".credentials.json"
-    try:
-        # Read existing file to preserve other fields
-        existing = {}
-        if cred_path.exists():
-            existing = json.loads(cred_path.read_text(encoding="utf-8"))
-
-        oauth_data: dict[str, Any] = {
-            "accessToken": access_token,
-            "refreshToken": refresh_token,
-            "expiresAt": expires_at_ms,
-        }
-        if scopes is not None:
-            oauth_data["scopes"] = scopes
-        elif "claudeAiOauth" in existing and "scopes" in existing["claudeAiOauth"]:
-            # Preserve previously-stored scopes when the refresh response
-            # does not include a scope field.
-            oauth_data["scopes"] = existing["claudeAiOauth"]["scopes"]
-
-        existing["claudeAiOauth"] = oauth_data
-
-        cred_path.parent.mkdir(parents=True, exist_ok=True)
-        # Per-process random suffix avoids collisions between concurrent
-        # writers and stale leftovers from a prior crashed write.
-        _tmp_cred = cred_path.with_suffix(f".tmp.{os.getpid()}.{secrets.token_hex(4)}")
-        try:
-            # Create the temp file atomically at 0o600. The previous
-            # write_text + post-replace chmod opened a TOCTOU window where
-            # both the temp file and the destination briefly inherited the
-            # process umask (commonly 0o644 = world-readable), exposing
-            # Claude Code OAuth tokens to other local users between create
-            # and chmod. Mirrors agent/google_oauth.py (#19673) and
-            # tools/mcp_oauth.py (#21148). Parent dir (~/.claude/) is
-            # owned by Claude Code itself, so we leave its mode alone.
-            fd = os.open(
-                str(_tmp_cred),
-                os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-                stat.S_IRUSR | stat.S_IWUSR,
-            )
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(existing, fh, indent=2)
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(_tmp_cred, cred_path)
-        except OSError:
-            try:
-                _tmp_cred.unlink(missing_ok=True)
-            except OSError:
-                pass
-            raise
-    except (OSError, IOError) as e:
-        logger.debug("Failed to write refreshed credentials: %s", e)
+    del access_token, refresh_token, expires_at_ms, scopes
 
 
 def _resolve_claude_code_token_from_credentials(
@@ -1457,42 +1241,24 @@ def _resolve_anthropic_pool_token() -> str | None:
 
 
 def resolve_anthropic_token() -> str | None:
-    """Resolve an Anthropic token from all available sources.
+    """Resolve an Anthropic token from explicit or PCBDraft-owned sources.
 
     Priority:
       1. ANTHROPIC_TOKEN env var (OAuth/setup token saved by Hermes)
       2. CLAUDE_CODE_OAUTH_TOKEN env var
       3. ANTHROPIC_API_KEY env var (explicit regular API key)
-      4. Claude Code credentials (~/.claude.json or ~/.claude/.credentials.json)
-         — with automatic refresh if expired and a refresh token is available
-      5. Anthropic credential_pool OAuth entry (~/.hermes/auth.json)
+      4. Anthropic credential_pool OAuth entry in the PCBDraft runtime
 
     Returns the token string or None.
     """
-    creds: dict[str, Any] | None = None
-    creds_loaded = False
-
-    def _read_creds() -> dict[str, Any] | None:
-        nonlocal creds, creds_loaded
-        if not creds_loaded:
-            creds = read_claude_code_credentials()
-            creds_loaded = True
-        return creds
-
-    # 1. Hermes-managed OAuth/setup token env var
+    # 1. PCBDraft-managed OAuth/setup token env var
     token = _getenv("ANTHROPIC_TOKEN").strip()
     if token:
-        preferred = _prefer_refreshable_claude_code_token(token, _read_creds())
-        if preferred:
-            return preferred
         return token
 
     # 2. CLAUDE_CODE_OAUTH_TOKEN (used by Claude Code for setup-tokens)
     cc_token = _getenv("CLAUDE_CODE_OAUTH_TOKEN").strip()
     if cc_token:
-        preferred = _prefer_refreshable_claude_code_token(cc_token, _read_creds())
-        if preferred:
-            return preferred
         return cc_token
 
     # 3. Regular API key. An explicit user-configured key must not be shadowed
@@ -1501,12 +1267,7 @@ def resolve_anthropic_token() -> str | None:
     if api_key:
         return api_key
 
-    # 4. Claude Code credential file
-    resolved_claude_token = _resolve_claude_code_token_from_credentials(_read_creds())
-    if resolved_claude_token:
-        return resolved_claude_token
-
-    # 5. Hermes credential_pool OAuth entry.
+    # 4. PCBDraft-owned credential_pool OAuth entry.
     resolved_pool_token = _resolve_anthropic_pool_token()
     if resolved_pool_token:
         return resolved_pool_token
@@ -1515,45 +1276,9 @@ def resolve_anthropic_token() -> str | None:
 
 
 def run_oauth_setup_token() -> str | None:
-    """Run 'claude setup-token' interactively and return the resulting token.
+    """Compatibility symbol; PCBDraft never launches Claude Code for login."""
 
-    Checks multiple sources after the subprocess completes:
-      1. Claude Code credential files (may be written by the subprocess)
-      2. CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_TOKEN env vars
-
-    Returns the token string, or None if no credentials were obtained.
-    Raises FileNotFoundError if the 'claude' CLI is not installed.
-    """
-    import shutil
-    import subprocess
-
-    claude_path = shutil.which("claude")
-    if not claude_path:
-        raise FileNotFoundError(
-            "The 'claude' CLI is not installed. "
-            "Install it with: npm install -g @anthropic-ai/claude-code"
-        )
-
-    # Run interactively — stdin/stdout/stderr inherited so the user can
-    # complete the OAuth login prompt. Must keep inherited stdin; the TUI-EOF
-    # concern does not apply to an interactive login the user explicitly
-    # invokes.  noqa: subprocess-stdin
-    try:
-        subprocess.run([claude_path, "setup-token"])
-    except (KeyboardInterrupt, EOFError):
-        return None
-
-    # Check if credentials were saved to Claude Code's config files
-    creds = read_claude_code_credentials()
-    if creds and is_claude_code_token_valid(creds):
-        return creds["accessToken"]
-
-    # Check env vars that may have been set
-    for env_var in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_TOKEN"):
-        val = _getenv(env_var).strip()
-        if val:
-            return val
-
+    logger.debug("External Claude Code setup-token flow is disabled")
     return None
 
 
@@ -1749,6 +1474,26 @@ def read_hermes_oauth_credentials() -> dict[str, Any] | None:
         except (json.JSONDecodeError, OSError, IOError) as e:
             logger.debug("Failed to read Hermes OAuth credentials: %s", e)
     return None
+
+
+def save_hermes_oauth_credentials(credentials: dict[str, Any]) -> None:
+    """Persist a PCBDraft-owned Anthropic OAuth token pair atomically."""
+
+    access_token = str(credentials.get("access_token") or "").strip()
+    if not access_token:
+        raise ValueError("Anthropic OAuth credentials are missing an access token")
+    from pcbdraft.core.runtime_utils import atomic_json_write
+
+    atomic_json_write(
+        _get_hermes_oauth_file(),
+        {
+            "accessToken": access_token,
+            "refreshToken": str(credentials.get("refresh_token") or ""),
+            "expiresAt": credentials.get("expires_at_ms"),
+        },
+        indent=2,
+        mode=0o600,
+    )
 
 
 # ---------------------------------------------------------------------------

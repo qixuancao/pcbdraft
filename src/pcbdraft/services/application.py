@@ -1075,7 +1075,11 @@ class ApplicationService:
     def list_projects(self) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         for candidate in sorted(self.projects_root.iterdir()):
-            if candidate.is_symlink() or not candidate.is_dir():
+            if (
+                candidate.name.startswith(".")
+                or candidate.is_symlink()
+                or not candidate.is_dir()
+            ):
                 continue
             try:
                 project = self._open_path(candidate)
@@ -1088,8 +1092,8 @@ class ApplicationService:
         draft = self.create_draft(name)
         return self.send_message(draft["project"]["id"], request)
 
-    def create_draft(self, name: str) -> dict[str, Any]:
-        """Create only the local conversation record; no engineering files exist yet."""
+    def _prepare_private_draft(self, name: str) -> tuple[str, Path, ApplicationProject]:
+        """Build draft records in a private directory that no project ID exposes."""
 
         clean_name = _sanitize_secret_text(_safe_text(name, "project name", limit=512))
         project_id = f"{_slug(clean_name)}-{secrets.token_hex(4)}"
@@ -1142,22 +1146,39 @@ class ApplicationService:
                 make_directory(temporary / name_value)
             atomic_write_json(temporary / "project.json", state)
             atomic_write_json(temporary / "conversation.json", conversation)
-            with ResourceLock(target, self.locks_root):
-                if target.exists() or target.is_symlink():
-                    raise ValidationError("application project identity collision")
-                os.replace(temporary, target)
         except BaseException:
             if temporary.exists():
                 shutil.rmtree(temporary, ignore_errors=True)
+            raise
+        return (
+            project_id,
+            target,
+            ApplicationProject(
+                root=temporary,
+                state=state,
+                conversation=conversation,
+            ),
+        )
+
+    def create_draft(self, name: str) -> dict[str, Any]:
+        """Create only the local conversation record; no engineering files exist yet."""
+
+        project_id, target, project = self._prepare_private_draft(name)
+        try:
+            with ResourceLock(target, self.locks_root):
+                if target.exists() or target.is_symlink():
+                    raise ValidationError("application project identity collision")
+                os.replace(project.root, target)
+        except BaseException:
+            if project.root.exists():
+                shutil.rmtree(project.root, ignore_errors=True)
             raise
         return self.open_project(project_id)
 
     def create_empty_project(self, name: str) -> dict[str, Any]:
         """Create and publish an empty synchronized semantic/KiCad project."""
 
-        draft = self.create_draft(name)
-        project_id = str(draft["project"]["id"])
-        project = self._open(project_id)
+        project_id, target, project = self._prepare_private_draft(name)
         board = BoardSpec.from_dict(
             {
                 "width_mm": 80.0,
@@ -1184,7 +1205,7 @@ class ApplicationService:
         )
         request = EmptyDesignRequest(
             design_id=project_id,
-            name=str(draft["project"]["name"]),
+            name=str(project.state["name"]),
             revision="1",
             scope=scope,
             board=board,
@@ -1245,29 +1266,26 @@ class ApplicationService:
                 project.design_root,
                 graph=PartGraph.bundled(),
             )
+            project.state["status"] = "generated"
+            project.state["revision"] = 1
+            project.state["design_revision"] = 1
+            project.state["updated_at"] = utc_timestamp()
+            self._event(
+                project.state,
+                project.root,
+                "project.synchronized_empty",
+                "Created an empty synchronized semantic and KiCad project",
+            )
+            self._write_records(project.root, project.state, project.conversation)
+            with ResourceLock(target, self.locks_root):
+                if target.exists() or target.is_symlink():
+                    raise ValidationError("application project identity collision")
+                os.replace(project.root, target)
         except BaseException:
-            # Creation is one atomic operation: a native-generation failure
-            # must not leave a misleading draft with the requested identity.
-            shutil.rmtree(project.root, ignore_errors=True)
-            raise
-        try:
-            with ResourceLock(project.root, self.locks_root):
-                current = self._open(project_id)
-                current.state["status"] = "generated"
-                current.state["revision"] = 1
-                current.state["design_revision"] = 1
-                current.state["updated_at"] = utc_timestamp()
-                self._event(
-                    current.state,
-                    current.root,
-                    "project.synchronized_empty",
-                    "Created an empty synchronized semantic and KiCad project",
-                )
-                self._write_records(current.root, current.state, current.conversation)
-        except BaseException:
-            # No project identity is published until both native and
-            # application records describe the same synchronized revision.
-            shutil.rmtree(project.root, ignore_errors=True)
+            # Only the private staging directory belongs to this failed creator.
+            # A published identity is never recursively removed here.
+            if project.root.exists():
+                shutil.rmtree(project.root, ignore_errors=True)
             raise
         return self._with_tool_result(
             self.open_project(project_id),
@@ -5363,7 +5381,11 @@ class ApplicationService:
 
     def _recover_interrupted_projects(self) -> None:
         for candidate in self.projects_root.iterdir():
-            if candidate.is_symlink() or not candidate.is_dir():
+            if (
+                candidate.name.startswith(".")
+                or candidate.is_symlink()
+                or not candidate.is_dir()
+            ):
                 continue
             try:
                 project = self._open_path(candidate)

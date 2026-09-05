@@ -117,6 +117,31 @@ class GUIFrontendTests(unittest.TestCase):
             kicad_ipc=False,
         )
 
+    def test_gui_rejects_non_workspace_approval_before_dispatch(self) -> None:
+        for mode in ("review", "read_only"):
+            stderr = StringIO()
+            with (
+                self.subTest(mode=mode),
+                patch("pcbdraft.interfaces.gui.run_gui") as run_gui,
+                redirect_stderr(stderr),
+            ):
+                result = main(
+                    [
+                        "--approval-mode",
+                        mode,
+                        "gui",
+                        "--project",
+                        "中文项目",
+                    ]
+                )
+
+            self.assertEqual(result, 2)
+            self.assertIn(
+                "GUI currently supports only --approval-mode workspace",
+                stderr.getvalue(),
+            )
+            run_gui.assert_not_called()
+
     def test_assets_and_runtime_urls_are_base_path_relative(self) -> None:
         parser = _AssetParser()
         parser.feed(self.html)

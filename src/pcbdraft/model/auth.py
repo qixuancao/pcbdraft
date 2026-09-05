@@ -3937,7 +3937,7 @@ def _read_codex_tokens(*, _lock: bool = True) -> dict[str, Any]:
     state = _load_provider_state(auth_store, "openai-codex")
     if not state:
         raise AuthError(
-            "No Codex credentials stored. Run `hermes auth` to authenticate.",
+            "No PCBDraft Codex credentials stored. Run `pcbdraft connect` to authenticate.",
             provider="openai-codex",
             code="codex_auth_missing",
             relogin_required=True,
@@ -3945,7 +3945,7 @@ def _read_codex_tokens(*, _lock: bool = True) -> dict[str, Any]:
     tokens = state.get("tokens")
     if not isinstance(tokens, dict):
         raise AuthError(
-            "Codex auth state is missing tokens. Run `hermes auth` to re-authenticate.",
+            "PCBDraft Codex auth state is incomplete. Run `pcbdraft connect` to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_invalid_shape",
             relogin_required=True,
@@ -3954,14 +3954,14 @@ def _read_codex_tokens(*, _lock: bool = True) -> dict[str, Any]:
     refresh_token = tokens.get("refresh_token")
     if not isinstance(access_token, str) or not access_token.strip():
         raise AuthError(
-            "Codex auth is missing access_token. Run `hermes auth` to re-authenticate.",
+            "PCBDraft Codex auth is missing an access token. Run `pcbdraft connect` to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_missing_access_token",
             relogin_required=True,
         )
     if not isinstance(refresh_token, str) or not refresh_token.strip():
         raise AuthError(
-            "Codex auth is missing refresh_token. Run `hermes auth` to re-authenticate.",
+            "PCBDraft Codex auth is missing a refresh token. Run `pcbdraft connect` to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_missing_refresh_token",
             relogin_required=True,
@@ -4104,19 +4104,10 @@ def _save_codex_tokens(
 
 
 def _recover_codex_tokens_from_cli(reason: str) -> dict[str, str] | None:
-    """Adopt a valid Codex CLI token pair into Hermes auth, if available."""
-    imported = _import_codex_cli_tokens()
-    # Require BOTH tokens before adopting: persisting a payload without a
-    # usable refresh_token would only break the next refresh cycle.
-    if not (
-        imported
-        and str(imported.get("access_token", "") or "").strip()
-        and str(imported.get("refresh_token", "") or "").strip()
-    ):
-        return None
-    logger.info("Codex auth recovered from Codex CLI auth.json (%s).", reason)
-    _save_codex_tokens(imported)
-    return dict(imported)
+    """Refuse cross-CLI recovery; Codex credentials are owned by PCBDraft."""
+
+    logger.debug("Codex CLI credential recovery is disabled (%s)", reason)
+    return None
 
 
 def refresh_codex_oauth_pure(
@@ -4269,27 +4260,10 @@ def _refresh_codex_auth_tokens(
             str(tokens.get("refresh_token", "") or ""),
             timeout_seconds=timeout_seconds,
         )
-    except AuthError as exc:
-        # Self-heal cross-store refresh_token rotation. Hermes keeps its OWN
-        # Codex OAuth token (per profile + top-level), separate from the Codex
-        # CLI's ~/.codex/auth.json. OAuth refresh_tokens are single-use, so when
-        # the Codex CLI (or another Hermes process) rotates the shared token,
-        # this frozen copy's refresh_token goes stale and the refresh fails with
-        # a relogin-required error (invalid_grant / refresh_token_reused / 401).
-        # Before surfacing that as a hard 401 to the turn, adopt the canonical
-        # fresh token from ~/.codex/auth.json (the Codex CLI keeps it current) so
-        # idle profiles / desktop sessions recover automatically instead of
-        # 401'ing until a manual re-auth. Transient failures (e.g. 429 quota)
-        # keep relogin_required=False — the stored token is still valid there, so
-        # we never self-heal those and re-raise unchanged.
-        if not getattr(exc, "relogin_required", False):
-            raise
-        imported = _recover_codex_tokens_from_cli(
-            f"refresh_token rejected: {getattr(exc, 'code', None) or 'auth_error'}"
-        )
-        if not imported:
-            raise
-        return imported
+    except AuthError:
+        # A rejected PCBDraft-owned refresh remains a PCBDraft re-login
+        # boundary. Never adopt the external Codex CLI's rotating token pair.
+        raise
 
     updated_tokens = dict(tokens)
     updated_tokens["access_token"] = refreshed["access_token"]
@@ -4300,38 +4274,13 @@ def _refresh_codex_auth_tokens(
 
 
 def _import_codex_cli_tokens() -> dict[str, str] | None:
-    """Try to read tokens from ~/.codex/auth.json (Codex CLI shared file).
+    """Return no external Codex CLI tokens.
 
-    Returns tokens dict if valid and not expired, None otherwise.
-    Does NOT write to the shared file.
+    Kept as a compatibility symbol for vendored callers; PCBDraft never reads
+    or imports ``~/.codex/auth.json``.
     """
-    codex_home = os.getenv("CODEX_HOME", "").strip()
-    if not codex_home:
-        codex_home = str(Path.home() / ".codex")
-    auth_path = Path(codex_home).expanduser() / "auth.json"
-    if not auth_path.is_file():
-        return None
-    try:
-        payload = json.loads(auth_path.read_text(encoding="utf-8-sig"))
-        tokens = payload.get("tokens")
-        if not isinstance(tokens, dict):
-            return None
-        access_token = tokens.get("access_token")
-        refresh_token = tokens.get("refresh_token")
-        if not access_token or not refresh_token:
-            return None
-        # Reject expired tokens — importing stale tokens from ~/.codex/
-        # that can't be refreshed leaves the user stuck with "Login successful!"
-        # but no working credentials.
-        if _codex_access_token_is_expiring(access_token, 0):
-            logger.debug(
-                "Codex CLI tokens at %s are expired — skipping import.",
-                auth_path,
-            )
-            return None
-        return dict(tokens)
-    except Exception:
-        return None
+
+    return None
 
 
 def resolve_codex_runtime_credentials(
@@ -4356,23 +4305,7 @@ def resolve_codex_runtime_credentials(
         data = _read_codex_tokens()
     except AuthError as exc:
         read_error = exc
-        if getattr(exc, "relogin_required", False) and getattr(exc, "code", None) in {
-            "codex_auth_missing_access_token",
-            "codex_auth_missing_refresh_token",
-            "codex_auth_invalid_shape",
-        }:
-            imported = _recover_codex_tokens_from_cli(
-                str(getattr(exc, "code", None) or "auth_error")
-            )
-            if imported:
-                data = {
-                    "tokens": imported,
-                    "last_refresh": imported.get("last_refresh"),
-                }
-            else:
-                data = None
-        else:
-            data = None
+        data = None
 
     if data is None:
         pool_token = _pool_codex_access_token()
@@ -4442,7 +4375,7 @@ def resolve_codex_runtime_credentials(
         if read_error is not None:
             raise read_error
         raise AuthError(
-            "No Codex credentials stored. Run `hermes auth` to authenticate.",
+            "No PCBDraft Codex credentials stored. Run `pcbdraft connect` to authenticate.",
             provider="openai-codex",
             code="codex_auth_missing",
             relogin_required=True,
@@ -8328,37 +8261,6 @@ def _login_openai_codex(
                 print("Existing Codex credentials are expired. Starting fresh login...")
         except AuthError:
             pass
-
-    # Check for existing Codex CLI tokens we can import
-    if not force_new_login:
-        cli_tokens = _import_codex_cli_tokens()
-        if cli_tokens:
-            print("Found existing Codex CLI credentials at ~/.codex/auth.json")
-            print(
-                "Hermes will create its own session to avoid conflicts with Codex CLI / VS Code."
-            )
-            try:
-                do_import = (
-                    input(
-                        "Import these credentials? (a separate login is recommended) [y/N]: "
-                    )
-                    .strip()
-                    .lower()
-                )
-            except (EOFError, KeyboardInterrupt):
-                do_import = "n"
-            if do_import in {"y", "yes"}:
-                _save_codex_tokens(cli_tokens)
-                base_url = (
-                    os.getenv("PCBDRAFT_RUNTIME_CODEX_BASE_URL", "").strip().rstrip("/")
-                    or DEFAULT_CODEX_BASE_URL
-                )
-                config_path = _update_config_for_provider("openai-codex", base_url)
-                print()
-                print("Credentials imported. Note: if Codex CLI refreshes its token,")
-                print("Hermes will keep working independently with its own session.")
-                print(f"  Config updated: {config_path} (model.provider=openai-codex)")
-                return
 
     # Run a fresh device code flow — Hermes gets its own OAuth session
     print()

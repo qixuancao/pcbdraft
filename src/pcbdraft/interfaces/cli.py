@@ -11,7 +11,7 @@ from pathlib import Path
 
 from pcbdraft import PRIMARY_CLI, PRODUCT_NAME, __version__
 from pcbdraft.core.debug_trace import trace_enabled, trace_path
-from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.repository import configure_repository, current_repository
 from pcbdraft.interfaces.terminal import launch_cli
 from pcbdraft.services.doctor import doctor_report, setup_runtime
@@ -349,7 +349,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             from pcbdraft.agent.tool_bindings import get_service, set_current_project_id
 
             if args.project_id:
-                view = get_service().open_project(args.project_id)
+                view = get_service(
+                    recover_interrupted=args.approval_mode != "read_only"
+                ).open_project(args.project_id)
                 set_current_project_id(str(view["project"]["id"]))
             return launch_cli([], permission_mode=args.approval_mode)
         if args.command == "trace":
@@ -381,6 +383,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print("KiCad runtime and stock-library tables are ready.")
             return 0
         if args.command == "gui":
+            if args.approval_mode != "workspace":
+                raise ValidationError(
+                    "GUI currently supports only --approval-mode workspace; "
+                    "review and read_only are available in the terminal interface"
+                )
             from pcbdraft.interfaces.gui import run_gui
 
             return run_gui(

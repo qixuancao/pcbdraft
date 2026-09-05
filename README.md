@@ -145,7 +145,9 @@ API Key、浏览器/设备代码登录、云身份、本地端点、聚合服务
 提供商认证、端点检测、令牌刷新和传输路由由 PCBDraft 的原生模型模块
 运行时统一处理。PCBDraft 仍会对用于板卡规划的返回值执行本地 JSON Schema
 和领域校验。密钥和刷新令牌只保存在私有认证存储中，不会写入 PCB
-工程、对话记录、调试跟踪或模型运行收据。
+工程、对话记录、调试跟踪或模型运行收据。直连模式不会读取、复制或回写
+Claude Code、Codex CLI 等其他客户端的凭据文件；请使用 `pcbdraft connect`
+建立独立登录，或显式配置环境凭据/API Key。
 
 ## 启动
 
@@ -351,7 +353,8 @@ KiCad 检查和工程证据。无论调用来自模型、MCP 还是本地策略�
 默认的 `--approval-mode workspace` 会继续执行用户要求的本地工程操作；希望在
 每次 authoritative write 前人工确认时，可用
 `uv run pcbdraft --approval-mode review`。`read_only` 会拒绝所有会留下持久状态的
-PCB 工具。
+PCB 工具。上述非默认权限模式目前只由终端界面支持；`gui` 会在启动服务前明确拒绝
+`review` 或 `read_only`，不会静默回退到 `workspace`。
 
 交互终端中常用命令：
 
