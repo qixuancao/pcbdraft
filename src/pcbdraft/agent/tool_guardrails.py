@@ -283,6 +283,26 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
             ):
                 return True, " [full]"
 
+    data = safe_json_loads(result)
+    if isinstance(data, dict):
+        explicit_error = data.get("error")
+        if explicit_error:
+            return True, " [error]"
+        if data.get("success") is False or data.get("ok") is False:
+            return True, " [error]"
+        status = data.get("status")
+        if isinstance(status, str) and status.casefold() in {
+            "blocked",
+            "cancelled",
+            "error",
+            "failed",
+            "timed_out",
+            "timeout",
+        }:
+            return True, " [error]"
+        if data.get("success") is True or data.get("ok") is True:
+            return False, ""
+
     lower = result[:500].lower()
     if '"error"' in lower or '"failed"' in lower or result.startswith("Error"):
         return True, " [error]"

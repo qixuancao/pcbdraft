@@ -492,7 +492,16 @@ def _on_session_end(
                     turn_id=turn_id,
                     project_id=project_id,
                     process_status=product_receipt.get("process_status"),
-                    task_outcome=product_receipt.get("task_outcome"),
+                    release_outcome=product_receipt.get(
+                        "release_outcome", product_receipt.get("task_outcome")
+                    ),
+                    scoped_task_outcome=product_receipt.get(
+                        "scoped_task_outcome", "unknown"
+                    ),
+                    scoped_task_evidence=product_receipt.get(
+                        "scoped_task_evidence",
+                        {"kind": "unavailable", "source_revision": None},
+                    ),
                     termination_reason=product_receipt.get("termination_reason"),
                     stage_reached=product_receipt.get("stage_reached"),
                     release_gate_passed=product_receipt.get("release_gate_passed"),

@@ -1497,9 +1497,29 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
 
     # Structured error in JSON result (any tool that surfaces {"error": ...}).
     if isinstance(data, dict):
-        err = data.get("error") or data.get("message")
-        if err and (data.get("success") is False or "error" in data):
-            return True, f" [{_trim_error(str(err))}]"
+        explicit_error = data.get("error")
+        if explicit_error:
+            return True, f" [{_trim_error(str(explicit_error))}]"
+        if data.get("success") is False or data.get("ok") is False:
+            message = data.get("message")
+            if message:
+                return True, f" [{_trim_error(str(message))}]"
+            return True, " [error]"
+        status = data.get("status")
+        if isinstance(status, str) and status.casefold() in {
+            "blocked",
+            "cancelled",
+            "error",
+            "failed",
+            "timed_out",
+            "timeout",
+        }:
+            return True, f" [{_trim_error(status)}]"
+        # Explicit structured success is authoritative.  Do not fall through
+        # to the legacy text scan: successful PCB receipts intentionally carry
+        # nullable diagnostics such as ``"error": null``.
+        if data.get("success") is True or data.get("ok") is True:
+            return False, ""
 
     # Generic heuristic for non-terminal tools
     # Multimodal tool results (dicts with _multimodal=True) are not strings —

@@ -109,6 +109,53 @@ class DebugTraceTests(unittest.TestCase):
                 record_event("model_request", model="test-model")
             self.assertFalse(target.exists())
 
+    def test_structured_drc_pass_with_null_error_is_not_observed_as_error(
+        self,
+    ) -> None:
+        from pcbdraft.tools.dispatch import _tool_result_observer_fields
+
+        result = json.dumps(
+            {
+                "success": True,
+                "error": None,
+                "message": "DRC检查完成",
+                "result": {"overall_status": "pass"},
+            }
+        )
+
+        self.assertEqual(
+            _tool_result_observer_fields("pcb_run_drc", result),
+            ("ok", None, None),
+        )
+        self.assertEqual(
+            _tool_result_observer_fields(
+                "pcb_run_drc",
+                json.dumps({"success": False, "error": "KiCad failed"}),
+            ),
+            ("error", "tool_error", "KiCad failed"),
+        )
+        runtime_failure = json.dumps({"ok": False, "message": "runtime failed"})
+        self.assertEqual(
+            _tool_result_observer_fields("pcb_run_drc", runtime_failure),
+            ("error", "tool_error", "runtime failed"),
+        )
+        for terminal_status in ("blocked", "cancelled", "failed", "timeout"):
+            with self.subTest(terminal_status=terminal_status):
+                status, error_type, _message = _tool_result_observer_fields(
+                    "pcb_run_drc",
+                    json.dumps({"status": terminal_status}),
+                )
+                self.assertEqual(status, "error")
+                self.assertEqual(error_type, "tool_error")
+
+        from pcbdraft.agent.tool_guardrails import classify_tool_failure
+
+        self.assertEqual(classify_tool_failure("pcb_run_drc", result), (False, ""))
+        self.assertEqual(
+            classify_tool_failure("pcb_run_drc", runtime_failure),
+            (True, " [error]"),
+        )
+
     def test_writer_rotation_keeps_bounded_backups(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             target = Path(temporary) / "trace.jsonl"
@@ -810,7 +857,12 @@ class DebugPluginTests(unittest.TestCase):
                 self.receipts.append({"project_id": project_id, **values})
                 return {
                     "process_status": "exited",
-                    "task_outcome": "incomplete",
+                    "release_outcome": "incomplete",
+                    "scoped_task_outcome": "unknown",
+                    "scoped_task_evidence": {
+                        "kind": "unavailable",
+                        "source_revision": 4,
+                    },
                     "termination_reason": "agent_returned_before_gate",
                     "stage_reached": "routing",
                     "release_gate_passed": False,
@@ -845,6 +897,13 @@ class DebugPluginTests(unittest.TestCase):
         self.assertEqual(
             [event["event"] for event in events],
             ["plugin_loaded", "product_session_terminal", "session_end"],
+        )
+        terminal = events[1]["data"]
+        self.assertEqual(terminal["release_outcome"], "incomplete")
+        self.assertEqual(terminal["scoped_task_outcome"], "unknown")
+        self.assertEqual(
+            terminal["scoped_task_evidence"],
+            {"kind": "unavailable", "source_revision": 4},
         )
 
     def test_session_end_maps_turn_failure_budget_and_strategy_truthfully(self) -> None:

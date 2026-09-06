@@ -24,7 +24,8 @@ PROGRESS_DELTA_VERSION = 1
 STAGE_EVIDENCE_SCHEMA = "pcbdraft-stage-evidence"
 STAGE_EVIDENCE_VERSION = 1
 PRODUCT_SESSION_TERMINAL_SCHEMA = "pcbdraft-product-session-terminal"
-PRODUCT_SESSION_TERMINAL_VERSION = 1
+LEGACY_PRODUCT_SESSION_TERMINAL_VERSION = 1
+PRODUCT_SESSION_TERMINAL_VERSION = 2
 PRODUCT_SESSION_FILE_LIMIT = 1024 * 1024
 
 METRIC_NAMES = (
@@ -92,6 +93,26 @@ class TaskOutcome(str, Enum):
     FAILED = "failed"
     BLOCKED = "blocked"
     INCOMPLETE = "incomplete"
+
+
+class ScopedTaskOutcome(str, Enum):
+    """Outcome of the caller's bounded task, independent of release readiness."""
+
+    UNKNOWN = "unknown"
+    PASSED = "passed"
+    FAILED = "failed"
+    BLOCKED = "blocked"
+    INCOMPLETE = "incomplete"
+
+
+class ScopedTaskEvidenceKind(str, Enum):
+    """Deterministic basis for a scoped-task terminal classification."""
+
+    UNAVAILABLE = "unavailable"
+    RELEASE_GATE = "release_gate"
+    TERMINAL_FAILURE = "terminal_failure"
+    TERMINAL_BLOCK = "terminal_block"
+    TERMINAL_INCOMPLETE = "terminal_incomplete"
 
 
 TERMINATION_REASONS = frozenset(
@@ -761,7 +782,7 @@ class ProductSessionTerminalReceipt:
             raise ValidationError("product receipt progress revision differs")
         release_facts = (
             self.release_gate_passed,
-            self.task_outcome is TaskOutcome.PASSED,
+            self.release_outcome is TaskOutcome.PASSED,
             self.termination_reason == "release_gate_passed",
             self.stage_reached is EngineeringStage.RELEASE_GATE,
         )
@@ -796,8 +817,32 @@ class ProductSessionTerminalReceipt:
             if self.termination_reason in {"tool_failure", "crashed"}
             else TaskOutcome.INCOMPLETE
         )
-        if self.task_outcome is not expected_outcome:
-            raise ValidationError("product receipt task outcome is inconsistent")
+        if self.release_outcome is not expected_outcome:
+            raise ValidationError("product receipt release outcome is inconsistent")
+
+    @property
+    def release_outcome(self) -> TaskOutcome:
+        """Explicit name for the legacy release-gated outcome field."""
+
+        return self.task_outcome
+
+    @property
+    def scoped_task_outcome(self) -> ScopedTaskOutcome:
+        return scoped_task_status(
+            process_status=self.process_status,
+            release_outcome=self.release_outcome,
+            termination_reason=self.termination_reason,
+            release_gate_passed=self.release_gate_passed,
+        )[0]
+
+    @property
+    def scoped_task_evidence_kind(self) -> ScopedTaskEvidenceKind:
+        return scoped_task_status(
+            process_status=self.process_status,
+            release_outcome=self.release_outcome,
+            termination_reason=self.termination_reason,
+            release_gate_passed=self.release_gate_passed,
+        )[1]
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -809,7 +854,12 @@ class ProductSessionTerminalReceipt:
             "turn_id": self.turn_id,
             "created_at": self.created_at,
             "process_status": self.process_status.value,
-            "task_outcome": self.task_outcome.value,
+            "release_outcome": self.release_outcome.value,
+            "scoped_task_outcome": self.scoped_task_outcome.value,
+            "scoped_task_evidence": {
+                "kind": self.scoped_task_evidence_kind.value,
+                "source_revision": self.source_revision,
+            },
             "termination_reason": self.termination_reason,
             "stage_reached": self.stage_reached.value,
             "release_gate_passed": self.release_gate_passed,
@@ -819,7 +869,7 @@ class ProductSessionTerminalReceipt:
 
     @classmethod
     def from_dict(cls, value: object) -> Self:
-        fields = {
+        common_fields = {
             "schema",
             "version",
             "receipt_id",
@@ -828,40 +878,82 @@ class ProductSessionTerminalReceipt:
             "turn_id",
             "created_at",
             "process_status",
-            "task_outcome",
             "termination_reason",
             "stage_reached",
             "release_gate_passed",
             "source_revision",
             "progress",
         }
-        if not isinstance(value, dict) or set(value) != fields:
+        if not isinstance(value, dict):
             raise ValidationError("product session terminal receipt is malformed")
-        if (
-            value["schema"] != PRODUCT_SESSION_TERMINAL_SCHEMA
-            or value["version"] != PRODUCT_SESSION_TERMINAL_VERSION
-        ):
+        version = value.get("version")
+        legacy = version == LEGACY_PRODUCT_SESSION_TERMINAL_VERSION
+        fields = (
+            common_fields | {"task_outcome"}
+            if legacy
+            else common_fields
+            | {
+                "release_outcome",
+                "scoped_task_outcome",
+                "scoped_task_evidence",
+            }
+        )
+        if set(value) != fields:
+            raise ValidationError("product session terminal receipt is malformed")
+        if value["schema"] != PRODUCT_SESSION_TERMINAL_SCHEMA or version not in {
+            LEGACY_PRODUCT_SESSION_TERMINAL_VERSION,
+            PRODUCT_SESSION_TERMINAL_VERSION,
+        }:
             raise ValidationError("unsupported product session terminal schema/version")
         try:
             process = ProcessStatus(value["process_status"])
-            outcome = TaskOutcome(value["task_outcome"])
+            release_outcome = TaskOutcome(
+                value["task_outcome"] if legacy else value["release_outcome"]
+            )
             stage = EngineeringStage(value["stage_reached"])
         except (TypeError, ValueError) as exc:
             raise ValidationError("product session terminal enums are invalid") from exc
-        return cls(
+        scoped_outcome = None
+        scoped_evidence_kind = None
+        if not legacy:
+            evidence = value["scoped_task_evidence"]
+            if (
+                not isinstance(evidence, dict)
+                or set(evidence) != {"kind", "source_revision"}
+                or evidence["source_revision"] != value["source_revision"]
+            ):
+                raise ValidationError(
+                    "product receipt scoped task evidence is malformed"
+                )
+            try:
+                scoped_outcome = ScopedTaskOutcome(value["scoped_task_outcome"])
+                scoped_evidence_kind = ScopedTaskEvidenceKind(evidence["kind"])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    "product receipt scoped task evidence is malformed"
+                ) from exc
+        receipt = cls(
             value["receipt_id"],
             value["project_id"],
             value["session_id"],
             value["turn_id"],
             value["created_at"],
             process,
-            outcome,
+            release_outcome,
             value["termination_reason"],
             stage,
             value["release_gate_passed"],
             value["source_revision"],
             ProgressVector.from_dict(value["progress"]),
         )
+        if not legacy and (
+            receipt.scoped_task_outcome is not scoped_outcome
+            or receipt.scoped_task_evidence_kind is not scoped_evidence_kind
+        ):
+            raise ValidationError(
+                "product receipt scoped task evidence is inconsistent"
+            )
+        return receipt
 
 
 def terminal_outcome(
@@ -908,6 +1000,36 @@ def terminal_outcome(
     else:
         outcome = TaskOutcome.INCOMPLETE
     return outcome, reason
+
+
+def scoped_task_status(
+    *,
+    process_status: ProcessStatus,
+    release_outcome: TaskOutcome,
+    termination_reason: str,
+    release_gate_passed: bool,
+) -> tuple[ScopedTaskOutcome, ScopedTaskEvidenceKind]:
+    """Classify bounded-task state only from deterministic terminal facts.
+
+    A clean model return, including one that passes the release gate, is
+    deliberately ``unknown``: release readiness does not prove that a separate,
+    undeclared caller-local scope was satisfied.  Strong failure, block, and
+    interruption facts remain useful without weakening the release gate.
+    """
+
+    if release_outcome is TaskOutcome.FAILED:
+        return ScopedTaskOutcome.FAILED, ScopedTaskEvidenceKind.TERMINAL_FAILURE
+    if release_outcome is TaskOutcome.BLOCKED:
+        return ScopedTaskOutcome.BLOCKED, ScopedTaskEvidenceKind.TERMINAL_BLOCK
+    if process_status in {
+        ProcessStatus.CANCELLED,
+        ProcessStatus.TIMED_OUT,
+    } or termination_reason.startswith("budget_exhausted:"):
+        return (
+            ScopedTaskOutcome.INCOMPLETE,
+            ScopedTaskEvidenceKind.TERMINAL_INCOMPLETE,
+        )
+    return ScopedTaskOutcome.UNKNOWN, ScopedTaskEvidenceKind.UNAVAILABLE
 
 
 def store_product_session_terminal(

@@ -21,12 +21,15 @@ from pcbdraft.services.progress import (
     ProductSessionTerminalReceipt,
     ProgressClassification,
     ProgressVector,
+    ScopedTaskEvidenceKind,
+    ScopedTaskOutcome,
     StageEvidence,
     StageProjection,
     TaskOutcome,
     compare_progress,
     derive_stage,
     evaluate_convergence,
+    scoped_task_status,
     store_product_session_terminal,
     terminal_outcome,
 )
@@ -248,7 +251,13 @@ class ProductTerminalTests(unittest.TestCase):
 
             self.assertEqual(receipt, repeated)
             self.assertEqual(receipt["process_status"], "exited")
-            self.assertEqual(receipt["task_outcome"], "incomplete")
+            self.assertNotIn("task_outcome", receipt)
+            self.assertEqual(receipt["release_outcome"], "incomplete")
+            self.assertEqual(receipt["scoped_task_outcome"], "unknown")
+            self.assertEqual(
+                receipt["scoped_task_evidence"],
+                {"kind": "unavailable", "source_revision": 0},
+            )
             self.assertEqual(
                 receipt["termination_reason"], "agent_returned_before_gate"
             )
@@ -323,6 +332,61 @@ class ProductTerminalTests(unittest.TestCase):
             (TaskOutcome.FAILED, "crashed"),
         )
 
+    def test_scoped_task_status_requires_deterministic_terminal_evidence(self) -> None:
+        cases = (
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.INCOMPLETE,
+                "agent_returned_before_gate",
+                False,
+                ScopedTaskOutcome.UNKNOWN,
+                ScopedTaskEvidenceKind.UNAVAILABLE,
+            ),
+            (
+                ProcessStatus.CANCELLED,
+                TaskOutcome.INCOMPLETE,
+                "cancelled",
+                False,
+                ScopedTaskOutcome.INCOMPLETE,
+                ScopedTaskEvidenceKind.TERMINAL_INCOMPLETE,
+            ),
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.BLOCKED,
+                "no_progress",
+                False,
+                ScopedTaskOutcome.BLOCKED,
+                ScopedTaskEvidenceKind.TERMINAL_BLOCK,
+            ),
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.FAILED,
+                "tool_failure",
+                False,
+                ScopedTaskOutcome.FAILED,
+                ScopedTaskEvidenceKind.TERMINAL_FAILURE,
+            ),
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.PASSED,
+                "release_gate_passed",
+                True,
+                ScopedTaskOutcome.UNKNOWN,
+                ScopedTaskEvidenceKind.UNAVAILABLE,
+            ),
+        )
+        for process, release, reason, gate, scoped, evidence in cases:
+            with self.subTest(process=process, reason=reason):
+                self.assertEqual(
+                    scoped_task_status(
+                        process_status=process,
+                        release_outcome=release,
+                        termination_reason=reason,
+                        release_gate_passed=gate,
+                    ),
+                    (scoped, evidence),
+                )
+
     def test_terminal_receipt_round_trip_and_immutable_storage(self) -> None:
         progress = _vector(5)
         receipt = ProductSessionTerminalReceipt(
@@ -339,6 +403,21 @@ class ProductTerminalTests(unittest.TestCase):
             5,
             progress,
         )
+        serialized = receipt.to_dict()
+        self.assertEqual(serialized["version"], 2)
+        self.assertNotIn("task_outcome", serialized)
+        self.assertEqual(serialized["release_outcome"], "passed")
+        self.assertEqual(serialized["scoped_task_outcome"], "unknown")
+        self.assertEqual(
+            serialized["scoped_task_evidence"],
+            {"kind": "unavailable", "source_revision": 5},
+        )
+        legacy = dict(serialized)
+        legacy["version"] = 1
+        legacy["task_outcome"] = legacy.pop("release_outcome")
+        legacy.pop("scoped_task_outcome")
+        legacy.pop("scoped_task_evidence")
+        self.assertEqual(ProductSessionTerminalReceipt.from_dict(legacy), receipt)
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             path = store_product_session_terminal(root, receipt)
@@ -352,6 +431,19 @@ class ProductTerminalTests(unittest.TestCase):
         malformed["release_gate_passed"] = False
         with self.assertRaisesRegex(ValidationError, "release outcome"):
             ProductSessionTerminalReceipt.from_dict(malformed)
+
+        malformed_scope = receipt.to_dict()
+        malformed_scope["scoped_task_outcome"] = "passed"
+        with self.assertRaisesRegex(ValidationError, "scoped task evidence"):
+            ProductSessionTerminalReceipt.from_dict(malformed_scope)
+
+        stale_scope = receipt.to_dict()
+        stale_scope["scoped_task_evidence"] = {
+            "kind": "release_gate",
+            "source_revision": 4,
+        }
+        with self.assertRaisesRegex(ValidationError, "scoped task evidence"):
+            ProductSessionTerminalReceipt.from_dict(stale_scope)
 
         invalid_timestamp = receipt.to_dict()
         invalid_timestamp["created_at"] = "2026-02-31T00:00:00Z"

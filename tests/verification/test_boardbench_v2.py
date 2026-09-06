@@ -232,7 +232,12 @@ class BoardBenchRunV2Tests(unittest.TestCase):
                             "project_id": receipt.project_id,
                             "artifact": f"product-sessions/{receipt.receipt_id}.json",
                             "process_status": "exited",
-                            "task_outcome": "passed",
+                            "release_outcome": "passed",
+                            "scoped_task_outcome": "unknown",
+                            "scoped_task_evidence": {
+                                "kind": "unavailable",
+                                "source_revision": receipt.source_revision,
+                            },
                             "termination_reason": "release_gate_passed",
                             "stage_reached": "release_gate",
                             "release_gate_passed": True,

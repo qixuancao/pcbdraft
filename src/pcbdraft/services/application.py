@@ -2984,14 +2984,14 @@ class ApplicationService:
                     existing.release_gate_passed,
                     () if existing.release_gate_passed else ("retained_terminal",),
                 )
-                requested_outcome, requested_termination = terminal_outcome(
+                requested_release_outcome, requested_termination = terminal_outcome(
                     process_status=process,
                     requested_reason=termination_reason,
                     stage=retained_stage,
                 )
                 if (
                     existing.process_status is not process
-                    or existing.task_outcome is not requested_outcome
+                    or existing.release_outcome is not requested_release_outcome
                     or existing.termination_reason != requested_termination
                 ):
                     raise ValidationError(
@@ -3001,7 +3001,7 @@ class ApplicationService:
                 result["artifact"] = existing_path.relative_to(project.root).as_posix()
                 return result
             progress, stage = self._current_progress_and_stage(project)
-            outcome, reason = terminal_outcome(
+            release_outcome, reason = terminal_outcome(
                 process_status=process,
                 requested_reason=termination_reason,
                 stage=stage,
@@ -3013,7 +3013,7 @@ class ApplicationService:
                 turn_id,
                 utc_timestamp(),
                 process,
-                outcome,
+                release_outcome,
                 reason,
                 stage.stage,
                 stage.release_gate_passed,

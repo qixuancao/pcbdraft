@@ -1296,7 +1296,7 @@ def _retained_product_terminal(
             continue
         trace_facts = (
             data.get("process_status"),
-            data.get("task_outcome"),
+            data.get("release_outcome", data.get("task_outcome")),
             data.get("termination_reason"),
             data.get("stage_reached"),
             data.get("release_gate_passed"),
@@ -1309,6 +1309,16 @@ def _retained_product_terminal(
             receipt.release_gate_passed,
         )
         if trace_facts != receipt_facts:
+            continue
+        if (
+            "scoped_task_outcome" in data
+            and data.get("scoped_task_outcome") != receipt.scoped_task_outcome.value
+        ):
+            continue
+        if "scoped_task_evidence" in data and data.get("scoped_task_evidence") != {
+            "kind": receipt.scoped_task_evidence_kind.value,
+            "source_revision": receipt.source_revision,
+        }:
             continue
         conflicting_session_end = False
         if receipt.release_gate_passed:
