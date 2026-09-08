@@ -1,14 +1,8 @@
-"""Hermes skin/theme engine — the theme SDK for every surface.
+"""PCBDraft terminal skin and theme engine.
 
-A data-driven skin system that lets users (and Hermes itself) customize the
-visual appearance across the CLI, the TUI, and the desktop GUI from a single
-file. Skins are defined as YAML files in ~/.hermes/skins/ or as built-in presets.
-No code changes are needed to add a new skin.
-
-This module is the source of truth: it resolves the active skin, and the gateway
-pushes the resolved palette to the TUI and desktop (see tui_gateway's
-``resolve_skin`` / ``skin.changed``). A skin dropped in ~/.hermes/skins/ therefore
-themes all three surfaces at once — the theme analogue of the plugin SDK.
+This module resolves the active palette for PCBDraft's terminal surfaces. Skins
+are built-in presets or YAML files under ``$PCBDRAFT_RUNTIME_HOME/skins`` and are
+selected with ``display.skin`` in PCBDraft configuration.
 
 SKIN YAML SCHEMA
 ================
@@ -19,7 +13,7 @@ All fields are optional. Missing values inherit from the ``default`` skin.
 
     # Required: skin identity
     name: mytheme                         # Unique skin name (lowercase, hyphens ok)
-    description: Short description        # Shown in /skin listing
+    description: Short description        # Shown in skin diagnostics
 
     # Colors: hex values for Rich markup (banner, UI, response box)
     colors:
@@ -96,10 +90,10 @@ All fields are optional. Missing values inherit from the ``default`` skin.
     branding:
       agent_name: "PCBDraft"          # Banner title, status display
       welcome: "Welcome message"          # Shown at CLI startup
-      goodbye: "Goodbye! ⚕"              # Shown on exit
+      goodbye: "Goodbye from PCBDraft."     # Shown on exit
       response_label: " PCBDraft "       # Response box header label
       prompt_symbol: "❯"                 # Input prompt symbol (bare token; renderers add trailing space)
-      help_header: "(^_^)? Commands"      # /help header text
+      help_header: "PCBDraft Commands"    # /help header text
 
     # Tool prefix: character for tool output lines (default: ┊)
     tool_prefix: "┊"
@@ -115,14 +109,14 @@ USAGE
 
 .. code-block:: python
 
-    from hermes_cli.skin_engine import get_active_skin, list_skins, set_active_skin
+    from pcbdraft.interfaces.tui.skin_engine import get_active_skin, list_skins, set_active_skin
 
     skin = get_active_skin()
     print(skin.colors["banner_title"])    # "#FFD700"
     print(skin.get_branding("agent_name"))  # "PCBDraft"
 
     set_active_skin("ares")               # Switch to built-in ares skin
-    set_active_skin("mytheme")            # Switch to user skin from ~/.hermes/skins/
+    set_active_skin("mytheme")            # Switch to a runtime-home user skin
 
 BUILT-IN SKINS
 ==============
@@ -137,8 +131,8 @@ BUILT-IN SKINS
 USER SKINS
 ==========
 
-Drop a YAML file in ``~/.hermes/skins/<name>.yaml`` following the schema above.
-Activate with ``/skin <name>`` in the CLI or ``display.skin: <name>`` in config.yaml.
+Drop a YAML file in ``$PCBDRAFT_RUNTIME_HOME/skins/<name>.yaml`` following the
+schema above, then select it with ``display.skin: <name>`` in PCBDraft config.
 """
 
 import logging
@@ -282,10 +276,10 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
         "branding": {
             "agent_name": "PCBDraft",
             "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
+            "goodbye": "Goodbye from PCBDraft.",
             "response_label": " PCBDraft ",
             "prompt_symbol": "❯",
-            "help_header": "(^_^)? Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "┊",
     },
@@ -343,12 +337,12 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Ares Agent",
-            "welcome": "Welcome to Ares Agent! Type your message or /help for commands.",
-            "goodbye": "Farewell, warrior! ⚔",
-            "response_label": " ⚔ Ares ",
+            "agent_name": "PCBDraft",
+            "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
+            "goodbye": "Goodbye from PCBDraft.",
+            "response_label": " PCBDraft ",
             "prompt_symbol": "⚔",
-            "help_header": "(⚔) Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "╎",
         "banner_logo": """[bold #A3261F] █████╗ ██████╗ ███████╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -409,10 +403,10 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
         "branding": {
             "agent_name": "PCBDraft",
             "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
+            "goodbye": "Goodbye from PCBDraft.",
             "response_label": " PCBDraft ",
             "prompt_symbol": "❯",
-            "help_header": "[?] Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "┊",
     },
@@ -453,10 +447,10 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
         "branding": {
             "agent_name": "PCBDraft",
             "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
+            "goodbye": "Goodbye from PCBDraft.",
             "response_label": " PCBDraft ",
             "prompt_symbol": "❯",
-            "help_header": "(^_^)? Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "┊",
     },
@@ -499,10 +493,10 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
         "branding": {
             "agent_name": "PCBDraft",
             "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
-            "goodbye": "Goodbye! ⚕",
+            "goodbye": "Goodbye from PCBDraft.",
             "response_label": " PCBDraft ",
             "prompt_symbol": "❯",
-            "help_header": "[?] Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "│",
     },
@@ -545,10 +539,10 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
         "branding": {
             "agent_name": "PCBDraft",
             "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
-            "goodbye": "Goodbye! \u2695",
-            "response_label": " \u2695 Hermes ",
+            "goodbye": "Goodbye from PCBDraft.",
+            "response_label": " PCBDraft ",
             "prompt_symbol": "\u276f",
-            "help_header": "(^_^)? Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "\u250a",
     },
@@ -606,12 +600,12 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Poseidon Agent",
-            "welcome": "Welcome to Poseidon Agent! Type your message or /help for commands.",
-            "goodbye": "Fair winds! Ψ",
-            "response_label": " Ψ Poseidon ",
+            "agent_name": "PCBDraft",
+            "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
+            "goodbye": "Goodbye from PCBDraft.",
+            "response_label": " PCBDraft ",
             "prompt_symbol": "Ψ",
-            "help_header": "(Ψ) Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "│",
         "banner_logo": """[bold #B8E8FF]██████╗  ██████╗ ███████╗███████╗██╗██████╗  ██████╗ ███╗   ██╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -688,12 +682,12 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Sisyphus Agent",
-            "welcome": "Welcome to Sisyphus Agent! Type your message or /help for commands.",
-            "goodbye": "The boulder waits. ◉",
-            "response_label": " ◉ Sisyphus ",
+            "agent_name": "PCBDraft",
+            "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
+            "goodbye": "Goodbye from PCBDraft.",
+            "response_label": " PCBDraft ",
             "prompt_symbol": "◉",
-            "help_header": "(◉) Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "│",
         "banner_logo": """[bold #F5F5F5]███████╗██╗███████╗██╗   ██╗██████╗ ██╗  ██╗██╗   ██╗███████╗       █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -773,12 +767,12 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
             ],
         },
         "branding": {
-            "agent_name": "Charizard Agent",
-            "welcome": "Welcome to Charizard Agent! Type your message or /help for commands.",
-            "goodbye": "Flame out! ✦",
-            "response_label": " ✦ Charizard ",
+            "agent_name": "PCBDraft",
+            "welcome": "Welcome to PCBDraft! Type your message or /help for commands.",
+            "goodbye": "Goodbye from PCBDraft.",
+            "response_label": " PCBDraft ",
             "prompt_symbol": "✦",
-            "help_header": "(✦) Available Commands",
+            "help_header": "PCBDraft Commands",
         },
         "tool_prefix": "│",
         "banner_logo": """[bold #FFF0D4] ██████╗██╗  ██╗ █████╗ ██████╗ ██╗███████╗ █████╗ ██████╗ ██████╗        █████╗  ██████╗ ███████╗███╗   ██╗████████╗[/]
@@ -1010,7 +1004,7 @@ def get_active_prompt_symbol(fallback: str = "❯") -> str:
     return f"{cleaned or fallback.strip()} "
 
 
-def get_active_help_header(fallback: str = "(^_^)? Available Commands") -> str:
+def get_active_help_header(fallback: str = "PCBDraft Commands") -> str:
     """Get the /help header from the active skin."""
     try:
         return get_active_skin().get_branding("help_header", fallback)
@@ -1018,7 +1012,7 @@ def get_active_help_header(fallback: str = "(^_^)? Available Commands") -> str:
         return fallback
 
 
-def get_active_goodbye(fallback: str = "Goodbye! ⚕") -> str:
+def get_active_goodbye(fallback: str = "Goodbye from PCBDraft.") -> str:
     """Get the goodbye line from the active skin."""
     try:
         return get_active_skin().get_branding("goodbye", fallback)
@@ -1091,7 +1085,7 @@ def get_prompt_toolkit_style_overrides() -> dict[str, str]:
         "completion-menu.meta.completion.current": f"bg:{menu_meta_current_bg} {label}",
         "clarify-border": input_rule,
         "clarify-title": f"{title} bold",
-        "clarify-question": f"{text} bold",
+        "clarify-question": "bold",
         "clarify-choice": dim,
         "clarify-selected": f"{title} bold",
         "clarify-active-other": f"{title} italic",
@@ -1099,10 +1093,10 @@ def get_prompt_toolkit_style_overrides() -> dict[str, str]:
         "sudo-prompt": f"{error} bold",
         "sudo-border": input_rule,
         "sudo-title": f"{error} bold",
-        "sudo-text": text,
+        "sudo-text": "",
         "approval-border": input_rule,
         "approval-title": f"{warn} bold",
-        "approval-desc": f"{text} bold",
+        "approval-desc": "bold",
         "approval-cmd": f"{dim} italic",
         "approval-choice": dim,
         "approval-selected": f"{title} bold",

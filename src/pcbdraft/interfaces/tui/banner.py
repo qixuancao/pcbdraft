@@ -1,4 +1,4 @@
-"""Welcome banner, ASCII art, skills summary, and update check for the CLI.
+"""PCBDraft welcome banner and terminal display helpers.
 
 Pure display functions with no TerminalApp state dependency.
 """
@@ -577,16 +577,7 @@ _banner_data_prefetch_started = False
 
 
 def prefetch_banner_data():
-    """Warm the banner's subprocess/I/O-heavy inputs in a daemon thread.
-
-    ``build_welcome_banner`` needs git state (2-4 ``git rev-parse``/
-    ``describe`` subprocesses, ~130ms) and the skills index (a skills-tree
-    rglob, ~110ms). Both are cached per-process by their own modules, so
-    warming them here while the main thread pays the CPU-bound ``cli`` /
-    prompt_toolkit imports overlaps subprocess waits and file I/O (which
-    release the GIL) with import work. Idempotent; failures are irrelevant
-    because the banner recomputes anything missing.
-    """
+    """Warm the local git state used in the PCBDraft version label."""
     global _banner_data_prefetch_started
     if _banner_data_prefetch_started:
         return
@@ -597,15 +588,6 @@ def prefetch_banner_data():
             get_git_banner_state()
         except Exception:
             pass
-        try:
-            get_latest_release_tag()
-        except Exception:
-            pass
-        try:
-            get_available_skills()
-        except Exception:
-            pass
-
     threading.Thread(target=_run, name="banner-data-prefetch", daemon=True).start()
 
 
@@ -709,7 +691,7 @@ def _display_toolset_name(toolset_name: str) -> str:
 # refresh re-verifies it right after the banner renders (see
 # cli.show_banner), so a stale panel self-heals within one launch.
 
-_BANNER_SNAPSHOT_VERSION = 1
+_BANNER_SNAPSHOT_VERSION = 2
 
 
 def _banner_snapshot_path() -> Path:
@@ -762,8 +744,6 @@ def load_banner_snapshot(enabled_toolsets: list[str] = None) -> dict[str, Any] |
         or not isinstance(availability, dict)
     ):
         return None
-    if not isinstance(blob.get("skills_by_category"), dict):
-        return None
     return blob
 
 
@@ -791,7 +771,6 @@ def save_banner_snapshot(
             "lazy_tools": list(availability.get("lazy_tools", [])),
             "disabled_tools": list(availability.get("disabled_tools", [])),
         },
-        "skills_by_category": get_available_skills(),
     }
     path = _banner_snapshot_path()
     try:
@@ -899,8 +878,6 @@ def build_welcome_banner(
     unavailable_toolsets = availability.get("unavailable_toolsets", [])
     lazy_tools = set(availability.get("lazy_tools", []))
     disabled_tools = set(availability.get("disabled_tools", []))
-    _enabled_ts = {str(t) for t in enabled_toolsets}
-
     layout_table = Table.grid(padding=(0, 2))
     layout_table.add_column("left", justify="center")
     layout_table.add_column("right", justify="left")
@@ -908,23 +885,10 @@ def build_welcome_banner(
     # Resolve skin colors once for the entire banner
     accent = _skin_color("banner_accent", "#FFBF00")
     dim = _skin_color("banner_dim", "#B8860B")
-    text = _skin_color("banner_text", "#FFF8DC")
     session_color = _skin_color("session_border", "#8B8682")
 
-    # Use skin's custom caduceus art if provided
-    try:
-        from pcbdraft.interfaces.tui.skin_engine import get_active_skin
-
-        _bskin = get_active_skin()
-        _hero = (
-            _bskin.banner_hero
-            if hasattr(_bskin, "banner_hero") and _bskin.banner_hero
-            else PCBDRAFT_RUNTIME_CADUCEUS
-        )
-    except Exception:
-        _bskin = None
-        _hero = PCBDRAFT_RUNTIME_CADUCEUS
-    left_lines = ["", _hero, ""]
+    # Skins control the palette, while the product identity remains PCBDraft.
+    left_lines = ["", PCBDRAFT_RUNTIME_CADUCEUS, ""]
     if (provider or "").strip().lower() == "moa":
         # MoA virtual provider: ``model`` is a preset name. Show the preset and
         # its aggregator so the banner is meaningful instead of a bare slug.
@@ -950,9 +914,7 @@ def build_welcome_banner(
             if context_length
             else ""
         )
-        left_lines.append(
-            f"[{accent}]MoA: {preset_name}[/]{agg_str}{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]"
-        )
+        left_lines.append(f"[{accent}]MoA: {preset_name}[/]{agg_str}{ctx_str}")
     else:
         if not (model or "").strip() or (model or "").strip().lower() == "unknown":
             # Unconfigured install: say so in red instead of a blank/"unknown"
@@ -960,7 +922,7 @@ def build_welcome_banner(
             # is wrong and how to fix it.
             left_lines.append(
                 f"[bold red]no model configured[/] "
-                f"[dim {dim}]— run /model or hermes setup[/]"
+                f"[dim {dim}]— run /connect or /model[/]"
             )
         else:
             model_short = model.split("/")[-1] if "/" in model else model
@@ -973,9 +935,7 @@ def build_welcome_banner(
                 if context_length
                 else ""
             )
-            left_lines.append(
-                f"[{accent}]{model_short}[/]{ctx_str} [dim {dim}]·[/] [dim {dim}]Nous Research[/]"
-            )
+            left_lines.append(f"[{accent}]{model_short}[/]{ctx_str}")
 
     if os.getenv("PCBDRAFT_RUNTIME_YOLO_MODE"):
         left_lines.append(
@@ -1016,7 +976,7 @@ def build_welcome_banner(
             elif name in lazy_tools:
                 colored_names.append(f"[yellow]{name}[/]")
             else:
-                colored_names.append(f"[{text}]{name}[/]")
+                colored_names.append(name)
 
         tools_str = ", ".join(colored_names)
         if len(", ".join(sorted(tool_names))) > 45:
@@ -1037,7 +997,7 @@ def build_welcome_banner(
                 elif name in lazy_tools:
                     colored_names.append(f"[yellow]{name}[/]")
                 else:
-                    colored_names.append(f"[{text}]{name}[/]")
+                    colored_names.append(name)
             tools_str = ", ".join(colored_names)
 
         right_lines.append(f"[dim {dim}]{toolset}:[/] {tools_str}")
@@ -1082,8 +1042,8 @@ def build_welcome_banner(
             status = srv.get("status")
             if srv["connected"]:
                 right_lines.append(
-                    f"[dim {dim}]{srv['name']}[/] [{text}]({srv['transport']})[/] "
-                    f"[dim {dim}]—[/] [{text}]{srv['tools']} tool(s)[/]"
+                    f"[dim {dim}]{srv['name']}[/] ({srv['transport']}) "
+                    f"[dim {dim}]—[/] {srv['tools']} tool(s)"
                 )
             elif srv.get("disabled") or status == "disabled":
                 right_lines.append(
@@ -1107,55 +1067,8 @@ def build_welcome_banner(
                 )
 
     right_lines.append("")
-    right_lines.append(f"[bold {accent}]Available Skills[/]")
-    # The skills catalog is only reachable when the `skills` toolset is enabled
-    # (it exposes skill_view / skill_manage). When it's disabled — e.g. a Blank
-    # Slate install — the agent literally cannot load any skill, so advertising
-    # the on-disk catalog here is misleading. Reflect the real state instead.
-    _skills_enabled = (not _enabled_ts) or ("skills" in _enabled_ts)
-    if _skills_enabled:
-        if skills_by_category is None:
-            skills_by_category = get_available_skills()
-        total_skills = sum(len(s) for s in skills_by_category.values())
-    else:
-        skills_by_category = {}
-        total_skills = 0
-
-    # Dynamically size skills display based on terminal width.
-    # Rich grid with 2 columns; right column gets roughly 60% of terminal.
-    _term_cols = shutil.get_terminal_size().columns
-    _right_col_width = max(int(_term_cols * 0.6) - 10, 30)
-
-    if not _skills_enabled:
-        right_lines.append(f"[dim {dim}]Skills toolset disabled[/]")
-    elif skills_by_category:
-        for category in sorted(skills_by_category.keys()):
-            skill_names = sorted(skills_by_category[category])
-            # Account for "category: " prefix
-            _prefix_len = len(category) + 2
-            _avail = max(_right_col_width - _prefix_len, 20)
-            # Accumulate skills until we run out of space
-            parts, length = [], 0
-            for i, name in enumerate(skill_names):
-                _sep = ", " if parts else ""
-                _needed = len(_sep) + len(name)
-                # Estimate indicator size IF we were to add this skill then stop
-                _after = len(skill_names) - (i + 1)  # remaining after adding this
-                _ind_len = len(f", +{_after} more") if _after > 0 else 0
-                if parts and length + _needed + _ind_len > _avail:
-                    remaining = len(skill_names) - len(parts)
-                    parts.append(f"+{remaining} more")
-                    break
-                parts.append(name)
-                length += _needed
-            skills_str = ", ".join(parts)
-            right_lines.append(f"[dim {dim}]{category}:[/] [{text}]{skills_str}[/]")
-    else:
-        right_lines.append(f"[dim {dim}]No skills installed[/]")
-
-    right_lines.append("")
     mcp_connected = sum(1 for s in mcp_status if s["connected"]) if mcp_status else 0
-    summary_parts = [f"{len(tools)} tools", f"{total_skills} skills"]
+    summary_parts = [f"{len(tools)} tools"]
     if mcp_connected:
         summary_parts.append(f"{mcp_connected} MCP servers")
     summary_parts.append("/help for commands")
@@ -1168,38 +1081,12 @@ def build_welcome_banner(
 
         if get_current_runtime(_load_cfg()) == "codex_app_server":
             right_lines.append(
-                f"[bold {accent}]Runtime:[/] [{text}]codex app-server[/] "
+                f"[bold {accent}]Runtime:[/] codex app-server "
                 f"[dim {dim}](terminal/file ops/MCP run inside codex)[/]"
             )
     except Exception:
         pass
-    # Show active profile name when not 'default'
-    try:
-        from pcbdraft.interfaces.tui.profiles import get_active_profile_name
-
-        _profile_name = get_active_profile_name()
-        if _profile_name and _profile_name != "default":
-            right_lines.append(f"[bold {accent}]Profile:[/] [{text}]{_profile_name}[/]")
-    except Exception:
-        pass  # Never break the banner over a profiles.py bug
-
     right_lines.append(f"[dim {dim}]{' · '.join(summary_parts)}[/]")
-
-    # Update check — use prefetched result if available. NEVER block the
-    # banner on it: the prefetch does git/network work that rarely finishes
-    # before the banner renders, so a blocking wait here just adds its full
-    # timeout to every startup (500ms of the banner path pre-fix). If the
-    # result isn't ready yet, defer the warning line: a daemon thread waits
-    # for the prefetch and prints the same notice above the prompt when it
-    # lands (prompt_toolkit's patch_stdout renders late prints safely).
-    try:
-        behind = get_update_result(timeout=0.05)
-        if behind is None and not _update_check_done.is_set():
-            _defer_update_notice(console)
-        elif behind is not None and behind != 0:
-            right_lines.append(_format_update_notice(behind))
-    except Exception:
-        pass  # Never break the banner over an update check
 
     right_content = "\n".join(right_lines)
     layout_table.add_row(left_content, right_content)
@@ -1207,12 +1094,7 @@ def build_welcome_banner(
     title_color = _skin_color("banner_title", "#FFD700")
     border_color = _skin_color("banner_border", "#CD7F32")
     version_label = format_banner_version_label()
-    release_info = get_latest_release_tag()
-    if release_info:
-        _tag, _url = release_info
-        title_markup = f"[bold {title_color}][link={_url}]{version_label}[/link][/]"
-    else:
-        title_markup = f"[bold {title_color}]{version_label}[/]"
+    title_markup = f"[bold {title_color}]{version_label}[/]"
     outer_panel = Panel(
         layout_table,
         title=title_markup,
@@ -1223,11 +1105,6 @@ def build_welcome_banner(
     console.print()
     term_width = shutil.get_terminal_size().columns
     if term_width >= 95:
-        _logo = (
-            _bskin.banner_logo
-            if _bskin and hasattr(_bskin, "banner_logo") and _bskin.banner_logo
-            else PCBDRAFT_RUNTIME_AGENT_LOGO
-        )
-        console.print(_logo)
+        console.print(PCBDRAFT_RUNTIME_AGENT_LOGO)
         console.print()
     console.print(outer_panel)

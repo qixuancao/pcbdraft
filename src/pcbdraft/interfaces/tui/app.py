@@ -4967,20 +4967,13 @@ def _build_compact_banner() -> str:
     except Exception:
         _skin = None
 
-    skin_name = getattr(_skin, "name", "default") if _skin else "default"
     border_color = _skin.get_color("banner_border", "#FFD700") if _skin else "#FFD700"
     title_color = _skin.get_color("banner_title", "#FFBF00") if _skin else "#FFBF00"
     dim_color = _skin.get_color("banner_dim", "#B8860B") if _skin else "#B8860B"
 
-    if skin_name == "default":
-        line1 = "⚕ NOUS HERMES - AI Agent Framework"
-        tiny_line = "⚕ NOUS HERMES"
-    else:
-        agent_name = (
-            _skin.get_branding("agent_name", "PCBDraft") if _skin else "PCBDraft"
-        )
-        line1 = f"{agent_name} - AI Agent Framework"
-        tiny_line = agent_name
+    agent_name = "PCBDraft"
+    line1 = f"{agent_name} - AI-assisted PCB workflow"
+    tiny_line = agent_name
 
     if os.environ.get("PCBDRAFT_RUNTIME_FAST_STARTUP_BANNER") == "1":
         from pcbdraft.interfaces.tui import __release_date__ as _release_date
@@ -4992,7 +4985,7 @@ def _build_compact_banner() -> str:
 
     w = min(shutil.get_terminal_size().columns - 2, 88)
     if w < 30:
-        return f"\n[{title_color}]{tiny_line}[/] [dim {dim_color}]- Nous Research[/]\n"
+        return f"\n[{title_color}]{tiny_line}[/]\n"
 
     inner = w - 2  # inside the box border
     bar = "═" * w
@@ -5704,7 +5697,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     "this conversation will [bold]NOT be saved[/bold] to disk and "
                     "cannot be resumed later. Searching past sessions is also disabled.\n"
                     f"  Reason: {e}\n"
-                    "  Fix the state.db store (e.g. `hermes update` to rebuild the venv) to restore persistence."
+                    "  Repair the PCBDraft installation or state.db store to restore persistence."
                 )
             except Exception:
                 # Never let the warning path itself break startup.
@@ -7463,7 +7456,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 " │ ".join(parts), session_title, width
             )
         except Exception:
-            return f"⚕ {self.model if getattr(self, 'model', None) else 'Hermes'}"
+            return f"⚕ {self.model if getattr(self, 'model', None) else 'PCBDraft'}"
 
     def _get_status_bar_fragments(self):
         if not self._status_bar_visible or getattr(self, "_model_picker_state", None):
@@ -8333,9 +8326,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 from pcbdraft.interfaces.tui.skin_engine import get_active_skin
 
                 _skin = get_active_skin()
-                label = _skin.get_branding("response_label", "⚕ Hermes")
+                label = _skin.get_branding("response_label", " PCBDraft ")
             except Exception:
-                label = "⚕ Hermes"
+                label = " PCBDraft "
             # Assistant body text inherits the terminal foreground.  A themed
             # near-white foreground becomes unreadable when light-background
             # detection is unavailable or wrong (common through SSH/tmux).
@@ -8997,7 +8990,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 f"this is likely too low for agent use with tools.[/]"
             )
             self._console_print(
-                f"[dim]   Hermes needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens. Tool schemas + system prompt use a large fixed prefix.[/]"
+                f"[dim]   PCBDraft needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens. Tool schemas + system prompt use a large fixed prefix.[/]"
             )
             base_url = getattr(self, "base_url", "") or ""
             from urllib.parse import urlparse as _urlparse
@@ -9039,8 +9032,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 "[dim]   Switch with: /model sonnet  or  /model gpt5[/]"
             )
 
-        # Project-local skills: one-line status. Trusted → show count;
-        # untrusted-with-skills → point at `hermes skills trust`. Never raises.
+        # Project-local skills: one-line status. Never advertise a command that
+        # is not part of PCBDraft's terminal command registry.
         try:
             from pcbdraft.agent.skill_utils import (
                 get_project_skills_dirs,
@@ -9064,7 +9057,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     _root, _n = _untrusted
                     self._console_print(
                         f"[yellow]◆ {_n} project skill(s) found in {_root} but not "
-                        f"loaded — run `hermes skills trust` to enable them.[/]"
+                        "loaded because their source is not trusted.[/]"
                     )
         except Exception:
             logger.debug("project skills banner notice failed", exc_info=True)
@@ -9614,7 +9607,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     self._console_print(
                         f"   [dim]• {item['name']}[/] [dim italic]({', '.join(item['missing_vars'])})[/]"
                     )
-                self._console_print("[dim]   Run 'hermes setup' to configure[/]")
+                self._console_print(
+                    "[dim]   Configure the required tool credentials in PCBDraft settings[/]"
+                )
         except Exception:
             pass  # Don't crash on import errors
 
@@ -9706,7 +9701,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         is_running = bool(getattr(self, "_agent_running", False))
 
         lines = [
-            "Hermes CLI Status",
+            "PCBDraft Status",
             "",
             f"Session ID: {self.session_id}",
             f"Path: {display_runtime_home()}",
@@ -9745,10 +9740,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         try:
             from pcbdraft.interfaces.tui.skin_engine import get_active_help_header
 
-            header = get_active_help_header("(^_^)? Available Commands")
+            header = get_active_help_header("PCBDraft Commands")
         except Exception:
-            header = "(^_^)? Available Commands"
-        header = (header or "").strip() or "(^_^)? Available Commands"
+            header = "PCBDraft Commands"
+        header = (header or "").strip() or "PCBDraft Commands"
         inner_width = 55
         if len(header) > inner_width:
             header = header[:inner_width]
@@ -9765,51 +9760,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     f"    [bold {_accent_hex()}]{cmd:<15}[/] [dim]-[/] {_escape(desc)}"
                 )
 
-        skill_commands = _ensure_skill_commands()
-        if skill_commands:
-            _cprint(
-                f"\n  ⚡ {_BOLD}Skill Commands{_RST} ({len(skill_commands)} installed):"
-            )
-            for cmd, info in sorted(skill_commands.items()):
-                ChatConsole().print(
-                    f"    [bold {_accent_hex()}]{cmd:<22}[/] [dim]-[/] {_escape(info['description'])}"
-                )
-
-        _bundles_now = get_skill_bundles()
-        if _bundles_now:
-            _cprint(
-                f"\n  ▣ {_BOLD}Skill Bundles{_RST} ({len(_bundles_now)} installed):"
-            )
-            for cmd, info in sorted(_bundles_now.items()):
-                skill_count = len(info.get("skills", []))
-                desc = info.get("description") or f"Load {skill_count} skills"
-                ChatConsole().print(
-                    f"    [bold {_accent_hex()}]{cmd:<22}[/] [dim]-[/] "
-                    f"{_escape(desc)} [dim]({skill_count} skills)[/]"
-                )
-
-        quick_commands = self.config.get("quick_commands", {})
-        if quick_commands:
-            _cprint(
-                f"\n  ⚡ {_BOLD}Quick Commands{_RST} ({len(quick_commands)} configured):"
-            )
-            for name, qcmd in sorted(quick_commands.items()):
-                desc = qcmd.get("description", qcmd.get("type", ""))
-                ChatConsole().print(
-                    f"    [bold {_accent_hex()}]{('/' + name):<22}[/] [dim]-[/] {_escape(desc)}"
-                )
-
-        _cprint(f"\n  {_DIM}Tip: Just type your message to chat with Hermes!{_RST}")
+        _cprint(f"\n  {_DIM}Tip: Describe your PCB task directly to PCBDraft.{_RST}")
         _cprint(
             f"  {_DIM}Multi-line: Ctrl+J, Alt+Enter, or \\+Enter for a new line{_RST}"
         )
         _cprint(f"  {_DIM}Draft editor: Ctrl+G (Alt+G in VSCode/Cursor){_RST}")
-        if _is_termux_environment():
-            _cprint(
-                f"  {_DIM}Attach image: /image {_termux_example_image_path()} or start your prompt with a local image path{_RST}\n"
-            )
-        else:
-            _cprint(f"  {_DIM}Paste image: Alt+V (or /paste){_RST}\n")
+        _cprint()
 
     def show_tools(self):
         """Display available tools with kawaii ASCII art."""
@@ -11170,7 +11126,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return True
 
         choices = [
-            ("once", "Switch anyway", "Use this model for the current Hermes session."),
+            ("once", "Switch anyway", "Use this model for the current PCBDraft session."),
             ("cancel", "Cancel", "Keep the current model."),
         ]
         raw = self._prompt_text_input_modal(
@@ -13974,7 +13930,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             print(
                 "  Banked usage resets are only available on the openai-codex provider."
             )
-            print("  Switch with `/model` or `hermes auth` first.")
+            print("  Switch with `/connect` or `/model` first.")
             return
         base_url = (
             getattr(self.agent, "base_url", None) if self.agent else None
@@ -17428,12 +17384,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     from pcbdraft.interfaces.tui.skin_engine import get_active_skin
 
                     _skin = get_active_skin()
-                    label = _skin.get_branding("response_label", "⚕ Hermes")
+                    label = _skin.get_branding("response_label", " PCBDraft ")
                     _resp_color = _maybe_remap_for_light_mode(
                         _skin.get_color("response_border", "#CD7F32")
                     )
                 except Exception:
-                    label = "⚕ Hermes"
+                    label = " PCBDraft "
                     _resp_color = _maybe_remap_for_light_mode("#CD7F32")
 
                 is_error_response = result and (
@@ -17791,7 +17747,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             else:
                 duration_str = f"{seconds}s"
 
-            # Look up session title for resume-by-name hint
+            # Look up the session title for the summary.
             session_title = None
             if self._session_db:
                 try:
@@ -17799,27 +17755,6 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 except Exception:
                     pass
 
-            print("Resume this session with:")
-            # Session IDs are profile-constrained, so the resume hint must
-            # include `-p <profile>` for non-default profiles. Without this,
-            # copying the hint from a non-default profile fails to find the
-            # session on the next invocation. The "default" and "custom"
-            # profile names use the standard PCBDRAFT_RUNTIME_HOME, so no -p needed.
-            try:
-                from pcbdraft.interfaces.tui.profiles import get_active_profile_name
-
-                _active_profile = get_active_profile_name()
-            except Exception:
-                _active_profile = "default"
-            profile_flag = (
-                ""
-                if _active_profile in ("default", "custom")
-                else f" -p {_active_profile}"
-            )
-            print(f"  hermes --resume {self.session_id}{profile_flag}")
-            if session_title:
-                print(f'  hermes -c "{session_title}"{profile_flag}')
-            print()
             print(f"Session:        {self.session_id}")
             if session_title:
                 print(f"Title:          {session_title}")
@@ -17831,9 +17766,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             try:
                 from pcbdraft.interfaces.tui.skin_engine import get_active_goodbye
 
-                goodbye = get_active_goodbye("Goodbye! ⚕")
+                goodbye = get_active_goodbye("Goodbye from PCBDraft.")
             except Exception:
-                goodbye = "Goodbye! ⚕"
+                goodbye = "Goodbye from PCBDraft."
             print(goodbye)
 
     def _get_tui_prompt_symbols(self) -> tuple[str, str]:
@@ -18128,13 +18063,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 "welcome",
                 "Welcome to PCBDraft! Type your message or /help for commands.",
             )
-            _welcome_color = _welcome_skin.get_color("banner_text", "#FFF8DC")
         except Exception:
             _welcome_text = (
                 "Welcome to PCBDraft! Type your message or /help for commands."
             )
-            _welcome_color = "#FFF8DC"
-        self._console_print(f"[{_welcome_color}]{_welcome_text}[/]")
+        self._console_print(_welcome_text, markup=False, highlight=False)
 
         # Warm the /model picker's provider-models cache off-thread during this
         # idle window (banner shown, user about to type). The no-args picker
@@ -18189,37 +18122,6 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 )
         except Exception:
             pass
-        # First-time OpenClaw-residue banner — fires once if ~/.openclaw/ exists
-        # after an OpenClaw→Hermes migration (especially migrations done by
-        # OpenClaw's own tool, which doesn't archive the source directory).
-        try:
-            from pcbdraft.agent.onboarding import (
-                OPENCLAW_RESIDUE_FLAG,
-                detect_openclaw_residue,
-                is_seen,
-                mark_seen,
-                openclaw_residue_hint_cli,
-            )
-
-            if (
-                not is_seen(self.config, OPENCLAW_RESIDUE_FLAG)
-                and detect_openclaw_residue()
-            ):
-                try:
-                    _resid_color = _welcome_skin.get_color("banner_dim", "#B8860B")
-                except Exception:
-                    _resid_color = "#B8860B"
-                self._console_print(f"[{_resid_color}]{openclaw_residue_hint_cli()}[/]")
-                try:
-                    from pcbdraft.model.configuration import (
-                        get_config_path as _get_cfg_path_resid,
-                    )
-
-                    mark_seen(_get_cfg_path_resid(), OPENCLAW_RESIDUE_FLAG)
-                except Exception:
-                    pass  # best-effort — banner will fire again next session
-        except Exception:
-            pass  # banner is non-critical — never break startup
         # Show a random tip to help users discover features
         try:
             from pcbdraft.interfaces.tui.tips import get_random_tip
@@ -18233,53 +18135,6 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         except Exception:
             pass  # Tips are non-critical — never break startup
 
-        # Curator — kick off a background skill-maintenance pass on startup
-        # if the schedule says we're due.  Runs in a daemon thread so it
-        # never blocks the interactive loop.  Best-effort; any failure is
-        # swallowed to avoid breaking session startup.
-        try:
-            from pcbdraft.agent.curator import maybe_run_curator
-
-            maybe_run_curator(
-                idle_for_seconds=float("inf"),  # CLI startup = fully idle
-                on_summary=lambda msg: self._console_print(f"[dim #6b7684]💾 {msg}[/]"),
-            )
-        except Exception:
-            pass
-
-        # Skill sync — best-effort periodic pull, piggy-backing on the
-        # curator tick. Inert unless the access gate is open and a sync base
-        # URL is configured; swallows all errors so it never blocks startup.
-        try:
-            from pcbdraft.tools.skills_sync_client import maybe_pull_skills
-
-            maybe_pull_skills()
-        except Exception:
-            pass
-
-        # Org-shared skills — pull the organisation's approved set into the
-        # read-only mirror. Gated on real org membership: resolve_org_identity
-        # requires an org role on the token, which is only issued for
-        # multi-member organisations, so a solo account never reaches the
-        # network here. Fail-quiet, exactly like the personal pull above.
-        try:
-            from pcbdraft.tools.skills_sync_client import maybe_pull_org_skills
-
-            maybe_pull_org_skills()
-        except Exception:
-            pass
-        _skills_for_line = self.preloaded_skills or list(
-            getattr(self, "_preload_skills_requested", []) or []
-        )
-        if _skills_for_line and not self._startup_skills_line_shown:
-            # When the background --skills preload hasn't been folded in yet
-            # (it joins at agent init), show the REQUESTED names — identical
-            # to the loaded set except for typo'd names, which warn later.
-            skills_label = ", ".join(_skills_for_line)
-            self._console_print(
-                f"[bold {_accent_hex()}]Activated skills:[/] {skills_label}"
-            )
-            self._startup_skills_line_shown = True
         self._console_print()
 
         # State for async operation
@@ -20101,7 +19956,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             preview_lines.extend(
                 _wrap_panel_text(other_label, 60, subsequent_indent="    ")
             )
-            box_width = _panel_box_width("Hermes needs your input", preview_lines)
+            box_width = _panel_box_width("PCBDraft needs your input", preview_lines)
             inner_text_width = max(8, box_width - 2)
 
             # Pre-wrap choices + Other option — these are mandatory.
@@ -20231,12 +20086,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             lines = []
             # Box top border
             lines.append(("class:clarify-border", "╭─ "))
-            lines.append(("class:clarify-title", "Hermes needs your input"))
+            lines.append(("class:clarify-title", "PCBDraft needs your input"))
             lines.append(
                 (
                     "class:clarify-border",
                     " "
-                    + ("─" * max(0, box_width - len("Hermes needs your input") - 3))
+                    + ("─" * max(0, box_width - len("PCBDraft needs your input") - 3))
                     + "╮\n",
                 )
             )
@@ -20676,7 +20531,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # Clarify question panel
             "clarify-border": "#CD7F32",
             "clarify-title": "#FFD700 bold",
-            "clarify-question": "#FFF8DC bold",
+            "clarify-question": "bold",
             "clarify-choice": "#AAAAAA",
             "clarify-selected": "#FFD700 bold",
             "clarify-active-other": "#FFD700 italic",
@@ -20685,11 +20540,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             "sudo-prompt": "#FF6B6B bold",
             "sudo-border": "#CD7F32",
             "sudo-title": "#FF6B6B bold",
-            "sudo-text": "#FFF8DC",
+            "sudo-text": "",
             # Dangerous command approval panel
             "approval-border": "#CD7F32",
             "approval-title": "#FF8C00 bold",
-            "approval-desc": "#FFF8DC bold",
+            "approval-desc": "bold",
             "approval-cmd": "#AAAAAA italic",
             "approval-choice": "#AAAAAA",
             "approval-selected": "#FFD700 bold",
@@ -21322,7 +21177,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             print(
                 "Error: stdin (fd 0) is not available.\n"
                 "This can happen with certain Python installations (e.g. uv-managed cPython on macOS).\n"
-                "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                "Try reinstalling Python via pyenv or Homebrew, then restart PCBDraft."
             )
             _run_cleanup()
             self._print_exit_summary()
@@ -21402,7 +21257,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     f"\nError: stdin is not usable ({_stdin_err}).\n"
                     "This can happen with certain Python installations (e.g. uv-managed cPython on macOS)\n"
                     "where kqueue cannot register fd 0.\n"
-                    "Try reinstalling Python via pyenv or Homebrew, then re-run: hermes setup"
+                    "Try reinstalling Python via pyenv or Homebrew, then restart PCBDraft."
                 )
             else:
                 raise
