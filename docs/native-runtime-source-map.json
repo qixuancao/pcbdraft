@@ -697,5 +697,85 @@
     "vendor/hermes/tools/yuanbao_tools.py": "src/pcbdraft/tools/yuanbao_tools.py",
     "vendor/hermes/toolsets.py": "src/pcbdraft/tools/toolsets.py",
     "vendor/hermes/utils.py": "src/pcbdraft/core/runtime_utils.py"
-  }
+  },
+  "retired": [
+    {
+      "date": "2026-09-08",
+      "reason": "Removed the upstream Hermes dashboard/Web product surface because PCBDraft has no runtime or packaging entry point for it; PCBDraft GUI remains under pcbdraft.interfaces.gui and src/pcbdraft/web/.",
+      "files": [
+        {
+          "source": "vendor/hermes/hermes_cli/web_server.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_server.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_deps.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_deps.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_git.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_git.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_models.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_models.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/__init__.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/__init__.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/cron.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/cron.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/git.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/git.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/mcp.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/mcp.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/profiles.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/profiles.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/sessions.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/sessions.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/skills.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/skills.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/web_routers/tools.py",
+          "current_path": "src/pcbdraft/interfaces/tui/web_routers/tools.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/memory_oauth.py",
+          "current_path": "src/pcbdraft/interfaces/tui/memory_oauth.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/pty_bridge.py",
+          "current_path": "src/pcbdraft/interfaces/tui/pty_bridge.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/pty_session.py",
+          "current_path": "src/pcbdraft/interfaces/tui/pty_session.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/win_pty_bridge.py",
+          "current_path": "src/pcbdraft/interfaces/tui/win_pty_bridge.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/dashboard_register.py",
+          "current_path": "src/pcbdraft/interfaces/tui/dashboard_register.py"
+        },
+        {
+          "source": "vendor/hermes/hermes_cli/subcommands/dashboard.py",
+          "current_path": "src/pcbdraft/interfaces/tui/subcommands/dashboard.py"
+        }
+      ]
+    }
+  ]
 }

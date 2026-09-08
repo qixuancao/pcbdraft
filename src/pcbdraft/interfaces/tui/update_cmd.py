@@ -156,16 +156,13 @@ def _run_migrate_config_fresh(
 
 
 # Critical files that Hermes must be able to import immediately after an
-# update/install. Most are imported on every CLI startup; ``web_server.py``
-# is the desktop/dashboard backend path that a fresh Windows install launches
-# right away. If any of these fail to parse after a pull, the user can be
-# left with a bricked CLI or desktop backend. The post-pull syntax guard
-# validates these and auto-rolls-back on failure.
+# update/install. If any of these fail to parse after a pull, the user can be
+# left with a bricked CLI. The post-pull syntax guard validates these and
+# auto-rolls back on failure.
 _UPDATE_CRITICAL_FILES = (
     "hermes_cli/main.py",
     "hermes_cli/config.py",
     "hermes_cli/__init__.py",
-    "hermes_cli/web_server.py",
     "cli.py",
     "run_agent.py",
     "model_tools.py",

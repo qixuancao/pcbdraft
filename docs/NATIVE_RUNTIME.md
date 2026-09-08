@@ -4,9 +4,10 @@ PCBDraft 直接维护复用的 Hermes 实现。核心会话循环、TUI、工具
 模型适配与会话存储保留原有实现，再调整包路径及应用边界。没有另写一套同名
 功能来替代这些代码。
 
-本次核对了 **696 个原有 Python 模块**，每个都有当前源码位置，详见
-[逐文件来源映射](native-runtime-source-map.json)。迁移前的完整版本可在
-`9d7f1558af992e7c30f59a5198191bce63e00239:vendor/hermes/` 查阅。
+迁移基线核对了 **696 个原有 Python 模块**，当时的落位记录见
+[逐文件来源映射](native-runtime-source-map.json)。这份映射是历史来源台账，
+不等同于当前文件清单；后续移除项记录在其中的 `retired` 段。迁移前的完整
+版本可在 `9d7f1558af992e7c30f59a5198191bce63e00239:vendor/hermes/` 查阅。
 
 | 原有实现 | 当前维护位置 |
 | --- | --- |
@@ -25,8 +26,10 @@ PCBDraft 直接维护复用的 Hermes 实现。核心会话循环、TUI、工具
 
 旧的路径注入、启动方法补丁、磁盘观察器插件，以及运行时重写命令注册表的
 辅助函数已移除。TUI 命令直接声明于本项目，PCB 命令处理位于
-`interfaces/tui/project_commands.py`。终端和 Web 使用同一个 `AIAgent`；
-Web 的持久化调度负责记录工具、绑定工程和权限、处理审批与取消。
+`interfaces/tui/project_commands.py`。2026-09-08 又移除了没有 PCBDraft 入口的
+Hermes dashboard/Web 服务、路由、PTY 桥接及其旧命令注册；PCBDraft 的本地 GUI
+仍由 `pcbdraft.interfaces.gui` 和 `src/pcbdraft/web/` 提供。终端和 Web 使用同一个
+`AIAgent`；Web 的持久化调度负责记录工具、绑定工程和权限、处理审批与取消。
 
 现有 PCBDraft 专用配置目录仍可读取；独立安装的 Hermes 配置不参与解析。
 配置兼容字段、模型资源名和版权归属保留必要的历史名称，不表示另有一层
@@ -61,8 +64,8 @@ native loopback fixture 也退出 0：取消耗时 0.347 秒，状态为 cancell
 耗尽”的硬断言全部通过。没有访问真实模型或公网。首次沙箱阶段曾尝试精确
 暂存六个收尾文件，但因 `.git` 只读而失败；本轮 Git checkpoint 由宿主普通
 用户在用户明确授权下对这六个文件创建，最终提交状态以 Git 实际记录为准。
-这些边界不改变上述来源结论：696 个原有 Python 模块仍按职责直接复用和维护，
-没有销毁后另写替代实现。
+这些边界不改变上述来源结论：696 是迁移基线的来源核对数；当前仍按职责维护
+其中被 PCBDraft 使用的实现，已退役文件可由来源台账和基线提交追溯。
 
 统一 deadline 层也已修复超大整数转换的溢出：正值收敛到平台安全上限，
 负值保留既有无界语义。该模块仍有 6 项位于未改进程树终止代码的 Ruff 告警，
