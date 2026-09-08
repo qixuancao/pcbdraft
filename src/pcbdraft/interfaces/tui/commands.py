@@ -17,52 +17,10 @@ import shutil
 import subprocess
 import time
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any
 
-from pcbdraft.core.runtime_environment import INDICATOR_STYLES
 from pcbdraft.core.runtime_utils import is_truthy_value
-
-# mtime-keyed memo of the /personality completion source. load_cli_config()
-# does a full YAML parse + deep merge of the built-in defaults on every call,
-# and the completer runs on every keystroke of /personality. The personalities
-# list only changes when the config file changes on disk, so keying on
-# path+mtime keeps the memo freshness-correct (same pattern as load_env and
-# _nous_auth_status_cache). Falls back to a fresh load when the file cannot
-# be stat'ed.
-_personalities_memo: (
-    tuple[tuple[str | None, int | None, int | None], dict[str, Any]] | None
-) = None
-
-
-def _personalities_from_cli_config() -> dict[str, Any]:
-    """Return the available personalities map, memoised on config mtime.
-
-    Wraps ``available_personalities(load_cli_config())`` — the single owner of
-    built-ins + user overrides. Built-ins are static for the process lifetime,
-    so keying on the config file's path+mtime+size keeps the memo
-    freshness-correct.
-    """
-    global _personalities_memo
-    from pcbdraft.interfaces.tui.app import load_cli_config
-    from pcbdraft.interfaces.tui.personality import available_personalities
-
-    try:
-        from pcbdraft.model.configuration import get_config_path
-
-        cfg_path = get_config_path()
-        st = cfg_path.stat()
-        sig = (str(cfg_path), st.st_mtime_ns, st.st_size)
-    except Exception:
-        sig = (None, None, None)
-
-    if _personalities_memo is not None and _personalities_memo[0] == sig:
-        return _personalities_memo[1]
-
-    personalities = available_personalities(load_cli_config())
-    _personalities_memo = (sig, personalities)
-    return personalities
-
 
 logger = logging.getLogger(__name__)
 
@@ -179,9 +137,9 @@ COMMAND_REGISTRY: list[CommandDef] = [
     ),
     CommandDef(
         "model",
-        "Switch model (session-scoped; --global to persist)",
+        "Switch the persistent PCBDraft model",
         "Configuration",
-        args_hint="[model] [--provider name] [--global|--session] [--refresh]",
+        args_hint="[model] [--provider name] [--global] [--refresh]",
         busy_policy="reject",
         busy_handler="model",
     ),
@@ -1392,7 +1350,7 @@ def slack_subcommand_map() -> dict[str, str]:
 
 
 class SlashCommandCompleter(Completer):
-    """Autocomplete for built-in slash commands, subcommands, and skill commands."""
+    """Autocomplete for the registered PCBDraft commands and local context."""
 
     def __init__(
         self,
@@ -1402,9 +1360,12 @@ class SlashCommandCompleter(Completer):
         skill_bundles_provider: Callable[[], Mapping[str, dict[str, Any]]]
         | None = None,
     ) -> None:
-        self._skill_commands_provider = skill_commands_provider
+        # The provider parameters remain in the public constructor while the
+        # native TUI call site transitions away from Hermes skill resources.
+        # PCBDraft's command dispatcher accepts only COMMAND_REGISTRY entries,
+        # so provider results must not be exposed as runnable completions.
+        del skill_commands_provider, skill_bundles_provider
         self._command_filter = command_filter
-        self._skill_bundles_provider = skill_bundles_provider
         # Cached project file list for fuzzy @ completions
         self._file_cache: list[str] = []
         self._file_cache_time: float = 0.0
@@ -1418,98 +1379,11 @@ class SlashCommandCompleter(Completer):
         except Exception:
             return True
 
-    def _iter_skill_commands(self) -> Mapping[str, dict[str, Any]]:
-        if self._skill_commands_provider is None:
-            return {}
-        try:
-            return self._skill_commands_provider() or {}
-        except Exception:
-            return {}
-
-    def _iter_skill_bundles(self) -> Mapping[str, dict[str, Any]]:
-        if self._skill_bundles_provider is None:
-            return {}
-        try:
-            return self._skill_bundles_provider() or {}
-        except Exception:
-            return {}
-
-    # -- stacked slash-skill completion helpers ---------------------------
-
-    @staticmethod
-    def _normalize_skill_token(token: str) -> str:
-        """Canonicalize a typed skill token to its hyphenated /slug form.
-
-        Mirrors resolve_skill_command_key() in agent/skill_commands.py:
-        underscores (Telegram bot-command form) are interchangeable with
-        hyphens.
-        """
-        return "/" + token.lstrip("/").replace("_", "-").lower()
-
-    def _is_skill_command(self, token: str) -> bool:
-        return self._normalize_skill_token(token) in self._iter_skill_commands()
-
-    def _stacked_skill_completions(self, text: str):
-        """Offer skill-command completions for stacked invocations.
-
-        After ``/skill-a `` the user may chain more leading skills
-        (``/skill-a /skill-b do XYZ``). While every whitespace-delimited
-        token so far resolves to a distinct skill command and the current
-        word under the cursor starts with ``/``, keep offering the remaining
-        skill commands. The moment the chain is broken (a non-skill token
-        appears, the cap is reached, or the user is typing plain instruction
-        text) we offer nothing — instruction text must never be polluted
-        with skill suggestions.
-        """
-        try:
-            from pcbdraft.agent.skill_commands import _MAX_STACKED_SKILLS as _cap
-        except Exception:
-            _cap = 5
-
-        tokens = text.split()
-        if text.endswith(" "):
-            completed, current_word = tokens, ""
-        else:
-            completed, current_word = tokens[:-1], tokens[-1]
-
-        # The chain must be unbroken: every completed token is a distinct
-        # skill command, and there's room left under the cap.
-        seen: set[str] = set()
-        for token in completed:
-            key = self._normalize_skill_token(token)
-            if key not in self._iter_skill_commands() or key in seen:
-                return
-            seen.add(key)
-        if len(seen) >= _cap:
-            return
-
-        # Only suggest while the user is typing another /token — a bare
-        # space after the chain means they may be starting the instruction.
-        if not current_word.startswith("/"):
-            return
-
-        word_key = self._normalize_skill_token(current_word)
-        for cmd, info in self._iter_skill_commands().items():
-            if cmd in seen or not cmd.startswith(word_key):
-                continue
-            description = str(info.get("description", "Skill command"))
-            short_desc = description[:50] + ("..." if len(description) > 50 else "")
-            # Exact match: append a trailing space so the dropdown stays
-            # visible and the next stacked token can be typed immediately
-            # (mirrors _completion_text semantics).
-            replacement = f"{cmd} " if cmd == word_key else cmd
-            yield Completion(
-                replacement,
-                start_position=-len(current_word),
-                display=cmd,
-                display_meta=f"⚡ {short_desc}",
-            )
-
     # Commands that open pickers when run without arguments.
     # These should NOT receive a trailing space in completions because:
     # - The TUI's submit handler applies completions on Enter if input differs
     # - Adding space makes "/model" → "/model " which blocks picker execution
-    _PICKER_COMMANDS = frozenset({"model", "skin", "personality"})
+    _PICKER_COMMANDS = frozenset({"model"})
 
     @staticmethod
     def _completion_text(cmd_name: str, word: str) -> str:
@@ -1520,9 +1394,9 @@ class SlashCommandCompleter(Completer):
         menu. Appending a trailing space keeps the dropdown visible and makes
         backspacing retrigger it naturally.
 
-        However, commands that open pickers (model, skin, personality) should
-        NOT get a trailing space — the TUI would apply the completion on Enter
-        and block the picker from opening.
+        However, the model command opens a picker and should NOT get a trailing
+        space — the TUI would apply the completion on Enter and block the
+        picker from opening.
         """
         if cmd_name != word:
             return cmd_name
@@ -1857,194 +1731,6 @@ class SlashCommandCompleter(Completer):
                 display_meta=f"{fp}  {meta}" if meta else fp,
             )
 
-    @staticmethod
-    def _skin_completions(sub_text: str, sub_lower: str):
-        """Yield completions for /skin from available skins."""
-        try:
-            from pcbdraft.interfaces.tui.skin_engine import list_skins
-
-            for s in list_skins():
-                name = s["name"]
-                if name.startswith(sub_lower) and name != sub_lower:
-                    yield Completion(
-                        name,
-                        start_position=-len(sub_text),
-                        display=name,
-                        display_meta=s.get("description", "") or s.get("source", ""),
-                    )
-        except Exception:
-            pass
-
-    @staticmethod
-    def _tools_completions(sub_text: str, sub_lower: str):
-        """Yield completions for /tools — subcommand + toolset/MCP-server name.
-
-        Handles both ``/tools <tab>`` (suggesting ``list|disable|enable``) and
-        ``/tools enable <tab>`` / ``/tools disable <tab>`` (suggesting toolset
-        keys and MCP server prefixes, filtered by current enable state so the
-        user only sees actionable options).
-        """
-        SUBS = ("list", "disable", "enable")
-        parts = sub_text.split()
-        trailing_space = sub_text.endswith(" ")
-
-        # Subcommand stage: zero words typed, or completing the first word.
-        if len(parts) == 0 or (len(parts) == 1 and not trailing_space):
-            partial = sub_text if not trailing_space else ""
-            for sub in SUBS:
-                if sub.startswith(partial.lower()) and sub != partial.lower():
-                    yield Completion(sub, start_position=-len(partial), display=sub)
-            return
-
-        subcommand = parts[0].lower()
-        if subcommand not in ("enable", "disable"):
-            return
-
-        partial = "" if trailing_space else parts[-1]
-        partial_lower = partial.lower()
-        already = set(parts[1:] if trailing_space else parts[1:-1])
-
-        try:
-            from pcbdraft.interfaces.tui.tools_config import (
-                CONFIGURABLE_TOOLSETS,
-                _get_platform_tools,
-                _get_plugin_toolset_keys,
-            )
-            from pcbdraft.model.configuration import load_config_readonly
-
-            # Read-only path: the completer only inspects the config (toolset
-            # enable state + MCP server names) — it never mutates it. Use the
-            # readonly loader so the per-keystroke completion doesn't pay the
-            # defensive deepcopy (perf(agent) #74322 converted 29 call sites
-            # to the readonly loader; this per-keystroke site was missed).
-            config = load_config_readonly()
-            enabled = _get_platform_tools(
-                config, "cli", include_default_mcp_servers=False
-            )
-
-            for ts_key, label, _desc in CONFIGURABLE_TOOLSETS:
-                if ts_key in already or not ts_key.startswith(partial_lower):
-                    continue
-                is_on = ts_key in enabled
-                if subcommand == "enable" and is_on:
-                    continue
-                if subcommand == "disable" and not is_on:
-                    continue
-                yield Completion(
-                    ts_key,
-                    start_position=-len(partial),
-                    display=ts_key,
-                    display_meta=label,
-                )
-
-            for ts_key in sorted(_get_plugin_toolset_keys()):
-                if ts_key in already or not ts_key.startswith(partial_lower):
-                    continue
-                is_on = ts_key in enabled
-                if subcommand == "enable" and is_on:
-                    continue
-                if subcommand == "disable" and not is_on:
-                    continue
-                yield Completion(
-                    ts_key,
-                    start_position=-len(partial),
-                    display=ts_key,
-                    display_meta="plugin toolset",
-                )
-
-            mcp_servers = config.get("mcp_servers") or {}
-            if isinstance(mcp_servers, dict):
-                for server in sorted(mcp_servers):
-                    prefix = f"{server}:"
-                    if prefix in already or not prefix.startswith(partial_lower):
-                        continue
-                    yield Completion(
-                        prefix,
-                        start_position=-len(partial),
-                        display=prefix,
-                        display_meta=f"MCP server '{server}'",
-                    )
-        except Exception:
-            return
-
-    @staticmethod
-    def _handoff_completions(sub_text: str, sub_lower: str):
-        """Yield platform completions for /handoff.
-
-        Offers connected (enabled + configured) gateway platforms. A recorded
-        home channel is NOT required to list a platform — it's often learned at
-        runtime — so the meta hints whether one is set yet. Completes only the
-        first arg (the platform); once one is chosen, stop.
-        """
-        parts = sub_text.split()
-        trailing_space = sub_text.endswith(" ")
-        if len(parts) > 1 or (len(parts) == 1 and trailing_space):
-            return
-        partial = "" if (not parts or trailing_space) else parts[-1]
-        partial_lower = partial.lower()
-        try:
-            from pcbdraft.services.messaging.config import load_gateway_config
-
-            gw = load_gateway_config()
-            platforms = gw.get_connected_platforms()
-        except Exception:
-            return
-        for platform in platforms:
-            name = platform.value
-            if not name.startswith(partial_lower):
-                continue
-            try:
-                home = gw.get_home_channel(platform)
-            except Exception:
-                home = None
-            meta = (
-                f"→ {home.name}"
-                if home and getattr(home, "name", None)
-                else "send this session here"
-            )
-            yield Completion(
-                name,
-                start_position=-len(partial),
-                display=name,
-                display_meta=meta,
-            )
-
-    @staticmethod
-    def _personality_completions(sub_text: str, sub_lower: str):
-        """Yield completions for /personality via hermes_cli.personality."""
-        try:
-            # Single owner: built-ins + user overrides from agent.personalities.
-            from pcbdraft.interfaces.tui.app import load_cli_config
-            from pcbdraft.interfaces.tui.personality import (
-                available_personalities,
-                describe_personality,
-            )
-
-            # mtime-keyed memo: load_cli_config() does a full YAML parse + deep
-            # merge of the built-in defaults on every call, and this completer
-            # runs on every keystroke of /personality. The personalities list
-            # only changes when config.yaml changes on disk, so the memo stays
-            # freshness-correct (same pattern as load_env / _nous_auth_status_cache).
-            personalities = _personalities_from_cli_config()
-
-            if "none".startswith(sub_lower) and "none" != sub_lower:
-                yield Completion(
-                    "none",
-                    start_position=-len(sub_text),
-                    display="none",
-                    display_meta="clear personality overlay",
-                )
-            for name, prompt in personalities.items():
-                if name.startswith(sub_lower) and name != sub_lower:
-                    yield Completion(
-                        name,
-                        start_position=-len(sub_text),
-                        display=name,
-                        display_meta=describe_personality(prompt),
-                    )
-        except Exception:
-            pass
-
     def get_completions(self, document, complete_event):
         text = document.text_before_cursor
         if not text.startswith("/"):
@@ -2065,35 +1751,6 @@ class SlashCommandCompleter(Completer):
         if len(parts) > 1 or (len(parts) == 1 and text.endswith(" ")):
             sub_text = parts[1] if len(parts) > 1 else ""
             sub_lower = sub_text.lower()
-
-            # Stacked slash-skill invocations: after `/skill-a ` the user may
-            # chain more skills (`/skill-a /skill-b …`), so keep offering
-            # skill-command completions while the leading-skill chain is
-            # unbroken (see split_stacked_skill_commands in
-            # agent/skill_commands.py).
-            if self._is_skill_command(base_cmd):
-                yield from self._stacked_skill_completions(text)
-                return
-
-            # Dynamic completions for commands with runtime lists
-            if " " not in sub_text:
-                if base_cmd == "/skin":
-                    yield from self._skin_completions(sub_text, sub_lower)
-                    return
-                if base_cmd == "/personality":
-                    yield from self._personality_completions(sub_text, sub_lower)
-                    return
-
-            # /tools needs multi-word completion (subcommand + toolset name)
-            # so it handles both stages itself, bypassing the single-word
-            # SUBCOMMANDS branch below.
-            if base_cmd == "/tools":
-                yield from self._tools_completions(sub_text, sub_lower)
-                return
-
-            if base_cmd == "/handoff":
-                yield from self._handoff_completions(sub_text, sub_lower)
-                return
 
             # Static subcommand completions
             if (
@@ -2123,48 +1780,6 @@ class SlashCommandCompleter(Completer):
                     display=cmd,
                     display_meta=desc,
                 )
-
-        for cmd, info in self._iter_skill_bundles().items():
-            cmd_name = cmd[1:]
-            if cmd_name.startswith(word):
-                description = str(info.get("description", "Skill bundle"))
-                short_desc = description[:50] + ("..." if len(description) > 50 else "")
-                skill_count = len(info.get("skills", []))
-                yield Completion(
-                    self._completion_text(cmd_name, word),
-                    start_position=-len(word),
-                    display=cmd,
-                    display_meta=f"▣ {short_desc} ({skill_count} skills)",
-                )
-
-        for cmd, info in self._iter_skill_commands().items():
-            cmd_name = cmd[1:]
-            if cmd_name.startswith(word):
-                description = str(info.get("description", "Skill command"))
-                short_desc = description[:50] + ("..." if len(description) > 50 else "")
-                yield Completion(
-                    self._completion_text(cmd_name, word),
-                    start_position=-len(word),
-                    display=cmd,
-                    display_meta=f"⚡ {short_desc}",
-                )
-
-        # Plugin-registered slash commands
-        try:
-            from pcbdraft.agent.extensions.manager import get_plugin_commands
-
-            for cmd_name, cmd_info in get_plugin_commands().items():
-                if cmd_name.startswith(word):
-                    desc = str(cmd_info.get("description", "Plugin command"))
-                    short_desc = desc[:50] + ("..." if len(desc) > 50 else "")
-                    yield Completion(
-                        self._completion_text(cmd_name, word),
-                        start_position=-len(word),
-                        display=f"/{cmd_name}",
-                        display_meta=f"🔌 {short_desc}",
-                    )
-        except Exception:
-            pass
 
 
 # ---------------------------------------------------------------------------
@@ -2221,25 +1836,17 @@ class SlashCommandAutoSuggest(AutoSuggest):
         sub_text = parts[1] if len(parts) > 1 else ""
         sub_lower = sub_text.lower()
 
-        # Stacked slash-skill invocations: while the leading tokens form an
-        # unbroken skill chain and the user is typing another /token,
-        # ghost-suggest the rest of the next skill name. Otherwise fall
-        # through to the history fallback for instruction text.
-        if self._completer is not None and self._completer._is_skill_command(base_cmd):
-            for completion in self._completer._stacked_skill_completions(text):
-                remainder = (
-                    completion.text[-completion.start_position :]
-                    if completion.start_position
-                    else completion.text
-                )
-                if remainder.strip():
-                    return Suggestion(remainder)
-
-        # Static subcommands
+        # A slash command with arguments must resolve through the same registry
+        # and availability filter as dropdown completion. Otherwise an old
+        # history entry can resurrect removed Hermes commands as ghost text.
+        if resolve_command(base_cmd) is None:
+            return None
         if self._completer is not None and not self._completer._command_allowed(
             base_cmd
         ):
             return None
+
+        # Static subcommands
         if base_cmd in SUBCOMMANDS and SUBCOMMANDS[base_cmd]:
             if " " not in sub_text:
                 for sub in SUBCOMMANDS[base_cmd]:
