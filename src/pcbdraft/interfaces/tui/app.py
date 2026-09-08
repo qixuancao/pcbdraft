@@ -3705,6 +3705,32 @@ def _render_final_assistant_content(text: str, mode: str = "render"):
     return Markdown(plain)
 
 
+def _build_final_assistant_panel(
+    response: str,
+    *,
+    label: str,
+    border_color: str,
+    markdown_mode: str,
+    width: int,
+) -> Panel:
+    """Build a response panel whose body inherits the terminal foreground.
+
+    The border and title remain skin-colored, but the assistant text must not
+    assume a dark terminal background.  Background detection is necessarily
+    best-effort (especially through SSH and terminal multiplexers), whereas the
+    terminal's own default foreground is already paired with its background.
+    """
+    return Panel(
+        _render_final_assistant_content(response, mode=markdown_mode),
+        title=f"[{border_color} bold]{label}[/]",
+        title_align="left",
+        border_style=border_color,
+        box=rich_box.HORIZONTALS,
+        padding=(1, 0),
+        width=width,
+    )
+
+
 def _post_stream_transform_output(response: str, result: dict | None) -> str:
     """Return text that still needs display after a streamed response transform.
 
@@ -8308,19 +8334,14 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
                 _skin = get_active_skin()
                 label = _skin.get_branding("response_label", "⚕ Hermes")
-                _text_hex = _skin.get_color("banner_text", "#FFF8DC")
             except Exception:
                 label = "⚕ Hermes"
-                _text_hex = "#FFF8DC"
-            # Build a true-color ANSI escape for the response text color
-            # so streamed content matches the Rich Panel appearance.
-            try:
-                _r = int(_text_hex[1:3], 16)
-                _g = int(_text_hex[3:5], 16)
-                _b = int(_text_hex[5:7], 16)
-                self._stream_text_ansi = f"\033[38;2;{_r};{_g};{_b}m"
-            except (ValueError, IndexError):
-                self._stream_text_ansi = ""
+            # Assistant body text inherits the terminal foreground.  A themed
+            # near-white foreground becomes unreadable when light-background
+            # detection is unavailable or wrong (common through SSH/tmux).
+            # Keep the response frame themed via _ACCENT, but emit body text
+            # without a foreground-color SGR sequence.
+            self._stream_text_ansi = ""
             if self.show_timestamps:
                 label = f"{label} {datetime.now().strftime(getattr(self, 'timestamp_format', '%H:%M'))}"
             w = self._scrollback_box_width()
@@ -17411,13 +17432,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     _resp_color = _maybe_remap_for_light_mode(
                         _skin.get_color("response_border", "#CD7F32")
                     )
-                    _resp_text = _maybe_remap_for_light_mode(
-                        _skin.get_color("banner_text", "#FFF8DC")
-                    )
                 except Exception:
                     label = "⚕ Hermes"
                     _resp_color = _maybe_remap_for_light_mode("#CD7F32")
-                    _resp_text = _maybe_remap_for_light_mode("#FFF8DC")
 
                 is_error_response = result and (
                     result.get("failed") or result.get("partial")
@@ -17446,16 +17463,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 else:
                     _chat_console = ChatConsole()
                     _chat_console.print(
-                        Panel(
-                            _render_final_assistant_content(
-                                response, mode=self.final_response_markdown
-                            ),
-                            title=f"[{_resp_color} bold]{label}[/]",
-                            title_align="left",
-                            border_style=_resp_color,
-                            style=_resp_text,
-                            box=rich_box.HORIZONTALS,
-                            padding=(1, 0),
+                        _build_final_assistant_panel(
+                            response,
+                            label=label,
+                            border_color=_resp_color,
+                            markdown_mode=self.final_response_markdown,
                             width=self._scrollback_box_width(),
                         )
                     )
