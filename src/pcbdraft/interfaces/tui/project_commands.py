@@ -14,7 +14,7 @@ from pcbdraft.agent.tool_bindings import (
     refresh_service_provider,
     set_current_project_id,
 )
-from pcbdraft.core.errors import PCBDraftError
+from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.repository import current_repository
 from pcbdraft.services.provider_connection import (
     ConnectionOptions,
@@ -27,6 +27,8 @@ __all__ = (
     "HANDLERS",
     "PCBDRAFT_CATEGORY",
     "PCBDRAFT_COMMANDS",
+    "list_projects",
+    "matching_projects",
 )
 
 #: PCBDraft built-ins retained in the PCBDraft terminal surface.
@@ -38,6 +40,88 @@ BUILTIN_COMMANDS = frozenset(
 PCBDRAFT_CATEGORY = "PCB Project"
 
 _REVIEW_LOG_LIMIT = 20
+
+
+def _project_recency(project: dict) -> str:
+    """Return a sortable project timestamp without mutating the summary."""
+
+    return str(project.get("updated_at") or project.get("created_at") or "")
+
+
+def _project_match_rank(query: str, project: dict) -> int | None:
+    """Rank case-insensitive ID/name matches for the project picker."""
+
+    needle = query.strip().casefold()
+    if not needle:
+        return 0
+    project_id = str(project.get("id") or "").casefold()
+    name = str(project.get("name") or "").casefold()
+    if project_id == needle:
+        return 0
+    if name == needle:
+        return 1
+    if project_id.startswith(needle):
+        return 2
+    if project_id.endswith(needle):
+        return 3
+    if needle in project_id:
+        return 4
+    if needle in name:
+        return 5
+    return None
+
+
+def matching_projects(query: str, projects: list[dict]) -> list[dict]:
+    """Return matching summaries ordered by match quality and recent activity.
+
+    The returned dictionaries are the original service summaries. This helper
+    is read-only and suitable for both the interactive picker and text fallback.
+    """
+
+    recent_first = sorted(projects, key=_project_recency, reverse=True)
+    needle = query.strip()
+    if not needle:
+        return recent_first
+    ranked = [
+        (rank, project)
+        for project in recent_first
+        if (rank := _project_match_rank(needle, project)) is not None
+    ]
+    ranked.sort(key=lambda item: item[0])
+    return [project for _rank, project in ranked]
+
+
+def list_projects(query: str = "") -> list[dict]:
+    """Read and filter project summaries without recovering interrupted work."""
+
+    service = get_service(recover_interrupted=False)
+    return matching_projects(query, service.list_projects())
+
+
+def _short_project_id(project_id: str) -> str:
+    return project_id if len(project_id) <= 8 else project_id[-8:]
+
+
+def _display_project_time(project: dict) -> str:
+    value = _project_recency(project)
+    if not value:
+        return "unknown"
+    return value.replace("T", " ")[:16]
+
+
+def _open_candidates(query: str, matches: list[dict]) -> list[dict]:
+    """Prefer exact references; otherwise retain every possible match."""
+
+    if not matches:
+        return []
+    needle = query.strip()
+    exact_ids = [p for p in matches if _project_match_rank(needle, p) == 0]
+    if exact_ids:
+        return exact_ids
+    exact_names = [p for p in matches if _project_match_rank(needle, p) == 1]
+    if exact_names:
+        return exact_names
+    return matches
 
 
 def handle_new(raw_args: str) -> str:
@@ -64,22 +148,40 @@ def handle_new(raw_args: str) -> str:
 
 
 def handle_projects(raw_args: str) -> str:
-    """List the PCB projects below the configured repository."""
+    """List matching PCB projects below the configured repository."""
 
-    service = get_service()
-    projects = service.list_projects()
+    service = get_service(recover_interrupted=False)
+    query = raw_args.strip()
+    all_projects = service.list_projects()
+    projects = matching_projects(query, all_projects)
+    if query and not projects:
+        return (
+            f'No PCB projects matched "{query}".\n'
+            "Use /resume to browse recent projects or /new <name> to create one."
+        )
     if not projects:
         return (
             f"No projects yet in {service.projects_root}.\n"
             "Use /new <name> to create your first PCB project."
         )
-    lines = [f"PCB projects ({len(projects)}) in {service.projects_root}:"]
+    heading = (
+        f'PCB projects matching "{query}" ({len(projects)})'
+        if query
+        else f"PCB projects ({len(projects)})"
+    )
+    lines = [f"{heading} in {service.projects_root}:"]
+    current_id = get_current_project_id()
     for project in projects:
+        project_id = str(project.get("id") or "")
+        name = str(project.get("name") or "Untitled PCB project")
+        status = str(project.get("status") or "unknown")
+        current = "  ← current" if project_id == current_id else ""
         lines.append(
-            f"  • {project['id']}  [{project.get('status', '')}]  "
-            f"{project.get('name', '')}"
+            f"  • {name}  [{status}]  {project_id}  "
+            f"(short: {_short_project_id(project_id)})  "
+            f"updated {_display_project_time(project)}{current}"
         )
-    lines.append("Use /open <id> to select one.")
+    lines.append("Use /resume [name-or-id] or /open [name-or-id] to select one.")
     return "\n".join(lines)
 
 
@@ -109,12 +211,29 @@ def handle_project(raw_args: str) -> str:
 
 
 def handle_open(raw_args: str) -> str:
-    """Open an existing PCB project by id and make it the current context."""
+    """Open one PCB project by ID, ID prefix, or name."""
 
-    project_id = raw_args.strip()
-    if not project_id:
-        return "Usage: /open <id> — open an existing PCB project"
-    view = get_service().open_project(project_id)
+    query = raw_args.strip()
+    if not query:
+        return handle_projects("")
+    service = get_service(recover_interrupted=False)
+    matches = matching_projects(query, service.list_projects())
+    candidates = _open_candidates(query, matches)
+    if not candidates:
+        raise ValidationError(
+            f"project not found: {query}. Use /resume to browse recent projects."
+        )
+    if len(candidates) > 1:
+        choices = ", ".join(
+            f"{project.get('name') or 'Untitled'} ({project.get('id')})"
+            for project in candidates[:5]
+        )
+        raise ValidationError(
+            f'project reference is ambiguous: "{query}" matches {choices}. '
+            "Use /resume with a longer name or ID prefix."
+        )
+    project_id = str(candidates[0]["id"])
+    view = service.open_project(project_id)
     project = view["project"]
     set_current_project_id(str(project["id"]))
     return (
@@ -122,6 +241,13 @@ def handle_open(raw_args: str) -> str:
         f"status: {project['status']}\n"
         "  next step: describe the change you want, or /review for a summary."
     )
+
+
+def handle_resume(raw_args: str) -> str:
+    """Resume a project, with a text-list fallback when no query is given."""
+
+    query = raw_args.strip()
+    return handle_open(query) if query else handle_projects("")
 
 
 def handle_connect(raw_args: str) -> str:
@@ -247,14 +373,30 @@ def _resolve_project_id(raw_args: str) -> str:
 #: The PCBDraft-owned command table: (name, description, args_hint, handler).
 PCBDRAFT_COMMANDS: tuple[tuple[str, str, str, Callable[[str], str]], ...] = (
     ("new", "Create a new PCB project in the repository", "<name>", handle_new),
-    ("projects", "List PCB projects in the repository", "", handle_projects),
+    (
+        "projects",
+        "Browse recent PCB projects by name or ID",
+        "[query]",
+        handle_projects,
+    ),
+    (
+        "resume",
+        "Resume a recent PCB project by name or ID",
+        "[query]",
+        handle_resume,
+    ),
     (
         "project",
         "Show or switch the PCB project repository",
         "[directory]",
         handle_project,
     ),
-    ("open", "Open an existing PCB project by id", "<id>", handle_open),
+    (
+        "open",
+        "Open a PCB project by name or ID",
+        "[name-or-id]",
+        handle_open,
+    ),
     (
         "connect",
         "Connect, switch, or reauthenticate a model provider",

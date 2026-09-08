@@ -8,9 +8,10 @@ import random
 TIPS = [
     "Describe the board, constraints, and intended components in plain language to start a PCB draft.",
     "/new <name> creates a PCB project in the current project repository.",
-    "/projects lists the PCB projects in the current repository.",
+    "/projects [query] browses recent PCB projects; /pr is a shortcut.",
+    "/resume [query] reopens a recent PCB project by name or ID.",
     "/project [directory] shows or switches the PCB project repository.",
-    "/open <id> selects an existing PCB project.",
+    "/open [name-or-id] selects a project; without an argument it opens the browser.",
     "/connect opens model-provider setup or reauthentication.",
     "/model shows or switches the saved model selection.",
     "/review [id] summarizes the selected PCB project's current state.",

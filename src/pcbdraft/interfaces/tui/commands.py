@@ -163,6 +163,7 @@ COMMAND_REGISTRY: list[CommandDef] = [
             name=name,
             description=description,
             category="PCB Project",
+            aliases=("pr",) if name == "projects" else (),
             args_hint=args_hint,
             busy_policy="dispatch",
         )

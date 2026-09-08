@@ -5775,6 +5775,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         self._slash_confirm_state = None
         self._slash_confirm_deadline = 0
         self._model_picker_state = None
+        self._project_picker_state = None
         # Armed when a bare `/resume` prints the recent-sessions list so the
         # very next bare numeric input (e.g. `3`) resolves to that session.
         # Holds the exact list used for index resolution; one-shot (cleared on
@@ -7175,6 +7176,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             or self._sudo_state
             or self._secret_state
             or getattr(self, "_slash_confirm_state", None)
+            or getattr(self, "_project_picker_state", None)
         )
 
         return derive_pet_state(
@@ -7459,7 +7461,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return f"⚕ {self.model if getattr(self, 'model', None) else 'PCBDraft'}"
 
     def _get_status_bar_fragments(self):
-        if not self._status_bar_visible or getattr(self, "_model_picker_state", None):
+        if (
+            not self._status_bar_visible
+            or getattr(self, "_model_picker_state", None)
+            or getattr(self, "_project_picker_state", None)
+        ):
             return []
         try:
             snapshot = self._get_status_bar_snapshot()
@@ -11929,6 +11935,163 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         except Exception:
             return False
 
+    def _project_command_parts(
+        self, text: str, *, has_images: bool = False
+    ) -> tuple[str, str] | None:
+        """Resolve one registered PCB project command without changing state."""
+
+        if not text or has_images or not _looks_like_slash_command(text):
+            return None
+        try:
+            from pcbdraft.interfaces.tui.commands import resolve_command
+
+            parts = text.strip().split(None, 1)
+            command = resolve_command(parts[0].lstrip("/").casefold())
+            if command is None or command.name not in {
+                "new",
+                "open",
+                "project",
+                "projects",
+                "resume",
+            }:
+                return None
+            return command.name, parts[1].strip() if len(parts) > 1 else ""
+        except Exception:
+            return None
+
+    def _project_picker_query_from_input(
+        self, text: str, *, has_images: bool = False
+    ) -> str | None:
+        """Return the initial filter for an interactive project-picker command."""
+
+        parts = self._project_command_parts(text, has_images=has_images)
+        if parts is None:
+            return None
+        from pcbdraft.interfaces.tui.project_picker import project_picker_query
+
+        return project_picker_query(*parts)
+
+    def _should_handle_project_command_inline(
+        self, text: str, *, has_images: bool = False
+    ) -> bool:
+        """Keep picker entry and direct /open dispatch on the UI thread."""
+
+        parts = self._project_command_parts(text, has_images=has_images)
+        if parts is None:
+            return False
+        command, raw_args = parts
+        if command == "open":
+            return True
+        from pcbdraft.interfaces.tui.project_picker import project_picker_query
+
+        return project_picker_query(command, raw_args) is not None
+
+    def _project_switch_is_busy(self, *, include_pending: bool = True) -> bool:
+        """Return whether work is active or already queued for the current project."""
+
+        pending = getattr(self, "_pending_input", None)
+        try:
+            has_pending_input = pending is not None and not pending.empty()
+        except Exception:
+            has_pending_input = False
+        return bool(
+            getattr(self, "_agent_running", False)
+            or getattr(self, "_command_running", False)
+            or (include_pending and has_pending_input)
+        )
+
+    def _open_project_picker(self, query: str = "") -> bool:
+        """Open the native project picker from a clean composer buffer."""
+
+        if self._project_switch_is_busy():
+            _cprint("  Finish the current operation before switching PCB projects.")
+            return False
+        try:
+            from pcbdraft.agent.tool_bindings import get_current_project_id
+            from pcbdraft.interfaces.tui.project_commands import (
+                list_projects,
+                matching_projects,
+            )
+            from pcbdraft.interfaces.tui.project_picker import ProjectPickerState
+
+            all_projects = list_projects()
+            matches = matching_projects(query, all_projects)
+        except Exception as exc:
+            _cprint(f"  ✗ Could not list PCB projects: {exc}")
+            return False
+
+        self._pending_resume_sessions = None
+        self._capture_modal_input_snapshot()
+        self._project_picker_state = ProjectPickerState.create(
+            all_projects,
+            query=query,
+            matches=matches,
+            current_project_id=get_current_project_id(),
+        )
+        app = getattr(self, "_app", None)
+        buffer = getattr(app, "current_buffer", None) if app is not None else None
+        if buffer is not None:
+            buffer.text = query
+            buffer.cursor_position = len(query)
+        self._invalidate(min_interval=0.0)
+        return True
+
+    def _update_project_picker_query(self, query: str) -> None:
+        """Filter the picker against its one-time project snapshot."""
+
+        state = getattr(self, "_project_picker_state", None)
+        if state is None or query == state.query:
+            return
+        from pcbdraft.interfaces.tui.project_commands import matching_projects
+
+        state.replace_matches(query, matching_projects(query, state.all_projects))
+        self._invalidate(min_interval=0.0)
+
+    def _close_project_picker(self) -> None:
+        self._project_picker_state = None
+        self._pending_resume_sessions = None
+        self._restore_modal_input_snapshot()
+        self._invalidate(min_interval=0.0)
+
+    def _handle_project_picker_selection(self) -> bool:
+        """Open the highlighted project and rotate only after a real ID change."""
+
+        state = getattr(self, "_project_picker_state", None)
+        selected = state.selected_project() if state is not None else None
+        if selected is None:
+            return False
+        if self._project_switch_is_busy():
+            _cprint("  Finish queued or active work before switching PCB projects.")
+            return False
+
+        from pcbdraft.agent.tool_bindings import (
+            get_current_project_id,
+            set_current_project_id,
+        )
+        from pcbdraft.core.errors import PCBDraftError
+        from pcbdraft.interfaces.terminal import _rotate_project_conversation
+        from pcbdraft.interfaces.tui.project_commands import handle_open
+
+        previous_id = get_current_project_id()
+        try:
+            result = handle_open(str(selected.get("id") or ""))
+            current_id = get_current_project_id()
+            if current_id != previous_id:
+                try:
+                    _rotate_project_conversation(self)
+                except Exception as exc:
+                    set_current_project_id(previous_id)
+                    _cprint(f"  ✗ Could not switch PCB project: {exc}")
+                    return False
+        except PCBDraftError as exc:
+            _cprint(f"  ✗ {exc}")
+            return False
+
+        self._close_project_picker()
+        if result:
+            _cprint(result)
+        return True
+
     def _should_handle_steer_command_inline(
         self, text: str, has_images: bool = False
     ) -> bool:
@@ -12133,12 +12296,20 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _rotate_project_conversation,
             _slash_connection_options,
         )
+        from pcbdraft.agent.tool_bindings import (
+            get_current_project_id,
+            set_current_project_id,
+        )
         from pcbdraft.interfaces.tui.project_commands import HANDLERS
         from pcbdraft.services.provider_connection import ConnectionOptions
 
         tokens = command.strip().split(None, 1)
-        base = tokens[0].lstrip("/").casefold() if tokens else ""
+        raw_base = tokens[0].lstrip("/").casefold() if tokens else ""
         raw_args = tokens[1].strip() if len(tokens) > 1 else ""
+        from pcbdraft.interfaces.tui.commands import resolve_command
+
+        resolved = resolve_command(raw_base)
+        base = resolved.name if resolved is not None else raw_base
         if base == "connect" or (base == "model" and raw_args in {"", "--refresh"}):
             options = (
                 _slash_connection_options(raw_args)
@@ -12148,21 +12319,36 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _defer_connection(options)
             _cprint("  Opening the model connection wizard...")
             return False
+        if (
+            base in {"new", "open", "project", "resume"}
+            and raw_args
+            and TerminalApp._project_switch_is_busy(self, include_pending=False)
+        ):
+            _cprint("  Finish the current operation before switching PCB projects.")
+            return True
         handler = HANDLERS.get(base)
         if handler is None:
-            from pcbdraft.interfaces.tui.commands import resolve_command
-
             if not base or resolve_command(base) is None:
                 _cprint("  Unknown command. Use /help for available commands.")
                 return True
             return self._process_builtin_command(command)
+        previous_project_id = get_current_project_id()
         try:
             result = handler(raw_args)
         except PCBDraftError as exc:
             _cprint(f"✗ {exc}")
             return True
-        if base in {"new", "open", "project"} and raw_args:
-            _rotate_project_conversation(self)
+        if base in {"new", "open", "project", "resume"} and raw_args:
+            current_project_id = get_current_project_id()
+            should_rotate = base in {"new", "project"} or (
+                current_project_id != previous_project_id
+            )
+            if should_rotate:
+                try:
+                    _rotate_project_conversation(self)
+                except Exception:
+                    set_current_project_id(previous_project_id)
+                    raise
         if result:
             _cprint(result)
         return True
@@ -16544,7 +16730,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
     def _capture_modal_input_snapshot(self) -> None:
         """Temporarily clear the input buffer and save the user's in-progress draft."""
-        if self._modal_input_snapshot is not None or not getattr(self, "_app", None):
+        if getattr(self, "_modal_input_snapshot", None) is not None or not getattr(
+            self, "_app", None
+        ):
             return
         try:
             buf = self._app.current_buffer
@@ -16558,7 +16746,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
     def _restore_modal_input_snapshot(self) -> None:
         """Restore any draft text that was present before a modal prompt opened."""
-        snapshot = self._modal_input_snapshot
+        snapshot = getattr(self, "_modal_input_snapshot", None)
         self._modal_input_snapshot = None
         if not snapshot or not getattr(self, "_app", None):
             return
@@ -17852,6 +18040,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return _state_fragment("class:prompt-working", "⚠")
         if getattr(self, "_slash_confirm_state", None):
             return _state_fragment("class:prompt-working", "⚠")
+        if getattr(self, "_project_picker_state", None):
+            return _state_fragment("class:project-picker-title", "⌕")
         if self._clarify_freetext:
             return _state_fragment("class:clarify-selected", "✎")
         if self._clarify_state:
@@ -17964,6 +18154,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         approval_widget,
         slash_confirm_widget=None,
         clarify_widget,
+        project_picker_widget=None,
         model_picker_widget=None,
         spinner_widget=None,
         spacer,
@@ -17990,6 +18181,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 approval_widget,
                 slash_confirm_widget,
                 clarify_widget,
+                project_picker_widget,
                 model_picker_widget,
                 spinner_widget,
                 spacer,
@@ -18193,6 +18385,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         # the whole app.
         self._slash_confirm_state = None
         self._slash_confirm_deadline = 0
+        self._project_picker_state = None
 
         # Slash command loading state
         self._command_running = False
@@ -18323,6 +18516,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 event.app.invalidate()
                 return
 
+            # --- PCB project picker modal ---
+            if getattr(self, "_project_picker_state", None):
+                self._handle_project_picker_selection()
+                event.app.invalidate()
+                return
+
             # --- /model picker modal ---
             if self._model_picker_state:
                 try:
@@ -18417,6 +18616,31 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             text = raw_text.strip()
             has_images = bool(self._attached_images)
             if text or has_images:
+                # PCB project pickers own the composer and must be opened on
+                # the UI thread. Clear the submitted command first so its
+                # optional query becomes the filter instead of being erased by
+                # the normal post-command reset.
+                if self._should_handle_project_command_inline(
+                    text, has_images=has_images
+                ):
+                    picker_query = self._project_picker_query_from_input(
+                        text, has_images=has_images
+                    )
+                    event.app.current_buffer.reset(append_to_history=True)
+                    if self._project_switch_is_busy():
+                        _cprint(
+                            "  Finish queued or active work before switching PCB projects."
+                        )
+                    elif picker_query is not None:
+                        self._open_project_picker(picker_query)
+                    else:
+                        try:
+                            self.process_command(text)
+                        except Exception as exc:
+                            _cprint(f"  ✗ Could not switch PCB project: {exc}")
+                    event.app.invalidate()
+                    return
+
                 # Handle /model directly on the UI thread so interactive pickers
                 # can safely use prompt_toolkit terminal handoff helpers.
                 if self._should_handle_model_command_inline(
@@ -18631,6 +18855,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 and not self._approval_state
                 and not self._sudo_state
                 and not self._secret_state
+                and not getattr(self, "_project_picker_state", None)
             )
         )
 
@@ -18652,6 +18877,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 and not cli_ref._secret_state
                 and not cli_ref._slash_confirm_state
                 and not cli_ref._model_picker_state
+                and not cli_ref._project_picker_state
             )
         )
         _stash_panel_filter = Condition(
@@ -18758,6 +18984,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             immediately.
             """
             buf = event.current_buffer
+            if getattr(self, "_project_picker_state", None):
+                return
             if buf.complete_state:
                 # Completion menu is open — accept the selection
                 completion = buf.complete_state.current_completion
@@ -18916,6 +19144,31 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 )
                 event.app.invalidate()
 
+        # --- PCB project picker: arrow-key navigation ---
+        @kb.add("up", filter=Condition(lambda: bool(self._project_picker_state)))
+        def project_picker_up(event):
+            state = self._project_picker_state
+            if state is not None:
+                state.move(-1)
+                event.app.invalidate()
+
+        @kb.add("down", filter=Condition(lambda: bool(self._project_picker_state)))
+        def project_picker_down(event):
+            state = self._project_picker_state
+            if state is not None:
+                state.move(1)
+                event.app.invalidate()
+
+        @kb.add(
+            "escape",
+            filter=Condition(lambda: bool(self._project_picker_state)),
+            eager=True,
+        )
+        def project_picker_escape(event):
+            """ESC closes the PCB project picker without changing context."""
+            self._close_project_picker()
+            event.app.invalidate()
+
         # --- /model picker: arrow-key navigation ---
         @kb.add("up", filter=Condition(lambda: bool(self._model_picker_state)))
         def model_picker_up(event):
@@ -18996,6 +19249,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 and not self._sudo_state
                 and not self._secret_state
                 and not self._model_picker_state
+                and not self._project_picker_state
             )
         )
 
@@ -19064,6 +19318,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             if _should_cancel_voice:
                 _cprint(f"\n{_DIM}Recording cancelled.{_RST}")
                 threading.Thread(target=_recorder_ref.cancel, daemon=True).start()
+                event.app.invalidate()
+                return
+
+            # Cancel the project picker without exiting or changing project.
+            if self._project_picker_state:
+                self._close_project_picker()
                 event.app.invalidate()
                 return
 
@@ -19154,6 +19414,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             if _should_cancel_voice:
                 _cprint(f"\n{_DIM}Recording cancelled.{_RST}")
                 threading.Thread(target=_recorder_ref.cancel, daemon=True).start()
+                event.app.invalidate()
+                return
+
+            # Cancel the project picker without exiting or changing project.
+            if self._project_picker_state:
+                self._close_project_picker()
                 event.app.invalidate()
                 return
 
@@ -19533,7 +19799,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return cli_ref._get_tui_prompt_fragments()
 
         # Create the input area with multiline (Alt+Enter), autocomplete, and paste handling
-        from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+        from prompt_toolkit.auto_suggest import (
+            AutoSuggestFromHistory,
+            ConditionalAutoSuggest,
+        )
         from prompt_toolkit.completion import ThreadedCompleter
 
         _completer = SlashCommandCompleter(
@@ -19556,10 +19825,15 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # noticeable on WSL2/slow filesystems). ThreadedCompleter moves it off
             # the UI event loop, keeping typing responsive.
             completer=ThreadedCompleter(_completer),
-            complete_while_typing=True,
-            auto_suggest=SlashCommandAutoSuggest(
-                history_suggest=AutoSuggestFromHistory(),
-                completer=_completer,
+            complete_while_typing=Condition(
+                lambda: not bool(cli_ref._project_picker_state)
+            ),
+            auto_suggest=ConditionalAutoSuggest(
+                SlashCommandAutoSuggest(
+                    history_suggest=AutoSuggestFromHistory(),
+                    completer=_completer,
+                ),
+                Condition(lambda: not bool(cli_ref._project_picker_state)),
             ),
         )
         # Keep prompt_toolkit on its simple tempfile path. Setting
@@ -19611,6 +19885,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                still batch newlines.  Alt+Enter only adds 1 newline per
                event so it never triggers this.
             """
+            if getattr(self, "_project_picker_state", None) is not None:
+                self._update_project_picker_query(buf.text)
+                _prev_text_len[0] = len(buf.text)
+                _prev_newline_count[0] = buf.text.count("\n")
+                return
+
             text = _strip_leaked_bracketed_paste_wrappers(buf.text)
             text, _had_mouse_reports = _strip_leaked_terminal_responses_with_meta(text)
             if _had_mouse_reports:
@@ -19704,6 +19984,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 return ""
             if cli_ref._slash_confirm_state:
                 return "type 1/2/3, or use ↑/↓ then Enter"
+            if cli_ref._project_picker_state:
+                return "type a PCB project name or ID to filter"
             if cli_ref._clarify_freetext:
                 return "type your answer here and press Enter"
             if cli_ref._clarify_state:
@@ -19766,6 +20048,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     ("class:clarify-countdown", f"  ({remaining}s)"),
                 ]
 
+            if cli_ref._project_picker_state:
+                return [("class:hint", "  type to filter · ↑/↓ select · Enter open · Esc cancel")]
+
             if cli_ref._clarify_state:
                 # None deadline = unlimited wait → hide the countdown entirely.
                 if cli_ref._clarify_deadline is None:
@@ -19804,6 +20089,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 or cli_ref._secret_state
                 or cli_ref._approval_state
                 or cli_ref._slash_confirm_state
+                or cli_ref._project_picker_state
                 or cli_ref._clarify_state
                 or cli_ref._command_running
             ):
@@ -20281,6 +20567,35 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             filter=Condition(lambda: cli_ref._slash_confirm_state is not None),
         )
 
+        # --- PCB project picker: display widget ---
+        def _get_project_picker_display():
+            state = cli_ref._project_picker_state
+            if state is None:
+                return []
+            try:
+                from prompt_toolkit.application import get_app
+
+                size = get_app().output.get_size()
+                columns, rows = size.columns, size.rows
+            except Exception:
+                fallback = shutil.get_terminal_size((80, 24))
+                columns, rows = fallback.columns, fallback.lines
+            from pcbdraft.interfaces.tui.project_picker import render_project_picker
+
+            return render_project_picker(
+                state,
+                terminal_columns=columns,
+                terminal_rows=rows,
+            )
+
+        project_picker_widget = ConditionalContainer(
+            Window(
+                FormattedTextControl(_get_project_picker_display),
+                wrap_lines=False,
+            ),
+            filter=Condition(lambda: cli_ref._project_picker_state is not None),
+        )
+
         # --- /model picker: display widget ---
         def _get_model_picker_display():
             state = cli_ref._model_picker_state
@@ -20484,6 +20799,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     approval_widget=approval_widget,
                     slash_confirm_widget=slash_confirm_widget,
                     clarify_widget=clarify_widget,
+                    project_picker_widget=project_picker_widget,
                     model_picker_widget=model_picker_widget,
                     spinner_widget=spinner_widget,
                     spacer=spacer,
@@ -20536,6 +20852,13 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             "clarify-selected": "#FFD700 bold",
             "clarify-active-other": "#FFD700 italic",
             "clarify-countdown": "#CD7F32",
+            # PCB project picker: chrome keeps the accent; content inherits
+            # terminal foreground and selection uses polarity-safe reverse.
+            "project-picker-border": "#CD7F32",
+            "project-picker-title": "#FFD700 bold",
+            "project-picker-hint": "italic",
+            "project-picker-item": "",
+            "project-picker-selected": "reverse",
             # Sudo password panel
             "sudo-prompt": "#FF6B6B bold",
             "sudo-border": "#CD7F32",
