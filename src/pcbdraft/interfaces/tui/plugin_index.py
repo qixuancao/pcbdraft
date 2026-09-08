@@ -1,11 +1,12 @@
-"""Community plugin index — fetch, cache, search, and name resolution.
+"""Configured plugin index — fetch, cache, search, and name resolution.
 
-Mirrors the Skills Hub catalog pattern (``tools/skills_hub.py``): a static
-machine-readable JSON index hosted at a canonical URL, cached locally under
-``PCBDRAFT_RUNTIME_HOME/cache/`` with a TTL, with a bundled seed file as the offline
-fallback and format reference.
+PCBDraft has no built-in community marketplace. Users may configure a
+machine-readable JSON index with ``plugins.index_url``; each configured URL is
+cached locally under ``PCBDRAFT_RUNTIME_HOME/cache/`` with a TTL.
 
-Fallback chain: remote index → cached copy (fresh or stale) → bundled seed.
+Fallback chain for a configured index: remote index → cached copy (fresh or
+stale) → empty list. With no configured index the loader returns an empty
+list without accessing the network or an old cache.
 
 The index is discovery metadata ONLY.  **Indexed ≠ audited** — inclusion in
 the index means the entry's metadata was reviewed, not that the plugin's code
@@ -15,28 +16,21 @@ entries pin an immutable ref (tag or commit SHA).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 
 logger = logging.getLogger(__name__)
 
-# Canonical index location. Override via config key ``plugins.index_url``.
-DEFAULT_INDEX_URL = (
-    "https://raw.githubusercontent.com/NousResearch/hermes-plugin-index/main/index.json"
-)
-
-# Cache the fetched index for 24 hours; a stale cache is still preferred over
-# the bundled seed when the remote is unreachable.
+# Cache the fetched index for 24 hours; a stale cache is still used when the
+# explicitly configured remote is temporarily unreachable.
 INDEX_CACHE_TTL = 24 * 3600
-
-# Bundled seed — offline fallback and the machine-readable format reference.
-SEED_INDEX_PATH = Path(__file__).parent / "data" / "plugin_index.json"
 
 _FETCH_TIMEOUT = 10.0
 _MAX_INDEX_BYTES = 5 * 1024 * 1024  # refuse absurdly large index payloads
@@ -90,12 +84,14 @@ class PluginIndexEntry:
         return d
 
 
-def _cache_path() -> Path:
-    return get_runtime_home() / "cache" / "plugin_index.json"
+def _cache_path(index_url: str) -> Path:
+    """Return a cache path isolated to one configured index URL."""
+    digest = hashlib.sha256(index_url.encode("utf-8")).hexdigest()[:16]
+    return get_runtime_home() / "cache" / f"plugin_index_{digest}.json"
 
 
-def get_index_url() -> str:
-    """Resolve the index URL: config override ``plugins.index_url`` or default."""
+def get_index_url() -> str | None:
+    """Return the explicitly configured ``plugins.index_url``, if any."""
     try:
         from pcbdraft.model.configuration import cfg_get, load_config_readonly
 
@@ -104,7 +100,7 @@ def get_index_url() -> str:
             return override.strip()
     except Exception:  # pragma: no cover - config loading must never break search
         logger.debug("plugin index: config override lookup failed", exc_info=True)
-    return DEFAULT_INDEX_URL
+    return None
 
 
 def _parse_entries(raw: Any) -> list[PluginIndexEntry]:
@@ -161,17 +157,11 @@ def _parse_entries(raw: Any) -> list[PluginIndexEntry]:
     return entries
 
 
-def _load_seed_entries() -> list[PluginIndexEntry]:
-    try:
-        return _parse_entries(json.loads(SEED_INDEX_PATH.read_text(encoding="utf-8")))
-    except (OSError, ValueError) as exc:  # pragma: no cover - bundled file
-        logger.warning("plugin index: bundled seed unreadable: %s", exc)
-        return []
-
-
-def _read_cache(*, max_age: float | None) -> list[PluginIndexEntry] | None:
+def _read_cache(
+    index_url: str, *, max_age: float | None
+) -> list[PluginIndexEntry] | None:
     """Return cached entries if the cache exists (and is younger than *max_age*)."""
-    cache = _cache_path()
+    cache = _cache_path(index_url)
     try:
         if not cache.is_file():
             return None
@@ -185,9 +175,9 @@ def _read_cache(*, max_age: float | None) -> list[PluginIndexEntry] | None:
         return None
 
 
-def _write_cache(text: str) -> None:
+def _write_cache(index_url: str, text: str) -> None:
     try:
-        cache = _cache_path()
+        cache = _cache_path(index_url)
         cache.parent.mkdir(parents=True, exist_ok=True)
         from pcbdraft.core.runtime_utils import atomic_write_text
 
@@ -196,22 +186,21 @@ def _write_cache(text: str) -> None:
         logger.debug("plugin index: cache write failed: %s", exc)
 
 
-def _fetch_remote() -> list[PluginIndexEntry] | None:
+def _fetch_remote(index_url: str) -> list[PluginIndexEntry] | None:
     """Fetch and parse the remote index; cache the raw payload on success."""
-    url = get_index_url()
     try:
         import httpx
 
-        resp = httpx.get(url, timeout=_FETCH_TIMEOUT, follow_redirects=True)
+        resp = httpx.get(index_url, timeout=_FETCH_TIMEOUT, follow_redirects=True)
         resp.raise_for_status()
         text = resp.text
         if len(text.encode("utf-8", errors="ignore")) > _MAX_INDEX_BYTES:
             raise ValueError("Plugin index payload exceeds size limit.")
         entries = _parse_entries(json.loads(text))
-        _write_cache(text)
+        _write_cache(index_url, text)
         return entries
     except Exception as exc:
-        logger.debug("plugin index: remote fetch failed (%s): %s", url, exc)
+        logger.debug("plugin index: remote fetch failed (%s): %s", index_url, exc)
         return None
 
 
@@ -221,26 +210,32 @@ def load_index(
     """Load the plugin index.
 
     Returns ``(entries, source)`` where *source* is one of ``"remote"``,
-    ``"cache"``, or ``"seed"``.
+    ``"cache"``, or ``"none"``.
 
-    Order: fresh cache (unless *refresh*) → remote → stale cache → bundled seed.
+    A missing ``plugins.index_url`` returns ``([], "none")`` without reading
+    cache or attempting network access. For a configured URL the order is:
+    fresh cache (unless *refresh*) → remote → stale cache → empty list.
     ``offline=True`` skips the network entirely.
     """
+    index_url = get_index_url()
+    if index_url is None:
+        return [], "none"
+
     if not refresh:
-        cached = _read_cache(max_age=INDEX_CACHE_TTL)
+        cached = _read_cache(index_url, max_age=INDEX_CACHE_TTL)
         if cached is not None:
             return cached, "cache"
 
     if not offline:
-        remote = _fetch_remote()
+        remote = _fetch_remote(index_url)
         if remote is not None:
             return remote, "remote"
 
-    stale = _read_cache(max_age=None)
+    stale = _read_cache(index_url, max_age=None)
     if stale is not None:
         return stale, "cache"
 
-    return _load_seed_entries(), "seed"
+    return [], "none"
 
 
 # ---------------------------------------------------------------------------
