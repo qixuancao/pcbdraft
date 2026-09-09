@@ -128,17 +128,9 @@ jobs:
           "KICAD_CLI=$cli" | Out-File -FilePath $env:GITHUB_ENV -Append
       - run: uv sync --frozen --extra dev
       - run: uv run pcbdraft setup --json
-      - name: Generate and validate the native reference board
+      - name: Generate and validate the deterministic ATtiny fixture with real KiCad
         shell: bash
         run: >-
-          uv run pcbdraft generate
-          "$(uv run python -c 'from importlib.resources import files; from pcbdraft.core.resources import data_path; print(data_path("benchmark", "acceptance_requirements.json"))')"
-          "$RUNNER_TEMP/pcbdraft-first-board"
-          --json
-      - name: Validate the native reference board
-        shell: bash
-        run: >-
-          uv run pcbdraft validate
-          "$RUNNER_TEMP/pcbdraft-first-board"
+          uv run python scripts/native-kicad-smoke.py
+          "$RUNNER_TEMP/pcbdraft-native-smoke"
           --timeout 180
-          --json
