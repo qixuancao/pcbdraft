@@ -2,447 +2,158 @@
 
 ![PCBDraft 标志](docs/assets/brand/pcbdraft-mark-256.png)
 
-PCBDraft 是一个采用 Apache-2.0 许可证的独立 PCB 设计智能体。你用自然语言描述想做的
-电路板，它负责整理需求、规划电路、生成原生 KiCad 工程，并把连接检查、
-ERC、DRC 和每一步的证据留在本地。
+用自然语言生成、检查和继续修改小型低压 KiCad 原型板。
 
-它面向小型、低压、非安全关键的原型板。生成结果是工程候选，仍然需要
-人工审查，不能替代电气、布局、热、EMC 或制造工程师的签字。
+PCBDraft 把一句板卡需求变成可审查的电路计划和原生 KiCad 工程，并把连接检查、
+ERC、DRC、修改记录和候选产物留在项目目录。你可以继续用自然语言修改，也可以
+随时在 KiCad 中接手。
 
-## 特性
+> **实验性 Alpha（0.1.0）**：适合学习、验证想法和制作小型原型的工程候选，
+> 不适合直接用于量产、高压、大功率、医疗或安全关键设计。ERC/DRC 通过不代表
+> 电路可用、可制造或符合认证要求。
 
-- 类似编程智能体的交互终端界面，支持中文自然语言输入；
-- 默认即自主 Agent：PCBDraft Agent 自己观察工程、选择工具、阅读真实结果并
-  决定下一步，没有固定的 plan/generate/validate/repair/release 顺序；
-- 不要求用户预先决定层数、尺寸或全部器件；
-- 只使用本机安装的 KiCad 符号和封装；
-- 模型负责工程思考与工具选择，确定性代码负责生成 KiCad 文件、权限、
-  revision、事务与证据；
-- 自动布局、布线、连接检查、ERC、DRC 和项目一致性检查；
-- 所有模型服务都通过 PCBDraft 自己的配置文件接入，不依赖其他 CLI；
-- 失败会保留计划、工程和错误信息，方便继续修改。
+## 它适合谁
+
+- 想从需求快速得到一个可继续编辑的 KiCad 起点；
+- 想让模型协助整理器件、连接、布局和布线，同时保留本地检查证据；
+- 愿意人工检查原理图、封装、额定值、BOM 和制造输出。
+
+如果你的首要需求是任意复杂电路、完整 SI/PI/热/EMC 分析、器件可采购性保证，
+或无人审核直接下单，PCBDraft 目前不适合。
+
+## 当前能力
+
+- 在终端中用中文或英文描述、检查和迭代 PCB；
+- 根据本机 KiCad 库生成原生 `.kicad_sch`、`.kicad_pcb` 和工程文件；
+- 通过受限的结构化工具修改设计，而不是让模型任意写文件或执行 shell；
+- 运行连接、一致性、ERC、DRC 等本地检查，并将结果绑定到工程 revision；
+- 保存多个 PCB 项目，用 `/resume`、`/projects` 或 `/open` 找回工程；
+- 在本地 Web 工作台查看工程，也可以回到 KiCad 手工编辑。
+
+复杂电路覆盖、布局布线质量、元器件证据和硬件实测仍在建设中。目前没有能代表
+“任意板成功率”的公开数字，也没有可替代人工审核的生产就绪结论。
 
 ## 快速开始
 
-PCBDraft 支持 Linux、macOS 和 Windows，兼容稳定版 KiCad
-`>=10.0.0,<10.1.0`。当前发布的精确验收基线是 10.0.5；同一 10.0 系列的其他
-稳定 patch 可以运行，但 `pcbdraft doctor` 会如实标注它不是本发布的精确基线。
+运行环境：Python `>=3.11,<3.14`，稳定版 KiCad `>=10.0.0,<10.1.0`；当前精确
+验收基线是 KiCad 10.0.5。
 
-### Linux / macOS 一键安装
+> **版本提醒：**下面的默认安装命令从公开 `main` 解析并固定到精确 SHA。当前页面
+> 位于开发分支 `refactor/native-runtime-20260905`，新的 TUI 项目选择器尚不等于
+> `main` 已具备；要评估该功能，请使用后文的开发分支源码步骤。
 
-只需 Bash 和 `curl`。下面是一条完整命令：它会先下载完脚本，再让 Bash 执行，
-不会占用安装器的标准输入，因此确认提示和 `sudo` 密码输入都能正常工作。
+Linux / macOS：
 
 ```bash
 (installer="$(mktemp "${TMPDIR:-/tmp}/pcbdraft-install.XXXXXX")" && trap 'rm -f -- "$installer"' EXIT && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$installer" https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.sh && bash "$installer")
 ```
 
-Ubuntu 使用 apt 和 KiCad 10 稳定版 PPA；Debian、Fedora、Arch Linux 与 Linux
-Mint 保留各自已有的包管理器路径。macOS 需要事先装好 Homebrew，安装器不会替你
-安装通用包管理器。PCBDraft 本身始终装在当前用户目录；只有缺少或需要升级系统
-KiCad 时，包管理器才会请求管理员权限。
-
-### Windows 一键安装
-
-在普通 PowerShell 中运行下面这一条命令。Windows 优先使用系统已有的 WinGet，
-找不到 WinGet 时才使用已有的 Chocolatey；两者都没有时，安装器会在修改系统前
-给出明确的手动安装入口，而不会自动安装包管理器。
+Windows PowerShell：
 
 ```powershell
 & ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.ps1')))
 ```
 
-### 先检查、无人值守与重新运行
+安装器会先显示计划。系统 KiCad 的安装可能要求 `sudo` 或 UAC；PCBDraft 自身使用
+uv 的用户级隔离工具环境。完整平台范围、只检查模式、固定提交和排错见
+[安装指南](docs/INSTALLATION.md)。
 
-安装器一开始只做非破坏性检查，并显示平台、uv、KiCad、PCBDraft、将使用的包管理器
-以及是否需要管理员权限。只查看计划、不做任何修改：
-
-```bash
-(installer="$(mktemp "${TMPDIR:-/tmp}/pcbdraft-install.XXXXXX")" && trap 'rm -f -- "$installer"' EXIT && curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --output "$installer" https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.sh && bash "$installer" --check)
-```
-
-```powershell
-& ([scriptblock]::Create((Invoke-RestMethod -Uri 'https://raw.githubusercontent.com/qixuancao/pcbdraft/main/scripts/install.ps1'))) -Check
-```
-
-`--check` / `-Check` 在已经就绪时返回 0，需要执行已支持的安装动作时返回 10，
-遇到不受支持或不安全的状态时返回普通失败码。自动化环境可传 `--yes` / `-Yes`
-跳过 PCBDraft 自己的一次确认；这不会绕过 `sudo`、UAC 或包管理器的安全策略。
-`--ref` / `-Ref` 可指定完整的 40 位提交 SHA；原有的
-`--no-install-kicad`、`--no-install-uv`（PowerShell 中为
-`-NoInstallKiCad`、`-NoInstallUv`）也继续可用。
-
-安装器会先把公开 `main` 解析为完整提交 SHA，随后只从这个不可变提交读取源码和
-锁定约束。重复运行会重新检查实际状态：兼容的 uv、KiCad 和相同提交的 PCBDraft
-直接复用，中断或失败后运行同一条命令即可继续，不依赖临时状态文件。安装成功页的
-`Launch now:` 会给出当前机器上的绝对可执行路径，可以立刻复制运行；同时会在 PATH
-缺失时打印一条持久化修复提示。不需要 Git、预装 Python 或 GitHub 凭据。
-
-## 第一次启动
-
-核心安装就绪与模型登录是两件事：KiCad、PCBDraft 和库表全部通过检查后，即使尚未
-登录模型，安装仍然成功。需要开始自然语言设计时，再运行成功页给出的绝对路径并
-附加 `connect`，或在 PATH 已生效后单独运行：
+安装就绪和模型就绪是两件事。连接模型并检查环境：
 
 ```bash
 pcbdraft connect
-```
-
-完成后再启动 `pcbdraft`，直接输入任意一句板卡需求即可。
-
-环境检测和非破坏性修复统一由下面两个命令完成：
-
-```bash
 pcbdraft setup
 pcbdraft doctor --json
+pcbdraft
 ```
 
-PCBDraft 自身始终按用户级安装，不修改系统 Python，也不覆盖已有的 KiCad 配置；
-只有安装缺失的系统 KiCad 包时才会通过包管理器请求管理员权限。它会：
+进入 TUI 后先创建工程：
 
-- 检测稳定版 KiCad 10.0.x、`kicad-cli` 和 KiCad 自带的 `pcbnew` Python；
-- 在已支持的平台包管理器上安装缺失的 KiCad；
-- 检测或安装 uv，并由 uv 管理 PCBDraft 所需的 Python；
-- 用提交内锁定的运行时约束和 `uv tool install` 安装独立命令；
-- 按操作系统找到 KiCad 数据与配置目录，只初始化缺失的符号和封装库表。
+```text
+/new led-demo
+```
 
-安装器最后会打印命令的实际位置。Linux 和 macOS 通常位于
-`~/.local/bin/pcbdraft`；若首次运行提示找不到命令，执行：
+再输入一个明确的小需求，例如：
+
+```text
+设计一块 3.3V 指示灯原型板：一颗绿色 5mm LED、一个 330Ω 0805 电阻，
+用 2 针连接器接入 3.3V 和 GND。请先说明假设，再生成可在 KiCad 中检查的候选工程。
+```
+
+这只是**示例需求**，不是已验证成功率或硬件实测结果。生成后请人工检查器件型号、
+引脚、封装、极性、额定值、网络、板框、间距以及 ERC/DRC 结果。
+
+## 找回项目
+
+在 TUI 中输入 `/resume`，继续输入可筛选项目，使用 `↑` / `↓`、`Enter` 和 `Esc`
+操作。也可以直接使用：
+
+```text
+/projects led
+/open <项目名、完整 ID 或唯一 ID 前缀>
+```
+
+`/resume` 恢复的是保存于项目仓库中的 **PCB 工程状态和审计记录**。切换到不同工程
+时会开始新的模型会话；已选中同一工程时保留当前会话。它不会恢复旧终端逐字聊天，
+也不会自动重放中断的工具调用。
+更多工作流和精确命令语义见 [用户指南](docs/USER_GUIDE.md)。
+
+## 项目与 Web 工作台
 
 ```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
+pcbdraft repository --json
+pcbdraft repository /path/to/my-pcb-repository
+pcbdraft gui
+pcbdraft gui --project <项目 ID> --host 127.0.0.1 --port 9130
 ```
 
-模型选择和认证信息保存在平台的 PCBDraft 用户配置目录下的
-私有 `runtime/` 子目录；已有的 PCBDraft `hermes/` 目录会继续使用。该目录与独立安装的 Hermes 及其 `~/.hermes`
-数据隔离。首次启动还会创建并
-记录统一的 PCB 项目仓库 `~/PCBDraft/`；以后无论从哪个目录执行 `pcbdraft`，
-新项目、KiCad 原理图、`.kicad_pcb`、检查记录和发布文件都会位于这个仓库的
-`projects/` 下。要更新或修复安装，重新运行上面的安装命令即可。
+仓库中的 `projects/` 保存实际工程。切换仓库不会搬移或删除已有项目。Web 工作台
+默认只监听本机回环地址，用于查看 PCBDraft 工程，不是完整的 KiCad 替代品。
 
-## 从源码运行（开发）
+## 模型、数据与费用
 
-需要 Python 3.11 或更高版本、[uv](https://docs.astral.sh/uv/)，以及稳定版
-KiCad 10.0.x。Linux、macOS 和 Windows 的包导入、安装路径、锁与子进程边界会在
-CI 中检查，并分别运行真实 KiCad 的首板生成验收。
+PCBDraft 不内置模型，自然语言规划需要可用的模型服务。它会把对话、工具返回的工程
+信息，以及使用视觉功能时的板图图像发送给你选择的提供商；费用、日志保留、训练和
+地域策略由该提供商与账户配置决定。本地端点可配置，具体模型的工具调用和视觉兼容性
+需单独确认。不要把机密设计交给不符合你要求的服务。
+
+KiCad 执行、项目文件、revision 和检查收据位于本地。模型只能使用 PCBDraft 暴露的
+受限 PCB 工具，不能因此获得通用 shell 或任意文件系统访问权。
+
+## 版本说明
+
+上面的默认安装命令从公开 `main` 解析并安装不可变提交；安装器也支持显式 `--ref`
+或 `-Ref`。当前 README 位于开发分支
+`refactor/native-runtime-20260905`；在它合并前，新的 TUI 项目选择器和本文描述的
+部分开发行为不等于 `main` 已具备。要评估该分支：
 
 ```bash
 git clone https://github.com/qixuancao/pcbdraft.git
 cd pcbdraft
-uv sync --extra dev
+git switch refactor/native-runtime-20260905
+uv sync --frozen --extra dev
 uv run pcbdraft setup
 uv run pcbdraft doctor --json
+uv run pcbdraft
 ```
 
-## 配置模型
+当前自动化检查尚未形成全绿发布门禁。分支上的定向测试或单板 smoke 也不能当作
+稳定发行、自然语言成功率或硬件验证证据。
 
-运行 `pcbdraft connect`，或在交互终端中输入 `/connect`、`/model`，
-可以连接、切换或重新认证内置模型注册表中的提供商。向导支持
-API Key、浏览器/设备代码登录、云身份、本地端点、聚合服务和自定义端点；
-无浏览器的远程终端可使用 `pcbdraft connect --no-browser`。
+## 参与项目
 
-提供商认证、端点检测、令牌刷新和传输路由由 PCBDraft 的原生模型模块
-运行时统一处理。PCBDraft 仍会对用于板卡规划的返回值执行本地 JSON Schema
-和领域校验。密钥和刷新令牌只保存在私有认证存储中，不会写入 PCB
-工程、对话记录、调试跟踪或模型运行收据。直连模式不会读取、复制或回写
-Claude Code、Codex CLI 等其他客户端的凭据文件；请使用 `pcbdraft connect`
-建立独立登录，或显式配置环境凭据/API Key。
+- [提交 Issue](https://github.com/qixuancao/pcbdraft/issues)
+- [贡献指南](CONTRIBUTING.md)
+- [产品路线图](docs/ROADMAP.md)
+- [开发与验证](docs/DEVELOPMENT.md)
+- [架构说明](docs/ARCHITECTURE.md)
+- [安全策略](SECURITY.md)
 
-## 启动
+报告问题时请附操作系统、`pcbdraft --version`、`kicad-cli --version`、
+`pcbdraft doctor --json` 的脱敏输出、最小需求和原始错误。不要上传 API Key 或私有板卡。
 
-```bash
-pcbdraft
-```
+## 许可证与来源
 
-默认项目仓库是首次启动时创建的 `~/PCBDraft/`。如要放在另一块磁盘或已有的
-工程目录中，只需设置一次：
-
-```bash
-pcbdraft repository /path/to/my-pcb-repository
-pcbdraft repository --json  # 查看当前位置
-```
-
-该位置记录在与模型配置相同的平台配置目录下的 `repository.json`。切换仓库只影响
-之后打开和创建的 PCBDraft 项目；原仓库中的文件不会被移动或删除。
-
-### 本地 Web 工作台
-
-运行以下命令启动不依赖浏览器自动打开的本地 Web 界面：
-
-```bash
-pcbdraft gui
-pcbdraft gui --project <project-id> --host 127.0.0.1 --port 9130
-```
-
-然后手动打开终端显示的本地地址。工作台以已提交的板图为中心，提供项目搜索和
-状态筛选、器件/走线/过孔选择、图层快捷视图、对象检查器、验证状态、Agent 抽屉、
-命令面板、中英切换，以及主题、密度和布局记忆。验证结果会明确标识为通过、警告、
-失败、未运行或过期；不会把旧 revision 的结果显示为通过。
-
-若工程已保留完整、且收据 hash/size 可验证的制造产物，Inspector 会从固定服务器
-入口提供 BOM、Gerber/Drill ZIP、PnP、STEP 和原理图下载。浏览器不能提交文件路径
-或任意 artifact 名称；符号链接、路径穿越和收据不匹配会被拒绝。仅查看、下载和
-预览不会改变工程 revision 或 KiCad 文件；临时 ZIP/预览缓存位于用户缓存目录，
-不写入工程。静态资源和 API 使用相对路径，因此可将后端反向代理到 `/pcbdraft/`。
-Inspector 中的 “Open in KiCad” 只会打开当前所选仓库工程自己的 `.kicad_pcb`。
-部署就绪检查可访问 `GET /healthz` 或 `GET /pcbdraft/healthz`。
-
-KiCad 10 IPC 是可选的只读增强，不影响 GUI 的基本使用。需要时可安装官方绑定：
-
-```bash
-uv sync --extra kicad-ipc
-```
-
-IPC 需要已运行且在“偏好设置 → 插件”中启用 API server 的 KiCad；未安装绑定、
-KiCad 未打开或连接断开时，界面会明确显示 offline/unavailable 并继续使用 PCBDraft
-Design 与 `kicad-cli` 精确预览。
-
-直接描述电路板即可。用户没有指定层数时，PCBDraft 会根据小型原型的约束
-自动选择保守的初始方案，不要求用户理解叠层设计。
-
-## 默认工作方式：自主 Agent + 工具
-
-PCBDraft 默认不再按固定顺序驱动“规划→生成→验证→修复→发布”。默认模式是
-一个类似 Coding Agent 的循环：PCBDraft Agent 拿到一个持续存在的 PCB 目标
-（standing goal），自己观察当前工程、选择下一个工具、阅读真实结果，再决定
-继续、修改、检查、回退还是结束。
-
-```text
-用户持续目标
-      ↓
-  PCBDraft Agent
-  ↙    ↓    ↘
-查看   设计   修改
-  ↘    ↓    ↙
- PCB 工具注册表（具体扁平操作）
-      ↓
- ApplicationService（权限、revision、事务）
-      ↓
- 语义设计图 / KiCad
-      ↓
- 事实与证据
-      ↓
-  PCBDraft Agent
-      ↓
-continue / done / blocked
-```
-
-要点：
-
-- **工具结果只报告事实**。每次调用返回执行了什么、是否成功、改变了什么、
-  当前状态、发现了什么、有什么限制，以及证据引用。结果不包含
-  `next_step` 这类流程指令；下一步永远由 Agent 自己判断。
-- **每次结果之后 Agent 重新选择工具**。没有“模型只选第一个工具，之后由
-  本地固定流程接管”的限制；同一次模型响应中即使生成多个 PCB 调用，也只
-  执行第一个并逐一返回结果，避免在看见事实前连续修改工程。
-- **项目状态只是工程事实**（`draft`、`generated`、`validation_failed`、
-  `validated` 等），不唯一决定下一个工具。
-- **模型只看到具体扁平工具**。工程、检查、符号/封装库、语义编辑、摆放、
-  布线、验证、渲染和导出分别使用独立名称，例如 `pcb_inspect_design`、
-  `pcb_search_footprints`、`pcb_add_component`、`pcb_connect_pin`、
-  `pcb_place_footprint`、`pcb_route_net`、`pcb_run_drc` 和
-  `pcb_export_gerbers`。没有再通过 `operation` 选择第二层动作的 router，
-  也不向模型暴露一次执行整个阶段的宏。
-- **一次调用只做一个动作**。成功的写操作在同一事务里更新语义 IR、重新
-  物化 KiCad、检查同步关系并返回 revision、前后内容哈希和事实差异；任何
-  阶段失败都不会发布部分结果。
-- **会话绑定一个当前工程**。模型不能列出或打开其他工程；`/new`、`/open`
-  和 `--project` 是可信的工程选择边界。已安装的符号/封装可在选工程前查询，
-  当前工程的器件目录可用 `pcb_search_parts` / `pcb_describe_part` 查询；本机
-  KiCad 已有但目录未收录的组合可用 `pcb_register_kicad_part` 原子登记。
-  重新打开已有工程会恢复 `ApplicationService` 管理的工程状态、设计和审计记录，
-  但不会把旧终端聊天原样载入当前对话，也不会自动重放中断任务。成功切换工程后，
-  终端仍会静默开始一个新的原生会话，旧工程的工具结果不会进入新工程的下一次
-  模型请求。
-
-### 板图视觉流程
-
-打开工程后，可以直接提出“检查丝印是否遮挡焊盘”“看看布局是否有明显重叠”
-这类需要视觉判断的任务。模型会用 `pcb_render_board` 获取当前工程、当前 design
-revision 绑定的真实 PNG，先看整板。需要看清局部时，模型可从该结果自主选择一个
-像素矩形，并用结果中的 `image_sha256` 调用 `pcb_observe_board_region`；此工具只会
-裁剪当前工程 `last_preview` 固定 bundle 中经收据校验的 `board-top.png`，不接受文件
-路径。坐标原点是源图左上角，x 向右、y 向下，右/下边界不包含在裁剪中；返回结果会
-列出源图尺寸、裁剪框、源图/局部图哈希和 project/revision/design 绑定。局部图不做
-插值放大，不增加源图细节，也没有像素到板上毫米的投影标定。
-
-视觉判断之后，应使用 `pcb_inspect_component`、`pcb_inspect_net` 或
-`pcb_inspect_board` 获取稳定的 `component_id`、引脚/网络关系和板上毫米位置，再用
-封闭的结构化 PCB 工具精确修改；例如移动封装参考文字使用
-`pcb_move_footprint_reference`。修改会使旧 render 失效，模型必须重新调用
-`pcb_render_board`，如需局部确认再以新哈希调用 `pcb_observe_board_region`，只根据
-最新 revision 的图片确认结果。纯文字说明、器件属性或电气连接查询不需要因此
-自动渲染。
-
-板图像只在当前活跃模型请求中保留一张：后续任一 `pcb_*` 工具结果会移除旧图像
-像素但保留 revision、内容哈希和图片哈希摘要，并提示重新渲染。对话恢复或压缩后
-同样不会从历史摘要假装“看过图”，需要视觉判断时会获取新图。模型或提供商不支持
-图片工具结果、没有当前整板 render、源图哈希不符、图片损坏、收据过期、裁剪越界或
-大小超预算时会明确失败，不会静默退回 OCR、SVG 文本或无图推断。
-
-当前能力是 PCBDraft 工程工具闭环，不是通用桌面 computer-use，也不授予模型任意
-本地图片、shell、Python 或原始 KiCad 文本访问权。渲染后的视觉确认和局部 DRC
-只能作为设计候选证据，不能表示整板已生产合格或替代人工工程审查。
-
-### Goal Mode（持续目标）
-
-用 `/goal <目标>` 设立一个持续目标后，Agent 每轮结束由独立 judge 判断
-`done` / `continue` / `wait`：`continue` 时自动向同一会话追加一条简单的
-continuation 消息继续推进；`wait` 时暂停等待；达到通用 turn/tool 预算时
-如实暂停，不假装完成。用户的新消息随时可以暂停、修改或替换当前目标。
-Continuation 消息只重申目标并要求“检查当前工程状态、做你判断最有用的下一
-个具体工程动作”，不规定必须执行哪个阶段。
-
-### 语义设计图（Design Graph）
-
-CircuitPlan 和语义/原生意图 IR 保留为可查看、可逐步演化的设计表示。Agent
-使用 `pcb_inspect_design`、`pcb_inspect_component` 和 `pcb_inspect_net` 查看
-组件、功能块、网络、电源域、接口及保留的板级几何；再通过独立的 add、
-remove、update、connect、place、route 或 via 工具逐项修改。旧版 IR 在只读
-打开时保持原字节和哈希，第一次成功写入才原子升级为 IR v2。
-
-### 安全边界保持不变
-
-自由的是工程决策，硬约束的是权限、数据完整性和真实执行：
-
-- 所有写操作仍经过封闭工具目录、严格 Schema 校验、
-  `PermissionBroker`、baseline revision 检查、事务/工程锁和
-  ApplicationService——它是唯一工程写入权威；
-- 模型不能任意执行 Python/shell、不能任意写文件系统、不能直接手写原始
-  KiCad 文本，也不能引用 ApplicationService 内部方法；
-- ERC/DRC 等检查结果只能来自真实执行，不能由模型伪造；
-- durable dispatch 之后结果不明时照旧 fail closed。
-
-### 原生会话与持久化作业
-
-终端与 Web 自然语言会话共用 `agent.loop.AIAgent`，模型在每次工具结果之后
-决定下一步。Web 的 `ConversationOrchestrator` 把每次工具调用、审批、回复
-写入持久化记录，并保留跨轮模型历史。工程、权限和服务实例绑定到各自会话，
-并发处理不同工程时不会借用终端当前选中的工程。
-
-### Legacy 模式（durable job 路径）
-
-显式兼容任务和快捷操作仍由 `AgentOrchestrator`/`JobRunner` 驱动，
-其历史上的确定性后续工具策略（先由模型选一次工具、之后本地策略接管）保留
-为 legacy 兼容模式和显式快捷方式（`/validate`、`/confirm` 等）。它不再是
-默认 PCBDraft Agent 的控制器。持久化、恢复、预算和审批仍由
-`AgentOrchestrator`/`JobRunner` 负责；它们不决定 PCB 工程下一步。
-
-Legacy durable 路径中的每条消息都是一个可恢复的 Agent 回合。每次工具调用都会在
-执行前持久化，并绑定当前工程 revision；进程中断后，显式 `/retry` 会从原 turn
-中尚未 dispatch 的边界继续，不会重新解释已经完成的那条需求。若进程在一个写工具
-dispatch 后、精确结果收据落盘前退出，运行时会保守停止并要求检查工程后提交新 turn，
-不会用 `/retry` 猜测并重放可能已经发生的副作用。同样，工具在 durable dispatch
-之后抛错、但本地 revision/receipt 又不能证明精确结果时，会记为不可重放的
-interrupted/outcome-unknown；模型选择的直接动作若未完成，也不会根据当前状态推导成
-另一个动作（例如把失败的“丢弃候选”变成“应用候选”），而是要求提交新 turn。
-
-持久化 Agent Job 使用版本化的执行策略快照，精确绑定 permission mode、工具目录
-指纹和单回合工具上限。启动恢复和 `/retry` 只有在当前运行时与该快照完全一致时才会
-继续尚未 dispatch 的调用；旧版无策略 Job、历史 direct action、缺失 durable turn，
-以及任何绑定不明的记录都会 fail closed，只保留可见的 cancelled/interrupted/failed
-审计结果，不会因为重启而获得更宽权限。
-
-上述兼容模式的路由请求会在发出前写入工程内的
-`agent-turns/model-decisions/{turn_id}-router.json`。已完成的决策只会按原调用
-复用；已 dispatch 但结果不明，或已明确失败的决策，都不会自动再向模型
-POST，而是保守回到本地策略。该 journal 只记录工具选择边界，不能代替本地
-KiCad 检查和工程证据。无论调用来自模型、MCP 还是本地策略，都必须通过
-`PermissionBroker`、封闭工具目录、严格参数 Schema 和 revision 检查；模型不会因此
-获得文件系统、shell 或原始 KiCad 写权限。
-
-默认的 `--approval-mode workspace` 会继续执行用户要求的本地工程操作；希望在
-每次 authoritative write 前人工确认时，可用
-`uv run pcbdraft --approval-mode review`。`read_only` 会拒绝所有会留下持久状态的
-PCB 工具。上述非默认权限模式目前只由终端界面支持；`gui` 会在启动服务前明确拒绝
-`review` 或 `read_only`，不会静默回退到 `workspace`。
-
-交互终端中常用命令：
-
-| 命令 | 作用 |
-| --- | --- |
-| `/connect` | 连接、切换或重新认证模型提供商 |
-| `/goal <目标>` | 设立持续目标；Agent 循环推进直到完成、阻塞或预算暂停 |
-| `/goal status` / `pause` / `resume` / `clear` | 管理当前持续目标 |
-| `/resume [query]` | 打开最近 PCB 工程选择器，可按中文/英文名称或工程 ID 筛选 |
-| `/model` | 打开同一提供商与模型向导 |
-| `/project [路径]` | 查看当前项目仓库；提供路径时切换后续项目的统一存储位置 |
-| `/new <名称>` | 在项目仓库中创建新 PCB 项目并设为当前上下文（不传名称显示用法） |
-| `/projects [query]`（别名 `/pr`） | 打开内嵌工程选择器，可按中文/英文名称或 ID 筛选 |
-| `/open [id\|唯一前缀\|唯一名称]` | 无参数时打开工程选择器；提供完整 ID、唯一 ID 前缀或唯一名称时直接打开 |
-| `/review` | 查看计划、变更和检查证据 |
-| `/confirm` | 仅批准当前精确绑定的工具调用，或生成已审查方案 |
-| `/discard` | 拒绝待审批调用，或丢弃已暂存变更 |
-| `/logs [id]` | 显示最近工程事件 |
-| `/stop` | 在安全边界停止当前任务 |
-| `/retry` | 继续尚未 dispatch 的失败边界；绝不重放结果不明的写调用 |
-| `/validate` | 重新运行检查 |
-| `/release` | 生成制造候选证据包 |
-| `/quit` | 退出交互终端 |
-
-内嵌工程选择器支持继续输入筛选，并用 `↑` / `↓` 移动、`Enter` 确认、`Esc` 取消；
-`/resume`、`/projects` 和 `/pr` 使用同一个工程选择入口，不暴露上游 Hermes 的旧会话恢复。
-
-`/help` 显示全部可用命令。与 PCB 无关的命令
-（消息网关、语音、看板、计费、技能市场等）已从帮助、自动补全和分发中裁剪，
-交互终端只暴露 PCBDraft 需要的命令面。
-
-## 工程内核（能力，不是界面步骤）
-
-下面列出的是内核具备的工程能力。它们是 Agent 可以按任意顺序使用的活动，
-不是必须逐个经过的阶段：
-
-```text
-约束提取 · 电路计划 · KiCad 符号解析
-· 原理图与 PCB 生成 · 布局/布线 · 连接检查、ERC、DRC · 人工审查
-```
-
-语义设计图（CircuitPlan v2 / 语义 IR）会表达层级功能块、电源域、接口、
-连接器完整引脚表、网络标签、命名布局区域、锚点禁布区、差分对验收条件和
-可本地复算的断言。它是可查看、可逐步演化的设计表示，不要求一次性产出完整
-JSON 才能开始其他工作。模型只能选择受限名称和尺寸，不能直接写坐标、走线
-或 KiCad 文件文本；布局、禁布和生成后几何指标都由本地确定性代码执行与记录。
-当前差分对能力验证实际线宽、边到边间距、耦合长度比例和长度差，不代表阻抗
-仿真，也不代表已有专用的耦合布线器。
-
-生成的工程可以直接用 KiCad 打开和继续编辑。PCBDraft 不锁定文件格式，
-也不把模型服务绑定到某一家供应商。
-
-L4/L6/L7 外部记录会被复制、哈希并校验结构，但不会被当作已认证的签字。
-`production_evidence_complete` 只表示声明的证据槽位齐全；PCBDraft 始终保持
-`production_ready=false`，生产放行必须在本工具之外由有权限的工程流程完成。
-
-## 源码结构
-
-实现代码不再平铺在包根目录，而是按职责分层：
-
-| 目录 | 职责 |
-| --- | --- |
-| `pcbdraft/core/` | 错误、文件安全、锁、进程和项目基础设施 |
-| `pcbdraft/domain/` | PCB IR、需求、器件、规则和变更模型 |
-| `pcbdraft/agent/` | Agent 计划、事件、运行时、修复和工具边界 |
-| `pcbdraft/model/` | 模型配置、结构化调用和供应商适配 |
-| `pcbdraft/kicad/` | KiCad 原理图、PCB、布局、布线、预览与同步 |
-| `pcbdraft/services/` | 应用服务、任务、托管工程、事务和工作流 |
-| `pcbdraft/verification/` | 证据、验证、评审、基准和发布门禁 |
-| `pcbdraft/interfaces/` | CLI、Web 与原生 TUI（命令、渲染、终端生命周期） |
-
-`tests/` 使用相同的职责目录，能够直接找到每层对应的测试。详细边界和
-新增代码的放置规则见 [项目结构说明](docs/PROJECT_STRUCTURE.md)。1.0 版本
-暴露过的旧 Python 模块路径仍由惰性兼容层支持，新代码应使用上表中的规范路径。
-
-## 开发
-
-```bash
-scripts/test.sh
-```
-
-如需清理可能污染 wheel 的本地构建缓存，运行 `scripts/clean.sh` 或
-`make clean`。发布检查会在构建前后自动执行这一步。
-
-欢迎提交 Issue 和 Pull Request。
-
-## 许可证
-
-PCBDraft 使用 Apache License 2.0，详见 [LICENSE](LICENSE)。
+PCBDraft 使用 [Apache License 2.0](LICENSE)。部分会话、终端、提供商和通用工具代码
+由 Nous Research 的 Hermes Agent（MIT）修改而来；完整归属与第三方许可见
+[NOTICE](NOTICE)。PCBDraft 是独立项目，KiCad 商标归其权利人所有。

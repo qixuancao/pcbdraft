@@ -1,86 +1,94 @@
 # PCBDraft roadmap
 
-This roadmap separates the current Apache-licensed MVP from the much larger claim of
-autonomous production PCB engineering. It contains no fixed board catalog and no
-arbitrary layer ceiling: the agent selects a practical stackup when the user does
-not, while the installed KiCad backend reports concrete technical limits.
+PCBDraft is currently a `0.1.0` alpha for small, non-safety-critical KiCad
+prototypes. This roadmap describes desired outcomes, not shipped features or
+delivery dates. A capability counts as released only when the public version,
+documentation, and reproducible evidence refer to the same commit.
 
-## Current MVP baseline
+## Where the project is now
 
-The current runtime can accept an ordinary-language request through the Python TUI
-and a configured model API, create a schema-constrained circuit plan, resolve installed stock
-KiCad symbols and footprints, generate native schematic/PCB/project files, make
-a bounded deterministic placement/routing attempt, run available KiCad and
-PCBDraft checks, repair at most twice, and preserve inspectable evidence.
-Circuit-plan version 2 carries hierarchical functional blocks, power domains,
-interfaces, complete connector pinouts, exact net labels, named placement
-regions, anchored board keepouts, measurable differential-pair acceptance
-criteria, and locally evaluated assertions into the existing semantic IR.
-Coordinates remain local deterministic output. Version-1 plans remain readable.
+The current codebase provides a terminal and browser interface, a configured
+model-driven planning flow, native KiCad project generation, bounded PCB editing
+operations, and project-local checks and evidence. Projects can be kept in a
+repository and reopened for later work.
 
-The Hermes product surface is a closed flat PCB toolbox: each project read,
-semantic edit, board operation, check, render, or export is a separate strict
-tool call. IR v2 retains native outline, footprint pose, route, unroute, and via
-intent; existing IR v1 projects remain stable on read and migrate on their first
-successful atomic write. General Hermes shell/web tools, phase-sized PCB macros,
-and second-level domain routers are not part of the PCB model surface.
-Each Hermes session is bound to the trusted current project. Installed-library
-facts are globally readable, while project catalogs support factual part search,
-description, and atomic registration of an installed KiCad symbol/footprint pair.
+Those are engineering capabilities, not proof of broad usefulness. The project
+does not yet have enough documented external trials to distinguish product
+problems from installation friction, unclear positioning, model variability, or
+low visibility. ERC, DRC, and software fixtures also do not prove that a board is
+functionally correct, manufacturable, or safe.
 
-Release acceptance currently includes three materially different small boards:
+## Near-term outcomes
 
-- a connector, bypass capacitor, resistor, and LED indicator;
-- a two-connector passive RC low-pass breakout; and
-- a two-connector I2C adapter with explicit SDA/SCL pull-ups.
+### 1. A dependable first session
 
-All three complete real KiCad routing, ERC, DRC, schematic parity, and the
-candidate gate in the supported test environment. They remain non-production
-because component qualification, engineering review, fabrication, and physical
-test evidence are external. Imported records can complete declared evidence slots,
-but PCBDraft cannot authenticate them and always reports production readiness as
-false. An intentionally incomplete STM32F405/SHT31 plan
-also completes its declared fine-pitch routes, then fails the correct electrical
-gates for missing power pins, rail source, decoupling, and pull-ups.
+A new user should be able to install PCBDraft, configure a provider, run
+diagnostics, create a project, and understand the next action when any step fails.
+The documented path must cover the supported Python and KiCad versions and avoid
+assuming an existing developer checkout.
 
-## Next: broader useful prototypes
+The same user should be able to restart PCBDraft, find a recent project, resume
+it without knowing an internal ID, and see clearly whether work is active,
+interrupted, awaiting review, or blocked.
 
-Priority work should improve generality rather than add named-board branches:
+### 2. Three reproducible examples
 
-1. Extend the version-2 semantic contract with mounting holes, board-outline
-   intent, current classes, and stackup-aware route profiles. Emit native KiCad
-   rule areas for keepouts and add pair-aware coupled routing; the current
-   differential-pair contract measures generated geometry but does not claim
-   controlled impedance.
-2. Expand deterministic circuit review for regulator feedback, reset/boot/debug,
-   protection, crystal/clock networks, USB basics, pull direction, analog bias,
-   and device-specific power-pin families.
-3. Add a reviewed component-evidence workflow that can import exact manufacturer
-   identity, datasheet revision, package/pin contract, ratings, lifecycle, and
-   footprint qualification without treating web/model text as verified data.
-4. Feed structured placement/routing congestion back into bounded replanning,
-   and improve orientation, functional grouping, fan-out, plane assignment, and
-   rip-up/retry while keeping search limits and deterministic receipts.
-5. Add TUI-native schematic/board preview navigation, clearer semantic diffs,
-   per-finding remediation, and an explicit handoff to KiCad for manual edits.
+Publish three small examples: an LED indicator, a passive RC filter, and an I2C
+pull-up adapter. Each example must report rather than imply its result and include:
 
-Acceptance for this milestone should use a growing public corpus of small boards,
-report generation/routing/gate rates by topology, and retain every failure class.
-Passing the corpus must never be restated as arbitrary-board support.
+- the exact PCBDraft revision, OS, Python version, and KiCad version;
+- the request and non-secret provider/model settings;
+- elapsed time plus model usage and estimated cost when the provider exposes it;
+- the native KiCad artifacts and the checks that actually ran; and
+- every failed, skipped, or unavailable check, including the absence of physical
+  fabrication and measurement.
 
-## Later: engineering candidate workflow
+An example is still useful when it fails reproducibly. None of these examples is
+a production-readiness claim or a fixed-board branch in the implementation.
 
-An engineering-candidate release needs reproducible library/version locking,
-vendor capability profiles, BOM alternatives, tolerance and power analysis,
-simulation adapters where meaningful, richer DFM checks, and attributed human
-review. Hardware-in-the-loop fixtures should fabricate, assemble, bring up, and
-measure a small open test corpus so L7 represents physical evidence rather than a
-software fixture.
+### 3. One coherent release surface
 
-## Explicit non-goals and release rule
+Align the public default branch, install scripts, package metadata, changelog,
+documentation, CI commands, tag, and GitHub Release to one verified revision.
+Installation instructions should identify what was installed, and CI must invoke
+commands that exist in that revision. A released build should not depend on
+unpublished development-branch behavior.
 
-PCBDraft should not become a second EDA editor, let a model mutate raw native
-files, silently replace a requested circuit with a demo, self-sign engineering
-review, or infer production readiness from ERC/DRC alone. New claims ship only
-when a named artifact and reproducible test support them; unavailable sourcing,
-simulation, human review, fabrication, or measurement remains unavailable.
+Release only after the required CI and release checks pass for that exact
+revision. A local development checkpoint is not a public release.
+
+### 4. Evidence from external trial users
+
+Invite an initial group of roughly 5–10 external users to attempt the first-board
+and resume paths. Record install completion, time to the first native project,
+where users stop, whether they can reopen the project, model cost when available,
+and the failure classes they encounter. Do not collect private board content or
+credentials.
+
+Use that evidence to choose the next product work. The trial is intended to
+discover problems; it is not a promised adoption number or a success claim.
+
+## After the onboarding evidence
+
+Only then prioritize broader engineering work according to observed failures:
+
+- clearer review, recovery, semantic diffs, and KiCad handoff;
+- better generic electrical checks and component-evidence handling;
+- mounting holes, outline intent, current classes, stackup-aware constraints,
+  and rule-area support; and
+- bounded placement and routing improvements with inspectable failure reasons.
+
+Passing a small corpus must never be restated as arbitrary-board support.
+
+## Non-goals
+
+PCBDraft is not a replacement for KiCad, a source of certified component data,
+or an authority for production approval. It must not let a model write unchecked
+native files or shell commands, hide an incomplete route, infer production
+readiness from ERC/DRC, or claim human review, fabrication, assembly, or physical
+test that did not happen.
+
+Safety-critical, medical, aviation, mains-voltage, high-power, and production
+certification workflows are outside the current product scope. Future support
+would require explicit domain evidence and independent expert review, not a
+larger prompt or a passing software fixture.
