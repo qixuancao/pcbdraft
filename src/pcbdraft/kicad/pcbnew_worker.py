@@ -9,7 +9,6 @@ bounded, internally generated JSON job, keeping host project code off sys.path.
 from __future__ import annotations
 
 import hashlib
-import itertools
 import json
 import math
 import os
@@ -74,6 +73,31 @@ def _footprint_root():
 
 
 FOOTPRINT_ROOT = _footprint_root()
+
+
+def _adjacent_pairs(values):
+    """Yield neighboring values without requiring Python 3.10's pairwise."""
+
+    iterator = iter(values)
+    try:
+        previous = next(iterator)
+    except StopIteration:
+        return
+    for current in iterator:
+        yield previous, current
+        previous = current
+
+
+def _normalize_lf(text):
+    """Normalize Windows CRLF before strict deterministic processing."""
+
+    return text.replace("\r\n", "\n")
+
+
+def _write_utf8_lf(path, text):
+    """Write deterministic UTF-8/LF bytes using APIs available in Python 3.9."""
+
+    Path(path).write_bytes(_normalize_lf(text).encode("utf-8"))
 
 
 def _strict(value, required, optional=()):
@@ -295,7 +319,7 @@ def _canonicalize_board_uuids(path, replacements, design_id):
     data = source.read_bytes()
     if len(data) > 128 * 1024 * 1024:
         raise ValueError("generated board exceeds canonicalization bound")
-    text = data.decode("utf-8")
+    text = _normalize_lf(data.decode("utf-8"))
     definition = re.compile(
         r'\((?:uuid|tstamp)\s+"?([0-9a-fA-F]{8}-[0-9a-fA-F-]{27})"?\)'
     )
@@ -328,7 +352,7 @@ def _canonicalize_board_uuids(path, replacements, design_id):
             f"generated board contains {len(unexpected)} untracked UUID definitions"
         )
     text = _canonicalize_board_order(text)
-    source.write_text(text, encoding="utf-8", newline="\n")
+    _write_utf8_lf(source, text)
 
 
 def inspect_job(job):
@@ -805,7 +829,7 @@ def _set_footprint_uuids(footprint, design_id, component_id, replacements):
 
 def _add_outline(board, design_id, width_mm, height_mm, replacements):
     points = ((0, 0), (width_mm, 0), (width_mm, height_mm), (0, height_mm), (0, 0))
-    for index, (first, second) in enumerate(itertools.pairwise(points)):
+    for index, (first, second) in enumerate(_adjacent_pairs(points)):
         shape = pcbnew.PCB_SHAPE(board)
         shape.SetShape(pcbnew.SHAPE_T_SEGMENT)
         shape.SetLayer(pcbnew.Edge_Cuts)
@@ -1175,7 +1199,8 @@ def build_job(job, output_path):
         project_data = json.loads(auxiliary_project.read_text(encoding="utf-8"))
         project_data["meta"]["filename"] = project_target.name
         _configure_project_rules(project_data)
-        auxiliary_project.write_text(
+        _write_utf8_lf(
+            auxiliary_project,
             json.dumps(
                 project_data,
                 ensure_ascii=False,
@@ -1184,8 +1209,6 @@ def build_job(job, output_path):
                 allow_nan=False,
             )
             + "\n",
-            encoding="utf-8",
-            newline="\n",
         )
         os.chmod(auxiliary_project, 0o644)
         os.replace(auxiliary_project, project_target)

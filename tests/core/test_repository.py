@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -53,7 +54,9 @@ class ProjectRepositoryTests(unittest.TestCase):
                 project_id = draft["project"]["id"]
                 self.assertEqual(service.root, repository_path.resolve())
                 self.assertTrue(
-                    service.project_root(project_id).is_relative_to(repository_path)
+                    service.project_root(project_id)
+                    .resolve()
+                    .is_relative_to(repository_path.resolve())
                 )
                 self.assertFalse((unrelated_cwd / "projects").exists())
 
@@ -87,12 +90,19 @@ class ProjectRepositoryTests(unittest.TestCase):
                         cli_main(["repository", str(repository_path), "--json"]),
                         0,
                     )
-                self.assertIn(str(repository_path.resolve()), output.getvalue())
+                configured = json.loads(output.getvalue())
+                self.assertEqual(
+                    Path(configured["root"]).resolve(), repository_path.resolve()
+                )
 
                 output = StringIO()
                 with redirect_stdout(output):
                     self.assertEqual(cli_main(["repository", "--json"]), 0)
-                self.assertIn('"configured_now": false', output.getvalue())
+                reopened = json.loads(output.getvalue())
+                self.assertFalse(reopened["configured_now"])
+                self.assertEqual(
+                    Path(reopened["root"]).resolve(), repository_path.resolve()
+                )
 
     def test_existing_legacy_projects_are_recorded_without_moving_them(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

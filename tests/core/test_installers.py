@@ -435,6 +435,8 @@ if ($ready -ne 0) {{ exit 93 }}
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_dynamic_one_line_check_does_not_exit_the_calling_shell(self) -> None:
+        if os.name != "nt":
+            self.skipTest("the complete PowerShell installer preflight is Windows-only")
         engines = self._powershell_engines()
         if not engines:
             self.skipTest("PowerShell is unavailable on this runner")
@@ -468,6 +470,9 @@ class ReadmeInstallerCommandTests(unittest.TestCase):
 
     def test_documentation_covers_modes_prerequisites_and_next_steps(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        installation = (ROOT / "docs" / "INSTALLATION.md").read_text(encoding="utf-8")
+        documentation = readme + "\n" + installation
+        self.assertIn("(docs/INSTALLATION.md)", readme)
         for option in (
             "`--check`",
             "`-Check`",
@@ -476,11 +481,14 @@ class ReadmeInstallerCommandTests(unittest.TestCase):
             "`--ref`",
             "`-Ref`",
         ):
-            self.assertIn(option, readme)
-        for prerequisite in ("apt", "Homebrew", "WinGet", "Chocolatey"):
-            self.assertIn(prerequisite, readme)
-        self.assertIn("Launch now:", readme)
-        self.assertIn("pcbdraft connect", readme)
+            self.assertIn(option, documentation)
+        for prerequisite in ("Ubuntu", "Homebrew", "WinGet", "Chocolatey"):
+            self.assertIn(prerequisite, documentation)
+        self.assertIn("apt-get", BASH_INSTALLER.read_text(encoding="utf-8"))
+        self.assertIn("安装结束会打印可执行文件绝对路径", installation)
+        self.assertIn("Launch now:", BASH_INSTALLER.read_text(encoding="utf-8"))
+        self.assertIn("Launch now:", POWERSHELL_INSTALLER.read_text(encoding="utf-8"))
+        self.assertIn("pcbdraft connect", documentation)
 
 
 if __name__ == "__main__":
