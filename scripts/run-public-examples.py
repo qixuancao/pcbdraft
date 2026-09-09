@@ -122,6 +122,8 @@ def _runtime_probe(python: Path, env: dict[str, str], cwd: Path) -> dict[str, An
         or not value.get("usable")
     ):
         raise RuntimeError("the isolated runtime does not have a usable provider")
+    if not isinstance(value.get("python_version"), str) or not value["python_version"]:
+        raise RuntimeError("the worker Python version was not reported")
     return value
 
 
