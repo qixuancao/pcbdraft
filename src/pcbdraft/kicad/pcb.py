@@ -1828,7 +1828,9 @@ def _run_worker(
             max_output_bytes=WORKER_OUTPUT_LIMIT,
         )
         if result.timed_out:
-            raise PCBDraftError("isolated pcbnew worker timed out")
+            raise PCBDraftError(
+                f"isolated pcbnew worker timed out (mode={mode}, timeout={timeout:.1f}s)"
+            )
         if result.output_limited:
             raise PCBDraftError("isolated pcbnew worker exceeded its output bound")
         if result.returncode != 0:
