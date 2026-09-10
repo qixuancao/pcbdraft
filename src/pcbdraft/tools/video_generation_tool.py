@@ -45,7 +45,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.video_gen_provider import (
     COMMON_ASPECT_RATIOS,
@@ -211,8 +211,8 @@ def check_video_generation_requirements() -> bool:
     visible to the toolset gate.
     """
     try:
-        from pcbdraft.agent.video_gen_registry import list_providers
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.video_gen_registry import list_providers
 
         _ensure_plugins_discovered()
         for provider in list_providers():
@@ -238,8 +238,8 @@ def _resolve_active_provider():
     where a long-lived session was started before a plugin was installed.
     """
     try:
-        from pcbdraft.agent.video_gen_registry import get_active_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.video_gen_registry import get_active_provider
 
         _ensure_plugins_discovered()
         provider = get_active_provider()

@@ -22,7 +22,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from typing import Dict, List
 
 _GIT_TIMEOUT = 15
 _MAX_UNTRACKED_FILES = 50  # sanity cap so a node_modules explosion can't hang us

@@ -11,7 +11,6 @@ from __future__ import annotations
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import dataclass
 from io import StringIO
-from typing import Optional
 
 VALID_APPROVAL_MODES = ("manual", "smart", "off")
 

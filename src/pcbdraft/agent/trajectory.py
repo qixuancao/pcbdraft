@@ -8,7 +8,7 @@ the file-write logic live here.
 import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,10 @@ def has_incomplete_scratchpad(content: str) -> bool:
 
 
 def save_trajectory(
-    trajectory: list[dict[str, Any]], model: str, completed: bool, filename: str = None
+    trajectory: list[dict[str, Any]],
+    model: str,
+    completed: bool,
+    filename: str | None = None,
 ):
     """Append a trajectory entry to a JSONL file.
 
@@ -60,4 +63,4 @@ def save_trajectory(
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
         logger.info("Trajectory saved to %s", filename)
     except Exception as e:
-        logger.warning("Failed to save trajectory: %s", e)
+        logger.warning("Failed to save trajectory: %s", e, exc_info=True)

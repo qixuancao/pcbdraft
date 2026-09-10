@@ -13,7 +13,6 @@ import argparse
 import sys
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 
 def _fmt_ts(ts: str | None) -> str:

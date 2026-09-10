@@ -88,7 +88,7 @@ from collections.abc import Iterable, Mapping
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.interfaces.tui.sqlite_util import (
     add_column_if_missing as _add_column_if_missing,
@@ -4586,7 +4586,7 @@ def _resume_status_from_events(conn: sqlite3.Connection, task_id: str) -> str:
 
 def recompute_ready(
     conn: sqlite3.Connection,
-    failure_limit: int = None,
+    failure_limit: int | None = None,
 ) -> int:
     """Promote ``todo`` tasks to ``ready`` when all parents are ``done`` or ``archived``.
 
@@ -9449,7 +9449,7 @@ def _record_task_failure(
     error: str,
     *,
     outcome: str,
-    failure_limit: int = None,
+    failure_limit: int | None = None,
     force_trip: bool = False,
     release_claim: bool = False,
     end_run: bool = False,
@@ -9635,7 +9635,7 @@ def _record_spawn_failure(
     task_id: str,
     error: str,
     *,
-    failure_limit: int = None,
+    failure_limit: int | None = None,
 ) -> bool:
     return _record_task_failure(
         conn,

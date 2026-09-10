@@ -6,13 +6,28 @@ Usage:
     result = transport.normalize_response(raw_response)
 """
 
+import importlib
+import logging
+
 from pcbdraft.model.transports.types import (
     NormalizedResponse,
     ToolCall,
     Usage,
     build_tool_call,
-    map_finish_reason,  # noqa: F401
+    map_finish_reason,
 )
+
+__all__ = [
+    "NormalizedResponse",
+    "ToolCall",
+    "Usage",
+    "build_tool_call",
+    "get_transport",
+    "map_finish_reason",
+    "register_transport",
+]
+
+logger = logging.getLogger(__name__)
 
 _REGISTRY: dict = {}
 _discovered: bool = False
@@ -50,23 +65,11 @@ def _discover_transports() -> None:
     """Import all transport modules to trigger auto-registration."""
     global _discovered
     _discovered = True
-    try:
-        import pcbdraft.agent as agent  # noqa: F401
-        import pcbdraft.model.transports.anthropic
-    except ImportError:
-        pass
-    try:
-        import pcbdraft.agent as agent  # noqa: F401
-        import pcbdraft.model.transports.codex
-    except ImportError:
-        pass
-    try:
-        import pcbdraft.agent as agent  # noqa: F401
-        import pcbdraft.model.transports.chat_completions
-    except ImportError:
-        pass
-    try:
-        import pcbdraft.agent as agent  # noqa: F401
-        import pcbdraft.model.transports.bedrock
-    except ImportError:
-        pass
+    for name in ("anthropic", "codex", "chat_completions", "bedrock"):
+        try:
+            importlib.import_module("pcbdraft.agent")
+            importlib.import_module(f"pcbdraft.model.transports.{name}")
+        except ImportError:
+            logger.debug(
+                "Transport %s unavailable during discovery", name, exc_info=True
+            )

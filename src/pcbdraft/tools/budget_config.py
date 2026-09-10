@@ -4,7 +4,6 @@ Per-tool resolution: pinned > config overrides > registry > default.
 """
 
 from dataclasses import dataclass, field
-from typing import Dict
 
 # Tools whose thresholds must never be overridden.
 # read_file=inf prevents infinite persist->read->persist loops.

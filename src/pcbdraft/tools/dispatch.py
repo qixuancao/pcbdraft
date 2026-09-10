@@ -23,13 +23,14 @@ Public API (signatures preserved from the original 2,400-line version):
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import threading
 import time
 from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.tools.registry import (
     CHECK_FN_CACHE_BYPASS,
@@ -1161,7 +1162,7 @@ def _coerce_number(value: str, integer_only: bool = False):
     except (ValueError, OverflowError):
         return value
     # Guard against inf/nan — not JSON-serializable, keep original string
-    if f != f or f == float("inf") or f == float("-inf"):
+    if not math.isfinite(f):
         return value
     # If it looks like an integer (no fractional part), return int
     if f == int(f):
@@ -1689,7 +1690,7 @@ def handle_function_call(
         return result
 
     except Exception as e:
-        error_msg = f"Error executing {function_name}: {str(e)}"
+        error_msg = f"Error executing {function_name}: {e!s}"
         logger.exception(error_msg)
         result = tool_error(_sanitize_tool_error(error_msg))
         duration_ms = (

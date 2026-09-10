@@ -23,7 +23,7 @@ Usage:
     all_tools = resolve_toolset("full_stack")
 """
 
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 # Shared tool list for CLI and all messaging platform toolsets.
 # Edit this once to update all platforms simultaneously.
@@ -864,7 +864,7 @@ _resolve_toolset_memo: dict[tuple[str, bool, int, int], list[str]] = {}
 
 
 def resolve_toolset(
-    name: str, visited: set[str] = None, *, include_registry: bool = True
+    name: str, visited: set[str] | None = None, *, include_registry: bool = True
 ) -> list[str]:
     """
     Recursively resolve a toolset to get all tool names.
@@ -1102,7 +1102,10 @@ def validate_toolset(name: str) -> bool:
 
 
 def create_custom_toolset(
-    name: str, description: str, tools: list[str] = None, includes: list[str] = None
+    name: str,
+    description: str,
+    tools: list[str] | None = None,
+    includes: list[str] | None = None,
 ) -> None:
     """
     Create a custom toolset at runtime.

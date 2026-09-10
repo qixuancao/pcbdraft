@@ -10,8 +10,6 @@ the server doesn't 400 on an unsupported effort.
 
 from __future__ import annotations
 
-from typing import List, Optional
-
 # LM Studio accepts these top-level reasoning_effort values via its
 # OpenAI-compatible chat.completions endpoint.
 _LM_VALID_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh"}

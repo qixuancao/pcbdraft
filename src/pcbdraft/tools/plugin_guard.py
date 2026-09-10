@@ -46,7 +46,6 @@ from __future__ import annotations
 
 from datetime import UTC
 from pathlib import Path
-from typing import List, Optional, Tuple
 
 from pcbdraft.tools.skills_guard import (
     SUSPICIOUS_BINARY_EXTENSIONS,
@@ -305,7 +304,7 @@ def scan_plugin(plugin_dir: Path, source: str = "") -> ScanResult:
             all_findings.extend(_filter_findings(raw, rel))
 
     verdict = _determine_verdict(all_findings)
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     result = ScanResult(
         skill_name=plugin_dir.name,

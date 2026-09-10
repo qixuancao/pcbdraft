@@ -77,10 +77,10 @@ else:
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from pcbdraft.core.runtime_environment import OPENROUTER_BASE_URL, secure_parent_dir
@@ -610,7 +610,7 @@ try:
             if not v.endswith("_BASE_URL") and not v.endswith("_URL")
         )
         _base_url_var = next(
-            (v for v in _pp.env_vars if v.endswith("_BASE_URL") or v.endswith("_URL")),
+            (v for v in _pp.env_vars if v.endswith(("_BASE_URL", "_URL"))),
             None,
         )
         PROVIDER_REGISTRY[_pp.name] = ProviderConfig(
@@ -1326,13 +1326,13 @@ def _file_lock(
             if fcntl:
                 try:
                     fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                except (OSError, IOError):
+                except OSError:
                     pass
             elif msvcrt:
                 try:
                     lock_file.seek(0)
                     msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-                except (OSError, IOError):
+                except OSError:
                     pass
 
 
@@ -3259,7 +3259,7 @@ def _make_spotify_callback_handler(
     }
 
     class _SpotifyCallbackHandler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             parsed = urlparse(self.path)
             if parsed.path != expected_path:
                 self.send_response(404)
@@ -3282,7 +3282,7 @@ def _make_spotify_callback_handler(
                 body = "<html><body><h1>Spotify authorization received.</h1>You can close this tab.</body></html>"
             self.wfile.write(body.encode("utf-8"))
 
-        def log_message(self, format: str, *args: Any) -> None:  # noqa: A003
+        def log_message(self, format: str, *args: Any) -> None:
             return
 
     return _SpotifyCallbackHandler, result
@@ -4072,7 +4072,7 @@ def _sync_codex_pool_entries(
 
 
 def _save_codex_tokens(
-    tokens: dict[str, str], last_refresh: str = None, label: str = None
+    tokens: dict[str, str], last_refresh: str | None = None, label: str | None = None
 ) -> None:
     """Save Codex OAuth tokens to Hermes auth store (~/.hermes/auth.json)."""
     if last_refresh is None:
@@ -4470,8 +4470,7 @@ def _codex_usage_probe_url(base_url: str | None) -> str:
             os.getenv("PCBDRAFT_RUNTIME_CODEX_BASE_URL", "").strip().rstrip("/")
             or DEFAULT_CODEX_BASE_URL
         )
-    if normalized.endswith("/codex"):
-        normalized = normalized[: -len("/codex")]
+    normalized = normalized.removesuffix("/codex")
     prefix = normalized + ("/wham" if "/backend-api" in normalized else "/api/codex")
     return prefix + "/usage"
 
@@ -8863,10 +8862,10 @@ def _minimax_request_user_code(
             code="authorization_failed",
         )
     payload = response.json()
-    for field in ("user_code", "verification_uri", "expired_in"):
-        if field not in payload:
+    for field_name in ("user_code", "verification_uri", "expired_in"):
+        if field_name not in payload:
             raise AuthError(
-                f"MiniMax OAuth response missing field: {field}",
+                f"MiniMax OAuth response missing field: {field_name}",
                 provider="minimax-oauth",
                 code="authorization_incomplete",
             )

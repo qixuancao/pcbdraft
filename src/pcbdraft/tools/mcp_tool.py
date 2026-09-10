@@ -113,7 +113,7 @@ import time
 from collections.abc import Callable, Coroutine
 from datetime import datetime
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Optional
 from urllib.parse import urlparse
 
 from pcbdraft.tools.ansi_strip import strip_unicode_tags
@@ -854,34 +854,37 @@ def _is_method_not_found_error(exc: BaseException) -> bool:
 # would break legitimate MCP servers.
 _MCP_INJECTION_PATTERNS = [
     (
-        re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.I),
+        re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
         "prompt override attempt ('ignore previous instructions')",
     ),
     (
-        re.compile(r"you\s+are\s+now\s+a", re.I),
+        re.compile(r"you\s+are\s+now\s+a", re.IGNORECASE),
         "identity override attempt ('you are now a...')",
     ),
     (
-        re.compile(r"your\s+new\s+(task|role|instructions?)\s+(is|are)", re.I),
+        re.compile(r"your\s+new\s+(task|role|instructions?)\s+(is|are)", re.IGNORECASE),
         "task override attempt",
     ),
-    (re.compile(r"system\s*:\s*", re.I), "system prompt injection attempt"),
+    (re.compile(r"system\s*:\s*", re.IGNORECASE), "system prompt injection attempt"),
     (
-        re.compile(r"<\s*(system|human|assistant)\s*>", re.I),
+        re.compile(r"<\s*(system|human|assistant)\s*>", re.IGNORECASE),
         "role tag injection attempt",
     ),
     (
-        re.compile(r"do\s+not\s+(tell|inform|mention|reveal)", re.I),
+        re.compile(r"do\s+not\s+(tell|inform|mention|reveal)", re.IGNORECASE),
         "concealment instruction",
     ),
     (
-        re.compile(r"(curl|wget|fetch)\s+https?://", re.I),
+        re.compile(r"(curl|wget|fetch)\s+https?://", re.IGNORECASE),
         "network command in description",
     ),
-    (re.compile(r"base64\.(b64decode|decodebytes)", re.I), "base64 decode reference"),
-    (re.compile(r"exec\s*\(|eval\s*\(", re.I), "code execution reference"),
     (
-        re.compile(r"import\s+(subprocess|os|shutil|socket)", re.I),
+        re.compile(r"base64\.(b64decode|decodebytes)", re.IGNORECASE),
+        "base64 decode reference",
+    ),
+    (re.compile(r"exec\s*\(|eval\s*\(", re.IGNORECASE), "code execution reference"),
+    (
+        re.compile(r"import\s+(subprocess|os|shutil|socket)", re.IGNORECASE),
         "dangerous import reference",
     ),
 ]
@@ -2216,7 +2219,7 @@ class SamplingHandler:
                 asyncio.to_thread(_sync_call),
                 timeout=self.timeout,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self.metrics["errors"] += 1
             return self._error(
                 f"Sampling LLM call timed out after {self.timeout}s "
@@ -2435,7 +2438,7 @@ class ElicitationHandler:
                 asyncio.to_thread(_invoke_consent),
                 timeout=self.timeout + self._OUTER_TIMEOUT_GRACE_SECONDS,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "MCP server '%s' elicitation timed out after %ds",
                 self.server_name,
@@ -2646,7 +2649,7 @@ class MCPServerTask:
                 return await asyncio.wait_for(
                     session.discover(), timeout=connect_timeout
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 raise
             except asyncio.CancelledError:
                 raise
@@ -2672,7 +2675,7 @@ class MCPServerTask:
             )
         try:
             return await asyncio.wait_for(session.initialize(), timeout=connect_timeout)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise
         except asyncio.CancelledError:
             raise
@@ -3195,7 +3198,7 @@ class MCPServerTask:
                 asyncio.to_thread(check_package_for_malware, command, args),
                 timeout=_OSV_MALWARE_CHECK_TIMEOUT_S,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning(
                 "MCP server '%s': OSV malware preflight timed out after %.0fs "
                 "(network slow/unreachable) — proceeding without the check.",
@@ -4360,7 +4363,7 @@ class MCPServerTask:
         if self._task and not self._task.done():
             try:
                 await asyncio.wait_for(self._task, timeout=10)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning(
                     "MCP server '%s' shutdown timed out, cancelling task",
                     self.name,

@@ -43,7 +43,7 @@ from collections.abc import Mapping
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 logger = logging.getLogger(__name__)
@@ -1898,7 +1898,7 @@ def _resolve_worktree_base(
 
 
 def _setup_worktree(
-    repo_root: str = None, sync_base: bool = True, name: str | None = None
+    repo_root: str | None = None, sync_base: bool = True, name: str | None = None
 ) -> dict[str, str] | None:
     """Create an isolated git worktree for this CLI session.
 
@@ -2576,7 +2576,7 @@ def _worktree_lock_is_live(repo_root: str, worktree_path: str, timeout: int = 10
     return None
 
 
-def _cleanup_worktree(info: dict[str, str] = None) -> None:
+def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
     """Remove a worktree and its branch on exit.
 
     Preserves the worktree only if it has unpushed commits (real work
@@ -5232,16 +5232,16 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
     def __init__(
         self,
-        model: str = None,
-        toolsets: list[str] = None,
-        provider: str = None,
-        reasoning: str = None,
-        api_key: str = None,
-        base_url: str = None,
-        max_turns: int = None,
+        model: str | None = None,
+        toolsets: list[str] | None = None,
+        provider: str | None = None,
+        reasoning: str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        max_turns: int | None = None,
         verbose: bool | None = None,
         compact: bool = False,
-        resume: str = None,
+        resume: str | None = None,
         checkpoints: bool = False,
         pass_session_id: bool = False,
         ignore_rules: bool = False,
@@ -6559,8 +6559,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             from pcbdraft.model.model_switch import format_model_for_display
 
             model_short = format_model_for_display(model_short)
-        if model_short.endswith(".gguf"):
-            model_short = model_short[:-5]
+        model_short = model_short.removesuffix(".gguf")
         if len(model_short) > 26:
             model_short = f"{model_short[:23]}..."
 
@@ -12294,15 +12293,15 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
     def process_command(self, command: str) -> bool:
         """Dispatch the PCBDraft command surface and rotate project context."""
+        from pcbdraft.agent.tool_bindings import (
+            get_current_project_id,
+            set_current_project_id,
+        )
         from pcbdraft.core.errors import PCBDraftError
         from pcbdraft.interfaces.terminal import (
             _defer_connection,
             _rotate_project_conversation,
             _slash_connection_options,
-        )
-        from pcbdraft.agent.tool_bindings import (
-            get_current_project_id,
-            set_current_project_id,
         )
         from pcbdraft.interfaces.tui.project_commands import HANDLERS
         from pcbdraft.services.provider_connection import ConnectionOptions
@@ -14914,9 +14913,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
     def _on_tool_progress(
         self,
         event_type: str,
-        function_name: str = None,
-        preview: str = None,
-        function_args: dict = None,
+        function_name: str | None = None,
+        preview: str | None = None,
+        function_args: dict | None = None,
         **kwargs,
     ):
         """Called on tool lifecycle events (tool.started, tool.completed, reasoning.available, etc.).
@@ -16828,7 +16827,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 pass
 
     def chat(
-        self, message, images: list = None, voice_input: bool = False
+        self, message, images: list | None = None, voice_input: bool = False
     ) -> str | None:
         """
         Send a message to the agent and get a response.
@@ -21821,24 +21820,24 @@ def _run_kanban_goal_loop_q(cli: "TerminalApp", first_response: str) -> None:
 
 
 def main(
-    query: str = None,
-    q: str = None,
-    image: str = None,
-    toolsets: str = None,
-    skills: str | list[str] | tuple[str, ...] = None,
-    model: str = None,
-    provider: str = None,
-    reasoning: str = None,
-    api_key: str = None,
-    base_url: str = None,
-    max_turns: int = None,
+    query: str | None = None,
+    q: str | None = None,
+    image: str | None = None,
+    toolsets: str | None = None,
+    skills: str | list[str] | tuple[str, ...] | None = None,
+    model: str | None = None,
+    provider: str | None = None,
+    reasoning: str | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
+    max_turns: int | None = None,
     verbose: bool | None = None,
     quiet: bool = False,
     compact: bool = False,
     list_tools: bool = False,
     list_toolsets: bool = False,
     gateway: bool = False,
-    resume: str = None,
+    resume: str | None = None,
     worktree: bool = False,
     w: bool = False,
     checkpoints: bool = False,

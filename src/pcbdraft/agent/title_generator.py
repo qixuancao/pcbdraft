@@ -22,7 +22,7 @@ import logging
 import re
 import threading
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.agent.context_compressor import LEGACY_SUMMARY_PREFIX
 from pcbdraft.agent.message_content import flatten_message_text
@@ -345,7 +345,7 @@ def generate_title(
     user_message: str,
     timeout: float | None = None,
     failure_callback: FailureCallback | None = None,
-    main_runtime: dict = None,
+    main_runtime: dict | None = None,
     runtime_validator: RuntimeValidator | None = None,
 ) -> str | None:
     """Generate a session title from the user's opening message.
@@ -540,7 +540,7 @@ def auto_title_session(
     session_id: str,
     user_message: str,
     failure_callback: FailureCallback | None = None,
-    main_runtime: dict = None,
+    main_runtime: dict | None = None,
     title_callback: TitleCallback | None = None,
     runtime_validator: RuntimeValidator | None = None,
 ) -> None:
@@ -592,7 +592,7 @@ def _auto_title_session(
     session_id: str,
     user_message: str,
     failure_callback: FailureCallback | None = None,
-    main_runtime: dict = None,
+    main_runtime: dict | None = None,
     title_callback: TitleCallback | None = None,
     runtime_validator: RuntimeValidator | None = None,
 ) -> None:
@@ -713,7 +713,7 @@ def maybe_auto_title(
     user_message: str,
     conversation_history: list | None = None,
     failure_callback: FailureCallback | None = None,
-    main_runtime: dict = None,
+    main_runtime: dict | None = None,
     title_callback: TitleCallback | None = None,
     runtime_validator: RuntimeValidator | None = None,
 ) -> None:

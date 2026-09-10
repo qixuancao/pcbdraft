@@ -6,7 +6,7 @@ owns format conversion and normalization, while client construction and
 boto3 calls stay on AIAgent.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.model.transports.base import ProviderTransport
 from pcbdraft.model.transports.types import NormalizedResponse, ToolCall, Usage
@@ -153,6 +153,6 @@ class BedrockTransport(ProviderTransport):
 
 
 # Auto-register on import
-from pcbdraft.model.transports import register_transport  # noqa: E402
+from pcbdraft.model.transports import register_transport
 
 register_transport("bedrock_converse", BedrockTransport)

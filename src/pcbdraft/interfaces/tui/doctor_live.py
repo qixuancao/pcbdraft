@@ -21,7 +21,6 @@ from __future__ import annotations
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import List, Optional
 
 from pcbdraft.interfaces.tui.doctor import (
     _section,

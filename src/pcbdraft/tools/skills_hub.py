@@ -23,9 +23,9 @@ import subprocess
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 from urllib.parse import unquote, urljoin, urlparse, urlsplit, urlunparse
 
 import httpx
@@ -147,7 +147,7 @@ class SkillBundle:
     """A downloaded skill ready for quarantine/scanning/installation."""
 
     name: str
-    files: dict[str, Union[str, bytes]]  # relative_path -> file content
+    files: dict[str, str | bytes]  # relative_path -> file content
     source: str
     identifier: str
     trust_level: str
@@ -689,7 +689,7 @@ class GitHubSource(SkillSource):
         if referenced is None:
             return None
 
-        files: dict[str, Union[str, bytes]] = {"SKILL.md": skill_md}
+        files: dict[str, str | bytes] = {"SKILL.md": skill_md}
         tree = self._get_repo_tree(repo)
         if tree is not None:
             branch, entries = tree
@@ -1589,7 +1589,7 @@ class UrlSource(SkillSource):
         referenced = _referenced_support_paths(text)
         if referenced is None:
             return None
-        files: dict[str, Union[str, bytes]] = {"SKILL.md": text}
+        files: dict[str, str | bytes] = {"SKILL.md": text}
         base_url = url.rsplit("/", 1)[0] + "/"
         for rel_path in sorted(referenced):
             support_url = urljoin(base_url, rel_path)
@@ -3580,7 +3580,7 @@ class OptionalSkillSource(SkillSource):
         else:
             skill_dir = resolved
 
-        files: dict[str, Union[str, bytes]] = {}
+        files: dict[str, str | bytes] = {}
         for f in skill_dir.rglob("*"):
             if (
                 f.is_file()
@@ -3690,7 +3690,7 @@ class OptionalSkillSource(SkillSource):
             return None
         _branch, entries = tree
         prefix = f"{repo_path}/"
-        files: dict[str, Union[str, bytes]] = {}
+        files: dict[str, str | bytes] = {}
         for item in entries:
             if item.get("type") != "blob" or item.get("mode") == "120000":
                 continue
@@ -4080,7 +4080,7 @@ def quarantine_bundle(bundle: SkillBundle) -> Path:
     """Write a skill bundle to the quarantine directory for scanning."""
     ensure_hub_dirs()
     skill_name = _validate_skill_name(bundle.name)
-    validated_files: list[tuple[str, Union[str, bytes]]] = []
+    validated_files: list[tuple[str, str | bytes]] = []
     for rel_path, file_content in bundle.files.items():
         safe_rel_path = _validate_bundle_rel_path(rel_path)
         validated_files.append((safe_rel_path, file_content))

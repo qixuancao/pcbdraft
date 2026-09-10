@@ -11,7 +11,6 @@ TUI, desktop) renders one structured signal instead of re-parsing error text.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Optional
 
 from pcbdraft.core.runtime_utils import base_url_host_matches
 

@@ -37,7 +37,7 @@ import os
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -590,8 +590,8 @@ def build_bearer_http_client(
 
 
 __all__ = [
-    "EntraIdentityConfig",
     "SCOPE_AI_AZURE_DEFAULT",
+    "EntraIdentityConfig",
     "build_bearer_http_client",
     "build_credential",
     "build_token_provider",

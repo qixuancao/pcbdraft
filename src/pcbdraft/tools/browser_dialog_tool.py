@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pcbdraft.tools.browser_supervisor import SUPERVISOR_REGISTRY
 from pcbdraft.tools.registry import registry

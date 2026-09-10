@@ -11,7 +11,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from pcbdraft.core.runtime_environment import get_runtime_home
@@ -145,8 +145,7 @@ def _canonical_github_remote(url: str | None) -> str:
         if parsed.netloc and parsed.path:
             value = f"{parsed.netloc}{parsed.path}"
     value = value.strip().rstrip("/")
-    if value.endswith(".git"):
-        value = value[:-4]
+    value = value.removesuffix(".git")
     return value.lower()
 
 
@@ -675,7 +674,7 @@ def _display_toolset_name(toolset_name: str) -> str:
     """Normalize internal/legacy toolset identifiers for banner display."""
     if not toolset_name:
         return "unknown"
-    return toolset_name[:-6] if toolset_name.endswith("_tools") else toolset_name
+    return toolset_name.removesuffix("_tools")
 
 
 # =========================================================================
@@ -723,7 +722,9 @@ def banner_snapshot_fingerprint() -> str | None:
     return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
 
 
-def load_banner_snapshot(enabled_toolsets: list[str] = None) -> dict[str, Any] | None:
+def load_banner_snapshot(
+    enabled_toolsets: list[str] | None = None,
+) -> dict[str, Any] | None:
     """Return the stored banner snapshot when its fingerprint is current."""
     try:
         blob = json.loads(_banner_snapshot_path().read_text(encoding="utf-8"))
@@ -787,7 +788,9 @@ def save_banner_snapshot(
         pass
 
 
-def compute_toolset_availability(enabled_toolsets: list[str] = None) -> dict[str, Any]:
+def compute_toolset_availability(
+    enabled_toolsets: list[str] | None = None,
+) -> dict[str, Any]:
     """Compute the banner's toolset-availability payload.
 
     Returns ``{"unavailable_toolsets": [...], "lazy_tools": [...],
@@ -837,14 +840,14 @@ def build_welcome_banner(
     console: "Console",
     model: str,
     cwd: str,
-    tools: list[dict] = None,
-    enabled_toolsets: list[str] = None,
-    session_id: str = None,
+    tools: list[dict] | None = None,
+    enabled_toolsets: list[str] | None = None,
+    session_id: str | None = None,
     get_toolset_for_tool=None,
-    context_length: int = None,
-    provider: str = None,
-    availability: dict[str, Any] = None,
-    skills_by_category: dict[str, list[str]] = None,
+    context_length: int | None = None,
+    provider: str | None = None,
+    availability: dict[str, Any] | None = None,
+    skills_by_category: dict[str, list[str]] | None = None,
 ):
     """Build and print a welcome banner with caduceus on left and info on right.
 
@@ -927,8 +930,7 @@ def build_welcome_banner(
             )
         else:
             model_short = model.split("/")[-1] if "/" in model else model
-            if model_short.endswith(".gguf"):
-                model_short = model_short[:-5]
+            model_short = model_short.removesuffix(".gguf")
             if len(model_short) > 28:
                 model_short = model_short[:25] + "..."
             ctx_str = (

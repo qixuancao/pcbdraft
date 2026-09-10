@@ -19,7 +19,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -430,14 +430,14 @@ def _dev_fixture_billing_state() -> BillingState | None:
         role="OWNER",
         balance_usd=Decimal("3.40"),
         cli_billing_enabled=True,
-        charge_presets=(Decimal("10"), Decimal("25"), Decimal("50")),
-        min_usd=Decimal("5"),
-        max_usd=Decimal("500"),
+        charge_presets=(Decimal(10), Decimal(25), Decimal(50)),
+        min_usd=Decimal(5),
+        max_usd=Decimal(500),
         portal_url=portal,
     )
     card = CardInfo(brand="Visa", last4="4242")
     autoreload_on = AutoReload(
-        enabled=True, threshold_usd=Decimal("5"), reload_to_usd=Decimal("25")
+        enabled=True, threshold_usd=Decimal(5), reload_to_usd=Decimal(25)
     )
 
     if name in ("logged-out", "logged_out", "loggedout"):

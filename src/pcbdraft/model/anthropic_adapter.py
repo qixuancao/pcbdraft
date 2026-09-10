@@ -737,8 +737,8 @@ def _common_betas_for_base_url(
 
 def _build_anthropic_client_with_bearer_hook(
     token_provider,
-    base_url: str = None,
-    timeout: float = None,
+    base_url: str | None = None,
+    timeout: float | None = None,
     *,
     drop_context_1m_beta: bool = False,
 ):
@@ -824,8 +824,8 @@ def _build_anthropic_client_with_bearer_hook(
 
 def build_anthropic_client(
     api_key,
-    base_url: str = None,
-    timeout: float = None,
+    base_url: str | None = None,
+    timeout: float | None = None,
     *,
     drop_context_1m_beta: bool = False,
 ):
@@ -1366,7 +1366,7 @@ def run_hermes_oauth_login_pure() -> dict[str, Any] | None:
     try:
         from pcbdraft.model.auth import _can_open_graphical_browser as _can_open_gui
     except Exception:
-        _can_open_gui = lambda: True  # noqa: E731 — degrade to prior behavior
+        _can_open_gui = lambda: True  # Degrade to prior behavior.
 
     if _can_open_gui():
         try:
@@ -1471,7 +1471,7 @@ def read_hermes_oauth_credentials() -> dict[str, Any] | None:
             data = json.loads(oauth_file.read_text(encoding="utf-8"))
             if data.get("accessToken"):
                 return data
-        except (json.JSONDecodeError, OSError, IOError) as e:
+        except (json.JSONDecodeError, OSError) as e:
             logger.debug("Failed to read Hermes OAuth credentials: %s", e)
     return None
 
@@ -1560,7 +1560,7 @@ def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
         # Non-Anthropic models (gpt-5.4, gemini-2.5, etc.) use dots
         # as part of their canonical names.  See issue #17171.
         _lower = model.lower()
-        if _lower.startswith("claude-") or _lower.startswith("anthropic/"):
+        if _lower.startswith(("claude-", "anthropic/")):
             model = model.replace(".", "-")
     return model
 

@@ -13,7 +13,6 @@ zero-tools end state) loudly turns that silent failure into an actionable one.
 """
 
 from collections.abc import Callable
-from typing import List
 
 
 def validate_platform_toolsets(

@@ -47,7 +47,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_utils import env_var_enabled
 
@@ -423,7 +423,7 @@ def _validate_workdir(workdir: str) -> str | None:
     for ch in workdir:
         if not _is_safe_workdir_char(ch):
             return (
-                f"Blocked: workdir contains disallowed character {repr(ch)}. "
+                f"Blocked: workdir contains disallowed character {ch!r}. "
                 "Use a simple filesystem path without shell metacharacters."
             )
     return None
@@ -1848,9 +1848,9 @@ def _create_environment(
     image: str,
     cwd: str,
     timeout: int,
-    ssh_config: dict = None,
-    container_config: dict = None,
-    local_config: dict = None,
+    ssh_config: dict | None = None,
+    container_config: dict | None = None,
+    local_config: dict | None = None,
     task_id: str = "default",
     host_cwd: str | None = None,
 ):

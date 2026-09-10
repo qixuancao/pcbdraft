@@ -23,7 +23,7 @@ import re
 import sqlite3
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.context_engine import ContextEngine, sanitize_memory_context
 from pcbdraft.agent.error_classifier import FailoverReason, classify_api_error
@@ -2924,7 +2924,7 @@ class ContextCompressor(ContextEngine):
         protect_last_n: int = 20,
         summary_target_ratio: float = 0.20,
         quiet_mode: bool = False,
-        summary_model_override: str = None,
+        summary_model_override: str | None = None,
         base_url: str = "",
         api_key: str = "",
         config_context_length: int | None = None,
@@ -3329,7 +3329,7 @@ class ContextCompressor(ContextEngine):
         projected_real = self.last_real_prompt_tokens + growth
         return projected_real < self.threshold_tokens
 
-    def should_compress(self, prompt_tokens: int = None) -> bool:
+    def should_compress(self, prompt_tokens: int | None = None) -> bool:
         """Check if context exceeds the compression threshold.
 
         Returns ``True`` when compression should run now. For the caller-facing
@@ -3345,7 +3345,7 @@ class ContextCompressor(ContextEngine):
         return decision
 
     def should_compress_info(
-        self, prompt_tokens: int = None
+        self, prompt_tokens: int | None = None
     ) -> "tuple[bool, str | None]":
         """Check if context exceeds the compression threshold.
 

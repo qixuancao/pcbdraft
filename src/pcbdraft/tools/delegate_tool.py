@@ -17,14 +17,12 @@ The parent's context only sees the delegation call and the summary result,
 never the child's intermediate tool calls or reasoning.
 """
 
-from collections.abc import Callable
-
-
 import contextvars
 import enum
 import json
 import logging
 import re
+from collections.abc import Callable
 
 logger = logging.getLogger(__name__)
 import os
@@ -34,7 +32,7 @@ import weakref
 from concurrent.futures import (
     TimeoutError as FuturesTimeoutError,
 )
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from pcbdraft.agent.interrupt_compat import request_hard_interrupt
@@ -1410,7 +1408,11 @@ def _build_child_progress_callback(
         return kw
 
     def _relay(
-        event_type: str, tool_name: str = None, preview: str = None, args=None, **kwargs
+        event_type: str,
+        tool_name: str | None = None,
+        preview: str | None = None,
+        args=None,
+        **kwargs,
     ):
         if not parent_cb:
             return
@@ -1422,7 +1424,11 @@ def _build_child_progress_callback(
             logger.debug("Parent callback failed: %s", e)
 
     def _callback(
-        event_type, tool_name: str = None, preview: str = None, args=None, **kwargs
+        event_type,
+        tool_name: str | None = None,
+        preview: str | None = None,
+        args=None,
+        **kwargs,
     ):
         # Lifecycle events emitted by the orchestrator itself — handled
         # before enum normalisation since they are not part of DelegateEvent.

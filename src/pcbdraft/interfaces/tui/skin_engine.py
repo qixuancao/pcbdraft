@@ -138,7 +138,7 @@ schema above, then select it with ``display.skin: <name>`` in PCBDraft config.
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 

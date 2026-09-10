@@ -10,7 +10,7 @@ reasoning configuration, temperature handling, and extra_body assembly.
 """
 
 import json
-from typing import Any, Dict
+from typing import Any
 
 from pcbdraft.agent.moonshot_schema import is_moonshot_model, sanitize_moonshot_tools
 from pcbdraft.agent.prompt_builder import DEVELOPER_ROLE_MODELS
@@ -336,7 +336,7 @@ class ChatCompletionsTransport(ProviderTransport):
                 if needs_sanitize:
                     break
             elif (
-                isinstance(tool_calls, type(None))
+                tool_calls is None
                 and msg.get("role") == "assistant"
                 and "tool_calls" in msg
             ):
@@ -422,7 +422,7 @@ class ChatCompletionsTransport(ProviderTransport):
                 if copied_tool_calls is not None:
                     mutable_msg()["tool_calls"] = copied_tool_calls
             elif (
-                isinstance(tool_calls, type(None))
+                tool_calls is None
                 and msg.get("role") == "assistant"
                 and "tool_calls" in msg
             ):
@@ -1023,6 +1023,6 @@ class ChatCompletionsTransport(ProviderTransport):
 
 
 # Auto-register on import
-from pcbdraft.model.transports import register_transport  # noqa: E402
+from pcbdraft.model.transports import register_transport
 
 register_transport("chat_completions", ChatCompletionsTransport)

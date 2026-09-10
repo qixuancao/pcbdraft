@@ -40,7 +40,6 @@ from collections import defaultdict
 from collections.abc import Iterable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 # ── Public stamp type ────────────────────────────────────────────────
 # (mtime, read_ts, partial).  partial=True when read_file returned a

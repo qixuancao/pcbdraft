@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import os
-from typing import List
 
 from rich.console import Console
 from rich.panel import Panel

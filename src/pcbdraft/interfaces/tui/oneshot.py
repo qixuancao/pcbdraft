@@ -26,7 +26,6 @@ import os
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.agent.session_context import declare_stateless_channel
 from pcbdraft.model.fallback_config import get_fallback_chain

@@ -37,7 +37,6 @@ from __future__ import annotations
 import re
 import secrets
 import sys
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Field-shape validators

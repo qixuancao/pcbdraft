@@ -35,7 +35,7 @@ support.
 
 import json
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from pcbdraft.services.session_db_common import _RESET_END_REASONS
 
@@ -96,7 +96,7 @@ _COMPACTION_PREFIXES = (
 _FRESH_RESET_END_REASONS = frozenset(_RESET_END_REASONS) | {"new_session"}
 
 
-def _format_timestamp(ts: Union[int, float, str, None]) -> str:
+def _format_timestamp(ts: int | float | str | None) -> str:
     """Convert a Unix timestamp (float/int) or ISO string to a human-readable date.
 
     Returns "unknown" for None, str(ts) if conversion fails.
@@ -372,7 +372,7 @@ def _resolve_profile_db(profile: str):
     )
 
 
-def _session_link(session_id: str, profile: str = None) -> str:
+def _session_link(session_id: str, profile: str | None = None) -> str:
     """The reference the agent writes to point the user at a session.
 
     Same value the desktop composer emits when a session is dragged into a
@@ -443,7 +443,7 @@ def _locate_session_db(session_id: str):
 
 
 def _read_session(
-    db, session_id: str, head: int = 20, tail: int = 10, link_profile: str = None
+    db, session_id: str, head: int = 20, tail: int = 10, link_profile: str | None = None
 ) -> str:
     """Read shape: dump a whole session by id (head + tail when large).
 
@@ -495,7 +495,10 @@ def _read_session(
 
 
 def _list_recent_sessions(
-    db, limit: int, current_session_id: str = None, link_profile: str = None
+    db,
+    limit: int,
+    current_session_id: str | None = None,
+    link_profile: str | None = None,
 ) -> str:
     """Return metadata for the most recent sessions (no LLM calls, no FTS5)."""
     try:
@@ -564,7 +567,7 @@ def _scroll(
     session_id: str,
     around_message_id: int,
     window: int = 5,
-    current_session_id: str = None,
+    current_session_id: str | None = None,
 ) -> str:
     """Scroll shape: return a window of messages centered on an anchor.
 
@@ -801,8 +804,8 @@ def _discover(
     limit: int,
     sort: str | None,
     detail: str,
-    current_session_id: str = None,
-    link_profile: str = None,
+    current_session_id: str | None = None,
+    link_profile: str | None = None,
 ) -> str:
     """Discovery shape: FTS5 plus adaptive or full result hydration."""
     role_list = role_filter if role_filter else ["user", "assistant"]
@@ -985,18 +988,18 @@ def _discover(
 
 def _session_search_impl(
     query: str = "",
-    role_filter: str = None,
+    role_filter: str | None = None,
     limit: int = 3,
     db=None,
-    current_session_id: str = None,
+    current_session_id: str | None = None,
     # Scroll shape
-    session_id: str = None,
-    around_message_id: int = None,
+    session_id: str | None = None,
+    around_message_id: int | None = None,
     window: int = 5,
     # Discovery shape
-    sort: str = None,
+    sort: str | None = None,
     # Cross-profile (any shape)
-    profile: str = None,
+    profile: str | None = None,
     # Discovery result shaping (appended to preserve positional compatibility)
     detail: str = "adaptive",
     *,
@@ -1118,18 +1121,18 @@ def _session_search_impl(
 
 def session_search(
     query: str = "",
-    role_filter: str = None,
+    role_filter: str | None = None,
     limit: int = 3,
     db=None,
-    current_session_id: str = None,
+    current_session_id: str | None = None,
     # Scroll shape
-    session_id: str = None,
-    around_message_id: int = None,
+    session_id: str | None = None,
+    around_message_id: int | None = None,
     window: int = 5,
     # Discovery shape
-    sort: str = None,
+    sort: str | None = None,
     # Cross-profile (any shape)
-    profile: str = None,
+    profile: str | None = None,
     # Discovery result shaping (appended to preserve positional compatibility)
     detail: str = "adaptive",
 ) -> str:

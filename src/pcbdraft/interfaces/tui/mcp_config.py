@@ -13,7 +13,7 @@ import logging
 import os
 import re
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.core.runtime_environment import display_runtime_home
 from pcbdraft.interfaces.tui.colors import Colors, color

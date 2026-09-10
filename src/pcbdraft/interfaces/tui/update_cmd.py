@@ -34,7 +34,6 @@ import sys
 import time as _time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.core.runtime_environment import venv_python_path
 from pcbdraft.model.configuration import get_runtime_home
@@ -1844,12 +1843,10 @@ def _is_fork(origin_url: str | None) -> bool:
         return False
     # Normalize URL for comparison (strip trailing .git if present)
     normalized = origin_url.rstrip("/")
-    if normalized.endswith(".git"):
-        normalized = normalized[:-4]
+    normalized = normalized.removesuffix(".git")
     for official in OFFICIAL_REPO_URLS:
         official_normalized = official.rstrip("/")
-        if official_normalized.endswith(".git"):
-            official_normalized = official_normalized[:-4]
+        official_normalized = official_normalized.removesuffix(".git")
         if normalized == official_normalized:
             return False
     return True
@@ -3119,7 +3116,7 @@ def _ensure_acp_launcher() -> None:
 
     No-op on Windows (install.ps1 copies ``hermes.exe`` + ``hermes-acp.exe``
     into ``$InstallDir\bin`` and puts THAT on the user PATH — never the whole
-    ``venv\Scripts`` dir, which would shadow the user's ``python`` (#83797) —
+    ``venv\\Scripts`` dir, which would shadow the user's ``python`` (#83797) —
     so ``hermes-acp.exe`` already resolves) and wherever a ``hermes-acp`` is
     already present next to the ``hermes`` command.  Unwritable directories
     (e.g. ``/usr/local/bin`` as non-root) are skipped silently.  Idempotent.

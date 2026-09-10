@@ -47,21 +47,12 @@ import re
 import sys
 import threading
 import types
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
-from typing import (
-    Any,
-    Dict,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Type,
-    Union,
-)
+from typing import Any
 
 from pcbdraft.agent.extensions.capabilities import (
     CAPABILITY_REGISTRY,
@@ -1114,7 +1105,7 @@ class PluginManifest:
     version: str = ""
     description: str = ""
     author: str = ""
-    requires_env: list[Union[str, dict[str, Any]]] = field(default_factory=list)
+    requires_env: list[str | dict[str, Any]] = field(default_factory=list)
     provides_tools: list[str] = field(default_factory=list)
     provides_hooks: list[str] = field(default_factory=list)
     source: str = ""  # "user", "project", or "entrypoint"
@@ -1190,7 +1181,7 @@ class PluginSystemPromptSection:
     """A plugin-owned section rendered once for each new session."""
 
     id: str
-    content: Union[str, Callable[[Mapping[str, Any]], str]]
+    content: str | Callable[[Mapping[str, Any]], str]
     position: str
     max_chars: int
     plugin: str
@@ -3261,7 +3252,7 @@ class PluginContext:
     def register_system_prompt_section(
         self,
         id: str,
-        content: Union[str, Callable[[Mapping[str, Any]], str]],
+        content: str | Callable[[Mapping[str, Any]], str],
         *,
         position: str = "after_memory",
         max_chars: int = DEFAULT_SYSTEM_PROMPT_SECTION_MAX_CHARS,
@@ -3738,7 +3729,7 @@ class PluginManager:
 
     @staticmethod
     def _resolve_plugin_key(
-        plugin: Union[str, PluginManifest, LoadedPlugin],
+        plugin: str | PluginManifest | LoadedPlugin,
     ) -> str:
         if isinstance(plugin, LoadedPlugin):
             return plugin.manifest.key or plugin.manifest.name
@@ -3748,7 +3739,7 @@ class PluginManager:
 
     def unload(
         self,
-        plugin: Union[str, PluginManifest, LoadedPlugin, None] = None,
+        plugin: str | PluginManifest | LoadedPlugin | None = None,
     ) -> bool:
         """Unload registrations while excluding discovery/deferred loading."""
         with self._discovery_lock, _plugin_home_scope(self.home_path):
@@ -3756,7 +3747,7 @@ class PluginManager:
 
     def _unload_scoped(
         self,
-        plugin: Union[str, PluginManifest, LoadedPlugin, None] = None,
+        plugin: str | PluginManifest | LoadedPlugin | None = None,
     ) -> bool:
         """Unload one plugin or all plugins owned by this manager.
 
@@ -5986,7 +5977,7 @@ def get_portable_mcp_server_names_nowait() -> set[str]:
 
 
 def unload_plugins(
-    plugin: Union[str, PluginManifest, LoadedPlugin, None] = None,
+    plugin: str | PluginManifest | LoadedPlugin | None = None,
 ) -> bool:
     """Unload one plugin or all plugins from the process-global manager.
 

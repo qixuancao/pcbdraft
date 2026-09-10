@@ -57,8 +57,6 @@ Refresh-token handling:
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
-
 from fastapi import Request
 from fastapi.responses import Response
 

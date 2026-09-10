@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ def _detect_api_mode_for_url(base_url: str) -> str | None:
     if hostname == "api.anthropic.com":
         return "anthropic_messages"
     path = urlparse(normalized).path.rstrip("/")
-    if path.endswith("/anthropic") or path.endswith("/anthropic/v1"):
+    if path.endswith(("/anthropic", "/anthropic/v1")):
         return "anthropic_messages"
     if hostname == "api.kimi.com" and "/coding" in normalized:
         return "anthropic_messages"
@@ -292,10 +292,8 @@ def _anthropic_base_url_override_ok(base_url: str) -> bool:
         return False
 
     # Official Anthropic / Claude hosts.
-    if (
-        hostname == "api.anthropic.com"
-        or hostname.endswith(".anthropic.com")
-        or hostname.endswith(".claude.com")
+    if hostname == "api.anthropic.com" or hostname.endswith(
+        (".anthropic.com", ".claude.com")
     ):
         return True
     # Azure Foundry Anthropic endpoints (handled specially downstream).
@@ -992,7 +990,7 @@ def find_custom_provider_identity_by_model(model: str) -> str | None:
                 return True
         models = entry.get("models")
         if isinstance(models, dict):
-            return any(str(mid).strip().lower() == target for mid in models.keys())
+            return any(str(mid).strip().lower() == target for mid in models)
         if isinstance(models, list):
             for item in models:
                 if isinstance(item, str) and item.strip().lower() == target:

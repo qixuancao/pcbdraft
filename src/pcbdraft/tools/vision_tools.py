@@ -38,7 +38,7 @@ import uuid
 from collections.abc import Awaitable
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
@@ -1396,7 +1396,7 @@ async def _vision_analyze_native(
 async def vision_analyze_tool(
     image_url: str,
     user_prompt: str,
-    model: str = None,
+    model: str | None = None,
     task_id: str | None = None,
     region: list | None = None,
 ) -> str:
@@ -1672,7 +1672,7 @@ async def vision_analyze_tool(
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     except Exception as e:
-        error_msg = f"Error analyzing image: {str(e)}"
+        error_msg = f"Error analyzing image: {e!s}"
         logger.error("%s", error_msg, exc_info=True)
 
         # Detect vision capability errors — give the model a clear message
@@ -2103,7 +2103,7 @@ async def _download_video(
 async def video_analyze_tool(
     video_url: str,
     user_prompt: str,
-    model: str = None,
+    model: str | None = None,
     task_id: str | None = None,
 ) -> str:
     """Analyze a video via multimodal LLM. Returns JSON {success, analysis}."""
@@ -2265,7 +2265,7 @@ async def video_analyze_tool(
         return json.dumps(result, indent=2, ensure_ascii=False)
 
     except Exception as e:
-        error_msg = f"Error analyzing video: {str(e)}"
+        error_msg = f"Error analyzing video: {e!s}"
         logger.error("%s", error_msg, exc_info=True)
 
         err_str = str(e).lower()

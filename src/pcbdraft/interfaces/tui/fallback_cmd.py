@@ -20,7 +20,7 @@ Storage: ``fallback_providers`` in ``~/.hermes/config.yaml`` (top-level, list of
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.model.fallback_config import get_fallback_chain
 

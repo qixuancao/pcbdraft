@@ -7,8 +7,7 @@ import logging
 import os
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
-from typing import Optional
+from datetime import UTC, datetime
 from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)

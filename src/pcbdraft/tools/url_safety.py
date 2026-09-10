@@ -31,7 +31,7 @@ import logging
 import os
 import re
 import socket
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import (
     parse_qsl,
     quote,
@@ -509,7 +509,7 @@ def is_safe_url(url: str) -> bool:
             logger.warning("Blocked request — DNS resolution failed for: %s", hostname)
             return False
 
-        for family, _, _, _, sockaddr in addr_info:
+        for _family, _, _, _, sockaddr in addr_info:
             ip_str = sockaddr[0]
             if "%" in ip_str:
                 ip_str = ip_str.split("%")[0]

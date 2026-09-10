@@ -49,7 +49,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +85,7 @@ def _signature_from_schema(
             continue
         py = _JSON_TO_PY.get((pspec or {}).get("type"), Any)
         ann, default = (
-            (py, inspect.Parameter.empty) if pname in required else (Optional[py], None)
+            (py, inspect.Parameter.empty) if pname in required else (py | None, None)
         )
         annots[pname] = ann
         params.append(

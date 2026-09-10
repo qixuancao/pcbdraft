@@ -28,7 +28,7 @@ import logging
 import os
 import threading
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 
 # fal_client is imported lazily — see _load_fal_client(). Pulling it
 # eagerly added ~64 ms to every CLI cold start because
@@ -1502,7 +1502,7 @@ def image_generate_tool(
 
     except Exception as e:
         generation_time = (datetime.datetime.now() - start_time).total_seconds()
-        error_msg = f"Error generating image: {str(e)}"
+        error_msg = f"Error generating image: {e!s}"
         logger.error("%s", error_msg, exc_info=True)
 
         response_data = {
@@ -1586,8 +1586,8 @@ def check_image_generation_requirements() -> bool:
     # Probe only the explicitly selected plugin. Merely possessing a cloud
     # provider key must not opt a user into a paid image-generation backend.
     try:
-        from pcbdraft.agent.image_gen_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.image_gen_registry import get_provider
 
         _ensure_plugins_discovered()
         provider = get_provider(configured)
@@ -1790,8 +1790,8 @@ def _dispatch_to_plugin_provider(
     try:
         # Import locally so plugin discovery isn't triggered just by
         # importing this module (tests rely on that).
-        from pcbdraft.agent.image_gen_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.image_gen_registry import get_provider
 
         _ensure_plugins_discovered()
         provider = get_provider(configured)
@@ -1971,8 +1971,8 @@ def _maybe_route_managed_krea(
         return None
 
     try:
-        from pcbdraft.agent.image_gen_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.image_gen_registry import get_provider
 
         _ensure_plugins_discovered()
         provider = get_provider("krea")
@@ -2169,8 +2169,8 @@ def _active_image_capabilities() -> dict[str, Any]:
     configured_provider = _read_configured_image_provider()
     if configured_provider and configured_provider != "fal":
         try:
-            from pcbdraft.agent.image_gen_registry import get_provider
             from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+            from pcbdraft.agent.image_gen_registry import get_provider
 
             _ensure_plugins_discovered()
             provider = get_provider(configured_provider)

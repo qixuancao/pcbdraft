@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import FrozenSet, Optional
 
 from pcbdraft.interfaces.tui.proxy.adapters.base import (
     UpstreamAdapter,

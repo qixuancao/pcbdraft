@@ -22,7 +22,7 @@ import shlex
 import sys
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.interfaces.tui import kanban_db as kb
 from pcbdraft.interfaces.tui import kanban_swarm as ks

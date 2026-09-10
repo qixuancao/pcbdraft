@@ -105,8 +105,7 @@ def _env_keys_defined_in_dotenv(path: Path) -> set[str]:
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
-        if line.startswith("export "):
-            line = line[7:]
+        line = line.removeprefix("export ")
         key = line.split("=", 1)[0].strip()
         if key:
             keys.add(key)
@@ -349,8 +348,7 @@ def _load_dotenv_with_fallback(path: Path, *, override: bool) -> None:
     except UnicodeDecodeError:
         # utf-8-sig can't strip a BOM once we fall back to latin-1 decode.
         raw = path.read_bytes()
-        if raw.startswith(codecs.BOM_UTF8):
-            raw = raw[len(codecs.BOM_UTF8) :]
+        raw = raw.removeprefix(codecs.BOM_UTF8)
         load_dotenv(stream=io.StringIO(raw.decode("latin-1")), override=override)
     # Strip non-ASCII characters from credential env vars that were just
     # loaded.  API keys must be pure ASCII since they're sent as HTTP
@@ -393,7 +391,7 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
     # codecs.BOM_UTF16_LE (FF FE). Checking UTF-16 first would
     # misdetect UTF-32-LE as UTF-16-LE and mangle the file.
     force_utf8_rewrite = False
-    if raw.startswith(codecs.BOM_UTF32_LE) or raw.startswith(codecs.BOM_UTF32_BE):
+    if raw.startswith((codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE)):
         # Lazy import keeps the module import block identical to #65124's
         # codecs/io additions so the two PRs auto-merge either order.
         path_key = str(path.resolve())
@@ -407,7 +405,7 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
                 path,
             )
         return
-    if raw.startswith(codecs.BOM_UTF16_LE) or raw.startswith(codecs.BOM_UTF16_BE):
+    if raw.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
         # "utf-16" uses the BOM to select endianness and strips it.
         # TextIOWrapper + newline=None matches open()'s universal-newlines
         # line splitting (\\n/\\r\\n/\\r only — not splitlines()'s extra

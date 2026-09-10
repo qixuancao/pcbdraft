@@ -25,7 +25,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Any, List, NamedTuple, Optional
+from typing import Any, NamedTuple
 
 from pcbdraft.agent.models_dev import (
     ModelCapabilities,
@@ -774,8 +774,7 @@ def _model_sort_key(model_id: str, prefix: str) -> tuple:
     """
     # Strip the prefix (and optional "/" separator for aggregator slugs)
     rest = model_id[len(prefix) :]
-    if rest.startswith("/"):
-        rest = rest[1:]
+    rest = rest.removeprefix("/")
     rest = rest.lstrip("-").strip()
 
     # Parse version and suffix from the remainder.
@@ -996,7 +995,7 @@ def resolve_alias(
 
 def get_authenticated_provider_slugs(
     current_provider: str = "",
-    user_providers: dict = None,
+    user_providers: dict | None = None,
     custom_providers: list | None = None,
 ) -> list[str]:
     """Return slugs of providers that have credentials.
@@ -1258,7 +1257,7 @@ def switch_model(
     current_api_key: str = "",
     is_global: bool = False,
     explicit_provider: str = "",
-    user_providers: dict = None,
+    user_providers: dict | None = None,
     custom_providers: list | None = None,
 ) -> ModelSwitchResult:
     """Core model-switching pipeline shared between CLI and gateway.
@@ -1675,8 +1674,6 @@ def switch_model(
     api_mode = ""
 
     if provider_changed or explicit_provider:
-        import os
-
         # User-config providers (providers.<name> in config.yaml) carry their
         # own base_url + transport + key reference. resolve_runtime_provider()
         # resolves by provider NAME and doesn't know user-config slugs (e.g. a
@@ -1948,7 +1945,7 @@ def switch_model(
 # Process-level guard so the picker prewarm thread is spawned at most once per
 # process — mirrors run_agent's _openrouter_prewarm_done. Without a guard a
 # long-lived process (or repeated triggers) would leak one OS thread per call.
-import threading as _threading  # noqa: E402
+import threading as _threading
 
 _picker_prewarm_done = _threading.Event()
 
@@ -2164,8 +2161,6 @@ def _collect_authed_provider_slugs(
     :param excluded: Provider slugs to exclude (from ``model_catalog.excluded_providers``).
     :returns: List of normalized provider slugs that have credentials.
     """
-    import os
-
     from pcbdraft.agent.models_dev import PROVIDER_TO_MODELS_DEV
     from pcbdraft.model.auth import PROVIDER_REGISTRY, _load_auth_store
     from pcbdraft.model.catalog import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
@@ -2327,7 +2322,7 @@ def _collect_authed_provider_slugs(
 def list_authenticated_providers(
     current_provider: str = "",
     current_base_url: str = "",
-    user_providers: dict = None,
+    user_providers: dict | None = None,
     custom_providers: list | None = None,
     *,
     force_fresh_nous_tier: bool = False,
@@ -2375,8 +2370,6 @@ def list_authenticated_providers(
     matches the active provider without blocking on every saved/offline custom
     endpoint.
     """
-    import os
-
     from pcbdraft.agent.models_dev import PROVIDER_TO_MODELS_DEV, fetch_models_dev
     from pcbdraft.agent.models_dev import get_provider_info as _mdev_pinfo
     from pcbdraft.model.auth import PROVIDER_REGISTRY
@@ -3673,7 +3666,7 @@ def _prepend_moa_picker_provider(
 def list_picker_providers(
     current_provider: str = "",
     current_base_url: str = "",
-    user_providers: dict = None,
+    user_providers: dict | None = None,
     custom_providers: list | None = None,
     max_models: int | None = None,
     current_model: str = "",

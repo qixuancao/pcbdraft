@@ -30,7 +30,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from typing import Optional
 
 _USAGE_EXIT = 2
 _FAILURE_EXIT = 1
@@ -276,8 +275,7 @@ def _load_hermes_env() -> None:
                 import io
 
                 raw = env_path.read_bytes()
-                if raw.startswith(codecs.BOM_UTF8):
-                    raw = raw[len(codecs.BOM_UTF8) :]
+                raw = raw.removeprefix(codecs.BOM_UTF8)
                 load_dotenv(stream=io.StringIO(raw.decode("latin-1")), override=True)
             except Exception:
                 pass

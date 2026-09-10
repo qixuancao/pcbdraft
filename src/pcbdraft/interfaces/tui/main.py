@@ -429,7 +429,6 @@ import shutil
 import stat
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.interfaces.tui.subcommands._shared import (
     add_accept_hooks_flag as _add_accept_hooks_flag,
@@ -1047,8 +1046,7 @@ def _has_any_provider_configured() -> bool:
                 line = line.strip()
                 if line.startswith("#") or "=" not in line:
                     continue
-                if line.startswith("export "):
-                    line = line[7:]
+                line = line.removeprefix("export ")
                 key, _, val = line.partition("=")
                 val = val.strip().strip("'\"")
                 if key.strip() in provider_env_vars and val:
@@ -6055,7 +6053,7 @@ def _nixos_build_env() -> dict[str, str] | None:
         os_release = Path("/etc/os-release").read_text(encoding="utf-8")
     except OSError:
         return None
-    if not re.search(r"^ID=nixos$", os_release, re.M):
+    if not re.search(r"^ID=nixos$", os_release, re.MULTILINE):
         return None
 
     # python3 already on PATH — nothing to do
@@ -10360,9 +10358,7 @@ def cmd_profile(args):
                     print(f"{copied} bundled skills synced.")
                 else:
                     print(
-                        "⚠ Skills could not be seeded. Run `{} update` to retry.".format(
-                            name
-                        )
+                        f"⚠ Skills could not be seeded. Run `{name} update` to retry."
                     )
 
             # Create wrapper alias

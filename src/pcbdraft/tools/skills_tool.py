@@ -74,7 +74,7 @@ import threading
 import time
 from enum import Enum
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from pcbdraft.agent.skill_utils import EXCLUDED_SKILL_DIRS as _EXCLUDED_SKILL_DIRS
 from pcbdraft.agent.skill_utils import is_skill_support_path as _is_skill_support_path
@@ -649,7 +649,7 @@ def _get_session_platform() -> str:
         return ""
 
 
-def _is_skill_disabled(name: str, platform: str = None) -> bool:
+def _is_skill_disabled(name: str, platform: str | None = None) -> bool:
     """Check if a skill is disabled in config.
 
     Resolves the active platform from (in order of precedence):
@@ -822,7 +822,7 @@ def _sort_skills(skills: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(skills, key=lambda s: (s.get("category") or "", s["name"]))
 
 
-def skills_list(category: str = None, task_id: str = None) -> str:
+def skills_list(category: str | None = None, task_id: str | None = None) -> str:
     """
     List all available skills (progressive disclosure tier 1 - minimal metadata).
 
@@ -1108,8 +1108,8 @@ def _plugin_skill_linked_files(skill_root: Path) -> dict[str, list[str]] | None:
 
 def skill_view(
     name: str,
-    file_path: str = None,
-    task_id: str = None,
+    file_path: str | None = None,
+    task_id: str | None = None,
     preprocess: bool = True,
 ) -> str:
     """
@@ -1148,13 +1148,13 @@ def skill_view(
         # Names containing ':' are routed to the plugin skill registry.
         # Bare names fall through to the existing flat-tree scan below.
         if ":" in name:
-            from pcbdraft.agent.skill_utils import (
-                is_valid_namespace,
-                parse_qualified_name,
-            )
             from pcbdraft.agent.extensions.manager import (
                 discover_plugins,
                 get_plugin_manager,
+            )
+            from pcbdraft.agent.skill_utils import (
+                is_valid_namespace,
+                parse_qualified_name,
             )
 
             namespace, bare = parse_qualified_name(name)

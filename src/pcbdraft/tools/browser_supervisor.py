@@ -26,7 +26,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 # ``websockets`` costs ~22 ms at import and is only needed when a supervisor
 # actually connects to a CDP endpoint (``_connect_ws``). With

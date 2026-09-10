@@ -15,7 +15,6 @@ session's cwd and the sidebar follows the move; the DB write is the durable part
 import json
 import os
 from collections.abc import Callable
-from typing import Optional
 
 from pcbdraft.tools.registry import registry
 

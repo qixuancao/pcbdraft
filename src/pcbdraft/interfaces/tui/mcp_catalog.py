@@ -32,7 +32,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -400,8 +400,7 @@ def catalog_diagnostics() -> list[tuple]:
 
 def get_entry(name: str) -> CatalogEntry | None:
     """Look up a single entry by name. ``official/<name>`` prefix accepted."""
-    if name.startswith("official/"):
-        name = name[len("official/") :]
+    name = name.removeprefix("official/")
     for entry in list_catalog():
         if entry.name == name:
             return entry

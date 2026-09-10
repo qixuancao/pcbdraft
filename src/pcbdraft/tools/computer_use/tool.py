@@ -47,7 +47,7 @@ import re
 import struct
 import sys
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.tools.computer_use.backend import (
     ActionResult,

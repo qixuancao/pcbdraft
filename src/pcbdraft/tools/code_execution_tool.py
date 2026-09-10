@@ -45,7 +45,7 @@ import time
 import uuid
 
 _IS_WINDOWS = platform.system() == "Windows"
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.agent.thread_scoped_output import thread_scoped_silence
 from pcbdraft.tools.thread_context import propagate_context_to_thread
@@ -718,7 +718,7 @@ def _rpc_server_loop(
             try:
                 conn, _ = server_sock.accept()
                 break
-            except socket.timeout:
+            except TimeoutError:
                 continue
         if conn is None:
             return
@@ -728,7 +728,7 @@ def _rpc_server_loop(
         while True:
             try:
                 chunk = conn.recv(65536)
-            except socket.timeout:
+            except TimeoutError:
                 break
             if not chunk:
                 break
@@ -814,7 +814,7 @@ def _rpc_server_loop(
 
                 conn.sendall((result + "\n").encode())
 
-    except socket.timeout:
+    except TimeoutError:
         logger.debug("RPC listener socket timeout")
     except OSError as e:
         logger.debug("RPC listener socket error: %s", e, exc_info=True)
@@ -2230,7 +2230,7 @@ _TOOL_DOC_LINES = [
 
 
 def build_execute_code_schema(
-    enabled_sandbox_tools: set = None, mode: str = None
+    enabled_sandbox_tools: set | None = None, mode: str | None = None
 ) -> dict:
     """Build the execute_code schema with description listing only enabled tools.
 

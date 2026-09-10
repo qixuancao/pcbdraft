@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import List, Optional
 
 from pcbdraft.agent.models_dev import ModelInfo
 

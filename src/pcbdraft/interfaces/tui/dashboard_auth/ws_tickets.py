@@ -34,7 +34,7 @@ from __future__ import annotations
 import secrets
 import threading
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 #: Time-to-live for newly-minted tickets in seconds. 30 s is long enough
 #: that the SPA can call ``getWsTicket()`` and immediately open the WS,

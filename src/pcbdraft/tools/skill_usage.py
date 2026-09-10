@@ -29,9 +29,9 @@ import logging
 import os
 import tempfile
 from contextlib import contextmanager
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from pcbdraft.agent.skill_utils import is_excluded_skill_path, is_external_skill_path
 from pcbdraft.core.runtime_environment import get_runtime_home
@@ -111,13 +111,13 @@ def _usage_file_lock():
         if fcntl:
             try:
                 fcntl.flock(fd, fcntl.LOCK_UN)
-            except (OSError, IOError):
+            except OSError:
                 pass
         elif msvcrt:
             try:
                 fd.seek(0)
                 msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
-            except (OSError, IOError):
+            except OSError:
                 pass
         fd.close()
 

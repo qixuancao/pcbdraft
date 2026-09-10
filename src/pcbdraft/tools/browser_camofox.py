@@ -31,7 +31,7 @@ import logging
 import os
 import threading
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 import requests
@@ -478,7 +478,7 @@ def _post(path: str, body: dict, timeout: int | None = None) -> dict:
     return resp.json()
 
 
-def _get(path: str, params: dict = None, timeout: int | None = None) -> dict:
+def _get(path: str, params: dict | None = None, timeout: int | None = None) -> dict:
     """GET from camofox and return parsed response."""
     if timeout is None:
         timeout = _get_command_timeout()
@@ -489,7 +489,7 @@ def _get(path: str, params: dict = None, timeout: int | None = None) -> dict:
 
 
 def _get_raw(
-    path: str, params: dict = None, timeout: int | None = None
+    path: str, params: dict | None = None, timeout: int | None = None
 ) -> requests.Response:
     """GET from camofox and return raw response (for binary data)."""
     if timeout is None:
@@ -500,7 +500,7 @@ def _get_raw(
     return resp
 
 
-def _delete(path: str, body: dict = None, timeout: int | None = None) -> dict:
+def _delete(path: str, body: dict | None = None, timeout: int | None = None) -> dict:
     """DELETE to camofox and return parsed response."""
     if timeout is None:
         timeout = _get_command_timeout()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import threading
 from contextlib import nullcontext
-from typing import Optional
 
 _mcp_discovery_lock = threading.Lock()
 _mcp_discovery_started = False

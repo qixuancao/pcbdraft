@@ -76,7 +76,6 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, Optional
 
 from pcbdraft.interfaces.tui.dashboard_auth.base import Session
 

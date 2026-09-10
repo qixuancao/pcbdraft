@@ -23,7 +23,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -84,7 +83,7 @@ def data_training_warning(
     model_name: str,
     *,
     provider: str | None = None,
-    base_url: str | None = None,  # noqa: ARG001 — reserved for host-scoped rules
+    base_url: str | None = None,  # Reserved for host-scoped rules.
 ) -> DataTrainingWarning | None:
     """Return a warning payload when *model_name* selects a data-training tier.
 

@@ -30,7 +30,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.agent.redact import redact_sensitive_text
 from pcbdraft.model.codex_responses_adapter import _format_responses_error
@@ -382,7 +382,7 @@ class CodexAppServerSession:
     def __enter__(self) -> CodexAppServerSession:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()
 
     # ---------- interrupt ----------

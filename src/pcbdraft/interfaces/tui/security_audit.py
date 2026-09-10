@@ -29,7 +29,6 @@ import urllib.request
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 

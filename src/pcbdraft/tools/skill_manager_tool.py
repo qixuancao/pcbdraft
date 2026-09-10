@@ -38,7 +38,7 @@ import logging
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.agent.skill_utils import (
     SKILL_PROMPT_DESC_LIMIT,
@@ -657,7 +657,7 @@ def _validate_content_size(content: str, label: str = "SKILL.md") -> str | None:
     return None
 
 
-def _resolve_skill_dir(name: str, category: str = None) -> Path:
+def _resolve_skill_dir(name: str, category: str | None = None) -> Path:
     """Build the directory path for a new skill, optionally under a category."""
     if category:
         return _skills_dir() / category / name
@@ -933,7 +933,9 @@ def _add_description_prompt_preview(result: dict[str, Any], content: str) -> Non
         )
 
 
-def _create_skill(name: str, content: str, category: str = None) -> dict[str, Any]:
+def _create_skill(
+    name: str, content: str, category: str | None = None
+) -> dict[str, Any]:
     """Create a new user skill with SKILL.md content."""
     # Validate name
     err = _validate_name(name)
@@ -1102,7 +1104,7 @@ def _patch_skill(
     name: str,
     old_string: str,
     new_string: str,
-    file_path: str = None,
+    file_path: str | None = None,
     replace_all: bool = False,
 ) -> dict[str, Any]:
     """Targeted find-and-replace within a skill file.
@@ -1600,16 +1602,16 @@ def _maybe_debounced_sync_push(skill_name: str) -> None:
 def skill_manage(
     action: str,
     name: str,
-    content: str = None,
-    category: str = None,
-    file_path: str = None,
-    file_content: str = None,
-    old_string: str = None,
-    new_string: str = None,
+    content: str | None = None,
+    category: str | None = None,
+    file_path: str | None = None,
+    file_content: str | None = None,
+    old_string: str | None = None,
+    new_string: str | None = None,
     replace_all: bool = False,
-    absorbed_into: str = None,
-    task_id: str = None,
-    session_id: str = None,
+    absorbed_into: str | None = None,
+    task_id: str | None = None,
+    session_id: str | None = None,
 ) -> str:
     """
     Manage user-created skills. Dispatches to the appropriate action handler.

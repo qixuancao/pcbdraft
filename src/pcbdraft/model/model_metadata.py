@@ -13,7 +13,7 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 import yaml
@@ -1012,8 +1012,7 @@ def detect_local_server_type(base_url: str, api_key: str = "") -> str | None:
     normalized = _localhost_to_ipv4(normalized)
 
     server_url = normalized
-    if server_url.endswith("/v1"):
-        server_url = server_url[:-3]
+    server_url = server_url.removesuffix("/v1")
     lmstudio_url = _lmstudio_server_root(normalized)
 
     cached = _endpoint_probe_path_cache.get(server_url)
@@ -1927,8 +1926,7 @@ def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> int | 
 
     bare_model = _strip_provider_prefix(model)
     server_url = _localhost_to_ipv4(base_url.rstrip("/"))
-    if server_url.endswith("/v1"):
-        server_url = server_url[:-3]
+    server_url = server_url.removesuffix("/v1")
 
     try:
         server_type = detect_local_server_type(base_url, api_key=api_key)
@@ -2001,8 +1999,7 @@ def query_ollama_supports_vision(
         return None
 
     server_url = _localhost_to_ipv4(base_url.rstrip("/"))
-    if server_url.endswith("/v1"):
-        server_url = server_url[:-3]
+    server_url = server_url.removesuffix("/v1")
 
     headers = _auth_headers(api_key)
 
@@ -2080,8 +2077,7 @@ def _query_ollama_api_show_uncached(
     import httpx
 
     server_url = _localhost_to_ipv4(base_url.rstrip("/"))
-    if server_url.endswith("/v1"):
-        server_url = server_url[:-3]
+    server_url = server_url.removesuffix("/v1")
 
     if _endpoint_blackholed(server_url):
         return None
@@ -2265,8 +2261,7 @@ def _query_local_context_length_uncached(
 
     # Strip /v1 suffix to get the server root
     server_url = _localhost_to_ipv4(base_url.rstrip("/"))
-    if server_url.endswith("/v1"):
-        server_url = server_url[:-3]
+    server_url = server_url.removesuffix("/v1")
     lmstudio_url = _localhost_to_ipv4(_lmstudio_server_root(base_url))
 
     if _endpoint_blackholed(server_url):
@@ -2407,8 +2402,7 @@ def _query_anthropic_context_length(
         return None  # OAuth tokens can't access /v1/models
     try:
         base = base_url.rstrip("/")
-        if base.endswith("/v1"):
-            base = base[:-3]
+        base = base.removesuffix("/v1")
         url = f"{base}/v1/models?limit=1000"
         headers = {
             "x-api-key": api_key,
@@ -2509,7 +2503,7 @@ def _verified_codex_ctx_for_slug(model_bare: str) -> int | None:
     if exact is not None:
         return exact
     for key, ctx in _CODEX_OAUTH_VERIFIED_ABOVE_ADVERTISED_PREFIXES.items():
-        if slug == key or slug.startswith(key + "-") or slug.startswith(key + "."):
+        if slug == key or slug.startswith((key + "-", key + ".")):
             return ctx
     return None
 

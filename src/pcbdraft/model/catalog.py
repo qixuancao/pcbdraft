@@ -19,7 +19,7 @@ import urllib.parse
 import urllib.request
 from difflib import get_close_matches
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 if TYPE_CHECKING:
     from typing import TypeGuard
@@ -256,7 +256,7 @@ def _xai_curated_models() -> list[str]:
         xai = data.get("xai") if isinstance(data, dict) else None
         models = xai.get("models") if isinstance(xai, dict) else None
         if isinstance(models, dict) and models:
-            ids = [mid for mid in models.keys() if isinstance(mid, str)]
+            ids = [mid for mid in models if isinstance(mid, str)]
             if ids:
                 return _xai_finalize_catalog(sorted(ids))
     except Exception:
@@ -2489,8 +2489,7 @@ def get_pricing_for_provider(
             # Nous base_url typically looks like https://inference-api.nousresearch.com/v1
             # We need the part before /v1 for our fetch function
             stripped = base_url.rstrip("/")
-            if stripped.endswith("/v1"):
-                stripped = stripped[:-3]
+            stripped = stripped.removesuffix("/v1")
             return fetch_models_with_pricing(
                 api_key=api_key,
                 base_url=stripped,
@@ -2728,7 +2727,7 @@ def _base_url_looks_like_anthropic_messages(base_url: str) -> bool:
     if not normalized:
         return False
     path = urllib.parse.urlparse(normalized).path.rstrip("/")
-    return path.endswith("/anthropic") or path.endswith("/anthropic/v1")
+    return path.endswith(("/anthropic", "/anthropic/v1"))
 
 
 def _anthropic_models_url(base_url: str | None = None) -> str:
@@ -4148,10 +4147,12 @@ def get_copilot_model_context(model_id: str, api_key: str | None = None) -> int 
 
 def _is_github_models_base_url(base_url: str | None) -> bool:
     normalized = (base_url or "").strip().rstrip("/").lower()
-    return (
-        normalized.startswith(COPILOT_BASE_URL)
-        or normalized.startswith("https://models.github.ai/inference")
-        or normalized.startswith("https://models.inference.ai.azure.com")
+    return normalized.startswith(
+        (
+            COPILOT_BASE_URL,
+            "https://models.github.ai/inference",
+            "https://models.inference.ai.azure.com",
+        )
     )
 
 
@@ -4496,8 +4497,7 @@ def ollama_model_supports_thinking(
     import httpx
 
     server_url = (base_url or "").strip().rstrip("/")
-    if server_url.endswith("/v1"):
-        server_url = server_url[:-3]
+    server_url = server_url.removesuffix("/v1")
     if not server_url:
         return None
 

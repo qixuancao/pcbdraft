@@ -35,7 +35,6 @@ import shutil
 import subprocess
 import tempfile
 import threading
-from typing import Optional
 
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags
 

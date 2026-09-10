@@ -15,7 +15,7 @@ import shutil
 import sys
 import time
 from functools import lru_cache
-from typing import Any, Optional
+from typing import Any
 
 _TITLE_COLOR = "#E8C463"
 

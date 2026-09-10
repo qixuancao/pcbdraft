@@ -25,8 +25,6 @@ model — that invariant is covered by
 
 from __future__ import annotations
 
-from typing import Optional
-
 # Config key used by the sibling display toggles (/battery, /timestamps,
 # /footer) — a plain boolean under ``display``.
 FOCUS_CONFIG_KEY = "display.focus_view"

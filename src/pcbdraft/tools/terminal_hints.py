@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from typing import Optional
 
 # Bounded scan window: error headers appear early; deep output is noise.
 _SCAN_CHARS = 4000
@@ -88,7 +87,9 @@ def _hint_module_not_found(command: str, output: str) -> str | None:
 
 def _hint_merge_conflict(command: str, output: str) -> str | None:
     # ~1,172x: models sometimes re-run the failing merge/rebase verbatim.
-    if not re.search(r"^CONFLICT |Automatic merge failed|needs merge", output, re.M):
+    if not re.search(
+        r"^CONFLICT |Automatic merge failed|needs merge", output, re.MULTILINE
+    ):
         return None
     return (
         "Git merge conflict. Do not retry this command. Resolve the "

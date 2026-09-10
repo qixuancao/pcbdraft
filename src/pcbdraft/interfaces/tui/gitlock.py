@@ -27,7 +27,6 @@ import os
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 

@@ -21,7 +21,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pcbdraft.tools.registry import registry, tool_error
 
@@ -502,13 +502,13 @@ def browser_cdp(
         result = _run_async(
             _cdp_call(endpoint, method, call_params, target_id, safe_timeout)
         )
-    except asyncio.TimeoutError as exc:
+    except TimeoutError as exc:
+        # asyncio.TimeoutError is the built-in TimeoutError on Python 3.11+.
+        # Keep the original first handler's timeout context for both spellings.
         return tool_error(
             f"CDP call timed out after {safe_timeout}s: {exc}",
             method=method,
         )
-    except TimeoutError as exc:
-        return tool_error(str(exc), method=method)
     except RuntimeError as exc:
         return tool_error(str(exc), method=method)
     except WebSocketException as exc:

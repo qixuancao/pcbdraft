@@ -12,7 +12,6 @@ import os
 import shutil
 import sys
 from collections.abc import Sequence
-from typing import Optional
 
 from pcbdraft.interfaces.tui._parser import (
     PRE_ARGPARSE_INHERITED_FLAGS,

@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import List, Optional, Tuple
 
 # Hard cap on text scanned with regexes.  Context/tool-result strings can be
 # arbitrarily large, and the scanners are advisory guards rather than archival

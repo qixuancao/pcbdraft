@@ -62,7 +62,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path  # noqa: F401 — used by test mocks
 from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Tuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 from urllib.parse import parse_qs, urlparse, urlunparse
 
 # NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
@@ -79,7 +79,7 @@ from urllib.parse import parse_qs, urlparse, urlunparse
 #       (which is harmless — annotations aren't type-checked at runtime).
 # See tests/agent/test_auxiliary_client.py for patch patterns this supports.
 if TYPE_CHECKING:
-    from openai import OpenAI  # noqa: F401 — type hints only
+    from openai import OpenAI  # Type hints only.
 
 _OPENAI_CLS_CACHE: type | None = None
 
@@ -680,16 +680,8 @@ def _is_codex_gpt54_or_gpt55(model: str | None, provider: str | None = None) -> 
     if prov != "openai-codex":
         return False
     bare = (model or "").strip().lower().rsplit("/", 1)[-1]
-    return (
-        bare == "gpt-5.4"
-        or bare.startswith("gpt-5.4-")
-        or bare.startswith("gpt-5.4.")
-        or bare == "gpt-5.5"
-        or bare.startswith("gpt-5.5-")
-        or bare.startswith("gpt-5.5.")
-        or bare == "gpt-5.6"
-        or bare.startswith("gpt-5.6-")
-        or bare.startswith("gpt-5.6.")
+    return bare in {"gpt-5.4", "gpt-5.5", "gpt-5.6"} or bare.startswith(
+        ("gpt-5.4-", "gpt-5.4.", "gpt-5.5-", "gpt-5.5.", "gpt-5.6-", "gpt-5.6.")
     )
 
 
@@ -711,7 +703,7 @@ def _is_codex_spark(model: str | None, provider: str | None = None) -> bool:
 def _fixed_temperature_for_model(
     model: str | None,
     base_url: str | None = None,
-) -> "float | None | object":
+) -> float | None | object:
     """Return a temperature directive for models with strict contracts.
 
     Returns:
@@ -894,8 +886,7 @@ def _fast_model_from_catalog(provider_id: str) -> str:
         if not base_url:
             return ""
         # fetch_models_with_pricing appends its own /v1/models.
-        if base_url.endswith("/v1"):
-            base_url = base_url[:-3]
+        base_url = base_url.removesuffix("/v1")
         catalog = (
             fetch_models_with_pricing(
                 api_key=api_key or None, base_url=base_url, timeout=3.0
@@ -1483,7 +1474,7 @@ def _is_anthropic_compatible_host(url: str) -> bool:
         if host in _ANTHROPIC_COMPATIBLE_HOSTS:
             return True
         path = (parsed.path or "").rstrip("/").lower()
-        return path.endswith("/anthropic") or path.endswith("/anthropic/v1")
+        return path.endswith(("/anthropic", "/anthropic/v1"))
     except Exception:
         return False
 
@@ -1651,14 +1642,12 @@ class _CodexCompletionsAdapter:
             # tool registry permanently loses its slash-containing enum
             # constraints after the first auxiliary xAI call.  See #27907.
             try:
-                import copy as _copy
-
                 from pcbdraft.tools.schema_sanitizer import (
                     strip_pattern_and_format,
                     strip_slash_enum,
                 )
 
-                tools = _copy.deepcopy(list(tools))
+                tools = copy.deepcopy(list(tools))
                 tools, _ = strip_pattern_and_format(tools)
                 tools, _ = strip_slash_enum(tools)
             except Exception as exc:
@@ -2054,7 +2043,7 @@ class _AsyncCodexChatShim:
 class AsyncCodexAuxiliaryClient:
     """Async-compatible wrapper matching AsyncOpenAI.chat.completions.create()."""
 
-    def __init__(self, sync_wrapper: "CodexAuxiliaryClient"):
+    def __init__(self, sync_wrapper: CodexAuxiliaryClient):
         sync_adapter = sync_wrapper.chat.completions
         async_adapter = _AsyncCodexCompletionsAdapter(sync_adapter)
         self.chat = _AsyncCodexChatShim(async_adapter)
@@ -2295,7 +2284,7 @@ class _AsyncAnthropicChatShim:
 
 
 class AsyncAnthropicAuxiliaryClient:
-    def __init__(self, sync_wrapper: "AnthropicAuxiliaryClient"):
+    def __init__(self, sync_wrapper: AnthropicAuxiliaryClient):
         sync_adapter = sync_wrapper.chat.completions
         async_adapter = _AsyncAnthropicCompletionsAdapter(sync_adapter)
         self.chat = _AsyncAnthropicChatShim(async_adapter)
@@ -2363,7 +2352,7 @@ class _BedrockCompletionsAdapter:
 
 
 class _BedrockChatShim:
-    def __init__(self, adapter: "_BedrockCompletionsAdapter"):
+    def __init__(self, adapter: _BedrockCompletionsAdapter):
         self.completions = adapter
 
 
@@ -2398,7 +2387,7 @@ class _AsyncBedrockChatShim:
 
 
 class AsyncBedrockAuxiliaryClient:
-    def __init__(self, sync_wrapper: "BedrockAuxiliaryClient"):
+    def __init__(self, sync_wrapper: BedrockAuxiliaryClient):
         sync_adapter = sync_wrapper.chat.completions
         async_adapter = _AsyncBedrockCompletionsAdapter(sync_adapter)
         self.chat = _AsyncBedrockChatShim(async_adapter)
@@ -2425,7 +2414,7 @@ def _endpoint_speaks_anthropic_messages(base_url: str) -> bool:
     if not normalized:
         return False
     path = urlparse(normalized).path.rstrip("/")
-    if path.endswith("/anthropic") or path.endswith("/anthropic/v1"):
+    if path.endswith(("/anthropic", "/anthropic/v1")):
         return True
     hostname = base_url_hostname(normalized)
     if hostname == "api.anthropic.com":
@@ -2968,7 +2957,7 @@ def _warn_paid_lane_once(model: str) -> None:
 
 
 def _try_openrouter(
-    explicit_api_key: str = None, model: str = None
+    explicit_api_key: str | None = None, model: str | None = None
 ) -> tuple[OpenAI | None, str | None]:
     free_only, cfg_model = _aux_openrouter_settings()
     or_model = model or cfg_model
@@ -4059,7 +4048,9 @@ def _try_azure_foundry(
     return client, final_model
 
 
-def _try_anthropic(explicit_api_key: str = None) -> tuple[Any | None, str | None]:
+def _try_anthropic(
+    explicit_api_key: str | None = None,
+) -> tuple[Any | None, str | None]:
     try:
         from pcbdraft.model.anthropic_adapter import (
             build_anthropic_client,
@@ -5640,7 +5631,7 @@ async def _call_fallback_candidate_async(
 
 def _try_payment_fallback(
     failed_provider: str,
-    task: str = None,
+    task: str | None = None,
     reason: str = "payment error",
 ) -> tuple[Any | None, str | None, str]:
     """Try alternative providers after a payment/credit or connection error.
@@ -5703,7 +5694,7 @@ def _try_payment_fallback(
 
 def _try_main_agent_model_fallback(
     failed_provider: str,
-    task: str = None,
+    task: str | None = None,
     reason: str = "error",
     failed_model: str | None = None,
 ) -> tuple[Any | None, str | None, str]:
@@ -6415,7 +6406,7 @@ def _tag_effective_provider(client: Any, provider: str) -> None:
     if client is None or not provider:
         return
     try:
-        setattr(client, "_hermes_aux_effective_provider", provider)
+        client._hermes_aux_effective_provider = provider
     except (AttributeError, TypeError):
         logger.debug(
             "Auxiliary client %s cannot retain effective provider %s",
@@ -6544,12 +6535,12 @@ def _normalize_resolved_model(model_name: str | None, provider: str) -> str | No
 
 def resolve_provider_client(
     provider: str,
-    model: str = None,
+    model: str | None = None,
     async_mode: bool = False,
     raw_codex: bool = False,
-    explicit_base_url: str = None,
-    explicit_api_key: str = None,
-    api_mode: str = None,
+    explicit_base_url: str | None = None,
+    explicit_api_key: str | None = None,
+    api_mode: str | None = None,
     main_runtime: dict[str, Any] | None = None,
     is_vision: bool = False,
     task: str | None = None,
@@ -8404,11 +8395,11 @@ def _compat_model(
 
 def _get_cached_client(
     provider: str,
-    model: str = None,
+    model: str | None = None,
     async_mode: bool = False,
-    base_url: str = None,
-    api_key: str = None,
-    api_mode: str = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
+    api_mode: str | None = None,
     main_runtime: dict[str, Any] | None = None,
     is_vision: bool = False,
     task: str | None = None,
@@ -8544,9 +8535,9 @@ _AUX_DIRECT_API_BASE_URLS: dict[str, str] = {
 
 
 def _resolve_task_provider_model(
-    task: str = None,
-    provider: str = None,
-    model: str = None,
+    task: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> tuple[str, str | None, str | None, str | None, str | None]:
@@ -9846,24 +9837,24 @@ async def _acreate_with_stream(
 
 @_relay_auxiliary_call
 def call_llm(
-    task: str = None,
+    task: str | None = None,
     *,
-    provider: str = None,
-    model: str = None,
-    base_url: str = None,
-    api_key: str = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
     main_runtime: dict[str, Any] | None = None,
     messages: list,
     temperature: float | None = None,
-    max_tokens: int = None,
-    tools: list = None,
-    timeout: float = None,
-    extra_body: dict = None,
+    max_tokens: int | None = None,
+    tools: list | None = None,
+    timeout: float | None = None,
+    extra_body: dict | None = None,
     reasoning_config: dict | None = None,
     extra_headers: dict[str, str] | None = None,
-    api_mode: str = None,
+    api_mode: str | None = None,
     stream: bool = False,
-    stream_options: dict = None,
+    stream_options: dict | None = None,
     route_info: dict[str, str] | None = None,
 ) -> Any:
     """Run an auxiliary LLM request, applying the configured task limit."""
@@ -9918,24 +9909,24 @@ def _release_sync_semaphore_after_stream(
 
 
 def _call_llm_impl(
-    task: str = None,
+    task: str | None = None,
     *,
-    provider: str = None,
-    model: str = None,
-    base_url: str = None,
-    api_key: str = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
     main_runtime: dict[str, Any] | None = None,
     messages: list,
     temperature: float | None = None,
-    max_tokens: int = None,
-    tools: list = None,
-    timeout: float = None,
-    extra_body: dict = None,
+    max_tokens: int | None = None,
+    tools: list | None = None,
+    timeout: float | None = None,
+    extra_body: dict | None = None,
     reasoning_config: dict | None = None,
     extra_headers: dict[str, str] | None = None,
-    api_mode: str = None,
+    api_mode: str | None = None,
     stream: bool = False,
-    stream_options: dict = None,
+    stream_options: dict | None = None,
     route_info: dict[str, str] | None = None,
 ) -> Any:
     """Centralized synchronous LLM call.
@@ -10822,19 +10813,19 @@ def extract_content_or_reasoning(response) -> str:
 
 @_relay_auxiliary_call_async
 async def async_call_llm(
-    task: str = None,
+    task: str | None = None,
     *,
-    provider: str = None,
-    model: str = None,
-    base_url: str = None,
-    api_key: str = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
     main_runtime: dict[str, Any] | None = None,
     messages: list,
     temperature: float | None = None,
-    max_tokens: int = None,
-    tools: list = None,
-    timeout: float = None,
-    extra_body: dict = None,
+    max_tokens: int | None = None,
+    tools: list | None = None,
+    timeout: float | None = None,
+    extra_body: dict | None = None,
     reasoning_config: dict | None = None,
     route_info: dict[str, str] | None = None,
 ) -> Any:
@@ -10865,19 +10856,19 @@ async def async_call_llm(
 
 
 async def _async_call_llm_impl(
-    task: str = None,
+    task: str | None = None,
     *,
-    provider: str = None,
-    model: str = None,
-    base_url: str = None,
-    api_key: str = None,
+    provider: str | None = None,
+    model: str | None = None,
+    base_url: str | None = None,
+    api_key: str | None = None,
     main_runtime: dict[str, Any] | None = None,
     messages: list,
     temperature: float | None = None,
-    max_tokens: int = None,
-    tools: list = None,
-    timeout: float = None,
-    extra_body: dict = None,
+    max_tokens: int | None = None,
+    tools: list | None = None,
+    timeout: float | None = None,
+    extra_body: dict | None = None,
     reasoning_config: dict | None = None,
     route_info: dict[str, str] | None = None,
 ) -> Any:

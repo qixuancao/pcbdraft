@@ -44,7 +44,7 @@ from pathlib import Path
 
 _IS_WINDOWS = platform.system() == "Windows"
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.redact import redact_sensitive_text
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags
@@ -1042,10 +1042,10 @@ class ProcessRegistry:
     def spawn_local(
         self,
         command: str,
-        cwd: str = None,
+        cwd: str | None = None,
         task_id: str = "",
         session_key: str = "",
-        env_vars: dict = None,
+        env_vars: dict | None = None,
         use_pty: bool = False,
     ) -> ProcessSession:
         """
@@ -1285,7 +1285,7 @@ class ProcessRegistry:
         self,
         env: Any,
         command: str,
-        cwd: str = None,
+        cwd: str | None = None,
         task_id: str = "",
         session_key: str = "",
         timeout: int = 10,
@@ -2054,7 +2054,7 @@ class ProcessRegistry:
             self._completion_consumed.add(session_id)
         return result
 
-    def wait(self, session_id: str, timeout: int = None) -> dict:
+    def wait(self, session_id: str, timeout: int | None = None) -> dict:
         """
         Block until a process exits, timeout, or interrupt.
 
@@ -2436,7 +2436,9 @@ class ProcessRegistry:
         except Exception:
             return 0
 
-    def list_sessions(self, task_id: str = None, session_key: str = None) -> list:
+    def list_sessions(
+        self, task_id: str | None = None, session_key: str | None = None
+    ) -> list:
         """List all running and recently-finished processes.
 
         When ``task_id`` is given, processes for that task are included. When
@@ -3220,10 +3222,10 @@ def _redact_process_result(result: dict) -> dict:
     from pcbdraft.agent.redact import redact_sensitive_text, redact_terminal_output
 
     command = result.get("command") or ""
-    for field in ("output", "output_preview"):
-        value = result.get(field)
+    for field_name in ("output", "output_preview"):
+        value = result.get(field_name)
         if isinstance(value, str) and value:
-            result[field] = redact_terminal_output(value, command)
+            result[field_name] = redact_terminal_output(value, command)
     if isinstance(result.get("command"), str) and result["command"]:
         result["command"] = redact_sensitive_text(result["command"], code_file=True)
     return result

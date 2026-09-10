@@ -23,7 +23,7 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.tools.environments.local import hermes_subprocess_env
 
@@ -207,7 +207,7 @@ class CodexAppServerClient:
     def __enter__(self) -> CodexAppServerClient:
         return self
 
-    def __exit__(self, *exc: Any) -> None:
+    def __exit__(self, *exc: object) -> None:
         self.close()
 
     # ---------- send/receive ----------

@@ -12,7 +12,7 @@ import json
 from collections.abc import Iterable, Iterator
 from datetime import UTC, datetime, timezone
 from html import escape as html_escape
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Literal
 
 ExportFormat = Literal["jsonl", "markdown"]
 ExportOnly = Literal["user-prompts"]

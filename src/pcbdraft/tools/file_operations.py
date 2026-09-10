@@ -36,7 +36,7 @@ import unicodedata
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional
+from typing import Any, ClassVar
 
 from pcbdraft.agent.file_safety import (
     build_write_denied_paths,
@@ -910,7 +910,7 @@ class ShellFileOperations(FileOperations):
     This includes local, docker, singularity, ssh, modal, and daytona environments.
     """
 
-    def __init__(self, terminal_env, cwd: str = None):
+    def __init__(self, terminal_env, cwd: str | None = None):
         """
         Initialize file operations with a terminal environment.
 
@@ -950,7 +950,11 @@ class ShellFileOperations(FileOperations):
         self._command_cache: dict[str, bool] = {}
 
     def _exec(
-        self, command: str, cwd: str = None, timeout: int = None, stdin_data: str = None
+        self,
+        command: str,
+        cwd: str | None = None,
+        timeout: int | None = None,
+        stdin_data: str | None = None,
     ) -> ExecuteResult:
         """Execute command via terminal backend.
 
@@ -1059,7 +1063,7 @@ class ShellFileOperations(FileOperations):
                     pass
             return True
 
-    def _is_likely_binary(self, path: str, content_sample: str = None) -> bool:
+    def _is_likely_binary(self, path: str, content_sample: str | None = None) -> bool:
         """
         Check if a file is likely binary.
 

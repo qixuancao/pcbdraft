@@ -19,7 +19,7 @@ import sqlite3
 import tempfile
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.services.session_db import (
     FTS_STORAGE_VERSION,

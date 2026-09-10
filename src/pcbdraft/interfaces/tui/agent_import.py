@@ -46,7 +46,7 @@ import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.core.runtime_utils import atomic_write_text, atomic_yaml_write
 
@@ -186,7 +186,7 @@ def extract_markdown_entries(text: str) -> list[str]:
             and not re.search(
                 r"\b(MEMORY|USER|SOUL|AGENTS|TOOLS|IDENTITY|CLAUDE)\.md\b",
                 h,
-                re.I,
+                re.IGNORECASE,
             )
         ]
         return " > ".join(filtered)

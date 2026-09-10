@@ -26,7 +26,7 @@ Lifecycle:
 """
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.redact import redact_sensitive_text
 
@@ -142,11 +142,11 @@ class ContextEngine(ABC):
         """
 
     @abstractmethod
-    def should_compress(self, prompt_tokens: int = None) -> bool:
+    def should_compress(self, prompt_tokens: int | None = None) -> bool:
         """Return True if compaction should fire this turn."""
 
     def should_compress_info(
-        self, prompt_tokens: int = None
+        self, prompt_tokens: int | None = None
     ) -> "tuple[bool, str | None]":
         """Return ``(should_compress, reason)``.
 
@@ -217,8 +217,8 @@ class ContextEngine(ABC):
         self,
         request_messages: list[dict[str, Any]],
         *,
-        conversation_messages: list[dict[str, Any]] = None,
-        incoming_message: dict[str, Any] = None,
+        conversation_messages: list[dict[str, Any]] | None = None,
+        incoming_message: dict[str, Any] | None = None,
         budget_tokens: int = 0,
     ) -> list[dict[str, Any]]:
         """Optionally choose/replace the context for THIS request, pre-generation.
@@ -282,7 +282,7 @@ class ContextEngine(ABC):
     def on_turn_complete(
         self,
         messages: list[dict[str, Any]],
-        usage: dict[str, Any] = None,
+        usage: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """Observe a finished user turn (post-turn ingestion / observation).

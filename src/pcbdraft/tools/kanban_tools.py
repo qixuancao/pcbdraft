@@ -32,7 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.agent.redact import redact_sensitive_text
 from pcbdraft.interfaces.tui.goals import judge_goal

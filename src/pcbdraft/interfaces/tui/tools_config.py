@@ -16,7 +16,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 from pcbdraft.core.runtime_utils import base_url_hostname, is_truthy_value
 from pcbdraft.interfaces.tui.colors import Colors, color
@@ -3076,7 +3075,7 @@ def _save_platform_tools(config: dict, platform: str, enabled_toolset_keys: set[
 
 def _toolset_has_keys(
     ts_key: str,
-    config: dict = None,
+    config: dict | None = None,
     *,
     force_fresh: bool = False,
     features: NousSubscriptionFeatures | None = None,
@@ -3288,8 +3287,8 @@ def _plugin_image_gen_providers() -> list[dict]:
     this function to dedupe against (see issue #26241).
     """
     try:
-        from pcbdraft.agent.image_gen_registry import list_providers
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.image_gen_registry import list_providers
 
         _ensure_plugins_discovered()
         providers = list_providers()
@@ -3326,8 +3325,8 @@ def _plugin_video_gen_providers() -> list[dict]:
     entry for ``video_gen`` keeps an empty providers list.
     """
     try:
-        from pcbdraft.agent.video_gen_registry import list_providers
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.video_gen_registry import list_providers
 
         _ensure_plugins_discovered()
         providers = list_providers()
@@ -3379,10 +3378,10 @@ def _plugin_web_search_providers() -> list[dict]:
     source of provider rows for the Web Search & Extract category.
     """
     try:
+        from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
         from pcbdraft.agent.web_search_registry import (
             list_providers as _list_web_providers,
         )
-        from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
 
         _ensure_plugins_discovered()
         providers = _list_web_providers()
@@ -3516,8 +3515,8 @@ def _plugin_tts_providers() -> list[dict]:
     through. Filtering here keeps the picker invariant.
     """
     try:
-        from pcbdraft.agent.tts_registry import _BUILTIN_NAMES, list_providers
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.tts_registry import _BUILTIN_NAMES, list_providers
 
         _ensure_plugins_discovered()
         providers = list_providers()
@@ -3913,8 +3912,8 @@ def _toolset_needs_configuration_prompt(
         if fal_key_is_configured():
             return False
         try:
-            from pcbdraft.agent.image_gen_registry import list_providers
             from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+            from pcbdraft.agent.image_gen_registry import list_providers
 
             _ensure_plugins_discovered()
             for provider in list_providers():
@@ -3930,8 +3929,8 @@ def _toolset_needs_configuration_prompt(
         # Satisfied when any plugin-registered video gen provider reports
         # available — no in-tree fallback (every backend is a plugin).
         try:
-            from pcbdraft.agent.video_gen_registry import list_providers
             from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+            from pcbdraft.agent.video_gen_registry import list_providers
 
             _ensure_plugins_discovered()
             for provider in list_providers():
@@ -4333,8 +4332,8 @@ def _plugin_image_gen_catalog(plugin_name: str):
     ``({}, None)`` if the provider isn't registered or has no models.
     """
     try:
-        from pcbdraft.agent.image_gen_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.image_gen_registry import get_provider
 
         _ensure_plugins_discovered()
         provider = get_provider(plugin_name)
@@ -4485,8 +4484,8 @@ def _plugin_video_gen_catalog(plugin_name: str):
     the plugin isn't registered or has no models.
     """
     try:
-        from pcbdraft.agent.video_gen_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.video_gen_registry import get_provider
 
         _ensure_plugins_discovered()
         provider = get_provider(plugin_name)
@@ -5537,7 +5536,7 @@ def _reconfigure_simple_requirements(ts_key: str):
 # ─── Main Entry Point ─────────────────────────────────────────────────────────
 
 
-def tools_command(args=None, first_install: bool = False, config: dict = None):
+def tools_command(args=None, first_install: bool = False, config: dict | None = None):
     """Entry point for `hermes tools` and `hermes setup tools`.
 
     Args:

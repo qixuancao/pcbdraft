@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
-from typing import List, Tuple
 
 # (file, line, pattern_id, description)
 Finding = tuple[str, int, str, str]

@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 import time
 from datetime import UTC, datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 _DURATION_RE = re.compile(
     r"^(\d+(?:\.\d+)?)\s*"

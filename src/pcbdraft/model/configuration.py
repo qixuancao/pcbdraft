@@ -30,7 +30,7 @@ import time
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from pcbdraft.interfaces.tui.route_identity import normalize_route_base_url
 from pcbdraft.interfaces.tui.secret_prompt import masked_secret_prompt
@@ -792,7 +792,7 @@ def get_container_exec_info() -> dict | None:
 
 # Re-export from hermes_constants — canonical definition lives there.
 from pcbdraft.core.runtime_environment import (
-    get_process_runtime_home,  # noqa: F811,E402
+    get_process_runtime_home,
     get_runtime_home,
 )
 from pcbdraft.core.runtime_utils import atomic_replace, fast_safe_load
@@ -930,7 +930,7 @@ def _is_container() -> bool:
             or "kubepods" in cgroup_content
         ):
             return True
-    except (OSError, IOError):
+    except OSError:
         pass
     return False
 
@@ -1065,7 +1065,7 @@ def _ensure_runtime_home_managed(home: Path):
 
 from pcbdraft.interfaces.tui.config_defaults import (
     DEFAULT_CONFIG,
-    OPTIONAL_ENV_VARS,  # noqa: F401
+    OPTIONAL_ENV_VARS,
 )
 
 # =============================================================================
@@ -4182,8 +4182,7 @@ def load_env() -> dict[str, str]:
                 # Strip the bash-compatible ``export `` prefix so lines like
                 # ``export API_KEY=...`` parse as ``API_KEY`` rather than being
                 # stored under the wrong key ``"export API_KEY"`` (#6659).
-                if line.startswith("export "):
-                    line = line[7:]
+                line = line.removeprefix("export ")
                 key, _, value = line.partition("=")
                 env_vars[key.strip()] = _parse_env_value(value)
 

@@ -21,7 +21,7 @@ import sys
 import tempfile
 import urllib.parse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.core.runtime_utils import atomic_write_text
@@ -329,8 +329,7 @@ def _repo_name_from_url(url: str) -> str:
     """Extract the repo name from a Git URL for the plugin directory name."""
     # Strip trailing .git and slashes
     name = url.rstrip("/")
-    if name.endswith(".git"):
-        name = name[:-4]
+    name = name.removesuffix(".git")
     # Get last path component
     name = name.rsplit("/", 1)[-1]
     # Handle ssh-style urls: git@github.com:owner/repo
@@ -2014,7 +2013,7 @@ def cmd_list(args: Any | None = None) -> None:
     if getattr(args, "plain", False):
         for name, version, _description, source, _dir, key in entries:
             status = _plugin_status(name, enabled, disabled, key=key)
-            print(f"{status:12} {source:8} {str(version):8} {name}")
+            print(f"{status:12} {source:8} {version!s:8} {name}")
         return
 
     if not entries:

@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import threading
-from typing import Optional
 
 from pcbdraft.model.auth import (
     ACCESS_TOKEN_REFRESH_SKEW_SECONDS,

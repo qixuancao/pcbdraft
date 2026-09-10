@@ -8,7 +8,7 @@ streaming, or the _run_codex_stream() call path.
 import hashlib
 import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 # Cron fires build session_id as ``cron_<job_id>_<YYYYMMDD_HHMMSS>`` (see
 # cron/scheduler.py). The trailing timestamp is per-fire noise; stripped so
@@ -856,6 +856,6 @@ class ResponsesApiTransport(ProviderTransport):
 
 
 # Auto-register on import
-from pcbdraft.model.transports import register_transport  # noqa: E402
+from pcbdraft.model.transports import register_transport
 
 register_transport("codex_responses", ResponsesApiTransport)

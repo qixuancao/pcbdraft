@@ -4,7 +4,7 @@ Delegates to the existing adapter functions in agent/anthropic_adapter.py.
 This transport owns format conversion and normalization — NOT client lifecycle.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.model.transports.base import ProviderTransport
 from pcbdraft.model.transports.types import NormalizedResponse
@@ -250,6 +250,6 @@ class AnthropicTransport(ProviderTransport):
 
 
 # Auto-register on import
-from pcbdraft.model.transports import register_transport  # noqa: E402
+from pcbdraft.model.transports import register_transport
 
 register_transport("anthropic_messages", AnthropicTransport)

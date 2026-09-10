@@ -22,7 +22,7 @@ import zipfile
 from contextlib import contextmanager
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import (
     display_runtime_home,

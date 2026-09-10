@@ -25,7 +25,7 @@ import time
 import uuid
 from collections.abc import Iterator
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -438,9 +438,7 @@ def _build_gemini_contents(
                     tool_call_id = str(
                         tool_call.get("id") or tool_call.get("call_id") or ""
                     )
-                    tool_name = str(
-                        ((tool_call.get("function") or {}).get("name") or "")
-                    )
+                    tool_name = str((tool_call.get("function") or {}).get("name") or "")
                     if tool_call_id and tool_name:
                         tool_name_by_call_id[tool_call_id] = tool_name
                     parts.append(
@@ -1095,8 +1093,7 @@ class GeminiNativeClient:
             )
         self.api_key = api_key
         normalized_base = (base_url or DEFAULT_GEMINI_BASE_URL).rstrip("/")
-        if normalized_base.endswith("/openai"):
-            normalized_base = normalized_base[: -len("/openai")]
+        normalized_base = normalized_base.removesuffix("/openai")
         self.base_url = normalized_base
         self._default_headers = dict(default_headers or {})
         self.chat = _GeminiChatNamespace(self)

@@ -30,7 +30,6 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
 
 DESKTOP_ENTRY_NAME = "hermes.desktop"
 

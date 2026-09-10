@@ -36,7 +36,6 @@ import logging
 import os
 import re
 from dataclasses import dataclass
-from typing import Optional
 
 from pcbdraft.core.runtime_utils import env_int
 from pcbdraft.interfaces.tui import kanban_db as kb

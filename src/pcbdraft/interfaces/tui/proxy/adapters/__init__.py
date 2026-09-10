@@ -5,8 +5,6 @@ the proxy server can use to forward requests with a freshly-minted bearer
 token. See :class:`UpstreamAdapter` for the contract.
 """
 
-from typing import Dict, Type
-
 from pcbdraft.interfaces.tui.proxy.adapters.base import UpstreamAdapter
 from pcbdraft.interfaces.tui.proxy.adapters.nous_portal import NousPortalAdapter
 from pcbdraft.interfaces.tui.proxy.adapters.xai import XAIGrokAdapter

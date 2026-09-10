@@ -3,9 +3,9 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Literal
 
 from pcbdraft.core.runtime_utils import base_url_host_matches, base_url_hostname
 from pcbdraft.model.model_metadata import (
@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_PRICING = {"input": 0.0, "output": 0.0}
 
-_ZERO = Decimal("0")
-_ONE_MILLION = Decimal("1000000")
+_ZERO = Decimal(0)
+_ONE_MILLION = Decimal(1000000)
 _NOUS_DEFAULT_BASE_URL = "https://inference-api.nousresearch.com/v1"
 
 # Sub-cent cost threshold: below $0.01, render at 4 decimal places so
@@ -1223,8 +1223,7 @@ def _normalize_anthropic_model_name(model: str) -> str:
       - Strips anthropic/ prefix if present
     """
     name = model.lower().strip()
-    if name.startswith("anthropic/"):
-        name = name[len("anthropic/") :]
+    name = name.removeprefix("anthropic/")
     # Normalize dots to dashes in version numbers (e.g. 4.7 → 4-7, 4.6 → 4-6)
     # But preserve the rest of the name structure
     name = re.sub(r"(\d+)\.(\d+)", r"\1-\2", name)

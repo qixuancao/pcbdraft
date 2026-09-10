@@ -31,7 +31,6 @@ import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.agent.skill_utils import is_excluded_skill_path
 from pcbdraft.interfaces.tui import profiles as profiles_mod

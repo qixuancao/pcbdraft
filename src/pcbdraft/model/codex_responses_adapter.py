@@ -17,7 +17,7 @@ import re
 import unicodedata
 import uuid
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.message_sanitization import deterministic_call_id
 from pcbdraft.agent.prompt_builder import DEFAULT_AGENT_IDENTITY

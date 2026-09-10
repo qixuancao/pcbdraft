@@ -40,7 +40,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # User-message texts that are really injected context wrappers, not typed
 # input. Matched against the stripped start of the text.

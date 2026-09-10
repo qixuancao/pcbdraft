@@ -28,7 +28,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Sequence
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags
 

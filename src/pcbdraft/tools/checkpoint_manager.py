@@ -57,7 +57,6 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.core.runtime_utils import env_int
@@ -1144,7 +1143,7 @@ class CheckpointManager:
         self,
         working_dir: str,
         commit_hash: str,
-        file_path: str = None,
+        file_path: str | None = None,
         safe: bool = False,
     ) -> dict:
         """Restore files to a checkpoint state.

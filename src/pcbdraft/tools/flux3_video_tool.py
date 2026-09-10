@@ -33,7 +33,6 @@ import json
 import logging
 import re
 import time
-from typing import Optional
 
 from pcbdraft.tools.managed_tool_gateway import (
     build_managed_media_uploader,
@@ -806,7 +805,7 @@ async def _handle_get_result(args: dict, **kwargs) -> str:
         return await asyncio.wait_for(
             _poll_until_done(url, save_to, started), timeout=_CALL_BACKSTOP_SECONDS
         )
-    except asyncio.TimeoutError:
+    except TimeoutError:
         return _still_generating(job_id)
 
 

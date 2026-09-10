@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Dict, Optional
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 

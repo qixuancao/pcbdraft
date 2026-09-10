@@ -63,7 +63,7 @@ class MetaAIProfile(ProviderProfile):
         self,
         *,
         reasoning_config: dict | None = None,
-        supports_reasoning: bool = False,  # noqa: ARG002 — we self-gate below
+        supports_reasoning: bool = False,  # We self-gate below.
         **context: Any,
     ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Emit ``reasoning_effort`` as a top-level api kwarg.

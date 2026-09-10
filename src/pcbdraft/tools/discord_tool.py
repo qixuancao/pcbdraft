@@ -31,7 +31,7 @@ import threading
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from pcbdraft.agent.secret_scope import get_secret
 from pcbdraft.tools.registry import registry, tool_error

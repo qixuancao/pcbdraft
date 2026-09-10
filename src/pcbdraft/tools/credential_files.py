@@ -25,7 +25,6 @@ import os
 import posixpath
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from pcbdraft.model.configuration import cfg_get
 

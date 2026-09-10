@@ -39,12 +39,12 @@ credential value. Results carry key NAMES and config PATHS only.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 __all__ = [
-    "save_provider_env_credential",
-    "remove_provider_env_credential",
     "purge_env_credential_references",
+    "remove_provider_env_credential",
+    "save_provider_env_credential",
 ]
 
 

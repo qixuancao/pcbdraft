@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import List, Optional
 
 from pcbdraft.core.runtime_environment import runtime_home_key
 from pcbdraft.interfaces.tui.dashboard_auth.base import (

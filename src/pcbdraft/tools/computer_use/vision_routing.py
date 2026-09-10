@@ -48,7 +48,7 @@ one extra LLM call and yields a usable description.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

@@ -37,7 +37,6 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Optional
 
 
 def _default_gateway_id() -> str:
@@ -83,8 +82,7 @@ def _resolve_connector_url(override: str | None) -> str | None:
     elif raw.startswith("wss://"):
         raw = "https://" + raw[len("wss://") :]
     # Strip a trailing /relay path segment if the user pasted the dial URL.
-    if raw.endswith("/relay"):
-        raw = raw[: -len("/relay")]
+    raw = raw.removesuffix("/relay")
     return raw
 
 

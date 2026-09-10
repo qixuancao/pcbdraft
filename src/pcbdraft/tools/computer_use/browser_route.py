@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 ToolCaller = Callable[[str, dict[str, Any]], dict[str, Any]]
 ToolProbe = Callable[[str], bool]

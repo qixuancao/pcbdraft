@@ -26,7 +26,6 @@ import re
 import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterator
-from typing import Dict, List, Optional
 
 from pcbdraft.tools.tool_backend_helpers import resolve_openai_audio_api_key
 from pcbdraft.tools.tts_tool import _get_provider, _load_tts_config, get_env_value

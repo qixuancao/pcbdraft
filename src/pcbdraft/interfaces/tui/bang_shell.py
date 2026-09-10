@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-from typing import Optional
 
 USAGE_HINT = "Usage: !<command> — run a shell command without spending a model turn (e.g. !git status)"
 

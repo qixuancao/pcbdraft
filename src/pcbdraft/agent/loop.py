@@ -64,7 +64,7 @@ from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 
@@ -108,7 +108,7 @@ def _session_source_for_agent(platform: str | None) -> str:
 
 # OpenAI lazy proxy + safe stdio + proxy URL helpers — see agent/process_bootstrap.py.
 # `OpenAI` is re-exported here so `patch("run_agent.OpenAI", ...)` in tests works.
-# The other `# re-export re-exports below cover names accessed via
+# The other re-exports below cover names accessed via
 # `mock.patch("run_agent.<X>")`, `from run_agent import <X>` in production
 # siblings, or the `_ra().<X>` indirection in agent/system_prompt.py — none
 # of which ruff's in-module usage scan can see.
@@ -457,82 +457,83 @@ class AIAgent:
 
     def __init__(
         self,
-        base_url: str = None,
-        api_key: str = None,
-        provider: str = None,
-        api_mode: str = None,
-        acp_command: str = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+        provider: str | None = None,
+        api_mode: str | None = None,
+        acp_command: str | None = None,
         acp_args: list[str] | None = None,
-        command: str = None,
+        command: str | None = None,
         args: list[str] | None = None,
         model: str = "",
         max_iterations: int = 90,  # Default tool-calling iterations (shared with subagents)
-        tool_delay: float = None,  # Deprecated: accepted for compatibility, ignored
-        enabled_toolsets: list[str] = None,
-        disabled_toolsets: list[str] = None,
+        # Deprecated: accepted for compatibility, ignored.
+        tool_delay: float | None = None,
+        enabled_toolsets: list[str] | None = None,
+        disabled_toolsets: list[str] | None = None,
         save_trajectories: bool = False,
         verbose_logging: bool = False,
         quiet_mode: bool = False,
         tool_progress_mode: str = "all",
-        ephemeral_system_prompt: str = None,
+        ephemeral_system_prompt: str | None = None,
         log_prefix_chars: int = 100,
         log_prefix: str = "",
-        providers_allowed: list[str] = None,
-        providers_ignored: list[str] = None,
-        providers_order: list[str] = None,
-        provider_sort: str = None,
+        providers_allowed: list[str] | None = None,
+        providers_ignored: list[str] | None = None,
+        providers_order: list[str] | None = None,
+        provider_sort: str | None = None,
         provider_require_parameters: bool = False,
-        provider_data_collection: str = None,
+        provider_data_collection: str | None = None,
         openrouter_min_coding_score: float | None = None,
-        session_id: str = None,
-        tool_progress_callback: Callable[..., Any] = None,
-        tool_start_callback: Callable[..., Any] = None,
-        tool_complete_callback: Callable[..., Any] = None,
-        thinking_callback: Callable[..., Any] = None,
-        reasoning_callback: Callable[..., Any] = None,
-        clarify_callback: Callable[..., Any] = None,
-        read_terminal_callback: Callable[..., Any] = None,
-        read_preview_callback: Callable[..., Any] = None,
-        read_window_below_callback: Callable[..., Any] = None,
-        setup_mcp_callback: Callable[..., Any] = None,
-        step_callback: Callable[..., Any] = None,
-        stream_delta_callback: Callable[..., Any] = None,
-        interim_assistant_callback: Callable[..., Any] = None,
-        tool_gen_callback: Callable[..., Any] = None,
-        status_callback: Callable[..., Any] = None,
-        notice_callback: Callable[..., Any] = None,
-        notice_clear_callback: Callable[..., Any] = None,
+        session_id: str | None = None,
+        tool_progress_callback: Callable[..., Any] | None = None,
+        tool_start_callback: Callable[..., Any] | None = None,
+        tool_complete_callback: Callable[..., Any] | None = None,
+        thinking_callback: Callable[..., Any] | None = None,
+        reasoning_callback: Callable[..., Any] | None = None,
+        clarify_callback: Callable[..., Any] | None = None,
+        read_terminal_callback: Callable[..., Any] | None = None,
+        read_preview_callback: Callable[..., Any] | None = None,
+        read_window_below_callback: Callable[..., Any] | None = None,
+        setup_mcp_callback: Callable[..., Any] | None = None,
+        step_callback: Callable[..., Any] | None = None,
+        stream_delta_callback: Callable[..., Any] | None = None,
+        interim_assistant_callback: Callable[..., Any] | None = None,
+        tool_gen_callback: Callable[..., Any] | None = None,
+        status_callback: Callable[..., Any] | None = None,
+        notice_callback: Callable[..., Any] | None = None,
+        notice_clear_callback: Callable[..., Any] | None = None,
         event_callback: Callable[[str, dict], None] | None = None,
         reaction_callback: Callable[[str], None] | None = None,
-        max_tokens: int = None,
-        reasoning_config: dict[str, Any] = None,
-        service_tier: str = None,
-        request_overrides: dict[str, Any] = None,
-        prefill_messages: list[dict[str, Any]] = None,
-        platform: str = None,
-        user_id: str = None,
-        user_id_alt: str = None,
-        user_name: str = None,
-        chat_id: str = None,
-        chat_name: str = None,
-        chat_type: str = None,
-        thread_id: str = None,
-        gateway_session_key: str = None,
+        max_tokens: int | None = None,
+        reasoning_config: dict[str, Any] | None = None,
+        service_tier: str | None = None,
+        request_overrides: dict[str, Any] | None = None,
+        prefill_messages: list[dict[str, Any]] | None = None,
+        platform: str | None = None,
+        user_id: str | None = None,
+        user_id_alt: str | None = None,
+        user_name: str | None = None,
+        chat_id: str | None = None,
+        chat_name: str | None = None,
+        chat_type: str | None = None,
+        thread_id: str | None = None,
+        gateway_session_key: str | None = None,
         skip_context_files: bool = False,
         load_soul_identity: bool = False,
         skip_memory: bool = False,
         skip_background_review: bool = False,
         session_db=None,
-        parent_session_id: str = None,
-        iteration_budget: "IterationBudget" = None,
-        fallback_model: dict[str, Any] = None,
+        parent_session_id: str | None = None,
+        iteration_budget: "IterationBudget | None" = None,
+        fallback_model: dict[str, Any] | None = None,
         credential_pool=None,
         checkpoints_enabled: bool = False,
         checkpoint_max_snapshots: int = 20,
         checkpoint_max_total_size_mb: int = 500,
         checkpoint_max_file_size_mb: int = 10,
         pass_session_id: bool = False,
-        requested_provider: str = None,
+        requested_provider: str | None = None,
     ):
         """Forwarder — see ``agent.agent_init.init_agent``."""
         if tool_delay is not None:
@@ -1408,7 +1409,7 @@ class AIAgent:
 
         replay_compression_warning(self)
 
-    def _is_direct_openai_url(self, base_url: str = None) -> bool:
+    def _is_direct_openai_url(self, base_url: str | None = None) -> bool:
         """Return True when a base URL targets OpenAI's native API."""
         if base_url is not None:
             hostname = base_url_hostname(base_url)
@@ -1418,7 +1419,7 @@ class AIAgent:
             )
         return hostname == "api.openai.com"
 
-    def _is_azure_openai_url(self, base_url: str = None) -> bool:
+    def _is_azure_openai_url(self, base_url: str | None = None) -> bool:
         """Return True when a base URL targets Azure OpenAI.
 
         Azure OpenAI exposes an OpenAI-compatible endpoint at
@@ -1434,7 +1435,7 @@ class AIAgent:
             url = getattr(self, "_base_url_lower", "") or ""
         return base_url_host_matches(url, "openai.azure.com")
 
-    def _is_github_copilot_url(self, base_url: str = None) -> bool:
+    def _is_github_copilot_url(self, base_url: str | None = None) -> bool:
         """Return True when a base URL targets GitHub Copilot's OpenAI-compatible API."""
         if base_url is not None:
             hostname = base_url_hostname(base_url)
@@ -2017,7 +2018,7 @@ class AIAgent:
                     msg["timestamp"] = timestamp
 
     def _persist_session(
-        self, messages: list[dict], conversation_history: list[dict] = None
+        self, messages: list[dict], conversation_history: list[dict] | None = None
     ):
         """Save session state to both JSON log and SQLite on any exit path.
 
@@ -3211,7 +3212,7 @@ class AIAgent:
             return redacted
         return content
 
-    def _save_session_log(self, messages: list[dict[str, Any]] = None):
+    def _save_session_log(self, messages: list[dict[str, Any]] | None = None):
         """Optional per-session JSON snapshot writer.
 
         Gated by ``sessions.write_json_snapshots`` (default False).  state.db
@@ -4441,7 +4442,7 @@ class AIAgent:
             },
         )
 
-    def shutdown_memory_provider(self, messages: list = None) -> None:
+    def shutdown_memory_provider(self, messages: list | None = None) -> None:
         """Shut down the memory provider and context engine at session end.
 
         Idempotent: gateway cleanup and AIAgent.close() may share this
@@ -4473,7 +4474,7 @@ class AIAgent:
             except Exception:
                 pass
 
-    def commit_memory_session(self, messages: list = None) -> None:
+    def commit_memory_session(self, messages: list | None = None) -> None:
         """Trigger end-of-session extraction without tearing providers down.
         Called when session_id rotates (e.g. /new, context compression);
         providers keep their state and continue running under the old
@@ -4912,13 +4913,15 @@ class AIAgent:
         """Check if an interrupt has been requested."""
         return self._interrupt_requested
 
-    def _build_system_prompt_parts(self, system_message: str = None) -> dict[str, str]:
+    def _build_system_prompt_parts(
+        self, system_message: str | None = None
+    ) -> dict[str, str]:
         """Forwarder — see ``agent.system_prompt.build_system_prompt_parts``."""
         from pcbdraft.agent.system_prompt import build_system_prompt_parts
 
         return build_system_prompt_parts(self, system_message=system_message)
 
-    def _build_system_prompt(self, system_message: str = None) -> str:
+    def _build_system_prompt(self, system_message: str | None = None) -> str:
         """Forwarder — see ``agent.system_prompt.build_system_prompt``."""
         from pcbdraft.agent.system_prompt import build_system_prompt
 
@@ -5905,7 +5908,7 @@ class AIAgent:
         self,
         api_kwargs: dict,
         client: Any = None,
-        on_first_delta: Callable[..., Any] = None,
+        on_first_delta: Callable[..., Any] | None = None,
     ):
         """Forwarder — see ``agent.codex_runtime.run_codex_stream``."""
         from pcbdraft.model.codex_runtime import run_codex_stream
@@ -7285,7 +7288,7 @@ class AIAgent:
         )
 
     def _interruptible_streaming_api_call(
-        self, api_kwargs: dict, *, on_first_delta: Callable[..., Any] = None
+        self, api_kwargs: dict, *, on_first_delta: Callable[..., Any] | None = None
     ):
         """Forwarder — see ``agent.chat_completion_helpers.interruptible_streaming_api_call``."""
         from pcbdraft.agent.chat_completion_helpers import (
@@ -7538,7 +7541,7 @@ class AIAgent:
             "[A multimodal message was converted to text for Anthropic compatibility.]"
         )
 
-    def _get_transport(self, api_mode: str = None):
+    def _get_transport(self, api_mode: str | None = None):
         """Return the cached transport for the given (or current) api_mode.
 
         Lazy-initializes on first call per api_mode. Returns None if no
@@ -8297,7 +8300,7 @@ class AIAgent:
         messages: list,
         *,
         logger=None,
-        session_id: str = None,
+        session_id: str | None = None,
         cursor=None,
     ) -> int:
         """Forwarder — see ``agent.agent_runtime_helpers.sanitize_tool_call_arguments``."""
@@ -8325,9 +8328,9 @@ class AIAgent:
         messages: list,
         system_message: str,
         *,
-        approx_tokens: int = None,
+        approx_tokens: int | None = None,
         task_id: str = "default",
-        focus_topic: str = None,
+        focus_topic: str | None = None,
         force: bool = False,
         defer_context_engine_notification: bool = False,
         commit_fence=None,
@@ -8704,7 +8707,7 @@ class AIAgent:
         function_args: dict,
         effective_task_id: str,
         tool_call_id: str | None = None,
-        messages: list = None,
+        messages: list | None = None,
         pre_tool_block_checked: bool = False,
         skip_tool_request_middleware: bool = False,
         tool_request_middleware_trace: list[dict[str, Any]] | None = None,
@@ -8821,9 +8824,9 @@ class AIAgent:
     def run_conversation(
         self,
         user_message: Any,
-        system_message: str = None,
-        conversation_history: list[dict[str, Any]] = None,
-        task_id: str = None,
+        system_message: str | None = None,
+        conversation_history: list[dict[str, Any]] | None = None,
+        task_id: str | None = None,
         stream_callback: Callable[..., Any] | None = None,
         persist_user_message: Any | None = None,
         persist_user_timestamp: float | None = None,
@@ -9326,13 +9329,13 @@ class AIAgent:
 
 
 def main(
-    query: str = None,
+    query: str | None = None,
     model: str = "",
-    api_key: str = None,
+    api_key: str | None = None,
     base_url: str = "",
     max_turns: int = 10,
-    enabled_toolsets: str = None,
-    disabled_toolsets: str = None,
+    enabled_toolsets: str | None = None,
+    disabled_toolsets: str | None = None,
     list_tools: bool = False,
     save_trajectories: bool = False,
     save_sample: bool = False,

@@ -52,7 +52,7 @@ import time
 import uuid
 from collections import deque
 from pathlib import PureWindowsPath
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags
 from pcbdraft.tools.computer_use.backend import (

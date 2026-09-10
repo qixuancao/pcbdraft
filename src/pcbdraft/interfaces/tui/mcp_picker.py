@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
-from typing import List, Optional
 
 from pcbdraft.interfaces.tui.cli_output import prompt_yes_no
 from pcbdraft.interfaces.tui.colors import Colors, color

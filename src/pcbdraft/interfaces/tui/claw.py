@@ -16,7 +16,6 @@ import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.core.runtime_environment import get_optional_skills_dir
 from pcbdraft.interfaces.tui.setup import (

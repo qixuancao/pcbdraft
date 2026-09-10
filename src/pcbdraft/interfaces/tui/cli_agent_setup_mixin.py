@@ -14,8 +14,8 @@ loaded) so this module never imports ``cli`` at import time -> no import cycle.
 
 from __future__ import annotations
 
-import sys
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -367,8 +367,8 @@ class CLIAgentSetupMixin:
     def _init_agent(
         self,
         *,
-        model_override: str = None,
-        runtime_override: dict = None,
+        model_override: str | None = None,
+        runtime_override: dict | None = None,
         request_overrides: dict | None = None,
     ) -> bool:
         """

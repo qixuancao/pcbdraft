@@ -20,7 +20,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_optional_skills_dir
 from pcbdraft.interfaces.tui.nous_subscription import get_nous_subscription_features
@@ -254,7 +254,7 @@ def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     print()
 
 
-def prompt(question: str, default: str = None, password: bool = False) -> str:
+def prompt(question: str, default: str | None = None, password: bool = False) -> str:
     """Prompt for input with optional default."""
     if default:
         display = f"{question} [{default}]: "
@@ -397,7 +397,7 @@ def prompt_yes_no(question: str, default: bool = True) -> bool:
         print_error("Please enter 'y' or 'n'")
 
 
-def prompt_checklist(title: str, items: list, pre_selected: list = None) -> list:
+def prompt_checklist(title: str, items: list, pre_selected: list | None = None) -> list:
     """
     Display a multi-select checklist and return the indices of selected items.
 
@@ -555,8 +555,8 @@ def _print_setup_summary(config: dict, runtime_home):
         # setups don't show as "missing FAL_KEY".
         _img_backend = None
         try:
-            from pcbdraft.agent.image_gen_registry import list_providers
             from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+            from pcbdraft.agent.image_gen_registry import list_providers
 
             _ensure_plugins_discovered()
             for _p in list_providers():
@@ -582,11 +582,11 @@ def _print_setup_summary(config: dict, runtime_home):
         tool_status.append(("Video Generation (FAL via Nous subscription)", True, None))
     else:
         try:
-            from pcbdraft.agent.video_gen_registry import (
-                list_providers as _list_video_providers,
-            )
             from pcbdraft.agent.extensions.manager import (
                 _ensure_plugins_discovered as _ensure_plugins,
+            )
+            from pcbdraft.agent.video_gen_registry import (
+                list_providers as _list_video_providers,
             )
 
             _ensure_plugins()

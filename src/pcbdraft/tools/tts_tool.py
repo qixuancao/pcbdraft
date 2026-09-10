@@ -55,7 +55,7 @@ from collections.abc import Callable, Iterator
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 from urllib.parse import urljoin, urlparse
 
 from pcbdraft.core.runtime_environment import display_runtime_home
@@ -941,8 +941,8 @@ def _dispatch_to_plugin_provider(
     if _is_command_provider_config(_get_named_provider_config(tts_config, key)):
         return None
     try:
-        from pcbdraft.agent.tts_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.tts_registry import get_provider
 
         _ensure_plugins_discovered()
         plugin_provider = get_provider(key)
@@ -4074,8 +4074,8 @@ def check_tts_requirements() -> bool:
         return _check_piper_available()
 
     try:
-        from pcbdraft.agent.tts_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.tts_registry import get_provider
 
         _ensure_plugins_discovered()
         plugin = get_provider(provider)

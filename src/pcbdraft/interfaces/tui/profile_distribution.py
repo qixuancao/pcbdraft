@@ -68,7 +68,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.agent.skill_utils import is_excluded_skill_path
 from pcbdraft.interfaces.tui._subprocess_compat import noninteractive_git_env

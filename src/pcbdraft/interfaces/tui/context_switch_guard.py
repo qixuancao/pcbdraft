@@ -13,7 +13,7 @@ so Herm TUI, CLI, and gateway surfaces that already show switch warnings pick it
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any, List, Optional
+from typing import Any
 
 from pcbdraft.model.model_metadata import MINIMUM_CONTEXT_LENGTH
 from pcbdraft.model.model_switch import (

@@ -17,7 +17,6 @@ import re
 import threading
 import time
 import urllib.request
-from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 

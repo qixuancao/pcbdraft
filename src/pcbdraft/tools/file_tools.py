@@ -1672,7 +1672,7 @@ def _get_file_ops(task_id: str = "default") -> ShellFileOperations:
     return file_ops
 
 
-def clear_file_ops_cache(task_id: str = None):
+def clear_file_ops_cache(task_id: str | None = None):
     """Clear the file operations cache."""
     with _file_ops_lock:
         if task_id:
@@ -2106,7 +2106,7 @@ def read_file_tool(
         return tool_error(str(e))
 
 
-def reset_file_dedup(task_id: str = None):
+def reset_file_dedup(task_id: str | None = None):
     """Clear the deduplication cache for file reads.
 
     Called after context compression — the original read content has been
@@ -2430,11 +2430,11 @@ def write_file_tool(
 
 def patch_tool(
     mode: str = "replace",
-    path: str = None,
-    old_string: str = None,
-    new_string: str = None,
+    path: str | None = None,
+    old_string: str | None = None,
+    new_string: str | None = None,
     replace_all: bool = False,
-    patch: str = None,
+    patch: str | None = None,
     task_id: str = "default",
     cross_profile: bool = False,
     session_id: str | None = None,
@@ -2680,7 +2680,7 @@ def search_tool(
     pattern: str,
     target: str = "content",
     path: str = ".",
-    file_glob: str = None,
+    file_glob: str | None = None,
     limit: int = 50,
     offset: int = 0,
     output_mode: str = "content",

@@ -13,15 +13,12 @@ automatically.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
-
 import logging
 import os
 import sys
 import time
-from typing import Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 import requests
 

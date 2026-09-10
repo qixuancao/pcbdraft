@@ -34,7 +34,6 @@ Substrate facts (verified May 2026):
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Optional
 
 # ─── Public types ───────────────────────────────────────────────────────
 

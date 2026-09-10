@@ -1198,10 +1198,7 @@ def _model_flow_azure_foundry(config, current_model=""):
     (models.dev, provider metadata, hardcoded family fallbacks).
     """
     from pcbdraft.interfaces.tui import azure_detect
-    from pcbdraft.model.auth import (
-        _save_model_choice,
-        deactivate_provider,  # noqa: F401
-    )
+    from pcbdraft.model.auth import deactivate_provider
     from pcbdraft.model.configuration import (
         get_env_value,
         load_config,

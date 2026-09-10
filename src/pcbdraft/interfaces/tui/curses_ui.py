@@ -8,13 +8,12 @@ text-based numbered fallback for terminals without curses support.
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Set, Tuple, Union
 
 from pcbdraft.interfaces.tui.colors import Colors, color
 
 # Rich radiolist rows: (text, style). style is None | "yellow" | "dim".
 # Plain ``str`` items remain fully supported.
-RadioItem = Union[str, Sequence[tuple[str, str | None]]]
+RadioItem = str | Sequence[tuple[str, str | None]]
 
 
 def radio_item_plain(item: RadioItem) -> str:

@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Callable
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 #: Auto-migration support floor. Configs whose on-disk ``_config_version`` is
 #: below this are NOT auto-migrated any more (policy decision, July 2026):

@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import signal
-from typing import Optional
 
 try:
     import aiohttp

@@ -26,7 +26,6 @@ Behaviour:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 # Path is resolved relative to this module so it works regardless of cwd —
 # matches the pattern used by ``banner._resolve_repo_dir``.

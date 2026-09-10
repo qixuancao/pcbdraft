@@ -28,8 +28,6 @@ Detection notes:
 
 from __future__ import annotations
 
-from typing import Optional
-
 # Container id -> canonical file extension.
 CONTAINER_TO_EXT = {
     "m4a": ".m4a",

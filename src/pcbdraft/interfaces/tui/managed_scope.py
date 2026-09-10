@@ -23,7 +23,6 @@ import logging
 import os
 import threading
 from pathlib import Path
-from typing import Dict, Optional
 
 import yaml
 

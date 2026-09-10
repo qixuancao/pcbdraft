@@ -42,7 +42,6 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Awaitable, Callable
-from typing import Optional, Tuple
 
 from fastapi import Request
 from fastapi.responses import JSONResponse, Response

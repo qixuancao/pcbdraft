@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.core.runtime_utils import base_url_host_matches, base_url_hostname
 
@@ -460,6 +460,9 @@ def get_provider(name: str, *, allow_network: bool = True) -> ProviderDef | None
             else _mdev_provider(canonical, allow_network=False)
         )
     except Exception:
+        logger.debug(
+            "models.dev provider lookup failed for %s", canonical, exc_info=True
+        )
         mdev_info = None
 
     overlay = PCBDRAFT_RUNTIME_OVERLAYS.get(canonical)
@@ -912,7 +915,11 @@ def resolve_provider_full(
                         source="hermes-auth-registry",
                     )
         except Exception:
-            pass
+            logger.debug(
+                "Auth registry alias lookup failed for %s; using provider catalog",
+                raw,
+                exc_info=True,
+            )
 
     # 1. Built-in (models.dev + overlays)
     pdef = get_provider(canonical)
@@ -950,6 +957,10 @@ def resolve_provider_full(
                 source="models.dev",
             )
     except Exception:
-        pass
+        logger.debug(
+            "Fallback models.dev provider lookup failed for %s",
+            canonical,
+            exc_info=True,
+        )
 
     return None

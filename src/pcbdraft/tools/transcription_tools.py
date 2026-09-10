@@ -39,7 +39,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 from urllib.parse import urljoin
 
 from pcbdraft.core.runtime_utils import is_truthy_value
@@ -1291,8 +1291,8 @@ def _dispatch_to_plugin_provider(
     ):
         return None
     try:
-        from pcbdraft.agent.transcription_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.transcription_registry import get_provider
 
         _ensure_plugins_discovered()
         plugin_provider = get_provider(key)

@@ -25,7 +25,6 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.interfaces.tui._subprocess_compat import IS_WINDOWS, windows_hide_flags
 

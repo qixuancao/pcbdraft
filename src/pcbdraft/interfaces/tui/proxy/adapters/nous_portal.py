@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Dict, FrozenSet, Optional
+from typing import Any
 
 from pcbdraft.interfaces.tui.proxy.adapters.base import (
     UpstreamAdapter,

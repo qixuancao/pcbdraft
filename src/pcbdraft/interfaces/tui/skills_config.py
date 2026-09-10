@@ -12,8 +12,6 @@ Config stored in ~/.hermes/config.yaml under:
       cli: []
 """
 
-from typing import List, Optional, Set
-
 from pcbdraft.interfaces.tui.colors import Colors, color
 from pcbdraft.interfaces.tui.platforms import PLATFORMS as _PLATFORMS
 from pcbdraft.model.configuration import cfg_get, load_config, save_config

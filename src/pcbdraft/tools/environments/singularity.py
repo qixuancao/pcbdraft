@@ -12,7 +12,6 @@ import subprocess
 import threading
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.tools.environments.base import (

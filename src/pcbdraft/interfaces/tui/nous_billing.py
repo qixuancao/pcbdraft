@@ -30,7 +30,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 DEFAULT_PORTAL_BASE_URL = "https://portal.nousresearch.com"
 

@@ -30,7 +30,7 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.agent.error_classifier import FailoverReason
 from pcbdraft.agent.message_sanitization import _FULL_ARGS_LOG_BOUND
@@ -321,7 +321,7 @@ def sanitize_tool_call_arguments(
     messages: list,
     *,
     logger=None,
-    session_id: str = None,
+    session_id: str | None = None,
     cursor: dict | None = None,
 ) -> int:
     """Repair corrupted assistant tool-call argument JSON in-place.
@@ -3200,7 +3200,7 @@ def invoke_tool(
     function_args: dict,
     effective_task_id: str,
     tool_call_id: str | None = None,
-    messages: list = None,
+    messages: list | None = None,
     pre_tool_block_checked: bool = False,
     skip_tool_request_middleware: bool = False,
     tool_request_middleware_trace: list[dict[str, Any]] | None = None,

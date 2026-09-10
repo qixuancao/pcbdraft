@@ -25,7 +25,6 @@ import time
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.core.runtime_environment import display_runtime_home, get_runtime_home
 

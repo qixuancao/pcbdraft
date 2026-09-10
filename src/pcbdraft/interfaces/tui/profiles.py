@@ -31,7 +31,6 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import Dict, List, Optional, Tuple
 
 from pcbdraft.agent.skill_utils import is_excluded_skill_path
 

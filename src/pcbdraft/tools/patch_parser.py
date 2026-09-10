@@ -39,7 +39,7 @@ import inspect
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 
 class OperationType(Enum):
@@ -506,7 +506,7 @@ def apply_v4a_operations(
                     errors.append(f"Failed to update {op.file_path}: {result[1]}")
 
         except Exception as e:
-            errors.append(f"Error processing {op.file_path}: {str(e)}")
+            errors.append(f"Error processing {op.file_path}: {e!s}")
 
     # Lint results were collected from write_file's internal _check_lint_delta
     # via the four-tuple return of _apply_add / _apply_update — zero extra

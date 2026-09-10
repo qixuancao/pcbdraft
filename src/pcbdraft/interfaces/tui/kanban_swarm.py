@@ -20,7 +20,7 @@ import json
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.interfaces.tui import kanban_db as kb
 

@@ -31,7 +31,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.skill_utils import SKILL_PROMPT_DESC_LIMIT, parse_frontmatter
 
@@ -247,7 +247,8 @@ def _check_shell_utilities(body: str) -> list[LintFinding]:
 
 def _check_sections(body: str) -> list[LintFinding]:
     if not any(
-        re.search(rf"^#+\s+{re.escape(s)}", body, re.M) for s in _EXPECTED_SECTIONS
+        re.search(rf"^#+\s+{re.escape(s)}", body, re.MULTILINE)
+        for s in _EXPECTED_SECTIONS
     ):
         return [
             LintFinding(
@@ -366,7 +367,7 @@ def _check_platform_list_valid(frontmatter: dict[str, Any]) -> list[LintFinding]
 
 def _strip_code_blocks(body: str) -> str:
     """Remove fenced code blocks so prose-only checks don't fire on examples."""
-    return re.sub(r"```.*?```", "", body, flags=re.S)
+    return re.sub(r"```.*?```", "", body, flags=re.DOTALL)
 
 
 # ── Public API ───────────────────────────────────────────────────────────────

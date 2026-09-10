@@ -16,7 +16,6 @@ platform the gateway truncates it and points the user at the dashboard / file.
 from __future__ import annotations
 
 import json
-from typing import List, Optional
 
 from pcbdraft.tools import write_approval as wa
 
@@ -40,7 +39,7 @@ def _fmt_pending_list(subsystem: str) -> str:
         origin = r.get("origin", "foreground")
         tag = " [auto]" if origin == "background_review" else ""
         lines.append(f"  {r['id']}{tag}  {r.get('summary', '')}")
-    where = "/{s} approve <id>".format(s=subsystem)
+    where = f"/{subsystem} approve <id>"
     lines.append("")
     lines.append(f"Apply: {where}   Reject: /{subsystem} reject <id>")
     if subsystem == wa.SKILLS:

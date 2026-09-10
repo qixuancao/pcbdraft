@@ -33,7 +33,6 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.interfaces.tui.sqlite_runtime import (

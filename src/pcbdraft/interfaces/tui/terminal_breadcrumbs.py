@@ -22,7 +22,6 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 # Multiplexer / terminal-emulator identity env vars, checked in order when
 # no real tty path is available (e.g. stdin piped but stdout still a pty

@@ -114,7 +114,7 @@ class OpenRouterProfile(ProviderProfile):
         here. The picker early-returns via the dedicated openrouter path before
         reaching this method, so filtering here would be unreachable.
         """
-        global _CACHE  # noqa: PLW0603
+        global _CACHE
         if _CACHE is not None:
             return _CACHE
         try:

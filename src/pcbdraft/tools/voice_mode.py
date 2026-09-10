@@ -25,7 +25,7 @@ import time
 import wave
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -2371,8 +2371,8 @@ def _check_plugin_stt_provider(provider: str) -> bool:
     if key == "none":
         return False
     try:
-        from pcbdraft.agent.transcription_registry import get_provider
         from pcbdraft.agent.extensions.manager import _ensure_plugins_discovered
+        from pcbdraft.agent.transcription_registry import get_provider
 
         _ensure_plugins_discovered()
         plugin_provider = get_provider(key)

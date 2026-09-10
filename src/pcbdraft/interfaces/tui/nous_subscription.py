@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Set
 
 from pcbdraft.core.runtime_utils import is_truthy_value
 from pcbdraft.interfaces.tui.nous_account import (

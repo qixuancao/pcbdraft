@@ -3,8 +3,8 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 
 import httpx
 
@@ -443,8 +443,7 @@ def _codex_backend_urls(base_url: str) -> tuple[str, str, str]:
     normalized = (base_url or "").strip().rstrip("/")
     if not normalized:
         normalized = "https://chatgpt.com/backend-api/codex"
-    if normalized.endswith("/codex"):
-        normalized = normalized[: -len("/codex")]
+    normalized = normalized.removesuffix("/codex")
     prefix = normalized + ("/wham" if "/backend-api" in normalized else "/api/codex")
     return (
         prefix + "/usage",

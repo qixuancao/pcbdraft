@@ -12,7 +12,7 @@ import shlex
 import tarfile
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.tools.environments.base import (

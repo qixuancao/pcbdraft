@@ -45,7 +45,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.tools.daemon_pool import DaemonThreadPoolExecutor

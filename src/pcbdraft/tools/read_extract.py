@@ -24,7 +24,7 @@ import threading
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 from xml.etree import ElementTree as ET
 
 __all__ = [

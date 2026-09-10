@@ -14,7 +14,6 @@ desktop-sourced sessions.
 
 import json
 from collections.abc import Callable
-from typing import Optional
 
 from pcbdraft.tools.registry import registry, tool_error
 

@@ -41,7 +41,7 @@ Design notes / invariants honored:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 #: Default number of recent exchanges to preserve verbatim when the user
 #: runs ``/compress here`` without an explicit count.

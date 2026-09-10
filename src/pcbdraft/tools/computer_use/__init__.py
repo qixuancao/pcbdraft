@@ -36,9 +36,17 @@ from __future__ import annotations
 
 # Re-export the public surface so `from tools.computer_use import ...` works.
 from pcbdraft.tools.computer_use.tool import (
-    check_computer_use_requirements,
-    get_computer_use_schema,
-    handle_computer_use,
-    release_computer_use_session,
-    set_approval_callback,
+    check_computer_use_requirements as check_computer_use_requirements,
+)
+from pcbdraft.tools.computer_use.tool import (
+    get_computer_use_schema as get_computer_use_schema,
+)
+from pcbdraft.tools.computer_use.tool import (
+    handle_computer_use as handle_computer_use,
+)
+from pcbdraft.tools.computer_use.tool import (
+    release_computer_use_session as release_computer_use_session,
+)
+from pcbdraft.tools.computer_use.tool import (
+    set_approval_callback as set_approval_callback,
 )

@@ -27,7 +27,7 @@ import os
 import sys
 import threading
 from collections.abc import Callable
-from typing import Any, Optional
+from typing import Any
 
 # Modifier aliases mirrored from the TUI parser (``ui-tui/src/lib/platform.ts``)
 # ``_MOD_ALIASES`` table — the contract that removes the cross-runtime

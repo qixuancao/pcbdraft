@@ -28,7 +28,7 @@ import logging
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.core.runtime_utils import atomic_write_text
@@ -309,13 +309,13 @@ class MemoryStore:
             if fcntl:
                 try:
                     fcntl.flock(fd, fcntl.LOCK_UN)
-                except (OSError, IOError):
+                except OSError:
                     pass
             elif msvcrt:
                 try:
                     fd.seek(0)
                     msvcrt.locking(fd.fileno(), msvcrt.LK_UNLCK, 1)
-                except (OSError, IOError):
+                except OSError:
                     pass
             fd.close()
 
@@ -739,7 +739,9 @@ class MemoryStore:
         """Truncated one-line previews of entries for error feedback."""
         return [e[:width] + ("..." if len(e) > width else "") for e in entries]
 
-    def _success_response(self, target: str, message: str = None) -> dict[str, Any]:
+    def _success_response(
+        self, target: str, message: str | None = None
+    ) -> dict[str, Any]:
         # A successful write means the consolidation loop made progress, so the
         # per-turn failure budget resets (the cap counts consecutive failures,
         # not lifetime ones within a turn) (#42405).
@@ -817,7 +819,7 @@ class MemoryStore:
             # save persists over the real bytes — the wipe class documented
             # above. Undecodable bytes must surface as read_ok=False.
             return path.read_text(encoding="utf-8-sig"), True
-        except (OSError, IOError, UnicodeDecodeError):
+        except (OSError, UnicodeDecodeError):
             return "", False
 
     @staticmethod
@@ -906,7 +908,7 @@ class MemoryStore:
         bak_path = path.with_suffix(path.suffix + f".bak.{ts}")
         try:
             bak_path.write_text(raw, encoding="utf-8")
-        except (OSError, IOError):
+        except OSError:
             return str(bak_path) + " (BACKUP FAILED — file unchanged on disk)"
         return str(bak_path)
 
@@ -922,7 +924,7 @@ class MemoryStore:
         content = ENTRY_DELIMITER.join(entries) if entries else ""
         try:
             atomic_write_text(path, content, tmp_prefix=".mem_")
-        except (OSError, IOError) as e:
+        except OSError as e:
             raise RuntimeError(f"Failed to write memory file {path}: {e}")
 
 
@@ -1109,11 +1111,11 @@ def _missing_old_text_error(store: "MemoryStore", target: str, action: str) -> s
 
 
 def memory_tool(
-    action: str = None,
+    action: str | None = None,
     target: str = "memory",
-    content: str = None,
-    old_text: str = None,
-    new_text: str = None,
+    content: str | None = None,
+    old_text: str | None = None,
+    new_text: str | None = None,
     operations: list[dict[str, Any]] | None = None,
     store: MemoryStore | None = None,
 ) -> str:

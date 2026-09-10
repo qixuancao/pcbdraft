@@ -11,7 +11,6 @@ tool's thread is safe).
 """
 
 from collections.abc import Callable
-from typing import Optional
 
 from pcbdraft.agent.session_context import get_session_env
 

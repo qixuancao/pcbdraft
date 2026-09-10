@@ -10,9 +10,9 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, fields, replace
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import pcbdraft.model.auth as auth_mod
 from pcbdraft.agent.secret_scope import get_secret as _get_secret

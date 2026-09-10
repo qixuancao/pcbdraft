@@ -23,7 +23,7 @@ from __future__ import annotations
 import os
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.tools.ansi_strip import sanitize_display_text
 
