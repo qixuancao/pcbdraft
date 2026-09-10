@@ -26,6 +26,27 @@ WORKER_PHASE_INSPECT_BOARD_LOAD_END = "inspect_board_load_end"
 WORKER_PHASE_INSPECT_BOARD_CONNECTIVITY = "inspect_board_connectivity"
 WORKER_PHASE_INSPECT_BOARD_COMPONENTS = "inspect_board_components"
 WORKER_PHASE_INSPECT_BOARD_TRACKS = "inspect_board_tracks"
+WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_BEGIN = (
+    "inspect_board_tracks_container_begin"
+)
+WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_END = "inspect_board_tracks_container_end"
+WORKER_PHASE_INSPECT_BOARD_TRACKS_ITERATOR_NEXT = "inspect_board_tracks_iterator_next"
+WORKER_PHASE_INSPECT_BOARD_TRACKS_TYPE_CLASSIFICATION = (
+    "inspect_board_tracks_type_classification"
+)
+WORKER_PHASE_INSPECT_BOARD_TRACKS_VIA_TOP_LAYER = "inspect_board_tracks_via_top_layer"
+WORKER_PHASE_INSPECT_BOARD_TRACKS_VIA_BOTTOM_LAYER = (
+    "inspect_board_tracks_via_bottom_layer"
+)
+WORKER_PHASE_INSPECT_BOARD_TRACKS_NET_NAME = "inspect_board_tracks_net_name"
+WORKER_PHASE_INSPECT_BOARD_TRACKS_NUMERIC_GEOMETRY = (
+    "inspect_board_tracks_numeric_geometry"
+)
+WORKER_PHASE_INSPECT_BOARD_TRACKS_SEGMENT_LAYER = "inspect_board_tracks_segment_layer"
+WORKER_PHASE_INSPECT_BOARD_TRACKS_ITEM_MARKERS_SUPPRESSED = (
+    "inspect_board_tracks_item_markers_suppressed"
+)
+WORKER_PHASE_INSPECT_BOARD_TRACKS_COMPLETE = "inspect_board_tracks_complete"
 WORKER_PHASE_INSPECT_BOARD_ZONES = "inspect_board_zones"
 WORKER_PHASE_INSPECT_BOARD_OUTLINE = "inspect_board_outline"
 WORKER_PHASE_INSPECT_BOARD_SETTINGS_NETS = "inspect_board_settings_nets"
@@ -42,6 +63,17 @@ WORKER_PHASE_MARKERS = frozenset(
         WORKER_PHASE_INSPECT_BOARD_CONNECTIVITY,
         WORKER_PHASE_INSPECT_BOARD_COMPONENTS,
         WORKER_PHASE_INSPECT_BOARD_TRACKS,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_BEGIN,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_END,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_ITERATOR_NEXT,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_TYPE_CLASSIFICATION,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_VIA_TOP_LAYER,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_VIA_BOTTOM_LAYER,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_NET_NAME,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_NUMERIC_GEOMETRY,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_SEGMENT_LAYER,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_ITEM_MARKERS_SUPPRESSED,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS_COMPLETE,
         WORKER_PHASE_INSPECT_BOARD_ZONES,
         WORKER_PHASE_INSPECT_BOARD_OUTLINE,
         WORKER_PHASE_INSPECT_BOARD_SETTINGS_NETS,
@@ -70,6 +102,7 @@ JOB_LIMIT = 32 * 1024 * 1024
 MAX_COMPONENTS = 500
 MAX_NETS = 2000
 MAX_ROUTES = 200_000
+WORKER_TRACK_DIAGNOSTIC_ITEM_LIMIT = 8
 LIB_ID = re.compile(r"^[A-Za-z0-9_.+~-]+:[A-Za-z0-9_.+~(){}-]+$")
 WORKER_NAMESPACE = uuid.UUID("33c385e7-95eb-5434-a09f-cf8c782dcc01")
 
@@ -581,18 +614,48 @@ def inspect_board_job(job):
             )
         components.append(component)
     _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS)
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_BEGIN)
+    track_items = board.Tracks()
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_END)
+    track_iterator = iter(track_items)
+    track_item_count = 0
+    track_markers_suppressed = False
+
+    def emit_track_marker(marker):
+        if track_item_count < WORKER_TRACK_DIAGNOSTIC_ITEM_LIMIT:
+            _emit_phase(marker)
+
     tracks = []
-    for item in board.Tracks():
+    while True:
+        if track_item_count < WORKER_TRACK_DIAGNOSTIC_ITEM_LIMIT:
+            _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS_ITERATOR_NEXT)
+        elif not track_markers_suppressed:
+            _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS_ITEM_MARKERS_SUPPRESSED)
+            track_markers_suppressed = True
+        try:
+            item = next(track_iterator)
+        except StopIteration:
+            break
+        emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_TYPE_CLASSIFICATION)
         if isinstance(item, pcbnew.PCB_VIA):
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_VIA_TOP_LAYER)
             start_layer = item.TopLayer()
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_VIA_BOTTOM_LAYER)
             stop_layer = item.BottomLayer()
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_NET_NAME)
+            net_name = str(item.GetNetname())
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_NUMERIC_GEOMETRY)
+            x_mm = _mm(item.GetPosition().x)
+            y_mm = _mm(item.GetPosition().y)
+            width_mm = _mm(item.GetWidth())
+            drill_mm = _mm(item.GetDrillValue())
             track: dict[str, object] = {
                 "kind": "via",
-                "net": str(item.GetNetname()),
-                "x_mm": _mm(item.GetPosition().x),
-                "y_mm": _mm(item.GetPosition().y),
-                "width_mm": _mm(item.GetWidth()),
-                "drill_mm": _mm(item.GetDrillValue()),
+                "net": net_name,
+                "x_mm": x_mm,
+                "y_mm": y_mm,
+                "width_mm": width_mm,
+                "drill_mm": drill_mm,
                 "from_layer": logical_layer[start_layer],
                 "to_layer": logical_layer[stop_layer],
             }
@@ -600,22 +663,35 @@ def inspect_board_job(job):
                 track["uuid"] = item.m_Uuid.AsStdString()
             tracks.append(track)
         elif isinstance(item, pcbnew.PCB_TRACK):
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_NET_NAME)
+            net_name = str(item.GetNetname())
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_NUMERIC_GEOMETRY)
+            x1_mm = _mm(item.GetStart().x)
+            y1_mm = _mm(item.GetStart().y)
+            x2_mm = _mm(item.GetEnd().x)
+            y2_mm = _mm(item.GetEnd().y)
+            width_mm = _mm(item.GetWidth())
+            emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_SEGMENT_LAYER)
+            layer_name = str(board.GetLayerName(item.GetLayer()))
+            layer_index = logical_layer[item.GetLayer()]
             track = {
                 "kind": "segment",
-                "net": str(item.GetNetname()),
-                "x1_mm": _mm(item.GetStart().x),
-                "y1_mm": _mm(item.GetStart().y),
-                "x2_mm": _mm(item.GetEnd().x),
-                "y2_mm": _mm(item.GetEnd().y),
-                "width_mm": _mm(item.GetWidth()),
-                "layer": str(board.GetLayerName(item.GetLayer())),
-                "layer_index": logical_layer[item.GetLayer()],
+                "net": net_name,
+                "x1_mm": x1_mm,
+                "y1_mm": y1_mm,
+                "x2_mm": x2_mm,
+                "y2_mm": y2_mm,
+                "width_mm": width_mm,
+                "layer": layer_name,
+                "layer_index": layer_index,
             }
             if include_spatial:
                 track["uuid"] = item.m_Uuid.AsStdString()
             tracks.append(track)
         else:
             raise TypeError("board contains an unsupported track object")
+        track_item_count += 1
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS_COMPLETE)
     _emit_phase(WORKER_PHASE_INSPECT_BOARD_ZONES)
     zones = []
     for zone in board.Zones():
