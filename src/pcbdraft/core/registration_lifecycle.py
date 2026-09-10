@@ -18,7 +18,7 @@ def same_registration(left: Any, right: Any) -> bool:
     """Compare opaque registry snapshots using identity only."""
     if isinstance(left, tuple) and isinstance(right, tuple):
         return len(left) == len(right) and all(
-            same_registration(a, b) for a, b in zip(left, right)
+            same_registration(a, b) for a, b in zip(left, right, strict=True)
         )
     return left is right
 

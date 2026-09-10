@@ -588,6 +588,7 @@ def prefetch_banner_data():
             get_git_banner_state()
         except Exception:
             pass
+
     threading.Thread(target=_run, name="banner-data-prefetch", daemon=True).start()
 
 

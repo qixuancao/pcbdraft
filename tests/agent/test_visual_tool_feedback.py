@@ -8,7 +8,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import patch
 
 from PIL import Image
@@ -514,9 +514,13 @@ class PCBVisualWorkflowTests(unittest.TestCase):
         )
 
         class _Agent:
-            valid_tool_names = {"tool_search", "tool_describe", "tool_call"}
-            enabled_toolsets = ["pcbdraft"]
-            disabled_toolsets = ["browser"]
+            valid_tool_names: ClassVar[set[str]] = {
+                "tool_search",
+                "tool_describe",
+                "tool_call",
+            }
+            enabled_toolsets: ClassVar[list[str]] = ["pcbdraft"]
+            disabled_toolsets: ClassVar[list[str]] = ["browser"]
             quiet_mode = True
 
         class _Runtime:

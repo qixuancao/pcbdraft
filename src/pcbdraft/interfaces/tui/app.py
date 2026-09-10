@@ -11132,7 +11132,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return True
 
         choices = [
-            ("once", "Switch anyway", "Use this model for the current PCBDraft session."),
+            (
+                "once",
+                "Switch anyway",
+                "Use this model for the current PCBDraft session.",
+            ),
             ("cancel", "Cancel", "Keep the current model."),
         ]
         raw = self._prompt_text_input_modal(
@@ -20049,7 +20053,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 ]
 
             if cli_ref._project_picker_state:
-                return [("class:hint", "  type to filter · ↑/↓ select · Enter open · Esc cancel")]
+                return [
+                    (
+                        "class:hint",
+                        "  type to filter · ↑/↓ select · Enter open · Esc cancel",
+                    )
+                ]
 
             if cli_ref._clarify_state:
                 # None deadline = unlimited wait → hide the countdown entirely.

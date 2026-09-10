@@ -32,7 +32,9 @@ class AssistantResponseColorTests(unittest.TestCase):
 
         border_ansi = "\x1b[38;2;18;52;86m"
         with (
-            patch.object(skin_engine, "get_active_skin", return_value=LightUnreadableSkin()),
+            patch.object(
+                skin_engine, "get_active_skin", return_value=LightUnreadableSkin()
+            ),
             patch.object(tui_app, "_ACCENT", border_ansi),
             patch.object(tui_app, "_cprint") as rendered,
         ):
