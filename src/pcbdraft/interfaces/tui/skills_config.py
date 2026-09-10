@@ -1,9 +1,9 @@
 """
-Skills configuration for Hermes Agent.
-`hermes skills` enters this module.
+Skills configuration for PCBDraft Agent.
+`internal skills` enters this module.
 
 Toggle individual skills or categories on/off, globally or per-platform.
-Config stored in ~/.hermes/config.yaml under:
+Config stored in ~/.pcbdraft/config.yaml under:
 
   skills:
     disabled: [skill-a, skill-b]          # global disabled list
@@ -159,7 +159,7 @@ def _toggle_by_category(skills: list[dict], disabled: set[str]) -> set[str]:
 
 
 def skills_command(args=None):
-    """Entry point for `hermes skills`."""
+    """Entry point for `internal skills`."""
     from pcbdraft.interfaces.tui.curses_ui import curses_checklist
 
     config = load_config()

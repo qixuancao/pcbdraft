@@ -2,7 +2,7 @@
 
 This module holds the per-version migration steps that used to live as a
 768-line ladder of ``if current_ver < N:`` blocks inside
-``hermes_cli.config.migrate_config``. Each step is a function
+``pcbdraft.model.configuration.migrate_config``. Each step is a function
 ``_migrate_to_N(results, quiet)`` whose body is copied verbatim from the
 original block; only the shared skeleton (the version gate and the strict
 ascending ordering) lives in the :func:`run_migrations` driver.
@@ -23,14 +23,13 @@ Semantics preserved exactly from the original ladder:
 
 Import direction / cycle avoidance:
 
-``hermes_cli.config`` imports :func:`run_migrations` lazily (inside
+``pcbdraft.model.configuration`` imports :func:`run_migrations` lazily (inside
 ``migrate_config``), and every step function here resolves its helpers
 (``read_raw_config``, ``_persist_migration``, ``get_env_value``, …) lazily
-through the live ``hermes_cli.config`` module object at call time via
+through the live ``pcbdraft.model.configuration`` module object at call time via
 :func:`_cfg`. There is deliberately NO module-level import of
-``hermes_cli.config`` here, so no circular import can form — and, just as
-importantly, tests that monkeypatch helpers on ``hermes_cli.config`` (e.g.
-``patch("hermes_cli.config.read_raw_config", ...)``) keep working, because
+``pcbdraft.model.configuration`` here, so no circular import can form — and
+tests that monkeypatch helpers on that module keep working, because
 the steps always go through the module attribute rather than a bound-early
 reference.
 """
@@ -61,14 +60,14 @@ def support_floor_message() -> str:
     return (
         f"This config predates version {SUPPORT_FLOOR_VERSION} (~2 years old) "
         "and can no longer be auto-migrated. Back up "
-        f"{display_runtime_home()}/config.yaml and run `hermes setup` to "
-        f"regenerate, or manually set _config_version: {SUPPORT_FLOOR_VERSION} "
-        "after reviewing the changelog."
+        f"{display_runtime_home()}/config.yaml before reviewing it manually. "
+        "Use `pcbdraft connect` to configure a model provider and "
+        "`pcbdraft doctor` for runtime diagnostics."
     )
 
 
 def _cfg():
-    """Return the live ``hermes_cli.config`` module (lazy, cycle-free)."""
+    """Return the live native configuration module (lazy, cycle-free)."""
     import pcbdraft.model.configuration as config
 
     return config
@@ -122,7 +121,7 @@ def _migrate_to_12(results: dict[str, Any], quiet: bool) -> None:
 
                     parsed = urlparse(old_url)
                     key = (parsed.hostname or "endpoint").replace(".", "-")
-                except Exception:
+                except (TypeError, ValueError):
                     key = f"endpoint-{migrated_count}"
 
             # Don't overwrite existing entries
@@ -178,8 +177,10 @@ def _migrate_to_13(results: dict[str, Any], quiet: bool) -> None:
                     print(
                         f"  ✓ Cleared {dead_var} from .env (no longer used — config.yaml is source of truth)"
                     )
-        except Exception:
-            pass
+        except (OSError, ValueError) as exc:
+            results["warnings"].append(
+                f"Could not clear obsolete {dead_var} ({type(exc).__name__})"
+            )
 
 
 def _migrate_to_14(results: dict[str, Any], quiet: bool) -> None:
@@ -398,13 +399,13 @@ def _migrate_to_21(results: dict[str, Any], quiet: bool) -> None:
                     try:
                         with open(manifest_file, encoding="utf-8") as _mf:
                             manifest = fast_safe_load(_mf) or {}
-                    except Exception:
+                    except Exception:  # noqa: BLE001 — optional plugin manifest parser
                         manifest = {}
                     name = manifest.get("name") or child.name
                     if name in disabled_set:
                         continue
                     grandfathered.append(name)
-        except Exception:
+        except (OSError, TypeError, ValueError):
             grandfathered = []
 
         plugins_cfg["enabled"] = grandfathered
@@ -422,7 +423,7 @@ def _migrate_to_21(results: dict[str, Any], quiet: bool) -> None:
             else:
                 print(
                     "  ✓ Plugins now opt-in: no existing plugins to grandfather. "
-                    "Use `hermes plugins enable <name>` to activate."
+                    "Review the native plugin configuration before activation."
                 )
 
 
@@ -433,7 +434,7 @@ def _migrate_to_23(results: dict[str, Any], quiet: bool) -> None:
     # unification under `auxiliary.curator`) never wrote the curator section
     # to disk. The runtime deep-merge in `load_config()` fills defaults at
     # read time, so the curator *functions*; but users can't see/edit the
-    # settings in their `config.yaml`, and `hermes curator status` has no
+    # settings in their `config.yaml`, and the curator status view has no
     # stable logs dir to point at until the first run mkdir's it.
     #
     # This migration:
@@ -443,7 +444,7 @@ def _migrate_to_23(results: dict[str, Any], quiet: bool) -> None:
     #   2. Writes the `auxiliary.curator` aux-task slot (provider, model,
     #      base_url, api_key, timeout, extra_body) — canonical slot for
     #      routing the curator fork to a cheaper aux model.
-    #   3. Creates `~/.hermes/logs/curator/` if missing (belt-and-suspenders
+    #   3. Creates the runtime logs/curator directory if missing (belt-and-suspenders
     #      on top of ensure_runtime_home() — old profiles that predate this
     #      migration still benefit).
     _c = _cfg()
@@ -452,10 +453,10 @@ def _migrate_to_23(results: dict[str, Any], quiet: bool) -> None:
     get_runtime_home = _c.get_runtime_home
     DEFAULT_CONFIG = _c.DEFAULT_CONFIG
 
+    curator_dir = get_runtime_home() / "logs" / "curator"
     try:
-        curator_dir = get_runtime_home() / "logs" / "curator"
         curator_dir.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
+    except OSError as e:
         results["warnings"].append(f"Could not create {curator_dir}: {e}")
 
     config = read_raw_config()
@@ -502,7 +503,7 @@ def _migrate_to_23(results: dict[str, Any], quiet: bool) -> None:
             if not quiet:
                 print(
                     "  ✓ Curator settings now available "
-                    f"({', '.join(added_curator)}) — edit via `hermes config set`"
+                    f"({', '.join(added_curator)}) — review in config.yaml"
                 )
         if added_aux:
             results["config_added"].append(
@@ -511,7 +512,7 @@ def _migrate_to_23(results: dict[str, Any], quiet: bool) -> None:
             if not quiet:
                 print(
                     "  ✓ auxiliary.curator settings now available "
-                    f"({', '.join(added_aux)}) — edit via `hermes config set`"
+                    f"({', '.join(added_aux)}) — review in config.yaml"
                 )
 
 
@@ -576,7 +577,7 @@ def _migrate_to_29(results: dict[str, Any], quiet: bool) -> None:
 # is supplied by load_config()'s deep-merge at read time, and persisting a
 # default-valued key would only bloat a lean config (it gets stripped on
 # save anyway). Existing installs that WANT the old always-consolidate
-# behavior set it to true explicitly via `hermes config set`.
+# behavior set it to true explicitly in config.yaml.
 # (No registry entry: this version bump has no migration step.)
 
 

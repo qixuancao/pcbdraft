@@ -10,7 +10,7 @@ This module covers the chat_completions path (/v1 endpoint).
 from typing import Any
 from urllib.parse import urlparse
 
-from pcbdraft.interfaces.tui import __version__ as _HERMES_VERSION
+from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_VERSION
 from pcbdraft.model.provider_profiles import register_provider
 from pcbdraft.model.provider_profiles.base import OMIT_TEMPERATURE, ProviderProfile
 
@@ -123,9 +123,9 @@ kimi = KimiProfile(
     fixed_temperature=OMIT_TEMPERATURE,
     default_max_tokens=32000,
     default_headers={
-        "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-        "X-Title": "Hermes Agent",
-        "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+        "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+        "X-Title": "PCBDraft",
+        "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
     },
     default_aux_model="kimi-k2-turbo-preview",
 )
@@ -138,9 +138,9 @@ kimi_cn = KimiProfile(
     fixed_temperature=OMIT_TEMPERATURE,
     default_max_tokens=32000,
     default_headers={
-        "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-        "X-Title": "Hermes Agent",
-        "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+        "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+        "X-Title": "PCBDraft",
+        "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
     },
     default_aux_model="kimi-k2-turbo-preview",
 )

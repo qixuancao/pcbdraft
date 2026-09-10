@@ -2286,9 +2286,9 @@ def _spill_summary_to_file(task_index: int, summary: str) -> str | None:
     try:
         import datetime as _dt
 
-        from pcbdraft.core.runtime_environment import get_hermes_dir
+        from pcbdraft.core.runtime_environment import get_pcbdraft_dir
 
-        cache_dir = get_hermes_dir("cache/delegation", "delegation_cache")
+        cache_dir = get_pcbdraft_dir("cache/delegation", "delegation_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
         ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         path = cache_dir / f"subagent-summary-{task_index}-{ts}.txt"
@@ -4191,7 +4191,7 @@ def delegate_task(
                 _sync_result["note"] = (
                     "background=true is not available in this session — it cannot "
                     "receive a detached subagent result after the turn ends (a "
-                    "one-shot runner such as `hermes -z`, a cron job, a Kanban "
+                    "one-shot runner, a cron job, a Kanban "
                     "worker, or a stateless HTTP endpoint). The subagent(s) ran "
                     "SYNCHRONOUSLY and the result is included above."
                 )
@@ -4596,7 +4596,7 @@ def _resolve_delegation_credentials(cfg: dict, parent_agent) -> dict:
     if not api_key:
         raise ValueError(
             f"Delegation provider '{configured_provider}' resolved but has no API key. "
-            f"Set the appropriate environment variable or run 'hermes auth'."
+            f"Set the appropriate environment variable or run 'pcbdraft connect'."
         )
 
     # A pinned ACP transport command must exist — refuse the spawn loudly

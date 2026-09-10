@@ -81,9 +81,9 @@ class CommandDef:
     # enqueue, /model's custom busy-reject text).
     busy_handler: str | None = None
     # Registry-owned shared execution (thin slice, informational commands).
-    # Names a key in ``hermes_cli.slash_exec.EXECUTORS`` — a pure formatter
+    # Names a key in ``pcbdraft.interfaces.tui.slash_exec.EXECUTORS`` — a pure formatter
     # producing the canonical, surface-independent core text.  Surfaces
-    # resolve it via ``hermes_cli.slash_exec.run_execute`` and apply only
+    # resolve it via ``pcbdraft.interfaces.tui.slash_exec.run_execute`` and apply only
     # their own decoration (Rich markup, emoji/markdown, telegramize).  A
     # string key (not a callable) keeps this module import-light: the
     # gateway can import commands.py without prompt_toolkit and without
@@ -407,9 +407,9 @@ def _iter_plugin_command_entries() -> list[tuple[str, str, str]]:
     """Yield (name, description, args_hint) tuples for all plugin slash commands.
 
     Plugin commands are registered via
-    :func:`hermes_cli.plugins.PluginContext.register_command`. They behave
+    :func:`pcbdraft.interfaces.tui.plugins.PluginContext.register_command`. They behave
     like ``CommandDef`` entries for gateway surfacing: they appear in the
-    Telegram command menu, in Slack's ``/hermes`` subcommand mapping, and
+    Telegram command menu, in Slack's ``/pcbdraft`` subcommand mapping, and
     (via :func:`plugins.platforms.discord.adapter._register_slash_commands`) in
     Discord's native slash command picker.
 
@@ -469,7 +469,7 @@ def telegram_bot_commands() -> list[tuple[str, str]]:
     return result
 
 
-# Telegram allows up to 100 BotCommands. Hermes ships ~50 built-in commands;
+# Telegram allows up to 100 BotCommands. PCBDraft ships ~50 built-in commands;
 # a 60-slot default keeps every built-in plus common skill commands visible in
 # the `/` menu while staying comfortably under Telegram's ~4KB payload limit.
 # Users can tune this via platforms.telegram.extra.command_menu.max_commands.
@@ -509,7 +509,7 @@ _TELEGRAM_MENU_PRIORITY = (
 )
 """Built-in commands that should stay visible in Telegram's capped menu.
 
-Telegram only displays a small BotCommand menu in practice.  The full Hermes
+Telegram only displays a small BotCommand menu in practice.  The full PCBDraft
 registry is still dispatchable when typed manually, but operational commands
 need to survive the visible menu cap ahead of lower-priority built-ins.
 """
@@ -783,7 +783,7 @@ def _collect_gateway_skill_entries(
         # Ensure each prefix ends
         # with ``/`` so ``/my-skills`` does not also match ``/my-skills-extra``.
         # Without this widening, external skills are visible in
-        # ``hermes skills list`` and the agent's ``/skill-name`` dispatch but
+        # ``internal skills list`` and the agent's ``/skill-name`` dispatch but
         # silently excluded from gateway slash menus (#8110).
         _allowed_prefixes = [_skills_dir.rstrip("/") + "/"]
         _allowed_prefixes.extend(
@@ -846,7 +846,7 @@ def telegram_menu_commands(
 
     Skills are the only tier that gets trimmed when the cap is hit.
     User-installed hub skills are excluded — accessible via /skills.
-    Skills disabled for the ``"telegram"`` platform (via ``hermes skills
+    Skills disabled for the ``"telegram"`` platform (via ``internal skills
     config``) are excluded from the menu entirely.
 
     Returns:
@@ -915,7 +915,7 @@ def discord_skill_commands_by_category(
     Scan roots include the local ``SKILLS_DIR`` **and** any configured
     ``skills.external_dirs`` — matching the widened filter applied to the
     flat ``discord_skill_commands()`` collector in #18741. Without this
-    parity, external-dir skills are visible via ``hermes skills list`` and
+    parity, external-dir skills are visible via ``internal skills list`` and
     the agent's ``/skill-name`` dispatch but silently absent from Discord's
     ``/skill`` autocomplete.
 
@@ -1122,60 +1122,60 @@ _SLACK_RESERVED_COMMANDS = frozenset(
 # registry fills up. Without this, adding a new canonical command silently
 # clamps off low-priority aliases (they're added in the second pass), so a
 # long-standing native slash like /btw could disappear just because an
-# unrelated command landed. These claim their slots right after /hermes,
+# unrelated command landed. These claim their slots right after /pcbdraft,
 # ahead of both canonical names and the rest of the aliases. Anything not
-# listed here still degrades gracefully (reachable via /hermes <command>).
+# listed here still degrades gracefully (reachable via /pcbdraft <command>).
 # Keep this list TIGHT: every pinned alias takes a slot a canonical command
 # would otherwise get, and the Telegram-parity test fails when a canonical
 # gets clamped ("reset" was unpinned for exactly that — /new keeps its
-# native slot, the alias spelling stays reachable via /hermes reset).
+# native slot, the alias spelling stays reachable via /pcbdraft reset).
 _SLACK_PRIORITY_ALIASES = ("btw", "bg")
 
 # Canonical commands intentionally NOT given a native Slack slash slot. Slack
 # caps apps at 50 slash commands and the registry is at that ceiling; rather
 # than let the clamp silently drop whichever command sorts last (and break
 # Telegram parity), we explicitly route a few low-frequency commands through
-# ``/hermes <command>`` on Slack only. They remain native on every other
+# ``/pcbdraft <command>`` on Slack only. They remain native on every other
 # surface (CLI, TUI, Telegram, Discord). Keep this list TIGHT and intentional —
 # the telegram-parity test reads it so an entry here is a deliberate
-# "Slack-via-/hermes" decision, not a silent clamp.
-#   - topup: the billing/balance surface; reached via /hermes topup on Slack.
+# "Slack-via-/pcbdraft" decision, not a silent clamp.
+#   - topup: the billing/balance surface; reached via /internal topup on Slack.
 #     (the rehaul folded the old /credits + /billing surfaces into /topup.)
-#   - moa: high-cost slash mode, available through /hermes moa to avoid
+#   - moa: high-cost slash mode, available through /internal moa to avoid
 #     displacing existing native Slack slash commands at the 50-command cap.
-#   - debug: the log/report upload surface; reached via /hermes debug on Slack.
-#   - egress: Docker-only proxy status; reachable as /hermes egress on Slack.
+#   - debug: the log/report upload surface; reached via /pcbdraft debug on Slack.
+#   - egress: Docker-only proxy status; reachable as /internal egress on Slack.
 #   - init: repo-scan AGENTS.md bootstrap — a cwd-centric dev command that is
-#     rare from Slack; reachable as /hermes init. Without this entry, adding
+#     rare from Slack; reachable as /pcbdraft init. Without this entry, adding
 #     /init clamps /version off the native list and breaks Telegram parity.
-#   - version: low-frequency info command; reachable as /hermes version on
+#   - version: low-frequency info command; reachable as /internal version on
 #     Slack. Demoted when /context claimed a native slot (context is a
 #     recurring inspection surface; version is a one-off lookup); the demotion
 #     also absorbs the native slot /approvals now consumes at the 50-cap.
-#   - diff: git working-tree diff; reached via /hermes diff on Slack so it
+#   - diff: git working-tree diff; reached via /internal diff on Slack so it
 #     doesn't displace an existing native slash at the 50-command cap.
 #   - update: low-frequency self-update maintenance command; reached via
-#     /hermes update on Slack. Demoted to free the native slot /approvals now
+#     /internal update on Slack. Demoted to free the native slot /approvals now
 #     claims — without this entry /approvals tips the registry past the 50-cap
 #     and silently clamps /update off, breaking Telegram parity.
-#   - heartbeat: session heartbeat management; reached via /hermes heartbeat
+#   - heartbeat: session heartbeat management; reached via /internal heartbeat
 #     on Slack. Added at the 50-cap — a native slot would clamp /insights.
-#   - refine: on-demand memory/skill review; reached via /hermes refine on
+#   - refine: on-demand memory/skill review; reached via /internal refine on
 #     Slack. Added at the 50-cap — a native slot would clamp an existing
 #     native slash.
-#   - pause: global emergency stop; reached via /hermes pause [off] on
+#   - pause: global emergency stop; reached via /internal pause [off] on
 #     Slack. Added at the 50-cap — a native slot would clamp /platform.
-#   - whoami: one-off identity lookup; reached via /hermes whoami on Slack.
+#   - whoami: one-off identity lookup; reached via /internal whoami on Slack.
 #     Demoted when /loop claimed a native slot (loop is a recurring
 #     interactive surface; whoami is a rare debug lookup) — without this
 #     entry /loop tips the registry past the 50-cap and silently clamps
 #     /platform, breaking Telegram parity.
 #   - platform: informational platform/environment lookup; reached via
-#     /hermes platform on Slack. Demoted when /save became gateway-available
+#     /pcbdraft platform on Slack. Demoted when /save became gateway-available
 #     (session export is an interactive surface; platform is a rare
 #     informational lookup) — without this entry /save tips the registry
 #     past the 50-cap and silently clamps /platform, breaking parity.
-_SLACK_VIA_HERMES_ONLY = frozenset(
+_SLACK_VIA_PCBDRAFT_ONLY = frozenset(
     {
         "topup",
         "moa",
@@ -1212,7 +1212,7 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
     Every gateway-available command in ``COMMAND_REGISTRY`` is surfaced as
     a standalone Slack slash command (e.g. ``/btw``, ``/stop``, ``/model``),
     matching Discord's and Telegram's model where every command is a
-    first-class slash and not a ``/hermes <verb>`` subcommand.
+    first-class slash and not a ``/pcbdraft <verb>`` subcommand.
 
     Both canonical names and aliases are included so users can type any
     documented form (e.g. ``/background``, ``/bg``, and ``/btw`` all work).
@@ -1220,22 +1220,22 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
 
     Commands whose sanitized name collides with a Slack built-in
     (e.g. ``/status``, ``/me``, ``/join``) are silently skipped.  Users
-    can still reach them via ``/hermes <command>``.
+    can still reach them via ``/pcbdraft <command>``.
 
     Results are clamped to Slack's 50-command limit with duplicate-name
-    avoidance. ``/hermes`` is always reserved as the first entry so the
-    legacy ``/hermes <subcommand>`` form keeps working for anything that
+    avoidance. ``/pcbdraft`` is always reserved as the first entry so the
+    legacy ``/pcbdraft <subcommand>`` form keeps working for anything that
     gets dropped by the clamp or for free-form questions.
     """
     overrides = _resolve_config_gates()
     entries: list[tuple[str, str, str]] = []
     seen: set[str] = set()
 
-    # Reserve /hermes as the catch-all top-level command.
+    # Reserve /pcbdraft as the catch-all top-level command.
     entries.append(
-        ("hermes", "Talk to Hermes or run a subcommand", "[subcommand] [args]")
+        ("pcbdraft", "Talk to PCBDraft or run a subcommand", "[subcommand] [args]")
     )
-    seen.add("hermes")
+    seen.add("pcbdraft")
 
     def _add(name: str, desc: str, hint: str) -> None:
         slack_name = _sanitize_slack_name(name)
@@ -1243,8 +1243,8 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
             return
         if slack_name in _SLACK_RESERVED_COMMANDS:
             return
-        if slack_name in _SLACK_VIA_HERMES_ONLY:
-            # Intentionally Slack-via-/hermes only (see _SLACK_VIA_HERMES_ONLY).
+        if slack_name in _SLACK_VIA_PCBDRAFT_ONLY:
+            # Intentionally Slack-via-/pcbdraft only (see _SLACK_VIA_PCBDRAFT_ONLY).
             return
         if len(entries) >= _SLACK_MAX_SLASH_COMMANDS:
             return
@@ -1253,7 +1253,7 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
         seen.add(slack_name)
 
     # Priority pass: pin high-value aliases (e.g. /btw, /bg, /reset) ahead of
-    # everything except /hermes, so a new canonical command can never silently
+    # everything except /pcbdraft, so a new canonical command can never silently
     # clamp them off the 50-slash cap. Each alias borrows its parent command's
     # description and hint.
     _alias_to_cmd = {
@@ -1294,7 +1294,7 @@ def slack_native_slashes() -> list[tuple[str, str, str]]:
 
 
 def slack_app_manifest(
-    request_url: str = "https://hermes-agent.local/slack/commands",
+    request_url: str = "https://pcbdraft.local/slack/commands",
 ) -> dict[str, Any]:
     """Generate a Slack app manifest with all gateway commands as slashes.
 
@@ -1323,12 +1323,12 @@ def slack_app_manifest(
 
 
 def slack_subcommand_map() -> dict[str, str]:
-    """Return subcommand -> /command mapping for Slack /hermes handler.
+    """Return subcommand -> /command mapping for Slack /pcbdraft handler.
 
-    Maps both canonical names and aliases so /hermes bg do stuff works
-    the same as /hermes background do stuff.
+    Maps both canonical names and aliases so /internal bg do stuff works
+    the same as /internal background do stuff.
 
-    Plugin-registered slash commands are included so ``/hermes <plugin-cmd>``
+    Plugin-registered slash commands are included so ``/pcbdraft <plugin-cmd>``
     routes through the plugin handler.
     """
     overrides = _resolve_config_gates()
@@ -1362,7 +1362,7 @@ class SlashCommandCompleter(Completer):
         | None = None,
     ) -> None:
         # The provider parameters remain in the public constructor while the
-        # native TUI call site transitions away from Hermes skill resources.
+        # native TUI call site transitions away from PCBDraft skill resources.
         # PCBDraft's command dispatcher accepts only COMMAND_REGISTRY entries,
         # so provider results must not be exposed as runnable completions.
         del skill_commands_provider, skill_bundles_provider
@@ -1840,7 +1840,7 @@ class SlashCommandAutoSuggest(AutoSuggest):
 
         # A slash command with arguments must resolve through the same registry
         # and availability filter as dropdown completion. Otherwise an old
-        # history entry can resurrect removed Hermes commands as ghost text.
+        # history entry can resurrect removed PCBDraft commands as ghost text.
         if resolve_command(base_cmd) is None:
             return None
         if self._completer is not None and not self._completer._command_allowed(

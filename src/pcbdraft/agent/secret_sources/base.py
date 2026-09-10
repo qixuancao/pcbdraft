@@ -3,7 +3,7 @@
 A *secret source* resolves credentials from an external secret manager
 (Bitwarden Secrets Manager, 1Password, an OS keystore, a user script, ...)
 into environment-variable-shaped values at process startup, AFTER
-``~/.hermes/.env`` has loaded and BEFORE the rest of Hermes reads
+the runtime ``.env`` has loaded and BEFORE the rest of PCBDraft reads
 ``os.environ``.
 
 Scope of the contract (deliberate, please do not widen):
@@ -52,7 +52,7 @@ from pathlib import Path
 SECRET_SOURCE_API_VERSION = 1
 
 _SOURCE_ENVIRONMENT: ContextVar[MutableMapping[str, str] | None]
-_SOURCE_ENVIRONMENT = ContextVar("hermes_secret_source_environment", default=None)
+_SOURCE_ENVIRONMENT = ContextVar("pcbdraft_secret_source_environment", default=None)
 
 
 def set_source_environment(environ: MutableMapping[str, str]) -> Token:
@@ -227,17 +227,17 @@ class SecretSource(ABC):
         """
         generic = {
             ErrorKind.NOT_CONFIGURED: (
-                f"Run `hermes secrets {self.name} setup` to finish configuration."
+                f"Configure the {self.name} secret source (see `pcbdraft --help`)."
             ),
             ErrorKind.BINARY_MISSING: (
-                f"Run `hermes secrets {self.name} setup` to install the helper CLI."
+                f"Install the {self.name} helper CLI (see `pcbdraft --help`)."
             ),
             ErrorKind.AUTH_FAILED: (
-                f"Credentials rejected — run `hermes secrets {self.name} setup` "
+                f"Credentials rejected — reconfigure the {self.name} secret source "
                 "to re-authenticate."
             ),
             ErrorKind.AUTH_EXPIRED: (
-                f"Credentials expired — run `hermes secrets {self.name} setup` "
+                f"Credentials expired — reconfigure the {self.name} secret source "
                 "to re-authenticate."
             ),
             ErrorKind.NETWORK: (

@@ -10,8 +10,9 @@ JSON stdout enriches findings/summary but never overrides the verdict.
 Operational failures (spawn error, timeout, unknown exit code) respect
 the fail_open config setting. Programming errors propagate.
 
-Auto-install: if tirith is not found on PATH or at the configured path,
-it is automatically downloaded from GitHub releases to $PCBDRAFT_RUNTIME_HOME/bin/tirith.
+Installed binaries are used offline by default. Downloading from GitHub releases
+to $PCBDRAFT_RUNTIME_HOME/bin/tirith requires an explicit allow_download=True,
+security.tirith_allow_download: true, or TIRITH_ALLOW_DOWNLOAD=1 opt-in.
 The download always verifies SHA-256 checksums.  When cosign is available on
 PATH, provenance verification (GitHub Actions workflow signature) is also
 performed.  If cosign is not installed, the download proceeds with SHA-256
@@ -96,6 +97,9 @@ def _load_security_config() -> dict:
         "tirith_fail_open": _env_bool(
             "TIRITH_FAIL_OPEN",
             cfg.get("tirith_fail_open", defaults["tirith_fail_open"]),
+        ),
+        "tirith_allow_download": _env_bool(
+            "TIRITH_ALLOW_DOWNLOAD", cfg.get("tirith_allow_download") is True
         ),
     }
 
@@ -250,7 +254,7 @@ def _clear_install_failed():
         pass
 
 
-def _hermes_bin_dir() -> str:
+def _pcbdraft_bin_dir() -> str:
     """Return $PCBDRAFT_RUNTIME_HOME/bin, creating it if needed."""
     d = os.path.join(_get_runtime_home(), "bin")
     os.makedirs(d, exist_ok=True)
@@ -498,7 +502,7 @@ def _install_tirith(*, log_failures: bool = True) -> tuple[str | None, str]:
             if src is None:
                 return None, reason
 
-        dest = os.path.join(_hermes_bin_dir(), "tirith")
+        dest = os.path.join(_pcbdraft_bin_dir(), "tirith")
         try:
             shutil.move(src, dest)
         except OSError:
@@ -531,8 +535,8 @@ def _is_explicit_path(configured_path: str) -> bool:
     return configured_path != "tirith"
 
 
-def _resolve_tirith_path(configured_path: str) -> str:
-    """Resolve the tirith binary path, auto-installing if necessary.
+def _resolve_tirith_path(configured_path: str, *, allow_download: bool = False) -> str:
+    """Resolve an installed binary; downloading requires allow_download=True.
 
     If the user explicitly set a path (anything other than the bare "tirith"
     default), that path is authoritative — we never fall through to
@@ -541,7 +545,7 @@ def _resolve_tirith_path(configured_path: str) -> str:
     For the default "tirith":
     1. PATH lookup via shutil.which
     2. $PCBDRAFT_RUNTIME_HOME/bin/tirith (previously auto-installed)
-    3. Auto-install from GitHub releases → $PCBDRAFT_RUNTIME_HOME/bin/tirith
+    3. Only with allow_download=True: install into $PCBDRAFT_RUNTIME_HOME/bin/tirith
 
     Failed installs are cached for the process lifetime (and persisted to
     disk for 24h) to avoid repeated network attempts.
@@ -555,15 +559,6 @@ def _resolve_tirith_path(configured_path: str) -> str:
     expanded = os.path.expanduser(configured_path)
     explicit = _is_explicit_path(configured_path)
     install_failed = _resolved_path is _INSTALL_FAILED
-
-    # Platform has no tirith build (Windows etc.). Cache the verdict and
-    # return the unexpanded configured path — the spawn loop will fail-open
-    # via the dedupe'd OSError handler, but only after the first call; on
-    # subsequent calls the fast-path above short-circuits before spawning.
-    if not explicit and not is_platform_supported():
-        _resolved_path = _INSTALL_FAILED
-        _install_failure_reason = "unsupported_platform"
-        return expanded
 
     # Explicit path: check it and stop. Never auto-download a replacement.
     if explicit:
@@ -592,12 +587,21 @@ def _resolve_tirith_path(configured_path: str) -> str:
         _clear_install_failed()
         return found
 
-    hermes_bin = os.path.join(_hermes_bin_dir(), "tirith")
-    if os.path.isfile(hermes_bin) and os.access(hermes_bin, os.X_OK):
-        _resolved_path = hermes_bin
+    pcbdraft_bin = os.path.join(_pcbdraft_bin_dir(), "tirith")
+    if os.path.isfile(pcbdraft_bin) and os.access(pcbdraft_bin, os.X_OK):
+        _resolved_path = pcbdraft_bin
         _install_failure_reason = ""
         _clear_install_failed()
-        return hermes_bin
+        return pcbdraft_bin
+
+    # A missing scanner is not consent to contact a third-party service.
+    # Do not write download-failure state for an offline lookup miss.
+    if allow_download is not True:
+        return expanded
+    if not is_platform_supported():
+        _resolved_path = _INSTALL_FAILED
+        _install_failure_reason = "unsupported_platform"
+        return expanded
 
     # Local checks failed.  If a previous install attempt already failed,
     # skip the network retry — UNLESS the failure was "cosign_missing" and
@@ -656,9 +660,9 @@ def _background_install(*, log_failures: bool = True):
             _install_failure_reason = ""
             return
 
-        hermes_bin = os.path.join(_hermes_bin_dir(), "tirith")
-        if os.path.isfile(hermes_bin) and os.access(hermes_bin, os.X_OK):
-            _resolved_path = hermes_bin
+        pcbdraft_bin = os.path.join(_pcbdraft_bin_dir(), "tirith")
+        if os.path.isfile(pcbdraft_bin) and os.access(pcbdraft_bin, os.X_OK):
+            _resolved_path = pcbdraft_bin
             _install_failure_reason = ""
             return
 
@@ -673,8 +677,8 @@ def _background_install(*, log_failures: bool = True):
             _mark_install_failed(reason)
 
 
-def ensure_installed(*, log_failures: bool = True):
-    """Ensure tirith is available, downloading in background if needed.
+def ensure_installed(*, log_failures: bool = True, allow_download: bool | None = None):
+    """Use an installed tirith; download in background only after explicit opt-in.
 
     Quick PATH/local checks are synchronous; network download runs in a
     daemon thread so startup never blocks. Safe to call multiple times.
@@ -685,20 +689,14 @@ def ensure_installed(*, log_failures: bool = True):
     cfg = _load_security_config()
     if not cfg["tirith_enabled"]:
         return None
+    if allow_download is None:
+        allow_download = cfg.get("tirith_allow_download", False)
 
     # Already resolved from a previous call
     if _resolved_path is not None and _resolved_path is not _INSTALL_FAILED:
         path = _resolved_path
         if os.path.isfile(path) and os.access(path, os.X_OK):
             return path
-        return None
-
-    # Platform has no tirith build (e.g. Windows) — don't probe PATH,
-    # don't start a download thread, don't write a disk failure marker.
-    # Pattern-matching guards still run; this path stays silent.
-    if not is_platform_supported():
-        _resolved_path = _INSTALL_FAILED
-        _install_failure_reason = "unsupported_platform"
         return None
 
     configured_path = cfg["tirith_path"]
@@ -726,12 +724,19 @@ def ensure_installed(*, log_failures: bool = True):
         _clear_install_failed()
         return found
 
-    hermes_bin = os.path.join(_hermes_bin_dir(), "tirith")
-    if os.path.isfile(hermes_bin) and os.access(hermes_bin, os.X_OK):
-        _resolved_path = hermes_bin
+    pcbdraft_bin = os.path.join(_pcbdraft_bin_dir(), "tirith")
+    if os.path.isfile(pcbdraft_bin) and os.access(pcbdraft_bin, os.X_OK):
+        _resolved_path = pcbdraft_bin
         _install_failure_reason = ""
         _clear_install_failed()
-        return hermes_bin
+        return pcbdraft_bin
+
+    if allow_download is not True:
+        return None
+    if not is_platform_supported():
+        _resolved_path = _INSTALL_FAILED
+        _install_failure_reason = "unsupported_platform"
+        return None
 
     # If previously failed in-memory, check if the cause is now resolved
     if _resolved_path is _INSTALL_FAILED:
@@ -788,16 +793,22 @@ def check_command_security(command: str) -> dict:
     if not cfg["tirith_enabled"]:
         return {"action": "allow", "findings": [], "summary": ""}
 
+    fail_open = cfg["tirith_fail_open"]
     # Circuit breaker: if tirith has crashed _CRASH_LIMIT times in a row,
-    # stop trying for the rest of the process.  Without this, a corrupted
+    # stop spawning for the rest of the process, without relaxing fail-closed
+    # policy. Without this, a corrupted
     # or missing binary causes every tool call to hit the same spawn failure
     # → fail-open → agent retry loop, hanging the user for 20+ minutes
     # (issue #41400).
     if _circuit_open:
         return {
-            "action": "allow",
+            "action": "allow" if fail_open else "block",
             "findings": [],
-            "summary": "tirith disabled (circuit breaker)",
+            "summary": (
+                "tirith unavailable (circuit breaker, fail-open)"
+                if fail_open
+                else "tirith unavailable (circuit breaker, fail-closed)"
+            ),
         }
 
     # Unsupported platform (Windows etc.) — tirith has no binary here and
@@ -806,9 +817,10 @@ def check_command_security(command: str) -> dict:
     if not is_platform_supported():
         return {"action": "allow", "findings": [], "summary": ""}
 
-    tirith_path = _resolve_tirith_path(cfg["tirith_path"])
+    tirith_path = _resolve_tirith_path(
+        cfg["tirith_path"], allow_download=cfg.get("tirith_allow_download", False)
+    )
     timeout = cfg["tirith_timeout"]
-    fail_open = cfg["tirith_fail_open"]
 
     if tirith_path is None:
         _warn_once(

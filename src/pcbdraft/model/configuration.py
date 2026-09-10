@@ -1,17 +1,14 @@
 """
-Configuration management for Hermes Agent.
+Configuration management for PCBDraft.
 
-Config files are stored in ~/.hermes/ for easy access:
-- ~/.hermes/config.yaml  - All settings (model, toolsets, terminal, etc.)
-- ~/.hermes/.env         - API keys and secrets
+Config files are stored in the core PCBDraft runtime home:
+- $PCBDRAFT_RUNTIME_HOME/config.yaml - Settings (model, toolsets, terminal, etc.)
+- $PCBDRAFT_RUNTIME_HOME/.env        - API keys and secrets
 
 This module provides:
-- hermes config          - Show current configuration
-- hermes config edit     - Open config in editor
-- hermes config get      - Print a resolved configuration value
-- hermes config set      - Set a specific value
-- hermes config unset    - Remove a user configuration value
-- hermes config wizard   - Re-run setup wizard
+- pcbdraft connect - Configure provider and model
+- pcbdraft doctor  - Diagnose configuration
+- pcbdraft --help  - Show available commands
 """
 
 import copy
@@ -150,7 +147,7 @@ def _warn_config_parse_failure(
         msg += f" A copy of the corrupted file was saved to {backup_path}."
     logger.warning(msg)
     try:
-        sys.stderr.write(f"⚠️  hermes config: {msg}\n")
+        sys.stderr.write(f"⚠️  PCBDraft config: {msg}\n")
         sys.stderr.flush()
     except Exception:
         pass
@@ -251,10 +248,10 @@ def _reject_denylisted_env_var(key: str) -> None:
         raise ValueError(
             f"Environment variable {key!r} is on the writer denylist. "
             "Names that influence subprocess execution (LD_PRELOAD, "
-            "PYTHONPATH, PATH, EDITOR, ...) or Hermes runtime location "
+            "PYTHONPATH, PATH, EDITOR, ...) or PCBDraft runtime location "
             "(PCBDRAFT_RUNTIME_HOME, PCBDRAFT_RUNTIME_PROFILE, ...) cannot be persisted via "
             "the env writer. If you really need this, edit "
-            "~/.hermes/.env directly."
+            "$PCBDRAFT_RUNTIME_HOME/.env directly."
         )
 
 
@@ -470,7 +467,7 @@ def is_managed() -> bool:
 
 
 _NIX_UPDATE_MSG = (
-    "Update Hermes through the Nix source that installed it "
+    "Update PCBDraft through the Nix source that installed it "
     "(e.g. nix profile upgrade, or update your flake input and rebuild with nixos-rebuild or home-manager switch)"
 )
 
@@ -641,12 +638,14 @@ def recommended_update_command_for_method(method: str) -> str:
     if method in {"nix", "nixos"}:
         return _NIX_UPDATE_MSG
     if method == "docker":
-        return "docker pull nousresearch/hermes-agent:latest"
+        return "Rebuild or pull the PCBDraft image configured by your deployment, then restart it."
     if method == "apt":
         # By contract, the current "apt" install method is the Termux APT
         # distribution. It deliberately uses Termux's `pkg` frontend.
-        return "pkg upgrade hermes-agent"
-    return "hermes update"
+        return "Update PCBDraft through the package source that installed it."
+    return (
+        "Update PCBDraft from its installation source; run `pcbdraft doctor` afterward."
+    )
 
 
 def recommended_update_command() -> str:
@@ -674,30 +673,11 @@ def recommended_update_command() -> str:
 #     helper spells that out, with notes on tag pinning and config
 #     persistence so users don't get blindsided.
 _DOCKER_UPDATE_MESSAGE = """\
-✗ ``hermes update`` doesn't apply inside the Docker container.
-
-Hermes Agent runs as a published image (nousresearch/hermes-agent), not a
-git checkout — the container has no working tree to pull into.  Update by
-pulling a fresh image and restarting your container instead:
-
-  docker pull nousresearch/hermes-agent:latest
-  # then restart whatever started the container, e.g.:
-  docker compose up -d --force-recreate hermes-agent
-  # or, for ad-hoc runs, exit the current container and `docker run` again
-
-Verify the new version after restart:
-  docker run --rm nousresearch/hermes-agent:latest --version
-
-Notes:
-  • If you pinned a specific tag (e.g. ``:v0.14.0``) the ``:latest`` tag
-    won't move your container — pull the newer tag you actually want, or
-    switch to ``:latest`` / ``:main`` for rolling updates.  See available
-    tags at https://hub.docker.com/r/nousresearch/hermes-agent/tags
-  • Your config and session history live under ``$PCBDRAFT_RUNTIME_HOME`` (``/opt/data``
-    in the container, typically bind-mounted from the host) and persist
-    across image upgrades — re-pulling doesn't lose any state.
-  • Running a fork?  Build your own image with this repo's ``Dockerfile``
-    and replace the ``docker pull`` step with your build/push pipeline."""
+Update the PCBDraft container through the deployment that created it:
+rebuild or pull its configured image, then restart the container.
+Keep the existing PCBDRAFT_RUNTIME_HOME volume mounted to preserve runtime state.
+Run `pcbdraft doctor` after restarting to check the installation.
+"""
 
 
 def format_docker_update_message() -> str:
@@ -710,7 +690,7 @@ def format_docker_update_message() -> str:
     return _DOCKER_UPDATE_MESSAGE
 
 
-def format_managed_message(action: str = "modify this Hermes installation") -> str:
+def format_managed_message(action: str = "modify this PCBDraft installation") -> str:
     """Build a user-facing error for managed installs."""
     managed_system = get_managed_system() or "a package manager"
     raw = os.getenv("PCBDRAFT_RUNTIME_MANAGED", "").strip().lower()
@@ -718,15 +698,15 @@ def format_managed_message(action: str = "modify this Hermes installation") -> s
     if managed_system == "NixOS":
         env_hint = "true" if raw in _MANAGED_TRUE_VALUES else raw or "true"
         return (
-            f"Cannot {action}: this Hermes installation is managed by NixOS "
+            f"Cannot {action}: this PCBDraft installation is managed by NixOS "
             f"(PCBDRAFT_RUNTIME_MANAGED={env_hint}).\n"
-            "Edit services.hermes-agent.settings in your configuration.nix and run:\n"
+            "Edit the PCBDraft configuration in your NixOS installation and run:\n"
             "  sudo nixos-rebuild switch"
         )
 
     return (
-        f"Cannot {action}: this Hermes installation is managed by {managed_system}.\n"
-        "Use your package manager to upgrade or reinstall Hermes."
+        f"Cannot {action}: this PCBDraft installation is managed by {managed_system}.\n"
+        "Use your package manager to upgrade or reinstall PCBDraft."
     )
 
 
@@ -774,15 +754,15 @@ def get_container_exec_info() -> dict | None:
     # All other exceptions (PermissionError, malformed data, etc.) propagate
 
     backend = info.get("backend", "docker")
-    container_name = info.get("container_name", "hermes-agent")
-    exec_user = info.get("exec_user", "hermes")
-    hermes_bin = info.get("hermes_bin", "/data/current-package/bin/hermes")
+    container_name = info.get("container_name", "pcbdraft")
+    exec_user = info.get("exec_user", "pcbdraft")
+    pcbdraft_bin = info.get("pcbdraft_bin", "/data/current-package/bin/pcbdraft")
 
     return {
         "backend": backend,
         "container_name": container_name,
         "exec_user": exec_user,
-        "hermes_bin": hermes_bin,
+        "pcbdraft_bin": pcbdraft_bin,
     }
 
 
@@ -813,7 +793,7 @@ def get_project_root() -> Path:
     return Path(__file__).parent.parent.resolve()
 
 
-def _resolve_hermes_uid_gid() -> tuple[int | None, int | None]:
+def _resolve_pcbdraft_uid_gid() -> tuple[int | None, int | None]:
     """Read the PCBDRAFT_RUNTIME_UID / PCBDRAFT_RUNTIME_GID env vars set by Docker deployments.
 
     Docker containers running Hermes commonly set these to map the in-container
@@ -843,7 +823,7 @@ def _resolve_hermes_uid_gid() -> tuple[int | None, int | None]:
     return uid, gid
 
 
-def _chown_to_hermes_uid(path) -> None:
+def _chown_to_pcbdraft_uid(path) -> None:
     """Chown ``path`` to ``PCBDRAFT_RUNTIME_UID:PCBDRAFT_RUNTIME_GID`` if those env vars are set.
 
     No-op when:
@@ -855,7 +835,7 @@ def _chown_to_hermes_uid(path) -> None:
     directories created by :func:`ensure_runtime_home` on Docker deployments.
     See #34107.
     """
-    uid, gid = _resolve_hermes_uid_gid()
+    uid, gid = _resolve_pcbdraft_uid_gid()
     if uid is None and gid is None:
         return
     try:
@@ -901,7 +881,7 @@ def _secure_dir(path):
         os.chmod(path, mode)
     except (OSError, NotImplementedError):
         pass
-    _chown_to_hermes_uid(path)
+    _chown_to_pcbdraft_uid(path)
 
 
 def _is_container() -> bool:
@@ -977,7 +957,7 @@ def _ensure_default_soul_md(home: Path) -> None:
 # Home paths whose directory skeleton has been created this process — see
 # ensure_runtime_home(). Only successful passes are recorded, so a raised
 # managed-mode/missing-profile error keeps re-checking on later loads.
-_HERMES_HOME_ENSURED: set = set()
+_PCBDRAFT_HOME_ENSURED: set = set()
 
 
 def ensure_runtime_home():
@@ -998,7 +978,7 @@ def ensure_runtime_home():
     home = get_runtime_home()
     key = str(home)
 
-    if key in _HERMES_HOME_ENSURED and home.is_dir():
+    if key in _PCBDRAFT_HOME_ENSURED and home.is_dir():
         return
     # Named profiles must be created explicitly (e.g. ``hermes profile create``).
     # If a stale process keeps running after the profile was renamed/deleted,
@@ -1035,7 +1015,7 @@ def ensure_runtime_home():
             _secure_dir(d)
         _ensure_default_soul_md(home)
 
-    _HERMES_HOME_ENSURED.add(key)
+    _PCBDRAFT_HOME_ENSURED.add(key)
 
 
 def _ensure_runtime_home_managed(home: Path):
@@ -2202,7 +2182,7 @@ def validate_config_structure(
                 ConfigIssue(
                     "error",
                     "Could not load config.yaml",
-                    "Run 'hermes setup' to create a valid config",
+                    "Run 'pcbdraft connect' to create a valid config",
                 )
             ]
 
@@ -2359,7 +2339,7 @@ def validate_config_structure(
         issues.append(
             ConfigIssue(
                 "warning",
-                "custom_providers defined but no 'model' section — Hermes won't know which provider to use",
+                "custom_providers defined but no 'model' section — PCBDraft won't know which provider to use",
                 "Add a model section:\n"
                 "  model:\n"
                 "    provider: custom\n"
@@ -2407,7 +2387,7 @@ def print_config_warnings(config: dict[str, Any] | None = None) -> None:
     for ci in issues:
         marker = "\033[31m✗\033[0m" if ci.severity == "error" else "\033[33m⚠\033[0m"
         lines.append(f"  {marker} {ci.message}")
-    lines.append("  \033[2mRun 'hermes doctor' for fix suggestions.\033[0m")
+    lines.append("  \033[2mRun 'pcbdraft doctor' for fix suggestions.\033[0m")
     sys.stderr.write("\n".join(lines) + "\n\n")
 
 
@@ -2541,7 +2521,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> dict[str, A
         results["warnings"].append(msg)
         # stderr so it is visible even on quiet startup paths, matching the
         # corrupt-config warning posture in _warn_config_parse_failure().
-        sys.stderr.write(f"⚠ hermes config: {msg}\n")
+        sys.stderr.write(f"⚠ PCBDraft config: {msg}\n")
         if not quiet:
             print(f"  ⚠ {msg}")
     else:
@@ -2695,7 +2675,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> dict[str, A
                         print(f"  ✓ Saved {name}")
                     print()
             else:
-                print("  Set later with: hermes config set <key> <value>")
+                print("  Set later in config.yaml; see `pcbdraft --help`.")
 
     # Check for missing config fields.
     #
@@ -2756,7 +2736,7 @@ def migrate_config(interactive: bool = True, quiet: bool = False) -> dict[str, A
                 print()
             _persist_migration(config)
         else:
-            print("  Set later with: hermes config set <key> <value>")
+            print("  Set later in config.yaml; see `pcbdraft --help`.")
 
     return results
 
@@ -2855,7 +2835,7 @@ def _env_expand_match(m: re.Match) -> str:
         if val is not None:
             return val
         logger.warning(
-            "Config ref %r: %s is not set (check ~/.hermes/.env); "
+            "Config ref %r: %s is not set (check $PCBDRAFT_RUNTIME_HOME/.env); "
             "keeping the literal placeholder",
             raw,
             name,
@@ -2914,7 +2894,7 @@ def _env_ref_snapshot(obj, snapshot=None):
     Stored alongside cached ``load_config()`` results so a cache hit can
     detect that the cached expansion was made against a *different*
     environment — e.g. a ``load_config()`` that ran before
-    ``load_hermes_dotenv()`` populated the process env, or an env var
+    ``load_pcbdraft_dotenv()`` populated the process env, or an env var
     rotated in-process after the first load. File mtime/size alone cannot
     see either case (#58514).
 
@@ -3794,7 +3774,7 @@ def _load_config_impl(*, want_deepcopy: bool) -> dict[str, Any]:
         if cached is not None and cache_sig is not None and cached[:4] == cache_sig:
             # File signatures match, but the cached expansion is only valid if
             # every ${VAR} it was expanded against still has the same value.
-            # Without this, a load_config() that ran before load_hermes_dotenv()
+            # Without this, a load_config() that ran before load_pcbdraft_dotenv()
             # pins unexpanded literals (e.g. auxiliary.<task>.api_key) for the
             # life of the process (#58514).
             env_snapshot = cached[5] if len(cached) > 5 else {}
@@ -3939,8 +3919,8 @@ _FALLBACK_COMMENT = """
 #
 # Supported providers:
 #   openrouter   (OPENROUTER_API_KEY)  — routes to any model
-#   openai-codex (OAuth — hermes auth) — OpenAI Codex
-#   nous         (OAuth — hermes auth) — Nous Portal
+#   openai-codex (OAuth — pcbdraft connect) — OpenAI Codex
+#   nous         (OAuth — pcbdraft connect) — Nous Portal
 #   zai          (ZAI_API_KEY)         — Z.AI / GLM
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
@@ -3971,8 +3951,8 @@ _COMMENTED_SECTIONS = """
 #
 # Supported providers:
 #   openrouter   (OPENROUTER_API_KEY)  — routes to any model
-#   openai-codex (OAuth — hermes auth) — OpenAI Codex
-#   nous         (OAuth — hermes auth) — Nous Portal
+#   openai-codex (OAuth — pcbdraft connect) — OpenAI Codex
+#   nous         (OAuth — pcbdraft connect) — Nous Portal
 #   zai          (ZAI_API_KEY)         — Z.AI / GLM
 #   kimi-coding  (KIMI_API_KEY)        — Kimi / Moonshot
 #   kimi-coding-cn (KIMI_CN_API_KEY)   — Kimi / Moonshot (China)
@@ -4762,7 +4742,7 @@ def show_config():
         )
     )
     print(
-        color("│              ⚕ Hermes Configuration                    │", Colors.CYAN)
+        color("│              PCBDraft Configuration                    │", Colors.CYAN)
     )
     print(
         color(
@@ -4853,7 +4833,7 @@ def show_config():
             print(
                 color(
                     f"                ⚠ .env has stale PCBDRAFT_RUNTIME_MAX_ITERATIONS={_env_ghost} "
-                    f"(run 'hermes doctor --fix' to remove)",
+                    f"(run 'pcbdraft doctor' for diagnostics)",
                     Colors.YELLOW,
                 )
             )
@@ -5025,9 +5005,9 @@ def show_config():
 
     print()
     print(color("─" * 60, Colors.DIM))
-    print(color("  hermes config edit     # Edit config file", Colors.DIM))
-    print(color("  hermes config set <key> <value>", Colors.DIM))
-    print(color("  hermes setup           # Run setup wizard", Colors.DIM))
+    print(color("  pcbdraft connect       # Configure provider and model", Colors.DIM))
+    print(color("  pcbdraft doctor        # Diagnose configuration", Colors.DIM))
+    print(color("  pcbdraft --help        # Available commands", Colors.DIM))
     print()
 
 
@@ -5340,9 +5320,8 @@ def warn_unpinned_cron_jobs_after_model_config_change(
         f"⚠️  {affected} enabled unpinned cron {noun} {verb} stored "
         f"{snapshot_field} values that differ from the new global {axis}. "
         "They will fail closed on their next run instead of silently using the "
-        "changed model/provider. Inspect with `hermes cron list`, then pin the "
-        "intended values with `hermes cron edit <job_id> --provider <provider> "
-        "--model <model>`."
+        "changed model/provider. Inspect the stored job definitions and pin the "
+        "intended provider/model values. See `pcbdraft --help` for available commands."
     )
 
 
@@ -5669,7 +5648,7 @@ def set_config_value(key: str, value: str, force: bool = False):
                 f"✗ Cannot parse {config_path}: {exc}\n"
                 f"  The file contains a YAML syntax error. Fix the error\n"
                 f"  in your config file first, then retry.\n"
-                f"  (hermes config edit will open it in your editor.)",
+                f"  (Open the runtime config.yaml in your editor.)",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -5781,15 +5760,15 @@ def set_config_value(key: str, value: str, force: bool = False):
                     file=sys.stderr,
                 )
                 print(
-                    f"    hermes config set {key}.<sub-key> <value>",
+                    f"    Edit {key}.<sub-key> in runtime config.yaml.",
                     file=sys.stderr,
                 )
                 print(
-                    "  Or use --force to replace the entire section:",
+                    "  Or explicitly replace the entire section in config.yaml:",
                     file=sys.stderr,
                 )
                 print(
-                    f"    hermes config set --force {key} {value!r}",
+                    f"    {key}: {value!r}",
                     file=sys.stderr,
                 )
                 sys.exit(1)
@@ -5848,7 +5827,7 @@ def set_config_value(key: str, value: str, force: bool = False):
         print(
             color(
                 f"⚠ '{key}' is not a recognized config key — it was saved anyway, "
-                "but Hermes may not read it.",
+                "but PCBDraft may not read it.",
                 Colors.YELLOW,
             )
         )
@@ -5922,7 +5901,7 @@ def unset_config_value(key: str):
                 f"✗ Cannot parse {config_path}: {exc}\n"
                 f"  The file contains a YAML syntax error. Fix the error\n"
                 f"  in your config file first, then retry.\n"
-                f"  (hermes config edit will open it in your editor.)",
+                f"  (Open the runtime config.yaml in your editor.)",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -5963,12 +5942,10 @@ def config_command(args):
     elif subcmd == "get":
         key = getattr(args, "key", None)
         if not key:
-            print("Usage: hermes config get <key> [--json]")
+            print("A configuration key is required. See `pcbdraft --help`.")
             print()
             print("Examples:")
-            print("  hermes config get model")
-            print("  hermes config get terminal.backend")
-            print("  hermes config get skills.config --json")
+            print("  model, terminal.backend, skills.config")
             sys.exit(1)
         get_config_value(key, as_json=getattr(args, "json", False))
 
@@ -5977,12 +5954,11 @@ def config_command(args):
         value = getattr(args, "value", None)
         force = bool(getattr(args, "force", False))
         if not key or value is None:
-            print("Usage: hermes config set [--force] <key> <value>")
+            print("A configuration key and value are required. See `pcbdraft --help`.")
             print()
             print("Examples:")
-            print("  hermes config set model anthropic/claude-sonnet-4")
-            print("  hermes config set terminal.backend docker")
-            print("  hermes config set OPENROUTER_API_KEY sk-or-...")
+            print("  Configure model/provider with `pcbdraft connect`.")
+            print("  Edit other values in runtime config.yaml or .env.")
             print()
             print("  --force: skip the unknown-key notice for unrecognized keys,")
             print("           and allow a scalar to replace a whole mapping section")
@@ -5992,12 +5968,10 @@ def config_command(args):
     elif subcmd == "unset":
         key = getattr(args, "key", None)
         if not key:
-            print("Usage: hermes config unset <key>")
+            print("A configuration key is required. See `pcbdraft --help`.")
             print()
             print("Examples:")
-            print("  hermes config unset model")
-            print("  hermes config unset terminal.backend")
-            print("  hermes config unset OPENROUTER_API_KEY")
+            print("  Remove the intended key from runtime config.yaml or .env.")
             sys.exit(1)
         unset_config_value(key)
 
@@ -6110,7 +6084,7 @@ def config_command(args):
                     Colors.YELLOW,
                 )
             )
-            print("    Run 'hermes config migrate' to add them")
+            print("    Run 'pcbdraft doctor' for configuration diagnostics")
 
         print()
 
@@ -6118,15 +6092,9 @@ def config_command(args):
         print(f"Unknown config command: {subcmd}")
         print()
         print("Available commands:")
-        print("  hermes config           Show current configuration")
-        print("  hermes config edit      Open config in editor")
-        print("  hermes config get <key>          Print a resolved config value")
-        print("  hermes config set <key> <value>   Set a config value")
-        print("  hermes config unset <key>        Remove a config value")
-        print("  hermes config check     Check for missing/outdated config")
-        print("  hermes config migrate   Update config with new options")
-        print("  hermes config path      Show config file path")
-        print("  hermes config env-path  Show .env file path")
+        print("  pcbdraft connect       Configure provider and model")
+        print("  pcbdraft doctor        Diagnose configuration")
+        print("  pcbdraft --help        Show available commands")
         sys.exit(1)
 
 

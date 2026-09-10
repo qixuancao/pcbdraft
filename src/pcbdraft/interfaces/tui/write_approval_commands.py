@@ -204,7 +204,7 @@ def _set_approval(subsystem: str, rest: list[str], set_mode_fn) -> str:
         val = "true" if enabled else "false"
         return (
             f"To change the {subsystem} approval gate, run:\n"
-            f"  hermes config set {subsystem}.write_approval {val}"
+            f"  Set write_approval to {val} in config.yaml; public CLI help: pcbdraft --help"
         )
     try:
         set_mode_fn(enabled)

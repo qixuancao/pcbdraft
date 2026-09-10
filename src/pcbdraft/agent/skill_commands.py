@@ -270,7 +270,7 @@ def _load_skill_payload(
 def _inject_skill_config(loaded_skill: dict[str, Any], parts: list[str]) -> None:
     """Resolve and inject skill-declared config values into the message parts.
 
-    If the loaded skill's frontmatter declares ``metadata.hermes.config``
+    If the loaded skill's frontmatter declares ``metadata.pcbdraft.config``
     entries, their current values (from config.yaml or defaults) are appended
     as a ``[Skill config: ...]`` block so the agent knows the configured values
     without needing to read config.yaml itself.
@@ -426,7 +426,7 @@ def _build_skill_message(
 
 
 def scan_skill_commands() -> dict[str, dict[str, Any]]:
-    """Scan ~/.hermes/skills/ and return a mapping of /command -> skill info.
+    """Scan runtime skills/ and return a mapping of /command -> skill info.
 
     Returns:
         Dict mapping "/skill-name" to {name, description, skill_md_path, skill_dir}.
@@ -514,7 +514,7 @@ def scan_skill_commands() -> dict[str, dict[str, Any]]:
                     if resolve_command(cmd_name) is not None:
                         logger.warning(
                             "Skill %r generates slash command '/%s' which "
-                            "collides with a core Hermes command; skipping "
+                            "collides with a core PCBDraft command; skipping "
                             "auto-registration. Use '/skill %s' instead.",
                             name,
                             cmd_name,
@@ -569,7 +569,7 @@ def get_skill_commands() -> dict[str, dict[str, Any]]:
 def reload_skills() -> dict[str, Any]:
     """Re-scan the skills directory and return a diff of what changed.
 
-    Rescans ``~/.hermes/skills/`` and any ``skills.external_dirs`` so the
+    Rescans runtime ``skills/`` and any ``skills.external_dirs`` so the
     slash-command map (``agent.skill_commands._skill_commands``) reflects
     skills added or removed on disk.
 

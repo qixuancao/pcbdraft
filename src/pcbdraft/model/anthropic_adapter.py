@@ -26,11 +26,11 @@ from pcbdraft.core.runtime_utils import (
 )
 
 try:
-    import pcbdraft.interfaces.tui as _hermes_cli
+    import pcbdraft.interfaces.tui as _pcbdraft_cli
 
-    _HERMES_VERSION = str(_hermes_cli.__version__)
+    _PCBDRAFT_VERSION = str(_pcbdraft_cli.__version__)
 except Exception:
-    _HERMES_VERSION = "0.0.0"
+    _PCBDRAFT_VERSION = "0.0.0"
 
 
 def _getenv(name: str, default: str = "") -> str:
@@ -922,9 +922,9 @@ def build_anthropic_client(
         # HTTP-Referer + X-Title + HermesAgent User-Agent.
         kwargs["api_key"] = api_key
         kwargs["default_headers"] = {
-            "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-            "X-Title": "Hermes Agent",
-            "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+            "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+            "X-Title": "PCBDraft",
+            "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
             **({"anthropic-beta": ",".join(common_betas)} if common_betas else {}),
         }
     elif _requires_bearer_auth(normalized_base_url):
@@ -969,9 +969,9 @@ def build_anthropic_client(
         # route builds its client right here and never sees the profile. Merge
         # the same set on top of whatever auth branch ran above.
         headers = dict(kwargs.get("default_headers") or {})
-        headers.setdefault("HTTP-Referer", "https://hermes-agent.nousresearch.com")
-        headers.setdefault("X-Title", "Hermes Agent")
-        headers.setdefault("User-Agent", f"HermesAgent/{_HERMES_VERSION}")
+        headers.setdefault("HTTP-Referer", "https://github.com/qixuancao/pcbdraft")
+        headers.setdefault("X-Title", "PCBDraft")
+        headers.setdefault("User-Agent", f"PCBDraft/{_PCBDRAFT_VERSION}")
         kwargs["default_headers"] = headers
 
     client = _anthropic_sdk.Anthropic(**kwargs)
@@ -1310,7 +1310,7 @@ _OAUTH_REDIRECT_URI = "https://console.anthropic.com/oauth/code/callback"
 _OAUTH_SCOPES = "org:create_api_key user:profile user:inference"
 
 
-def _get_hermes_oauth_file() -> Path:
+def _get_pcbdraft_oauth_file() -> Path:
     return get_runtime_home() / ".anthropic_oauth.json"
 
 
@@ -1329,8 +1329,8 @@ def _generate_pkce() -> tuple:
     return verifier, challenge
 
 
-def run_hermes_oauth_login_pure() -> dict[str, Any] | None:
-    """Run Hermes-native OAuth PKCE flow and return credential state."""
+def run_pcbdraft_oauth_login_pure() -> dict[str, Any] | None:
+    """Run PCBDraft-native OAuth PKCE flow and return credential state."""
     import secrets
     import time
     import webbrowser
@@ -1353,7 +1353,7 @@ def run_hermes_oauth_login_pure() -> dict[str, Any] | None:
     auth_url = f"https://claude.ai/oauth/authorize?{urlencode(params)}"
 
     print()
-    print("Authorize Hermes with your Claude Pro/Max subscription.")
+    print("Authorize PCBDraft with your Claude Pro/Max subscription.")
     print()
     print("╭─ Claude Pro/Max Authorization ────────────────────╮")
     print("│                                                   │")
@@ -1463,20 +1463,20 @@ def run_hermes_oauth_login_pure() -> dict[str, Any] | None:
     }
 
 
-def read_hermes_oauth_credentials() -> dict[str, Any] | None:
-    """Read Hermes-managed OAuth credentials from ~/.hermes/.anthropic_oauth.json."""
-    oauth_file = _get_hermes_oauth_file()
+def read_pcbdraft_oauth_credentials() -> dict[str, Any] | None:
+    """Read owned OAuth credentials from the core runtime home's OAuth file."""
+    oauth_file = _get_pcbdraft_oauth_file()
     if oauth_file.exists():
         try:
             data = json.loads(oauth_file.read_text(encoding="utf-8"))
             if data.get("accessToken"):
                 return data
         except (json.JSONDecodeError, OSError) as e:
-            logger.debug("Failed to read Hermes OAuth credentials: %s", e)
+            logger.debug("Failed to read PCBDraft OAuth credentials: %s", e)
     return None
 
 
-def save_hermes_oauth_credentials(credentials: dict[str, Any]) -> None:
+def save_pcbdraft_oauth_credentials(credentials: dict[str, Any]) -> None:
     """Persist a PCBDraft-owned Anthropic OAuth token pair atomically."""
 
     access_token = str(credentials.get("access_token") or "").strip()
@@ -1485,7 +1485,7 @@ def save_hermes_oauth_credentials(credentials: dict[str, Any]) -> None:
     from pcbdraft.core.runtime_utils import atomic_json_write
 
     atomic_json_write(
-        _get_hermes_oauth_file(),
+        _get_pcbdraft_oauth_file(),
         {
             "accessToken": access_token,
             "refreshToken": str(credentials.get("refresh_token") or ""),
@@ -2839,9 +2839,10 @@ def build_anthropic_kwargs(
         for block in system:
             if isinstance(block, dict) and block.get("type") == "text":
                 text = block.get("text", "")
-                text = text.replace("Hermes Agent", "Claude Code")
-                text = text.replace("Hermes agent", "Claude Code")
-                text = text.replace("hermes-agent", "claude-code")
+                text = text.replace("PCBDraft Agent", "Claude Code")
+                text = text.replace("PCBDraft agent", "Claude Code")
+                text = text.replace("pcbdraft-agent", "claude-code")
+                text = text.replace("PCBDraft", "Claude Code")
                 text = text.replace("Nous Research", "Anthropic")
                 block["text"] = text
 

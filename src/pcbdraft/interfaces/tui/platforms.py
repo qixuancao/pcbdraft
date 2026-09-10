@@ -1,5 +1,5 @@
 """
-Shared platform registry for Hermes Agent.
+Shared platform registry for PCBDraft Agent.
 
 Single source of truth for platform metadata consumed by both
 skills_config (label display) and tools_config (default toolset
@@ -21,61 +21,73 @@ class PlatformInfo(NamedTuple):
 # Ordered so that TUI menus are deterministic.
 PLATFORMS: OrderedDict[str, PlatformInfo] = OrderedDict(
     [
-        ("cli", PlatformInfo(label="🖥️  CLI", default_toolset="hermes-cli")),
+        ("cli", PlatformInfo(label="🖥️  CLI", default_toolset="pcbdraft-cli")),
         (
             "telegram",
-            PlatformInfo(label="📱 Telegram", default_toolset="hermes-telegram"),
+            PlatformInfo(label="📱 Telegram", default_toolset="pcbdraft-telegram"),
         ),
-        ("discord", PlatformInfo(label="💬 Discord", default_toolset="hermes-discord")),
-        ("slack", PlatformInfo(label="💼 Slack", default_toolset="hermes-slack")),
+        (
+            "discord",
+            PlatformInfo(label="💬 Discord", default_toolset="pcbdraft-discord"),
+        ),
+        ("slack", PlatformInfo(label="💼 Slack", default_toolset="pcbdraft-slack")),
         (
             "whatsapp",
-            PlatformInfo(label="📱 WhatsApp", default_toolset="hermes-whatsapp"),
+            PlatformInfo(label="📱 WhatsApp", default_toolset="pcbdraft-whatsapp"),
         ),
         (
             "whatsapp_cloud",
             PlatformInfo(
-                label="📱 WhatsApp Business (Cloud)", default_toolset="hermes-whatsapp"
+                label="📱 WhatsApp Business (Cloud)",
+                default_toolset="pcbdraft-whatsapp",
             ),
         ),
-        ("signal", PlatformInfo(label="📡 Signal", default_toolset="hermes-signal")),
+        ("signal", PlatformInfo(label="📡 Signal", default_toolset="pcbdraft-signal")),
         (
             "bluebubbles",
-            PlatformInfo(label="💙 BlueBubbles", default_toolset="hermes-bluebubbles"),
+            PlatformInfo(
+                label="💙 BlueBubbles", default_toolset="pcbdraft-bluebubbles"
+            ),
         ),
-        ("email", PlatformInfo(label="📧 Email", default_toolset="hermes-email")),
+        ("email", PlatformInfo(label="📧 Email", default_toolset="pcbdraft-email")),
         (
             "homeassistant",
             PlatformInfo(
-                label="🏠 Home Assistant", default_toolset="hermes-homeassistant"
+                label="🏠 Home Assistant", default_toolset="pcbdraft-homeassistant"
             ),
         ),
         (
             "mattermost",
-            PlatformInfo(label="💬 Mattermost", default_toolset="hermes-mattermost"),
+            PlatformInfo(label="💬 Mattermost", default_toolset="pcbdraft-mattermost"),
         ),
-        ("matrix", PlatformInfo(label="💬 Matrix", default_toolset="hermes-matrix")),
+        ("matrix", PlatformInfo(label="💬 Matrix", default_toolset="pcbdraft-matrix")),
         (
             "dingtalk",
-            PlatformInfo(label="💬 DingTalk", default_toolset="hermes-dingtalk"),
+            PlatformInfo(label="💬 DingTalk", default_toolset="pcbdraft-dingtalk"),
         ),
-        ("feishu", PlatformInfo(label="🪽 Feishu", default_toolset="hermes-feishu")),
-        ("wecom", PlatformInfo(label="💬 WeCom", default_toolset="hermes-wecom")),
+        ("feishu", PlatformInfo(label="🪽 Feishu", default_toolset="pcbdraft-feishu")),
+        ("wecom", PlatformInfo(label="💬 WeCom", default_toolset="pcbdraft-wecom")),
         (
             "wecom_callback",
             PlatformInfo(
-                label="💬 WeCom Callback", default_toolset="hermes-wecom-callback"
+                label="💬 WeCom Callback", default_toolset="pcbdraft-wecom-callback"
             ),
         ),
-        ("weixin", PlatformInfo(label="💬 Weixin", default_toolset="hermes-weixin")),
-        ("qqbot", PlatformInfo(label="💬 QQBot", default_toolset="hermes-qqbot")),
-        ("yuanbao", PlatformInfo(label="🤖 Yuanbao", default_toolset="hermes-yuanbao")),
-        ("webhook", PlatformInfo(label="🔗 Webhook", default_toolset="hermes-webhook")),
+        ("weixin", PlatformInfo(label="💬 Weixin", default_toolset="pcbdraft-weixin")),
+        ("qqbot", PlatformInfo(label="💬 QQBot", default_toolset="pcbdraft-qqbot")),
+        (
+            "yuanbao",
+            PlatformInfo(label="🤖 Yuanbao", default_toolset="pcbdraft-yuanbao"),
+        ),
+        (
+            "webhook",
+            PlatformInfo(label="🔗 Webhook", default_toolset="pcbdraft-webhook"),
+        ),
         (
             "api_server",
-            PlatformInfo(label="🌐 API Server", default_toolset="hermes-api-server"),
+            PlatformInfo(label="🌐 API Server", default_toolset="pcbdraft-api-server"),
         ),
-        ("cron", PlatformInfo(label="⏰ Cron", default_toolset="hermes-cron")),
+        ("cron", PlatformInfo(label="⏰ Cron", default_toolset="pcbdraft-cron")),
     ]
 )
 
@@ -117,7 +129,7 @@ def get_all_platforms() -> "OrderedDict[str, PlatformInfo]":
                     label=f"{entry.emoji}  {entry.label}"
                     if entry.emoji
                     else entry.label,
-                    default_toolset=f"hermes-{entry.name}",
+                    default_toolset=f"pcbdraft-{entry.name}",
                 )
     except Exception:
         pass

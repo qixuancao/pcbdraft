@@ -355,9 +355,10 @@ class VercelSandboxEnvironment(BaseEnvironment):
         self._remote_home = self._detect_remote_home()
 
         if self._remote_home == "/":
-            container_base = "/.hermes"
+            container_base = "/.pcbdraft/runtime"
         else:
-            container_base = f"{self._remote_home.rstrip('/')}/.hermes"
+            container_base = f"{self._remote_home.rstrip('/')}/.pcbdraft/runtime"
+        self._remote_runtime_home = container_base
         self._sync_manager = FileSyncManager(
             get_files_fn=lambda: iter_sync_files(container_base),
             upload_fn=self._vercel_upload,
@@ -560,13 +561,13 @@ class VercelSandboxEnvironment(BaseEnvironment):
             )
 
     def _vercel_bulk_download(self, dest_tar_path: Path) -> None:
-        remote_hermes = (
-            "/.hermes"
+        remote_pcbdraft = (
+            "/.pcbdraft/runtime"
             if self._remote_home == "/"
-            else f"{self._remote_home.rstrip('/')}/.hermes"
+            else f"{self._remote_home.rstrip('/')}/.pcbdraft/runtime"
         )
-        archive_member = remote_hermes.lstrip("/")
-        remote_tar = f"/tmp/.hermes_sync.{os.getpid()}.tar"
+        archive_member = remote_pcbdraft.lstrip("/")
+        remote_tar = f"/tmp/.pcbdraft_sync.{os.getpid()}.tar"
         sandbox = self._sandbox
         if sandbox is None:
             raise RuntimeError("Vercel sandbox is not attached")

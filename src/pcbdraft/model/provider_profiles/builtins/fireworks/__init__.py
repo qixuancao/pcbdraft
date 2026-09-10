@@ -9,7 +9,7 @@ Model IDs here track the canonical Fireworks catalog (fw-ai/fireconnect
 ``setup-cli``).
 """
 
-from pcbdraft.interfaces.tui import __version__ as _HERMES_VERSION
+from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_VERSION
 from pcbdraft.model.provider_profiles import register_provider
 from pcbdraft.model.provider_profiles.base import ProviderProfile
 
@@ -27,9 +27,9 @@ fireworks = ProviderProfile(
     # generic profile.default_headers path, so they survive switch_model and
     # credential rotation.
     default_headers={
-        "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-        "X-Title": "Hermes Agent",
-        "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+        "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+        "X-Title": "PCBDraft",
+        "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
     },
     # Auxiliary model for cheap tasks (compaction, title generation, vision).
     # A standard pay-as-you-go catalog ``/models/`` ID.

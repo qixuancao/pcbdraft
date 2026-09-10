@@ -105,7 +105,9 @@ class CredentialIsolationTests(unittest.TestCase):
             patch.object(auth, "is_provider_explicitly_configured", return_value=True),
             patch.object(credential_pool, "load_env", return_value={}),
             patch.object(credential_pool, "_get_secret", return_value=""),
-            patch.object(anthropic, "read_hermes_oauth_credentials", return_value=None),
+            patch.object(
+                anthropic, "read_pcbdraft_oauth_credentials", return_value=None
+            ),
             patch.object(anthropic, "read_claude_code_credentials") as external_read,
         ):
             changed, active = credential_pool._seed_from_singletons("anthropic", [])
@@ -125,10 +127,10 @@ class CredentialIsolationTests(unittest.TestCase):
         with (
             patch.object(
                 anthropic,
-                "run_hermes_oauth_login_pure",
+                "run_pcbdraft_oauth_login_pure",
                 return_value=placeholder,
             ) as owned_login,
-            patch.object(anthropic, "save_hermes_oauth_credentials") as owned_write,
+            patch.object(anthropic, "save_pcbdraft_oauth_credentials") as owned_write,
             patch.object(anthropic, "run_oauth_setup_token") as external_cli,
             redirect_stdout(StringIO()),
         ):
@@ -213,7 +215,7 @@ class CredentialIsolationTests(unittest.TestCase):
             resolved = auth.resolve_codex_runtime_credentials()
 
         self.assertEqual(resolved["api_key"], "TEST_PCBDRAFT_ACCESS")
-        self.assertEqual(resolved["source"], "hermes-auth-store")
+        self.assertEqual(resolved["source"], "pcbdraft-auth-store")
         external_recovery.assert_not_called()
 
 

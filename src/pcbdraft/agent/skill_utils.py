@@ -51,7 +51,7 @@ EXCLUDED_SKILL_DIRS = frozenset(
 SKILL_SUPPORT_DIRS = frozenset(("references", "templates", "assets", "scripts"))
 
 # ── Org-shared skills (sync contract) ───────────────────────────
-# Org mirrors live under ~/.hermes/skills/_org/<org_id>/. Resolution is
+# Org mirrors live under <PCBDRAFT_RUNTIME_HOME>/skills/_org/<org_id>/. Resolution is
 # TOKEN-GATED via a marker file the sync client writes after verifying the
 # token (skills_sync_client.pull_org_skills): only the marked org's mirror is
 # scanned. No marker ⇒ no org skills load. The marker is plain data (org_id
@@ -526,7 +526,7 @@ def get_external_skills_dirs() -> list[Path]:
 
     Each entry is expanded (``~`` and ``${VAR}``) and resolved to an absolute
     path.  Only directories that actually exist are returned.  Duplicates and
-    paths that resolve to the local ``~/.hermes/skills/`` are silently skipped.
+    paths that resolve to the local runtime ``skills/`` are silently skipped.
 
     Cached in-process, keyed on ``config.yaml`` mtime — the function is
     called once per skill during banner / tool-registry scans, and YAML
@@ -605,12 +605,12 @@ def get_external_skills_dirs() -> list[Path]:
 
 
 def get_all_skills_dirs() -> list[Path]:
-    """Return all skill directories: local ``~/.hermes/skills/`` first, then external.
+    """Return all skill directories: local runtime ``skills/`` first, then external.
 
     The local dir is always first (and always included even if it doesn't exist
     yet — callers handle that).  External dirs follow in config order.
 
-    NOTE: trusted project-local dirs (``./.hermes/skills`` at the git root) are
+    NOTE: trusted project-local dirs (``./.pcbdraft/skills`` at the git root) are
     NOT part of this list — they have *higher* precedence than the local dir,
     so callers that need them use :func:`get_project_skills_dirs` and scan
     those roots first. See ``get_scan_ordered_skills_dirs`` for the full
@@ -629,7 +629,7 @@ def get_all_skills_dirs() -> list[Path]:
 #
 # Two candidate roots at the project root (found by walking up from cwd to the
 # first directory containing ``.git``):
-#   <root>/.hermes/skills/   — Hermes-native location
+#   <root>/.pcbdraft/skills/ — PCBDraft-native location
 #   <root>/.agents/skills/   — cross-tool convention shared with other harnesses
 #
 # TRUST GATE: unlike AGENTS.md (plain instruction text), skills are load-on-
@@ -652,7 +652,7 @@ def get_all_skills_dirs() -> list[Path]:
 # byte-stable. Same contract as AGENTS.md injection and project plugins.
 
 PROJECT_SKILLS_SUBDIRS = (
-    os.path.join(".hermes", "skills"),
+    os.path.join(".pcbdraft", "skills"),
     os.path.join(".agents", "skills"),
 )
 
@@ -735,7 +735,7 @@ def _candidate_project_skills_dirs(root: Path) -> list[Path]:
     """Existing skill dirs under *root*, excluding the profile's own skills dir.
 
     The exclusion matters when PCBDRAFT_RUNTIME_HOME itself lives inside a git checkout:
-    ``<root>/.hermes/skills`` would otherwise double as both the profile-local
+    ``<root>/.pcbdraft/skills`` would otherwise double as both the profile-local
     and the project tier.
     """
     local_skills = get_skills_dir().resolve()
@@ -900,7 +900,7 @@ def normalize_skill_lookup_name(identifier: str) -> str:
     """Normalize a skill identifier to a ``skill_view()``-safe relative path.
 
     Slash commands and cron jobs may store absolute paths to skills that live
-    under ``~/.hermes/skills/`` (including via symlinks) or configured
+    under the runtime ``skills/`` (including via symlinks) or configured
     ``skills.external_dirs``. ``skill_view()`` rejects absolute names for
     security, so callers must translate trusted absolute paths to their
     relative form first.
@@ -938,7 +938,7 @@ def normalize_skill_lookup_name(identifier: str) -> str:
 
     # Prefer the lexical path under a trusted skill root before resolving
     # symlinks. Slash-command discovery can legitimately find a skill via
-    # ~/.hermes/skills/<name> where <name> is a symlink to a checked-out
+    # <PCBDRAFT_RUNTIME_HOME>/skills/<name> where <name> is a symlink to a checked-out
     # skill elsewhere. Resolving first turns that trusted visible path into
     # an arbitrary absolute path that skill_view() refuses to load.
     for root in trusted_roots:
@@ -998,18 +998,14 @@ def is_external_skill_path(path) -> bool:
 
 def extract_skill_conditions(frontmatter: dict[str, Any]) -> dict[str, list]:
     """Extract conditional activation fields from parsed frontmatter."""
-    metadata = frontmatter.get("metadata")
-    # Handle cases where metadata is not a dict (e.g., a string from malformed YAML)
-    if not isinstance(metadata, dict):
-        metadata = {}
-    hermes = metadata.get("hermes") or {}
-    if not isinstance(hermes, dict):
-        hermes = {}
+    from pcbdraft.agent.legacy_compat import read_skill_metadata
+
+    metadata = read_skill_metadata(frontmatter)
     return {
-        "fallback_for_toolsets": hermes.get("fallback_for_toolsets", []),
-        "requires_toolsets": hermes.get("requires_toolsets", []),
-        "fallback_for_tools": hermes.get("fallback_for_tools", []),
-        "requires_tools": hermes.get("requires_tools", []),
+        "fallback_for_toolsets": metadata.get("fallback_for_toolsets", []),
+        "requires_toolsets": metadata.get("requires_toolsets", []),
+        "fallback_for_tools": metadata.get("fallback_for_tools", []),
+        "requires_tools": metadata.get("requires_tools", []),
     }
 
 
@@ -1022,7 +1018,7 @@ def extract_skill_config_vars(frontmatter: dict[str, Any]) -> list[dict[str, Any
     Skills declare config.yaml settings they need via::
 
         metadata:
-          hermes:
+          pcbdraft:
             config:
               - key: wiki.path
                 description: Path to the LLM Wiki knowledge base directory
@@ -1032,13 +1028,9 @@ def extract_skill_config_vars(frontmatter: dict[str, Any]) -> list[dict[str, Any
     Returns a list of dicts with keys: ``key``, ``description``, ``default``,
     ``prompt``.  Invalid or incomplete entries are silently skipped.
     """
-    metadata = frontmatter.get("metadata")
-    if not isinstance(metadata, dict):
-        return []
-    hermes = metadata.get("hermes")
-    if not isinstance(hermes, dict):
-        return []
-    raw = hermes.get("config")
+    from pcbdraft.agent.legacy_compat import read_skill_metadata
+
+    raw = read_skill_metadata(frontmatter).get("config")
     if not raw:
         return []
     if isinstance(raw, dict):

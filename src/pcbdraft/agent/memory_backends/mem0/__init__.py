@@ -35,13 +35,12 @@ from __future__ import annotations
 import atexit
 import json
 import logging
-import os
 import threading
 import time
+from pathlib import Path
 from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider
-from pcbdraft.agent.secret_scope import get_secret
 from pcbdraft.tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
@@ -59,7 +58,7 @@ _CLIENT_ERROR_TYPES = ("MemoryNotFoundError", "ValidationError")
 # that legacy mem0.json files written by the setup wizard (which historically
 # wrote this exact placeholder) still allow gateway-native ids to flow
 # through instead of silently overriding them with the placeholder.
-_DEFAULT_USER_ID = "hermes-user"
+_DEFAULT_USER_ID = "pcbdraft-user"
 
 
 def _is_client_error(exc: Exception) -> bool:
@@ -76,7 +75,7 @@ def _is_client_error(exc: Exception) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _load_config() -> dict:
+def _load_config(runtime_home: str | None = None) -> dict:
     """Load config from env vars, with $PCBDRAFT_RUNTIME_HOME/mem0.json overrides.
 
     Environment variables provide defaults; mem0.json (if present) overrides
@@ -84,22 +83,25 @@ def _load_config() -> dict:
     but is missing fields like ``api_key`` that the user set in ``.env``.
     """
     from pcbdraft.core.runtime_environment import get_runtime_home
+    from pcbdraft.agent.legacy_compat import memory_profile_environment
 
+    environment = memory_profile_environment(runtime_home)
     config = {
-        "mode": os.environ.get("MEM0_MODE", "platform"),
-        "api_key": get_secret("MEM0_API_KEY", ""),
-        "host": os.environ.get("MEM0_HOST", ""),
-        "agent_id": os.environ.get("MEM0_AGENT_ID", "hermes"),
+        "mode": environment.get("MEM0_MODE", "platform"),
+        "api_key": environment.get("MEM0_API_KEY", ""),
+        "host": environment.get("MEM0_HOST", ""),
+        "agent_id": environment.get("MEM0_AGENT_ID", ""),
         "oss": {},
     }
     # Only carry user_id when the operator explicitly configured one (env or
     # mem0.json). An absent key tells initialize() to fall back to the
     # gateway-native id from kwargs instead of overriding it with a placeholder.
-    env_user_id = os.environ.get("MEM0_USER_ID")
+    env_user_id = environment.get("MEM0_USER_ID")
     if env_user_id:
         config["user_id"] = env_user_id
 
-    config_path = get_runtime_home() / "mem0.json"
+    home = Path(runtime_home) if runtime_home is not None else get_runtime_home()
+    config_path = home / "mem0.json"
     if config_path.exists():
         try:
             file_cfg = json.loads(config_path.read_text(encoding="utf-8"))
@@ -109,7 +111,24 @@ def _load_config() -> dict:
         except Exception:
             pass
 
-    return config
+    from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+
+    return effective_memory_namespaces(
+        "mem0",
+        config,
+        existing=config_path.exists() or bool(config["api_key"]),
+        environ=environment,
+    )
+
+
+def _materialize_config_for_save(runtime_home: str) -> dict:
+    """Preserve stored options and freeze the target profile's effective IDs."""
+    from pcbdraft.agent.legacy_compat import saved_memory_namespaces
+
+    path = Path(runtime_home) / "mem0.json"
+    existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    existing.update(saved_memory_namespaces("mem0", _load_config(runtime_home)))
+    return existing
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +232,7 @@ class Mem0MemoryProvider(MemoryProvider):
         self._api_key = ""
         self._host = ""
         self._user_id = _DEFAULT_USER_ID
-        self._agent_id = "hermes"
+        self._agent_id = "pcbdraft"
         self._rerank_default = False
         self._channel = "cli"  # gateway channel name (cli/telegram/discord/...)
         self._sync_thread = None
@@ -244,16 +263,8 @@ class Mem0MemoryProvider(MemoryProvider):
 
     def save_config(self, values, runtime_home):
         """Write config to $PCBDRAFT_RUNTIME_HOME/mem0.json."""
-        import json
-        from pathlib import Path
-
         config_path = Path(runtime_home) / "mem0.json"
-        existing = {}
-        if config_path.exists():
-            try:
-                existing = json.loads(config_path.read_text(encoding="utf-8"))
-            except Exception:
-                pass
+        existing = _materialize_config_for_save(runtime_home)
         existing.update(values)
         from pcbdraft.core.runtime_utils import atomic_json_write
 
@@ -281,9 +292,13 @@ class Mem0MemoryProvider(MemoryProvider):
             {
                 "key": "user_id",
                 "description": "User identifier",
-                "default": "hermes-user",
+                "default": "pcbdraft-user",
             },
-            {"key": "agent_id", "description": "Agent identifier", "default": "hermes"},
+            {
+                "key": "agent_id",
+                "description": "Agent identifier",
+                "default": "pcbdraft",
+            },
             {
                 "key": "rerank",
                 "description": "Enable reranking for recall",
@@ -393,11 +408,12 @@ class Mem0MemoryProvider(MemoryProvider):
         # The literal _DEFAULT_USER_ID string is treated as unset so users who
         # ran the setup wizard with the suggested default still get gateway-
         # native ids instead of being silently bucketed together.
-        configured = self._config.get("user_id")
-        if configured == _DEFAULT_USER_ID:
-            configured = None
-        self._user_id = configured or kwargs.get("user_id") or _DEFAULT_USER_ID
-        self._agent_id = self._config.get("agent_id", "hermes")
+        from pcbdraft.agent.legacy_compat import memory_user_identity
+
+        self._user_id = memory_user_identity(
+            self._config.get("user_id"), kwargs.get("user_id")
+        )
+        self._agent_id = self._config.get("agent_id", "pcbdraft")
         # Persisted rerank preference (setup wizard / mem0.json). Used as the
         # DEFAULT for mem0_search when the model doesn't pass ``rerank``
         # explicitly; per-call args still win. Platform-only feature — other

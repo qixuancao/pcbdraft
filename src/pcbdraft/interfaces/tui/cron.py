@@ -1,5 +1,5 @@
 """
-Cron subcommand for hermes CLI.
+Cron subcommand for pcbdraft CLI.
 
 Handles standalone cron management commands like list, create, edit,
 pause/resume/run/remove, status, and tick.
@@ -17,7 +17,7 @@ PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 # model tool via ``cron.jobs.create_job``) without a circular import. Re-export
 # ``_contains_gateway_lifecycle_command`` here for back-compat: ``tools/
 # terminal_tool.py`` imports it from this module to hard-block the same
-# commands at execution time when ``_HERMES_GATEWAY=1``.
+# commands at execution time when ``_PCBDRAFT_GATEWAY=1``.
 from cron.lifecycle_guard import (  # noqa: F401  (re-exported for terminal_tool)
     contains_gateway_lifecycle_command as _contains_gateway_lifecycle_command,
 )
@@ -97,14 +97,14 @@ def _warn_if_gateway_not_running() -> None:
             Colors.YELLOW,
         )
     )
-    print(color("     Start it with: hermes gateway install", Colors.DIM))
+    print(color("     Start it with: pcbdraft --help", Colors.DIM))
     print(
         color(
-            "                    sudo hermes gateway install --system  # Linux servers",
+            "                    sudo pcbdraft --help",
             Colors.DIM,
         )
     )
-    print(color("     Check status:  hermes cron status", Colors.DIM))
+    print(color("     Check status:  pcbdraft --help", Colors.DIM))
 
 
 def cron_list(show_all: bool = False):
@@ -117,7 +117,7 @@ def cron_list(show_all: bool = False):
         print(color("No scheduled jobs.", Colors.DIM))
         print(
             color(
-                "Create one with 'hermes cron create ...' or the /cron command in chat.",
+                "Create one with 'pcbdraft --help...' or the /cron command in chat.",
                 Colors.DIM,
             )
         )
@@ -261,7 +261,7 @@ def cron_tick():
         # (#87644). For the one-shot CLI surface, report cleanly instead of
         # dumping a traceback; the gateway ticker loop handles its own retry.
         print(color(f"✗ Cron tick failed: {exc}", Colors.RED))
-        print("  Check `hermes cron status` and the gateway log for details.")
+        print("  Check `pcbdraft --help` and the gateway log for details.")
         return 1
     return 0
 
@@ -352,7 +352,7 @@ def cron_status():
                 )
             )
             print(f"  PID: {', '.join(map(str, pids))}")
-            print("  Cron jobs may NOT be firing. Restart: hermes gateway restart")
+            print("  Cron jobs may NOT be firing. Restart: pcbdraft --help")
         elif hb_age is not None and ok_age is not None and ok_age > STALE_AFTER:
             # Loop is alive (fresh heartbeat) but no tick has SUCCEEDED in a
             # long time → ticks are failing every iteration.
@@ -376,8 +376,8 @@ def cron_status():
                     print(
                         color(
                             "  Hint: jobs.json may be owned by another user "
-                            "(e.g. rewritten by a root `docker exec hermes "
-                            "hermes cron ...`). Fix ownership to match the "
+                            "(e.g. rewritten by a root `docker exec pcbdraft "
+                            "pcbdraft --help...`). Fix ownership to match the "
                             "gateway user, and prefer `docker exec -u <uid>:<gid>`.",
                             Colors.YELLOW,
                         )
@@ -407,11 +407,9 @@ def cron_status():
         print(color("✗ Gateway is not running — cron jobs will NOT fire", Colors.RED))
         print()
         print("  To enable automatic execution:")
-        print("    hermes gateway install    # Install as a user service")
-        print(
-            "    sudo hermes gateway install --system  # Linux servers: boot-time system service"
-        )
-        print("    hermes gateway            # Or run in foreground")
+        print("    pcbdraft --help")
+        print("    sudo pcbdraft --help")
+        print("    pcbdraft --help in foreground")
 
     print()
 
@@ -652,7 +650,7 @@ def _job_action(action: str, job_id: str, success_verb: str) -> int:
 
 
 def cron_notepad(args) -> int:
-    """Handle ``hermes cron notepad <job_id> [get|set|delete|list]``.
+    """Handle ``internal cron notepad <job_id> [get|set|delete|list]``.
 
     The per-job durable KV scratchpad (``cron/notepad.py``). This CLI is the
     write path — a running cron agent updates its own notepad by invoking
@@ -675,7 +673,7 @@ def cron_notepad(args) -> int:
             if key is None or value is None:
                 print(
                     color(
-                        "Usage: hermes cron notepad <job_id> set <key> <value>",
+                        "Usage: pcbdraft --help",
                         Colors.RED,
                     )
                 )
@@ -686,9 +684,7 @@ def cron_notepad(args) -> int:
 
         if action == "get":
             if key is None:
-                print(
-                    color("Usage: hermes cron notepad <job_id> get <key>", Colors.RED)
-                )
+                print(color("Usage: pcbdraft --help", Colors.RED))
                 return 1
             stored = notepad.get_note(job_id, key)
             if stored is None:
@@ -699,11 +695,7 @@ def cron_notepad(args) -> int:
 
         if action == "delete":
             if key is None:
-                print(
-                    color(
-                        "Usage: hermes cron notepad <job_id> delete <key>", Colors.RED
-                    )
-                )
+                print(color("Usage: pcbdraft --help", Colors.RED))
                 return 1
             if notepad.delete_note(job_id, key):
                 print(
@@ -771,7 +763,5 @@ def cron_command(args):
         return _job_action("remove", args.job_id, "Removed")
 
     print(f"Unknown cron command: {subcmd}")
-    print(
-        "Usage: hermes cron [list|create|edit|pause|resume|run|remove|status|runs|tick]"
-    )
+    print("Usage: pcbdraft --help")
     sys.exit(1)

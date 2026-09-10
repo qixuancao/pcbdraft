@@ -11,7 +11,7 @@ of 4000+ models across 109+ providers.  Provides:
 Data resolution order:
   1. In-memory cache (fresh, or stale served immediately while a single
      background daemon thread refreshes)
-  2. Disk cache (~/.hermes/models_dev_cache.json — any age; stale data is
+  2. Disk cache (<PCBDRAFT_RUNTIME_HOME>/models_dev_cache.json — any age; stale data is
      served rather than blocking callers on the network)
   3. Network fetch (https://models.dev/api.json) — only when no cache
      exists at all; failed refreshes back off for 5 minutes process-wide
@@ -220,13 +220,13 @@ PROVIDER_TO_MODELS_DEV: dict[str, str] = {
 _MODELS_DEV_TO_PROVIDER: dict[str, list[str]] | None = None
 
 
-def _models_dev_to_hermes_ids(mdev_id: str) -> list[str]:
+def _models_dev_to_pcbdraft_ids(mdev_id: str) -> list[str]:
     """Return the Hermes provider ids that map to *mdev_id* (may be [])."""
     global _MODELS_DEV_TO_PROVIDER
     if _MODELS_DEV_TO_PROVIDER is None:
         reverse: dict[str, list[str]] = {}
-        for hermes_id, mapped in PROVIDER_TO_MODELS_DEV.items():
-            reverse.setdefault(mapped, []).append(hermes_id)
+        for pcbdraft_id, mapped in PROVIDER_TO_MODELS_DEV.items():
+            reverse.setdefault(mapped, []).append(pcbdraft_id)
         _MODELS_DEV_TO_PROVIDER = reverse
     return _MODELS_DEV_TO_PROVIDER.get(mdev_id, [])
 
@@ -917,9 +917,9 @@ def _provider_override_section(provider: str) -> dict[str, Any] | None:
     if mapped and mapped != provider_key:
         candidates.append(mapped)
     # Reverse: caller passed a models.dev id, config keyed by Hermes id.
-    for hermes_id in _models_dev_to_hermes_ids(provider_key):
-        if hermes_id != provider_key:
-            candidates.append(hermes_id)
+    for pcbdraft_id in _models_dev_to_pcbdraft_ids(provider_key):
+        if pcbdraft_id != provider_key:
+            candidates.append(pcbdraft_id)
 
     for key in candidates:
         section = overrides.get(key)

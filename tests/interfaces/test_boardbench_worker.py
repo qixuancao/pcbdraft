@@ -165,7 +165,7 @@ class BoardBenchWorkerTests(unittest.TestCase):
             ],
         )
 
-    def test_real_hermes_oneshot_parser_reaches_provider_boundary_with_limit(
+    def test_real_pcbdraft_oneshot_parser_reaches_provider_boundary_with_limit(
         self,
     ) -> None:
         """Exercise the installed parser without making a provider request."""
@@ -173,33 +173,32 @@ class BoardBenchWorkerTests(unittest.TestCase):
         probe = textwrap.dedent(
             """
             import sys
+            import os
             from types import SimpleNamespace
 
             import pcbdraft.interfaces.terminal as adapter
 
             adapter.activate()
-            import hermes_cli.main as hermes_main
-            import hermes_cli.oneshot as oneshot
-            import run_agent
+            import pcbdraft.interfaces.tui.oneshot as oneshot
+            from pcbdraft.agent.loop import AIAgent
 
             adapter.activate = lambda **_kwargs: None
             adapter.connection_status = lambda: SimpleNamespace(usable=True)
 
-            def provider_boundary(prompt, **_kwargs):
+            def provider_boundary(prompt, **kwargs):
                 assert prompt == "parser-only-probe"
                 assert "--max-turns" not in sys.argv
-                assert getattr(
-                    run_agent.AIAgent, "_pcbdraft_model_turn_limit", None
-                ) == 90
+                assert AIAgent.__module__ == "pcbdraft.agent.loop"
+                assert kwargs["max_iterations"] == 90
+                assert kwargs["toolsets"] == ["pcbdraft"]
+                assert not set(sys.modules) & {'hermes_cli', 'run_agent'}
+                assert not any(
+                    'vendor/hermes' in path.replace(os.sep, '/')
+                    for path in sys.path
+                )
                 return 0
 
             oneshot.run_oneshot = provider_boundary
-            hermes_main._cleanup_oneshot_runtime = lambda: None
-
-            def exit_without_hard_shutdown(code):
-                raise SystemExit(code)
-
-            hermes_main._exit_after_oneshot = exit_without_hard_shutdown
             code = adapter.launch_cli(
                 ["--oneshot", "parser-only-probe"],
                 model_turn_limit=90,
@@ -207,14 +206,16 @@ class BoardBenchWorkerTests(unittest.TestCase):
             raise SystemExit(code)
             """
         )
-        completed = subprocess.run(
-            [sys.executable, "-c", probe],
-            cwd=Path(__file__).resolve().parents[2],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        with tempfile.TemporaryDirectory() as runtime:
+            completed = subprocess.run(
+                [sys.executable, "-c", probe],
+                cwd=Path(__file__).resolve().parents[2],
+                env={**os.environ, "PCBDRAFT_RUNTIME_HOME": runtime},
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertNotIn("invalid choice", completed.stderr)
 

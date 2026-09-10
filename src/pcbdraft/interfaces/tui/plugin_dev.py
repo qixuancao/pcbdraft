@@ -1,4 +1,4 @@
-"""Runtime-backed validation behind ``hermes plugins doctor``.
+"""Runtime-backed validation behind ``internal plugins doctor``.
 
 The Doctor originated in #46456 / contributor PR #46457 by 峯岸 亮
 (@zapabob).  This core command keeps that contribution's manifest/import/
@@ -40,7 +40,7 @@ def _doctor_runtime(plugin_path: Path):
     test framework. Registration code executes under a temporary PCBDRAFT_RUNTIME_HOME
     with outbound socket connects blocked.
     """
-    temporary_home = tempfile.TemporaryDirectory(prefix="hermes-plugin-doctor-")
+    temporary_home = tempfile.TemporaryDirectory(prefix="pcbdraft-plugin-doctor-")
     stack = ExitStack()
     home = Path(temporary_home.name)
     bundled = home / "bundled-plugins"
@@ -77,14 +77,14 @@ def _doctor_runtime(plugin_path: Path):
     modules_before = {
         name
         for name in sys.modules
-        if name == "hermes_plugins" or name.startswith("hermes_plugins.")
+        if name == "pcbdraft_plugins" or name.startswith("pcbdraft_plugins.")
     }
     manager = PluginManager()
     try:
         manifests = manager._scan_directory(plugins_root, source="user")
         if not manifests:
             raise _DoctorLoadError(
-                f"Hermes discovery found no valid plugin manifest under {copied}"
+                f"PCBDraft discovery found no valid plugin manifest under {copied}"
             )
         if len(manifests) != 1:
             raise _DoctorLoadError(
@@ -127,7 +127,7 @@ def _doctor_runtime(plugin_path: Path):
                 registry._generation += 1
         for name in list(sys.modules):
             if name not in modules_before and (
-                name == "hermes_plugins" or name.startswith("hermes_plugins.")
+                name == "pcbdraft_plugins" or name.startswith("pcbdraft_plugins.")
             ):
                 sys.modules.pop(name, None)
         stack.close()
@@ -202,7 +202,7 @@ def resolve_plugin_path(target: str | os.PathLike[str] | None = None) -> Path:
         )
     except Exception:
         pass
-    candidates.append(Path.cwd() / ".hermes" / "plugins" / raw)
+    candidates.append(Path.cwd() / ".pcbdraft" / "plugins" / raw)
     for candidate in candidates:
         if candidate.is_dir():
             return candidate.resolve()
@@ -231,7 +231,7 @@ def _check_manifest_v2(report: DoctorReport, manifest: Any) -> None:
     mv = getattr(manifest, "manifest_version", 1)
     if mv > SUPPORTED_MANIFEST_VERSION:
         report.warning(
-            f"manifest_version {mv} is newer than this Hermes supports "
+            f"manifest_version {mv} is newer than this PCBDraft supports "
             f"({SUPPORTED_MANIFEST_VERSION}); unknown fields are ignored"
         )
 
@@ -277,7 +277,7 @@ def _check_manifest_v2(report: DoctorReport, manifest: Any) -> None:
         report.warning(
             "declared python_dependencies not installed: "
             + ", ".join(missing)
-            + " — Hermes never auto-installs plugin dependencies; "
+            + " — PCBDraft never auto-installs plugin dependencies; "
             + "install manually: pip install "
             + " ".join(f"'{m}'" for m in missing)
         )
@@ -297,7 +297,7 @@ def _check_manifest_v2(report: DoctorReport, manifest: Any) -> None:
 
 
 def doctor_plugin(target: str | os.PathLike[str] | None = None) -> DoctorReport:
-    """Validate one plugin through Hermes' real scanner and registration path."""
+    """Validate one plugin through PCBDraft' real scanner and registration path."""
     try:
         path = resolve_plugin_path(target)
     except FileNotFoundError as exc:

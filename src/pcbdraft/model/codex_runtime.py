@@ -369,7 +369,7 @@ _CODEX_TOOL_ITEM_TYPES = frozenset(
 # namespacing and emit the bare tool name (web_search, browser_navigate,
 # vision_analyze, ...) since the user thinks of these as Hermes tools,
 # not as MCP calls.
-_INTERNAL_MCP_SERVER = "hermes-tools"
+_INTERNAL_MCP_SERVER = "pcbdraft-tools"
 
 
 def _codex_item_to_tool_name(item: dict) -> str:

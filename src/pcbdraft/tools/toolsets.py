@@ -27,7 +27,7 @@ from typing import Any
 
 # Shared tool list for CLI and all messaging platform toolsets.
 # Edit this once to update all platforms simultaneously.
-_HERMES_CORE_TOOLS = [
+_PCBDRAFT_CORE_TOOLS = [
     # Web
     "web_search",
     "web_extract",
@@ -124,7 +124,7 @@ _HERMES_CORE_TOOLS = [
 # Webhook events may originate from untrusted third-party content (for example,
 # public PR titles/comments). Keep the default webhook toolset intentionally
 # constrained to avoid local file/system execution by prompt injection.
-_HERMES_WEBHOOK_SAFE_TOOLS = [
+_PCBDRAFT_WEBHOOK_SAFE_TOOLS = [
     "web_search",
     "web_extract",
     "vision_analyze",
@@ -152,7 +152,7 @@ TOOLSETS = {
             "x_search Responses tool. Read-only public X discovery; use the "
             "xurl skill for authenticated X API reads and account actions. "
             "Available when xAI credentials are configured (SuperGrok OAuth "
-            "or XAI_API_KEY). Off by default; enable in `hermes tools` → "
+            "or XAI_API_KEY). Off by default; enable in runtime configuration → "
             "X (Twitter) Search."
         ),
         "tools": ["x_search"],
@@ -179,7 +179,7 @@ TOOLSETS = {
             "text-to-video (prompt only) and image-to-video (prompt + "
             "image_url), plus reference-to-video. Provider-specific edit/"
             "extend workflows may appear as separate tools. Configure via "
-            "``hermes tools`` → Video Generation."
+            "runtime video_gen configuration."
         ),
         "tools": ["video_generate", "xai_video_edit", "xai_video_extend"],
         "includes": [],
@@ -481,7 +481,7 @@ TOOLSETS = {
     # outside the agent loop (cron delivery, the gateway kanban notifier, and
     # the `hermes send` CLI), not by the model deciding to send on its own.
     # ==========================================================================
-    "hermes-acp": {
+    "pcbdraft-acp": {
         "description": "Editor integration (VS Code, Zed, JetBrains) — coding-focused tools without messaging, audio, or clarify UI",
         "tools": [
             "web_search",
@@ -517,7 +517,7 @@ TOOLSETS = {
         ],
         "includes": [],
     },
-    "hermes-api-server": {
+    "pcbdraft-api-server": {
         "description": "OpenAI-compatible API server — full agent tools accessible via HTTP (no interactive UI tools like clarify or send_message)",
         "tools": [
             # Web
@@ -577,9 +577,9 @@ TOOLSETS = {
         ],
         "includes": [],
     },
-    "hermes-cli": {
+    "pcbdraft-cli": {
         "description": "Full interactive CLI toolset - all default tools plus cronjob management",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
     "pcbdraft": {
@@ -597,78 +597,78 @@ TOOLSETS = {
         ],
         "includes": [],
     },
-    "hermes-cron": {
+    "pcbdraft-cron": {
         # Mirrors hermes-cli so cron's "default" toolset is the same set of
         # core tools users see interactively — then `hermes tools` filters
         # them down per the platform config. _DEFAULT_OFF_TOOLSETS (moa,
         # homeassistant) are excluded by _get_platform_tools() unless
         # the user explicitly enables them.
-        "description": "Default cron toolset - same core tools as hermes-cli; gated by `hermes tools`",
-        "tools": _HERMES_CORE_TOOLS,
+        "description": "Default cron toolset - same core tools as pcbdraft-cli; gated by configuration",
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-telegram": {
+    "pcbdraft-telegram": {
         "description": "Telegram bot toolset - full access for personal use (terminal has safety checks)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-discord": {
+    "pcbdraft-discord": {
         "description": "Discord bot toolset - full access (terminal has safety checks via dangerous command approval)",
-        "tools": _HERMES_CORE_TOOLS
+        "tools": _PCBDRAFT_CORE_TOOLS
         + [
             "discord",
             "discord_admin",
         ],
         "includes": [],
     },
-    "hermes-whatsapp": {
+    "pcbdraft-whatsapp": {
         "description": "WhatsApp bot toolset - similar to Telegram (personal messaging, more trusted)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-slack": {
+    "pcbdraft-slack": {
         "description": "Slack bot toolset - full access for workspace use (terminal has safety checks)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-signal": {
+    "pcbdraft-signal": {
         "description": "Signal bot toolset - encrypted messaging platform (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-bluebubbles": {
+    "pcbdraft-bluebubbles": {
         "description": "BlueBubbles iMessage bot toolset - Apple iMessage via local BlueBubbles server",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-homeassistant": {
+    "pcbdraft-homeassistant": {
         "description": "Home Assistant bot toolset - smart home event monitoring and control",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-email": {
-        "description": "Email bot toolset - interact with Hermes via email (IMAP/SMTP)",
-        "tools": _HERMES_CORE_TOOLS,
+    "pcbdraft-email": {
+        "description": "Email bot toolset - interact with PCBDraft via email (IMAP/SMTP)",
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-mattermost": {
+    "pcbdraft-mattermost": {
         "description": "Mattermost bot toolset - self-hosted team messaging (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-matrix": {
+    "pcbdraft-matrix": {
         "description": "Matrix bot toolset - decentralized encrypted messaging (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-dingtalk": {
+    "pcbdraft-dingtalk": {
         "description": "DingTalk bot toolset - enterprise messaging platform (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-feishu": {
+    "pcbdraft-feishu": {
         "description": "Feishu/Lark bot toolset - enterprise messaging via Feishu/Lark (full access)",
-        "tools": _HERMES_CORE_TOOLS
+        "tools": _PCBDRAFT_CORE_TOOLS
         + [
             "feishu_doc_read",
             "feishu_drive_list_comments",
@@ -678,29 +678,29 @@ TOOLSETS = {
         ],
         "includes": [],
     },
-    "hermes-weixin": {
+    "pcbdraft-weixin": {
         "description": "Weixin bot toolset - personal WeChat messaging via iLink (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-qqbot": {
+    "pcbdraft-qqbot": {
         "description": "QQBot toolset - QQ messaging via Official Bot API v2 (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-wecom": {
+    "pcbdraft-wecom": {
         "description": "WeCom bot toolset - enterprise WeChat messaging (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-wecom-callback": {
+    "pcbdraft-wecom-callback": {
         "description": "WeCom callback toolset - enterprise self-built app messaging (full access)",
-        "tools": _HERMES_CORE_TOOLS,
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-yuanbao": {
+    "pcbdraft-yuanbao": {
         "description": "Yuanbao Bot 元宝消息平台工具集 - 群信息、成员查询、私聊、贴纸表情",
-        "tools": _HERMES_CORE_TOOLS
+        "tools": _PCBDRAFT_CORE_TOOLS
         + [
             "yb_query_group_info",
             "yb_query_group_members",
@@ -711,39 +711,39 @@ TOOLSETS = {
         "module": "tools.yuanbao_tools",
         "includes": [],
     },
-    "hermes-sms": {
-        "description": "SMS bot toolset - interact with Hermes via SMS (Twilio)",
-        "tools": _HERMES_CORE_TOOLS,
+    "pcbdraft-sms": {
+        "description": "SMS bot toolset - interact with PCBDraft via SMS (Twilio)",
+        "tools": _PCBDRAFT_CORE_TOOLS,
         "includes": [],
     },
-    "hermes-webhook": {
+    "pcbdraft-webhook": {
         "description": "Webhook toolset - receive and process external webhook events",
-        "tools": _HERMES_WEBHOOK_SAFE_TOOLS,
+        "tools": _PCBDRAFT_WEBHOOK_SAFE_TOOLS,
         "includes": [],
     },
-    "hermes-gateway": {
+    "pcbdraft-gateway": {
         "description": "Gateway toolset - union of all messaging platform tools",
         "tools": [],
         "includes": [
-            "hermes-telegram",
-            "hermes-discord",
-            "hermes-whatsapp",
-            "hermes-slack",
-            "hermes-signal",
-            "hermes-bluebubbles",
-            "hermes-homeassistant",
-            "hermes-email",
-            "hermes-sms",
-            "hermes-mattermost",
-            "hermes-matrix",
-            "hermes-dingtalk",
-            "hermes-feishu",
-            "hermes-wecom",
-            "hermes-wecom-callback",
-            "hermes-weixin",
-            "hermes-qqbot",
-            "hermes-webhook",
-            "hermes-yuanbao",
+            "pcbdraft-telegram",
+            "pcbdraft-discord",
+            "pcbdraft-whatsapp",
+            "pcbdraft-slack",
+            "pcbdraft-signal",
+            "pcbdraft-bluebubbles",
+            "pcbdraft-homeassistant",
+            "pcbdraft-email",
+            "pcbdraft-sms",
+            "pcbdraft-mattermost",
+            "pcbdraft-matrix",
+            "pcbdraft-dingtalk",
+            "pcbdraft-feishu",
+            "pcbdraft-wecom",
+            "pcbdraft-wecom-callback",
+            "pcbdraft-weixin",
+            "pcbdraft-qqbot",
+            "pcbdraft-webhook",
+            "pcbdraft-yuanbao",
         ],
     },
 }
@@ -838,7 +838,7 @@ def bundle_non_core_tools(toolset_name: str) -> set[str]:
     ``includes`` pass is sufficient. Unknown/garbage names fall back to the
     full resolution minus core — never re-introducing the core wipe.
     """
-    core = set(_HERMES_CORE_TOOLS)
+    core = set(_PCBDRAFT_CORE_TOOLS)
     ts_def = get_toolset(toolset_name)
     if not (ts_def and "tools" in ts_def):
         return set(resolve_toolset(toolset_name)) - core
@@ -931,15 +931,15 @@ def resolve_toolset(
         # into a toolset matching the platform name. This is a registry-derived
         # view, so it only applies when registry tools are requested; the static
         # view (include_registry=False) has no plugin-platform definition.
-        if include_registry and name.startswith("hermes-"):
-            platform_name = name[len("hermes-") :]
+        if include_registry and name.startswith("pcbdraft-"):
+            platform_name = name[len("pcbdraft-") :]
             try:
                 from pcbdraft.services.messaging.platform_registry import (
                     platform_registry,
                 )
 
                 if platform_registry.is_registered(platform_name):
-                    plugin_tools = set(_HERMES_CORE_TOOLS)
+                    plugin_tools = set(_PCBDRAFT_CORE_TOOLS)
                     try:
                         from pcbdraft.tools.registry import registry
 

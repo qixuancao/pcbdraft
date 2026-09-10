@@ -4,9 +4,9 @@ Scans four sources for memory provider plugins:
 
 1. Bundled providers: ``plugins/memory/<name>/`` (shipped with hermes-agent)
 2. User-installed providers: ``$PCBDRAFT_RUNTIME_HOME/plugins/<name>/``
-3. Project-local providers: ``./.hermes/plugins/<name>/``, opt-in via
+3. Project-local providers: ``./.pcbdraft/plugins/<name>/``, opt-in via
    ``PCBDRAFT_RUNTIME_ENABLE_PROJECT_PLUGINS``
-4. Pip-installed providers: ``hermes_agent.memory_providers`` entry points
+4. Pip-installed providers: ``pcbdraft.memory_providers`` entry points
 
 Directory providers must contain ``__init__.py`` with a class implementing
 the MemoryProvider ABC. Pip packages expose a provider or ``register(ctx)``
@@ -48,22 +48,22 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _MEMORY_PLUGINS_DIR = Path(__file__).parent
-ENTRY_POINTS_GROUP = "hermes_agent.memory_providers"
+ENTRY_POINTS_GROUP = "pcbdraft.memory_providers"
 _REGISTERED_MEMORY_PROVIDER_SKILLS: dict[str, Path] = {}
 
 # Synthetic parent package for user-installed providers, so they don't
 # collide with bundled providers in sys.modules.
-_USER_NAMESPACE = "_hermes_user_memory"
+_USER_NAMESPACE = "_pcbdraft_user_memory"
 
 
 def _register_synthetic_package(name: str, search_locations: list[str]) -> None:
     """Register an empty package shell in sys.modules.
 
-    User-installed providers import as ``_hermes_user_memory.<name>``, a
+    User-installed providers import as ``_pcbdraft_user_memory.<name>``, a
     dotted name whose parents exist nowhere on disk.  Unless those parents
     are present in ``sys.modules``, any relative import inside the plugin
     (``from . import config``) fails with
-    ``ModuleNotFoundError: No module named '_hermes_user_memory'`` — the
+    ``ModuleNotFoundError: No module named '_pcbdraft_user_memory'`` — the
     same reason the loader already registers ``plugins`` and
     ``plugins.memory`` for bundled providers.
     """
@@ -91,7 +91,7 @@ def _get_user_plugins_dir() -> Path | None:
 
 
 def _get_project_plugins_dir() -> Path | None:
-    """Return ``./.hermes/plugins/`` or None if unavailable or not opted in.
+    """Return ``./.pcbdraft/plugins/`` or None if unavailable or not opted in.
 
     Gated on ``PCBDRAFT_RUNTIME_ENABLE_PROJECT_PLUGINS`` exactly as the general
     ``PluginManager`` gates its own project scan — a repository you merely
@@ -102,7 +102,7 @@ def _get_project_plugins_dir() -> Path | None:
 
         if not _env_enabled("PCBDRAFT_RUNTIME_ENABLE_PROJECT_PLUGINS"):
             return None
-        d = Path.cwd() / ".hermes" / "plugins"
+        d = Path.cwd() / ".pcbdraft" / "plugins"
         return d if d.is_dir() else None
     except Exception:
         return None
@@ -144,7 +144,7 @@ def _iter_provider_dirs() -> list[tuple[str, Path]]:
             dirs.append((child.name, child))
 
     # 2. User-installed providers ($PCBDRAFT_RUNTIME_HOME/plugins/<name>/)
-    # 3. Project-local providers (./.hermes/plugins/<name>/), opt-in
+    # 3. Project-local providers (./.pcbdraft/plugins/<name>/), opt-in
     for source_dir in (_get_user_plugins_dir(), _get_project_plugins_dir()):
         if not source_dir:
             continue
@@ -766,7 +766,7 @@ def discover_plugin_cli_commands() -> list[dict]:
             cli_mod = sys.modules[module_name]
         else:
             if not _is_bundled:
-                # cli.py imports as _hermes_user_memory.<name>.cli, usually
+                # cli.py imports as _pcbdraft_user_memory.<name>.cli, usually
                 # before the provider itself is loaded.  Register its parent
                 # packages so relative imports inside cli.py
                 # ("from . import config") resolve without executing the

@@ -1,4 +1,4 @@
-"""Helpers for loading Hermes .env files consistently across entrypoints."""
+"""Helpers for loading PCBDraft .env files consistently across entrypoints."""
 
 from __future__ import annotations
 
@@ -20,19 +20,19 @@ from pcbdraft.core.runtime_utils import atomic_replace, fast_safe_load
 _CREDENTIAL_SUFFIXES = ("_API_KEY", "_TOKEN", "_SECRET", "_KEY")
 
 # Names we've already warned about during this process, so repeated
-# load_hermes_dotenv() calls (user env + project env, gateway hot-reload,
+# load_pcbdraft_dotenv() calls (user env + project env, gateway hot-reload,
 # tests) don't spam the same warning multiple times.
 _WARNED_KEYS: set[str] = set()
 
 # Paths we've already emitted a UTF-32 refuse-to-mangle warning for.
-# load_hermes_dotenv can call _sanitize_env_file_if_needed multiple times
+# load_pcbdraft_dotenv can call _sanitize_env_file_if_needed multiple times
 # for the same file (user env + project env + hot-reload); once per path
 # is enough.
 _WARNED_UTF32_PATHS: set[str] = set()
 
 # Map of env-var name → source label ("bitwarden", etc.) for credentials
-# that were injected by an external secret source during load_hermes_dotenv().
-# Used by setup / `hermes model` flows to label detected credentials so
+# that were injected by an external secret source during load_pcbdraft_dotenv().
+# Used by `pcbdraft connect` flows to label detected credentials so
 # users understand WHERE a key came from when their .env doesn't contain it
 # directly (otherwise the "credentials detected ✓" line looks identical to
 # the .env case and they don't know Bitwarden is wired up).
@@ -42,8 +42,8 @@ _SECRET_SOURCES: dict[str, str] = {}
 _SECRET_SOURCE_VALUES_BY_HOME: dict[str, dict[str, str]] = {}
 
 # PCBDRAFT_RUNTIME_HOME paths we've already pulled external secrets for during this
-# process.  ``load_hermes_dotenv()`` is called at module-import time from
-# several hot modules (cli.py, hermes_cli/main.py, run_agent.py,
+# process.  ``load_pcbdraft_dotenv()`` is called at module-import time from
+# several hot modules (cli.py, interfaces/tui/main.py, run_agent.py,
 # trajectory_compressor.py, gateway/run.py, ...), so without this guard the
 # Bitwarden status line gets printed 3-5x per startup.  Bitwarden's own
 # in-process cache prevents redundant network calls, but the print, the
@@ -52,13 +52,13 @@ _APPLIED_HOMES: set[str] = set()
 _SECRET_SOURCE_CACHE_LOCK = threading.RLock()
 
 
-def _known_hermes_env_keys() -> set[str]:
-    """Return the combined set of known Hermes env-var keys.
+def _known_pcbdraft_env_keys() -> set[str]:
+    """Return the combined set of known PCBDraft env-var keys.
 
     Includes both ``OPTIONAL_ENV_VARS`` (setup-flow vars with metadata) and
     ``_EXTRA_ENV_KEYS`` (provider/platform keys managed outside the setup
     wizard).  Lazy-imported to avoid circular-dependency during early-bootstrap
-    ``load_hermes_dotenv()`` calls.
+    ``load_pcbdraft_dotenv()`` calls.
     """
     from pcbdraft.interfaces.tui.config_defaults import OPTIONAL_ENV_VARS
     from pcbdraft.model.configuration import _EXTRA_ENV_KEYS
@@ -150,7 +150,7 @@ def get_secret_source(env_var: str) -> str | None:
     """Return the label of the secret source that supplied ``env_var``, if any.
 
     Returns ``"bitwarden"`` for keys pulled from Bitwarden Secrets Manager
-    during the current process's ``load_hermes_dotenv()`` call.  Returns
+    during the current process's ``load_pcbdraft_dotenv()`` call.  Returns
     ``None`` for keys that came from ``.env``, the shell environment, or
     aren't tracked.  The returned label is metadata only: credential-pool
     persistence may store it to explain the origin of a borrowed secret, but
@@ -207,7 +207,7 @@ def _hydrate_profile_secret_sources(home: Path) -> dict[str, str]:
             name: value for name, value in os.environ.items() if _is_global_env(name)
         }
         local_env.update(load_env_file(home / ".env"))
-        # Mirror load_hermes_dotenv()'s .op.env bootstrap: the 1Password
+        # Mirror load_pcbdraft_dotenv()'s .op.env bootstrap: the 1Password
         # service-account token lives in <home>/.op.env (gitignored), not
         # .env. Without seeding it here a cold profile configured for the
         # supported .op.env flow fails 1Password hydration (sweeper review
@@ -332,7 +332,7 @@ def _sanitize_loaded_credentials() -> None:
             "rich-text editor, or web page that substituted lookalike\n"
             "  Unicode glyphs for ASCII letters. If authentication fails "
             '(e.g. "API key not valid"), re-copy the key from the\n'
-            "  provider's dashboard and run `hermes setup` (or edit the "
+            "  provider's dashboard and run `pcbdraft connect` (or edit the "
             ".env file in a plain-text editor).",
             file=sys.stderr,
         )
@@ -466,16 +466,18 @@ def _sanitize_env_file_if_needed(path: Path) -> None:
         pass  # best-effort — don't block gateway startup
 
 
-def load_hermes_dotenv(
+def load_pcbdraft_dotenv(
     *,
     runtime_home: str | os.PathLike | None = None,
     project_env: str | os.PathLike | None = None,
     load_external_secrets: bool = True,
 ) -> list[Path]:
-    """Load Hermes environment files with user config taking precedence.
+    """Load PCBDraft environment files with user config taking precedence.
 
     Behavior:
-    - `~/.hermes/.env` overrides stale shell-exported values when present.
+    - By default, the process runtime home's `.env` overrides stale shell values,
+      ignoring task-local home overrides because this writes global os.environ.
+    - An explicit runtime_home intentionally loads that home's environment.
     - project `.env` acts as a dev fallback and only fills missing values when
       the user env exists.
     - if no user env exists, the project `.env` also overrides stale shell vars.
@@ -485,9 +487,7 @@ def load_hermes_dotenv(
     """
     loaded: list[Path] = []
 
-    home_path = Path(
-        runtime_home or os.getenv("PCBDRAFT_RUNTIME_HOME", Path.home() / ".hermes")
-    )
+    home_path = Path(runtime_home) if runtime_home else _process_runtime_home()
     user_env = home_path / ".env"
     project_env_path = Path(project_env) if project_env else None
 
@@ -548,7 +548,7 @@ def load_hermes_dotenv(
     # `hermes setup` before the user switched terminal.backend in config.yaml)
     # silently wins again on every reload. Startup launchers bridge
     # config→env once, but long-lived processes (gateway per-turn reload,
-    # cron standalone runs) call load_hermes_dotenv() repeatedly and used to
+    # cron standalone runs) call load_pcbdraft_dotenv() repeatedly and used to
     # flip the effective backend back to the stale .env value mid-session
     # (#29186, #67323). Re-apply config.yaml's explicit terminal keys last so
     # the documented config path always wins. Runs after _apply_managed_env()
@@ -572,16 +572,26 @@ def _reapply_terminal_config_bridge(home_path: Path) -> None:
 
     Scoped to the process PCBDRAFT_RUNTIME_HOME: the shared bridge reads the
     process-global config, so re-applying it for a *different* profile's
-    ``load_hermes_dotenv(runtime_home=...)`` call would bridge the wrong
+    ``load_pcbdraft_dotenv(runtime_home=...)`` call would bridge the wrong
     profile's config. Fail-open — a config problem must never break dotenv
     loading (the historical env-driven behavior still applies).
     """
     try:
         if Path(home_path).resolve() != _process_runtime_home().resolve():
             return
+        from pcbdraft.core.runtime_environment import (
+            reset_runtime_home_override,
+            set_runtime_home_override,
+        )
         from pcbdraft.model.configuration import apply_terminal_config_to_env
 
-        apply_terminal_config_to_env(env=None)
+        # The config reader is context-aware; a task scoped to another home
+        # must not bridge that task's terminal settings into the process env.
+        token = set_runtime_home_override(home_path)
+        try:
+            apply_terminal_config_to_env(env=None)
+        finally:
+            reset_runtime_home_override(token)
     except Exception:  # noqa: BLE001 — early bootstrap / malformed config
         pass
 
@@ -634,7 +644,7 @@ def _apply_external_secret_sources(home_path: Path) -> None:
     UI surfaces read, and the startup status lines.
 
     Idempotent within a process: subsequent calls for the same
-    ``home_path`` are no-ops.  ``load_hermes_dotenv()`` runs at import
+    ``home_path`` are no-ops.  ``load_pcbdraft_dotenv()`` runs at import
     time from several hot modules (cli.py, hermes_cli/main.py,
     run_agent.py, trajectory_compressor.py, ...), so without this guard
     the status lines would print 3-5x per CLI startup.  Use
@@ -656,7 +666,7 @@ def _apply_external_secret_sources(home_path: Path) -> None:
         # No secrets section (or everything disabled at parse level).  Not
         # marked applied either — the re-parse is a cheap fast_safe_load and
         # leaving the home unmarked lets a process pick up a config change
-        # on its next load_hermes_dotenv() call instead of never.
+        # on its next load_pcbdraft_dotenv() call instead of never.
         return
 
     # Defer the registry import until we know a secrets source is enabled —
@@ -692,7 +702,7 @@ def _apply_external_secret_sources(home_path: Path) -> None:
         return
 
     # A real fetch attempt happened (success OR error).  Mark the home now
-    # so the 3-5 import-time load_hermes_dotenv() calls per startup don't
+    # so the 3-5 import-time load_pcbdraft_dotenv() calls per startup don't
     # re-fetch / re-print — error retries within one process are opt-in via
     # reset_secret_source_cache().  Marking AFTER the attempt (not before,
     # see #40597) is what lets the earlier failure paths stay retryable.
@@ -776,7 +786,11 @@ def _load_secrets_config(home_path: Path) -> dict:
     # direct isolated parse if the shared reader is unavailable, preserving
     # the "malformed config can't take down dotenv loading" property (the
     # shared reader also swallows parse errors and returns {}).
-    if home_path == _process_runtime_home():
+    from pcbdraft.core.runtime_environment import get_runtime_home
+
+    # The shared reader follows the task context. Reuse it only when it reads
+    # the requested home; otherwise parse that home's file directly.
+    if home_path == get_runtime_home():
         try:
             from pcbdraft.model.configuration import read_raw_config
 
@@ -797,10 +811,7 @@ def _load_secrets_config(home_path: Path) -> dict:
 
 
 def _process_runtime_home() -> Path:
-    """The PCBDRAFT_RUNTIME_HOME the shared config cache is keyed to."""
-    try:
-        from pcbdraft.core.runtime_environment import get_runtime_home
+    """Resolve the process environment's home without following task overrides."""
+    from pcbdraft.core.runtime_environment import get_process_runtime_home
 
-        return get_runtime_home()
-    except Exception:
-        return Path.home() / ".hermes"
+    return get_process_runtime_home()

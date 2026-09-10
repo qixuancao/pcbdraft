@@ -5,7 +5,7 @@ Format: one JSON object per line. Token-like fields are stripped before
 serialisation to avoid leaking refresh tokens or JWTs to disk.
 
 This module deliberately keeps a minimal dependency surface — no imports
-from ``hermes_constants`` or other hermes_cli modules — so it can be
+from ``pcbdraft_constants`` or other pcbdraft.interfaces.tui modules — so it can be
 imported safely from middleware code that loads early in the startup
 sequence.
 """
@@ -69,7 +69,7 @@ class AuditEvent(enum.Enum):
 def _resolve_log_path() -> Path:
     """``$PCBDRAFT_RUNTIME_HOME/logs/dashboard-auth.log``.
 
-    Uses ``hermes_constants.get_runtime_home()`` (a leaf module — no import
+    Uses ``pcbdraft_constants.get_runtime_home()`` (a leaf module — no import
     cycle) so profile overrides and the native-Windows ``%LOCALAPPDATA%``
     fallback are honored.
     """

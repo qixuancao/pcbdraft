@@ -35,7 +35,9 @@ def _state_path() -> str:
 
         base = get_runtime_home()
     except ImportError:
-        base = os.path.join(os.path.expanduser("~"), ".hermes")
+        from pcbdraft.core.runtime_paths import runtime_home
+
+        base = runtime_home()
     return os.path.join(base, _STATE_SUBDIR, _STATE_FILENAME)
 
 

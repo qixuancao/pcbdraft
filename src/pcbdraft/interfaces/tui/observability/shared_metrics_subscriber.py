@@ -1,4 +1,4 @@
-"""Relay subscriber for the persisted Hermes shared-metrics slice."""
+"""Relay subscriber for the persisted PCBDraft shared-metrics slice."""
 
 from __future__ import annotations
 
@@ -27,18 +27,18 @@ logger = logging.getLogger(__name__)
 
 
 class SharedMetricsSubscriber:
-    """Persist validated Hermes counters from Relay lifecycle events."""
+    """Persist validated PCBDraft counters from Relay lifecycle events."""
 
     def __init__(
         self,
         store: SharedMetricsStore,
-        hermes_version: str,
+        pcbdraft_version: str,
         *,
         runtime_id: str | None = None,
     ) -> None:
         self.store = store
         self._client_resource = client_resource(
-            hermes_version,
+            pcbdraft_version,
             os_name=platform.system(),
             architecture=platform.machine(),
             install_method=detect_install_method(),
@@ -94,7 +94,7 @@ class SharedMetricsSubscriber:
                     )
             except Exception:
                 logger.warning(
-                    "Unable to persist the Hermes shared metric: %s",
+                    "Unable to persist the PCBDraft shared metric: %s",
                     metric_name,
                     exc_info=True,
                 )

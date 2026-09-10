@@ -1,10 +1,10 @@
-"""``hermes doctor --live`` — opt-in bounded real-call tool-backend probes.
+"""``pcbdraft doctor`` — opt-in bounded real-call tool-backend probes.
 
 Design invariants:
 
 - **Opt-in only.** These probes make real (cheap, metadata/read-only) network
   calls and may spend a trivial amount of quota. They run ONLY when the user
-  passes ``hermes doctor --live``.
+  passes ``pcbdraft doctor``.
 - **Bounded.** One probe per configured backend, sequential, each with a
   ~10s timeout (configurable via ``doctor.live_probe_timeout`` in
   config.yaml).
@@ -95,7 +95,7 @@ def _browser_available() -> bool:
         pass
     # agent-browser resolves lazily via npx on the default install (#43564),
     # invisible to the PATH/node_modules probes above. Mirror the rung
-    # hermes_cli.doctor uses so this probe can't diverge from it, including
+    # pcbdraft.interfaces.tui.doctor uses so this probe can't diverge from it, including
     # the Termux carve-out (bare npx is too fragile to advertise as ready
     # there — see check_browser_requirements).
     try:
@@ -137,7 +137,7 @@ def _launch_browser_probe(timeout: float) -> tuple:
 def _probe_mcp_server(name: str, config: dict, timeout: float):
     """initialize + tools/list against one configured MCP server.
 
-    Reuses the exact machinery behind ``hermes mcp test``.
+    Reuses the exact machinery behind ``internal mcp test``.
     """
     from pcbdraft.interfaces.tui.mcp_config import _probe_single_server
 

@@ -1,4 +1,4 @@
-"""Wake-word ("Hey Hermes") detection — hands-free session trigger.
+"""Explicitly configured wake-word detection — hands-free session trigger.
 
 A lightweight, always-on hotword listener that fires a callback when a wake
 phrase is spoken — the "Hey Siri" / "Alexa" pattern. Shared by the CLI, TUI, and
@@ -9,8 +9,7 @@ pipeline, then answers.
 Three engines, all fully on-device (no audio leaves the machine for detection):
 
 * **openwakeword** (default, free, no API key) — loads an ONNX model. Defaults
-  to the bundled "hey hermes" model (``tools/wakewords/``) so the wake word
-  works out of the box; or point ``wake_word.openwakeword.model`` at a built-in
+  to no model; point ``wake_word.openwakeword.model`` at a built-in
   name (``hey_jarvis``, ``alexa``, …) or a custom ``.onnx`` for another phrase.
 * **sherpa** (free, no API key, open vocabulary) — sherpa-onnx keyword
   spotting. Detects ANY typed phrase with no training: set
@@ -83,24 +82,21 @@ _DEFAULTS: dict[str, Any] = {
     #   "auto"   — local when a device exists, else client capture
     "capture": "auto",
     "provider": "openwakeword",
-    "phrase": "hey hermes",
+    "phrase": "",
     "sensitivity": 0.6,
     "confirmation_frames": _DEFAULT_CONFIRMATION_FRAMES,
     "start_new_session": True,
 }
 
-# Bundled "hey hermes" model (tools/wakewords/) — the default, so the wake word
-# works out of the box. Config names in _ALIASES resolve to it, not a built-in.
-_BUNDLED_MODEL_NAME = "hey_hermes"
-_BUNDLED_MODEL_ALIASES = frozenset({"", "hey_hermes", "hey hermes", "hermes"})
 
-
-def _bundled_wakeword_path(framework: str = "onnx") -> str:
-    """Path to the shipped hey_hermes model (.onnx/.tflite) for ``framework``."""
-    ext = "tflite" if str(framework).strip().lower() == "tflite" else "onnx"
-    return os.path.join(
-        os.path.dirname(__file__), "wakewords", f"{_BUNDLED_MODEL_NAME}.{ext}"
-    )
+def _configured_openwakeword_model(cfg: dict[str, Any]) -> str:
+    sub = cfg.get("openwakeword")
+    model = str(sub.get("model") or "").strip() if isinstance(sub, dict) else ""
+    if not model:
+        raise ValueError(
+            "Configure wake_word.openwakeword.model explicitly before enabling wake detection"
+        )
+    return model
 
 
 def _is_macos_arm64() -> bool:
@@ -250,7 +246,7 @@ def _confirmation_frames(cfg: dict[str, Any]) -> int:
 def wake_phrase(cfg: dict[str, Any] | None = None) -> str:
     """Human-facing wake phrase label (purely cosmetic; engine keys detection)."""
     cfg = cfg if cfg is not None else load_wake_word_config()
-    return str(_get(cfg, "phrase")) or "hey hermes"
+    return str(_get(cfg, "phrase") or "").strip()
 
 
 def resolve_capture_mode(
@@ -484,7 +480,7 @@ def silent_audio_hint(details: dict[str, Any]) -> str:
     """Platform-specific remediation for an armed stream delivering silence."""
     if sys.platform == "darwin":
         return (
-            "Microphone delivers only silence. Grant the Hermes backend "
+            "Microphone delivers only silence. Grant the PCBDraft backend "
             "microphone access in System Settings > Privacy & Security > "
             "Microphone, then toggle the wake word."
         )
@@ -542,6 +538,7 @@ class _OpenWakeWordEngine(_Engine):
     frame_length = 1280
 
     def __init__(self, cfg: dict[str, Any]):
+        model_ref = _configured_openwakeword_model(cfg)
         from pcbdraft.tools import lazy_deps
 
         lazy_deps.ensure("wake.openwakeword", prompt=False)
@@ -549,10 +546,6 @@ class _OpenWakeWordEngine(_Engine):
         import openwakeword
         from openwakeword.model import Model
 
-        sub = (
-            cfg.get("openwakeword") if isinstance(cfg.get("openwakeword"), dict) else {}
-        )
-        model_ref = str(sub.get("model") or _BUNDLED_MODEL_NAME).strip()
         framework = resolve_inference_framework(cfg)
         # openWakeWord returns a 0..1 score per frame; sensitivity IS the raw
         # threshold a score must clear. Higher = stricter (fewer false fires).
@@ -585,10 +578,7 @@ class _OpenWakeWordEngine(_Engine):
                 )
                 framework = "onnx"
 
-        # Default (or explicit "hey_hermes") → the bundled model; a built-in name
-        # or custom path is used as-is.
-        if model_ref.lower() in _BUNDLED_MODEL_ALIASES:
-            model_ref = _bundled_wakeword_path(framework)
+        # The explicitly selected model keeps its true trained labels.
 
         # openWakeWord needs its shared feature models (melspectrogram + embedding)
         # for ANY model — download_models() fetches those first on every call, so a
@@ -699,7 +689,9 @@ class _SherpaKwsEngine(_Engine):
         # on — every other wake-enabled profile's phrase, so ONE listener can
         # wake any profile ("hey hermes" / "hey coder" / ...). display-name →
         # profile is kept for routing the match back.
-        phrase = str(_get(cfg, "phrase") or "hey hermes").strip()
+        phrase = wake_phrase(cfg)
+        if not phrase:
+            raise ValueError("Configure wake_word.phrase explicitly for sherpa")
         own_profile = _active_profile_name()
         phrase_map: dict[str, str] = {phrase: own_profile}
         if bool(cfg.get("profile_routing", True)):
@@ -722,7 +714,7 @@ class _SherpaKwsEngine(_Engine):
         kw = tempfile.NamedTemporaryFile(
             mode="w",
             suffix=".txt",
-            prefix="hermes-kws-",
+            prefix="pcbdraft-kws-",
             delete=False,
             encoding="utf-8",
         )
@@ -984,7 +976,7 @@ def check_wake_word_requirements(cfg: dict[str, Any] | None = None) -> dict[str,
             if not ok
         )
         hint = (
-            f"Wake word needs {missing} configured — run `hermes tools` "
+            f"Wake word needs {missing} configured — run `pcbdraft doctor` "
             f"(Voice section) or see the voice-mode docs."
         )
 

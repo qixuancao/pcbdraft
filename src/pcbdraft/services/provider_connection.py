@@ -10,12 +10,13 @@ import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.io import atomic_write_bytes, make_directory, read_bytes_limited
+from pcbdraft.core.legacy_migration import migrate_legacy_runtime_home
 from pcbdraft.core.runtime_paths import runtime_home
 
 ConnectionOutcome = Literal["configured", "changed", "cancelled", "unavailable"]
@@ -42,6 +43,199 @@ _CONNECTION_STATE_PATHS = (
     "google_token.json",
     "shared/nous_auth.json",
 )
+_PROVIDER_ENV_FILES = (".env", ".op.env", "config.yaml")
+_RUNTIME_BINDING_KEYS = (
+    "PCBDRAFT_RUNTIME_HOME",
+    "PCBDRAFT_RUNTIME_SHARED_AUTH_DIR",
+    "PCBDRAFT_RUNTIME_HOME_MODE",
+)
+_PROVIDER_ENV_LOCK = threading.RLock()
+_FileFingerprint = tuple[int, int, int, int, int]
+
+
+@dataclass(frozen=True)
+class _EnvironmentFingerprint:
+    home_files: tuple[_FileFingerprint | None, ...]
+    managed_directory: str | None
+    managed_files: tuple[_FileFingerprint | None, ...]
+
+
+@dataclass(frozen=True)
+class _ProviderEnvironmentState:
+    home: str
+    fingerprint: _EnvironmentFingerprint
+    # Loader inputs are independent of its write delta. In particular, managed
+    # directory selection, the dotenv-disable flag, .op.env bootstrap gating,
+    # and arbitrary ${VAR} interpolation can depend on keys it never changes.
+    # Snapshot after loading so the loader's own writes do not invalidate every
+    # subsequent poll. No environment values are exposed in repr/logging.
+    inputs: dict[str, str] = field(repr=False)
+    # Never include credentials in repr/logging. Keep only the current home's
+    # delta so a later home cannot inherit values this initializer injected.
+    changes: dict[str, tuple[str | None, str | None]] = field(repr=False)
+
+
+_provider_environment_state: _ProviderEnvironmentState | None = None
+
+
+def _file_fingerprint(details: os.stat_result) -> _FileFingerprint:
+    return (
+        details.st_dev,
+        details.st_ino,
+        details.st_size,
+        details.st_mtime_ns,
+        details.st_ctime_ns,
+    )
+
+
+def _provider_env_fingerprint(home: Path) -> _EnvironmentFingerprint:
+    from pcbdraft.interfaces.tui import managed_scope
+
+    fingerprint: list[_FileFingerprint | None] = []
+    for name in _PROVIDER_ENV_FILES:
+        try:
+            details = (home / name).lstat()
+        except FileNotFoundError:
+            fingerprint.append(None)
+            continue
+        except OSError:
+            raise PCBDraftError(
+                "cannot inspect provider environment configuration"
+            ) from None
+        if not stat.S_ISREG(details.st_mode):
+            raise PCBDraftError(
+                "provider environment configuration must be a regular file"
+            )
+        fingerprint.append(_file_fingerprint(details))
+    # Use exactly the loader's path-selection seam on every poll: this also
+    # detects a previously missing/default directory appearing or disappearing.
+    # Metadata inspection never creates, sanitizes or writes managed files.
+    try:
+        managed_dir = managed_scope.get_managed_dir()
+    except (OSError, ValueError):
+        managed_dir = None
+    managed_files: list[_FileFingerprint | None] = []
+    if managed_dir is not None:
+        for name in (".env", "config.yaml"):
+            try:
+                # Managed scope follows IT-managed links and fails open on
+                # unreadable files; mirror that contract rather than applying
+                # the private-home file restrictions to this separate layer.
+                details = (managed_dir / name).stat()
+            except OSError:
+                managed_files.append(None)
+            else:
+                managed_files.append(_file_fingerprint(details))
+    return _EnvironmentFingerprint(
+        tuple(fingerprint),
+        str(managed_dir.absolute()) if managed_dir is not None else None,
+        tuple(managed_files),
+    )
+
+
+def _environment_changes(
+    before: dict[str, str],
+) -> dict[str, tuple[str | None, str | None]]:
+    return {
+        key: (before.get(key), os.environ.get(key))
+        for key in before.keys() | os.environ.keys()
+        if key not in _RUNTIME_BINDING_KEYS and before.get(key) != os.environ.get(key)
+    }
+
+
+def _undo_environment_changes(
+    changes: dict[str, tuple[str | None, str | None]],
+) -> None:
+    for key, (before, loaded) in changes.items():
+        # Preserve deliberate environment edits made by the caller since load.
+        if os.environ.get(key) != loaded:
+            continue
+        if before is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = before
+
+
+def _initialize_provider_environment(home: Path) -> None:
+    """Load once per active process home/configuration, under _PROVIDER_ENV_LOCK.
+
+    File metadata detects writes, replacements, deletions and dotenv bootstrap
+    changes without reading credential contents on each status poll, including
+    the managed dotenv and configuration overlay. Environment inputs are
+    checked separately from the undo delta: dotenv interpolation and secret
+    sources can consume arbitrary names, so any process environment change
+    conservatively invalidates the cache. A home switch never reuses the old
+    home's loaded values, even when switching back to an earlier home.
+    """
+    global _provider_environment_state
+    home_key = os.path.normcase(str(home.resolve()))
+    fingerprint = _provider_env_fingerprint(home)
+    previous = _provider_environment_state
+    if (
+        previous is not None
+        and previous.home == home_key
+        and previous.fingerprint == fingerprint
+        and previous.inputs == dict(os.environ)
+    ):
+        return
+    if previous is not None:
+        _undo_environment_changes(previous.changes)
+    _provider_environment_state = None
+    before = dict(os.environ)
+    from pcbdraft.model.env_loader import (
+        load_pcbdraft_dotenv,
+        reset_secret_source_cache,
+    )
+
+    try:
+        # The loader has its own once-per-home external-secret memo. Invalidate
+        # it only on this cache miss so edited secrets configuration refreshes,
+        # while repeated status polls never contact the secret service again.
+        reset_secret_source_cache()
+        load_pcbdraft_dotenv(runtime_home=home)
+        from pcbdraft.model.configuration import invalidate_env_cache
+
+        invalidate_env_cache()
+        # A dotenv must not redirect the runtime we just explicitly bound.
+        for key in _RUNTIME_BINDING_KEYS:
+            os.environ[key] = before[key]
+        _provider_environment_state = _ProviderEnvironmentState(
+            # Retain the pre-load fingerprint: a concurrent edit (or loader
+            # normalization) must cause the next query to refresh, rather than
+            # stamping old environment values with the new file's identity.
+            home_key,
+            fingerprint,
+            dict(os.environ),
+            _environment_changes(before),
+        )
+    except BaseException:
+        _undo_environment_changes(_environment_changes(before))
+        for key in _RUNTIME_BINDING_KEYS:
+            os.environ[key] = before[key]
+        raise
+
+
+@contextmanager
+def _provider_environment() -> Iterator[None]:
+    """Bind, initialize and read one process home's provider state consistently."""
+    from pcbdraft.core.runtime_environment import (
+        get_process_runtime_home,
+        reset_runtime_home_override,
+        set_runtime_home_override,
+    )
+
+    # dotenv writes process-global os.environ. Keep provider reads and setup in
+    # the same critical section so another provider call cannot switch profiles
+    # between environment initialization and config/provider expansion.
+    with _PROVIDER_ENV_LOCK:
+        activate_provider_runtime()
+        home = get_process_runtime_home()
+        token = set_runtime_home_override(home)
+        try:
+            _initialize_provider_environment(home)
+            yield
+        finally:
+            reset_runtime_home_override(token)
 
 
 @dataclass(frozen=True)
@@ -93,7 +287,14 @@ class ConnectionStatus:
 def activate_provider_runtime() -> None:
     """Bind imports and state to the packaged runtime and PCBDraft-owned home."""
 
-    home = runtime_home()
+    resolution = migrate_legacy_runtime_home()
+    if resolution.migration == "conflict":
+        raise PCBDraftError(
+            "PCBDraft runtime migration conflict: both legacy and native runtime "
+            "directories exist; both were retained. Set PCBDRAFT_RUNTIME_HOME "
+            "explicitly to the directory containing your account before restarting."
+        )
+    home = resolution.path
     if home.is_symlink():
         raise PCBDraftError("model connection home must not be a symbolic link")
     home = make_directory(home)
@@ -103,7 +304,7 @@ def activate_provider_runtime() -> None:
             "model connection state must not use a symbolic-link directory: shared"
         )
     shared_auth = make_directory(shared_auth)
-    # Always replace generic PCBDraft paths inherited from a standalone install.
+    # Bind shared authentication to this product's selected runtime home.
     os.environ["PCBDRAFT_RUNTIME_HOME"] = str(home)
     os.environ["PCBDRAFT_RUNTIME_SHARED_AUTH_DIR"] = str(shared_auth)
     os.environ["PCBDRAFT_RUNTIME_HOME_MODE"] = "0700"
@@ -187,7 +388,11 @@ def _config_signature() -> tuple[int, int, int] | None:
 def provider_identities() -> tuple[str, ...]:
     """Return the concrete identities used by the PCBDraft provider picker."""
 
-    activate_provider_runtime()
+    with _provider_environment():
+        return _provider_identities()
+
+
+def _provider_identities() -> tuple[str, ...]:
     from pcbdraft.model.catalog import CANONICAL_PROVIDERS
     from pcbdraft.model.configuration import (
         get_compatible_custom_providers,
@@ -357,7 +562,11 @@ def _reauthentication_override(enabled: bool) -> Iterator[None]:
 def connection_status(*, verify: bool = True) -> ConnectionStatus:
     """Read the active PCBDraft model and optionally verify runtime resolution."""
 
-    activate_provider_runtime()
+    with _provider_environment():
+        return _connection_status(verify=verify)
+
+
+def _connection_status(*, verify: bool) -> ConnectionStatus:
     from pcbdraft.model.configuration import load_config_readonly
 
     config = load_config_readonly()
@@ -424,8 +633,12 @@ def connection_status(*, verify: bool = True) -> ConnectionStatus:
 def connect(options: ConnectionOptions | None = None) -> ConnectionStatus:
     """Run PCBDraft' canonical provider/auth/model wizard and report safe state."""
 
+    with _provider_environment():
+        return _connect(options)
+
+
+def _connect(options: ConnectionOptions | None) -> ConnectionStatus:
     selected = options or ConnectionOptions()
-    activate_provider_runtime()
     from pcbdraft.model.settings import write_runtime_config
 
     write_runtime_config()

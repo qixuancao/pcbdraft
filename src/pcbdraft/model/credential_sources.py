@@ -1,10 +1,10 @@
-"""Unified removal contract for every credential source Hermes reads from.
+"""Unified removal contract for every credential source PCBDraft reads from.
 
-Hermes seeds its credential pool from many places:
+PCBDraft seeds its credential pool from these explicitly configured sources:
 
-    env:<VAR>     — os.environ / ~/.hermes/.env
+    env:<VAR>     — os.environ / $PCBDRAFT_RUNTIME_HOME/.env
     claude_code   — ~/.claude/.credentials.json
-    hermes_pkce   — ~/.hermes/.anthropic_oauth.json
+    pcbdraft_pkce — $PCBDRAFT_RUNTIME_HOME/.anthropic_oauth.json
     device_code   — auth.json providers.<provider> (nous, openai-codex, ...)
     qwen-cli      — ~/.qwen/oauth_creds.json
     gh_cli        — gh auth token
@@ -21,7 +21,7 @@ unify here is **removal**:
 Before this module, every source had an ad-hoc removal branch in
 ``auth_remove_command``, and several sources had no branch at all — so
 ``auth remove`` silently reverted on the next ``load_pool()`` call for
-qwen-cli, nous device_code (partial), hermes_pkce, copilot gh_cli, and
+qwen-cli, nous device_code (partial), pcbdraft_pkce, copilot gh_cli, and
 custom-config sources.
 
 Now every source registers a ``RemovalStep`` that does exactly three things
@@ -102,6 +102,9 @@ class RemovalStep:
     description: str = ""
 
     def matches(self, provider: str, source: str) -> bool:
+        from pcbdraft.model.credential_persistence import normalize_credential_source
+
+        source = normalize_credential_source(source)
         if self.provider != "*" and self.provider != provider:
             return False
         if self.match_fn is not None:
@@ -186,11 +189,11 @@ def _remove_env_source(provider: str, removed) -> RemovalResult:
         result.hints.extend(
             [
                 f"Note: {env_var} is still set in your shell environment "
-                f"(not in ~/.hermes/.env).",
+                f"(not in $PCBDRAFT_RUNTIME_HOME/.env).",
                 "  Unset it there (shell profile, systemd EnvironmentFile, "
-                "launchd plist, etc.) or it will keep being visible to Hermes.",
-                f"  The pool entry is now suppressed — Hermes will ignore "
-                f"{env_var} until you run `hermes auth add {provider}`.",
+                "launchd plist, etc.) or it will keep being visible to PCBDraft.",
+                f"  The pool entry is now suppressed — PCBDraft will ignore "
+                f"{env_var} until you reconnect {provider} with `pcbdraft connect`.",
             ]
         )
     else:
@@ -211,13 +214,13 @@ def _remove_claude_code(provider: str, removed) -> RemovalResult:
         hints=[
             "Suppressed claude_code credential — it will not be re-seeded.",
             "Note: Claude Code credentials still live in ~/.claude/.credentials.json",
-            "Run `hermes auth add anthropic` to re-enable if needed.",
+            "Run `pcbdraft connect` to re-enable Anthropic if needed.",
         ]
     )
 
 
-def _remove_hermes_pkce(provider: str, removed) -> RemovalResult:
-    """~/.hermes/.anthropic_oauth.json is ours — delete it outright."""
+def _remove_pcbdraft_pkce(provider: str, removed) -> RemovalResult:
+    """Delete the owned singleton in the core runtime home, including migrated grants."""
     from pcbdraft.core.runtime_environment import get_runtime_home
 
     result = RemovalResult()
@@ -225,7 +228,7 @@ def _remove_hermes_pkce(provider: str, removed) -> RemovalResult:
     if oauth_file.exists():
         try:
             oauth_file.unlink()
-            result.cleaned.append("Cleared Hermes Anthropic OAuth credentials")
+            result.cleaned.append("Cleared PCBDraft Anthropic OAuth credentials")
         except OSError as exc:
             result.hints.append(f"Could not delete {oauth_file}: {exc}")
     return result
@@ -288,7 +291,7 @@ def _remove_xai_oauth_device_code(provider: str, removed) -> RemovalResult:
     if _clear_auth_store_provider(provider):
         result.cleaned.append(f"Cleared {provider} OAuth tokens from auth store")
     result.hints.append(
-        "Run `hermes model` → xAI Grok OAuth (SuperGrok / Premium+) to re-authenticate if needed."
+        "Run `pcbdraft connect` → xAI Grok OAuth (SuperGrok / Premium+) to re-authenticate if needed."
     )
     return result
 
@@ -323,7 +326,7 @@ def _remove_codex_device_code(provider: str, removed) -> RemovalResult:
         [
             "Suppressed openai-codex device_code source — it will not be re-seeded.",
             "Note: Codex CLI credentials still live in ~/.codex/auth.json",
-            "Run `hermes auth add openai-codex` to re-enable if needed.",
+            "Run `pcbdraft connect` to re-enable Codex if needed.",
         ]
     )
     return result
@@ -339,7 +342,7 @@ def _remove_qwen_cli(provider: str, removed) -> RemovalResult:
         hints=[
             "Suppressed qwen-cli credential — it will not be re-seeded.",
             "Note: Qwen CLI credentials still live in ~/.qwen/oauth_creds.json",
-            "Run `hermes auth add qwen-oauth` to re-enable if needed.",
+            "Run `pcbdraft connect` to re-enable Qwen OAuth if needed.",
         ]
     )
 
@@ -371,7 +374,7 @@ def _remove_copilot_gh(provider: str, removed) -> RemovalResult:
         hints=[
             "Suppressed all copilot token sources (gh_cli + env vars) — they will not be re-seeded.",
             "Note: Your gh CLI / shell environment is unchanged.",
-            "Run `hermes auth add copilot` to re-enable if needed.",
+            "Run `pcbdraft connect` to re-enable Copilot if needed.",
         ]
     )
 
@@ -430,9 +433,9 @@ def _register_all_sources() -> None:
     register(
         RemovalStep(
             provider="anthropic",
-            source_id="hermes_pkce",
-            remove_fn=_remove_hermes_pkce,
-            description="~/.hermes/.anthropic_oauth.json",
+            source_id="pcbdraft_pkce",
+            remove_fn=_remove_pcbdraft_pkce,
+            description="$PCBDRAFT_RUNTIME_HOME/.anthropic_oauth.json",
         )
     )
     register(

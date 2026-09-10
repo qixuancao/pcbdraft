@@ -81,7 +81,7 @@ def _warn_memory_provider_unavailable(name: str, reason: str = "") -> None:
     log for itself. Without this warning a provider whose credentials/config are
     missing is silently dropped — the user has ``memory.provider`` set but gets
     no memory and no diagnostic. A common trigger is systemd/gateway services
-    not inheriting ``~/.hermes/.env``. See NousResearch/hermes-agent#2765.
+    not inheriting the runtime ``.env``. See NousResearch/hermes-agent#2765.
 
     ``reason`` is the provider's ``unavailable_reason()`` — a provider-specific,
     actionable hint (e.g. which package to install). Because an unavailable
@@ -94,8 +94,8 @@ def _warn_memory_provider_unavailable(name: str, reason: str = "") -> None:
     logger.warning(
         "Memory provider %r is selected but reports unavailable — external memory "
         "is disabled for this session (built-in memory still works). Check the "
-        "provider's credentials/config with 'hermes memory status'. Note: "
-        "systemd/gateway services do not inherit ~/.hermes/.env automatically; set "
+        "provider's credentials/config with 'pcbdraft doctor'. Note: "
+        "systemd/gateway services do not inherit the runtime .env automatically; set "
         "any required variables in the service environment.%s",
         name,
         f" {reason}" if reason else "",
@@ -317,7 +317,7 @@ def _build_codex_gpt5_autoraise_notice(
         f"ℹ Codex {model} caps context at {cap}, so auto-compaction was raised "
         f"to {to_pct}% (from {from_pct}%) to use more of the window before "
         f"summarizing.\n"
-        f"  Opt back out: hermes config set compression.codex_gpt55_autoraise false"
+        "  Opt back out: set compression.codex_gpt55_autoraise: false in runtime config.yaml"
     )
 
 
@@ -627,10 +627,10 @@ def init_agent(
         platform (str): The interface platform the user is on (e.g. "cli", "telegram", "discord", "whatsapp").
             Used to inject platform-specific formatting hints into the system prompt.
         skip_context_files (bool): If True, skip auto-injection of project context files
-            (SOUL.md, .hermes.md, AGENTS.md, CLAUDE.md, .cursorrules) from the cwd / PCBDRAFT_RUNTIME_HOME
+            (SOUL.md, .pcbdraft.md, AGENTS.md, CLAUDE.md, .cursorrules) from the cwd / PCBDRAFT_RUNTIME_HOME
             into the system prompt. Use this for batch processing and data generation to avoid
             polluting trajectories with user-specific persona or project instructions.
-        load_soul_identity (bool): If True, still use ~/.hermes/SOUL.md as the primary
+        load_soul_identity (bool): If True, use the runtime SOUL.md as the primary
             identity even when skip_context_files=True. Project context files from the cwd
             remain skipped.
     """
@@ -1045,7 +1045,7 @@ def init_agent(
     agent._or_cache_hits: int = 0
 
     # Centralized logging — agent.log (INFO+) and errors.log (WARNING+)
-    # both live under ~/.hermes/logs/.  Idempotent, so gateway mode
+    # both live under <PCBDRAFT_RUNTIME_HOME>/logs/. Idempotent, so gateway mode
     # (which creates a new AIAgent per message) won't duplicate handlers.
     from pcbdraft.core.runtime_logging import setup_logging, setup_verbose_logging
 
@@ -1351,9 +1351,9 @@ def init_agent(
 
                 client_kwargs["default_headers"] = _codex_cloudflare_headers(api_key)
             elif base_url_host_matches(effective_base, "x.ai"):
-                from pcbdraft.tools.xai_http import hermes_xai_default_headers
+                from pcbdraft.tools.xai_http import pcbdraft_xai_default_headers
 
-                client_kwargs["default_headers"] = hermes_xai_default_headers()
+                client_kwargs["default_headers"] = pcbdraft_xai_default_headers()
             elif "default_headers" not in client_kwargs:
                 # Fall back to profile.default_headers for providers that
                 # declare custom headers (e.g. Vercel AI Gateway attribution,
@@ -1476,13 +1476,13 @@ def init_agent(
                         raise RuntimeError(
                             f"Provider '{_explicit}' is set in config.yaml but no API key "
                             f"was found. Set the {_env_hint} environment "
-                            f"variable, or switch to a different provider with `hermes model`."
+                            f"variable, or switch to a different provider with `pcbdraft connect`."
                         )
                 if not getattr(agent, "_fallback_activated", False):
                     # No provider configured — reject with a clear message.
                     raise RuntimeError(
-                        "No LLM provider configured. Run `hermes model` to "
-                        "select a provider, or run `hermes setup` for first-time "
+                        "No LLM provider configured. Run `pcbdraft connect` to "
+                        "select a provider, or run `pcbdraft --help` for first-time "
                         "configuration."
                     )
 
@@ -1741,11 +1741,11 @@ def init_agent(
         if not delegated_child:
             os.environ["PCBDRAFT_RUNTIME_SESSION_ID"] = agent.session_id
 
-    # Session logs go into ~/.hermes/sessions/ alongside gateway sessions
+    # Session logs go into <PCBDRAFT_RUNTIME_HOME>/sessions/ alongside gateway sessions
     runtime_home = get_runtime_home()
     agent.logs_dir = runtime_home / "sessions"
     agent.logs_dir.mkdir(parents=True, exist_ok=True)
-    # Per-session JSON snapshot writer (~/.hermes/sessions/session_{sid}.json)
+    # Per-session JSON snapshot writer (<PCBDRAFT_RUNTIME_HOME>/sessions/session_{sid}.json)
     # is opt-in via sessions.write_json_snapshots (default False).  state.db
     # is canonical — the snapshot is only useful for external tooling that
     # reads the JSON files directly.  See run_agent._save_session_log.
@@ -2013,7 +2013,7 @@ def init_agent(
 
                         _profile = get_active_profile_name()
                         _init_kwargs["agent_identity"] = _profile
-                        _init_kwargs["agent_workspace"] = "hermes"
+                        _init_kwargs["agent_workspace"] = "pcbdraft"
                     except Exception:
                         pass
                     # NOTE: status_callback (for the deterministic retain
@@ -2372,10 +2372,15 @@ def init_agent(
     codex_app_server_auto_compaction = str(
         _compression_cfg.get("codex_app_server_auto", "native") or "native"
     ).lower()
-    if codex_app_server_auto_compaction not in {"native", "hermes", "off"}:
+    from pcbdraft.agent.legacy_compat import normalize_compaction_mode
+
+    codex_app_server_auto_compaction = normalize_compaction_mode(
+        codex_app_server_auto_compaction
+    )
+    if codex_app_server_auto_compaction not in {"native", "pcbdraft", "off"}:
         _ra().logger.warning(
             "Invalid compression.codex_app_server_auto=%r; using 'native'. "
-            "Valid values are: native, hermes, off.",
+            "Valid values are: native, pcbdraft, off.",
             codex_app_server_auto_compaction,
         )
         codex_app_server_auto_compaction = "native"
@@ -2912,10 +2917,10 @@ def init_agent(
     # non-CLI surface to still surface the warning.)
     if not agent.quiet_mode and (agent.platform or "cli") != "cli":
         try:
-            from pcbdraft.model.model_switch import _check_hermes_model_warning
+            from pcbdraft.model.model_switch import _check_pcbdraft_model_warning
 
-            _hermes_warn = _check_hermes_model_warning(agent.model or "")
-            if _hermes_warn:
+            _pcbdraft_warn = _check_pcbdraft_model_warning(agent.model or "")
+            if _pcbdraft_warn:
                 _user_msg = (
                     "⚠ Nous Research Hermes 3 & 4 models are NOT agentic — they "
                     "lack reliable tool-calling for agent workflows (delegation, "
@@ -2926,7 +2931,7 @@ def init_agent(
                     agent._emit_warning(_user_msg)
                 else:
                     print(f"\n{_user_msg}\n", file=sys.stderr)
-                _ra().logger.warning(_hermes_warn)
+                _ra().logger.warning(_pcbdraft_warn)
         except Exception:
             pass
 

@@ -124,7 +124,7 @@ CODE_EXEMPT_PATTERN_IDS = {
 # at warn tier (caution) rather than an unoverridable block.
 SEVERITY_REMAP = {
     "binary_file": "high",
-    "hermes_env_access": "medium",
+    "pcbdraft_env_access": "medium",
     "curl_pipe_shell": "high",
 }
 

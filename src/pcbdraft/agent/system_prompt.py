@@ -58,7 +58,7 @@ from pcbdraft.core.runtime_utils import is_truthy_value
 logger = logging.getLogger(__name__)
 _PLUGIN_SECTION_FRAME_RE = re.compile(
     r"^## Plugin Context: (?P<id>[a-z0-9][a-z0-9._-]{0,127})\n"
-    r"<!-- hermes-plugin-section-chars:(?P<chars>[0-9]{1,4}) -->\n\n",
+    r"<!-- pcbdraft-plugin-section-chars:(?P<chars>[0-9]{1,4}) -->\n\n",
     re.MULTILINE,
 )
 
@@ -684,8 +684,8 @@ def build_system_prompt_parts(
             pass
 
     # Active-profile hint — names the Hermes profile the agent is running
-    # under so it doesn't conflate ~/.hermes/skills/ (default profile) with
-    # ~/.hermes/profiles/<active>/skills/ (this profile's). Deterministic
+    # under so it doesn't conflate <runtime-root>/skills/ (default profile) with
+    # <runtime-root>/profiles/<active>/skills/ (this profile's). Deterministic
     # for the lifetime of the agent — profile name doesn't change
     # mid-session, so this doesn't break the prompt cache.
     # See file_safety._resolve_active_profile_name + classify_cross_profile_target
@@ -720,7 +720,7 @@ def build_system_prompt_parts(
         _home_str = _root_str = str(get_runtime_home())
     if active_profile == "default":
         post_workspace_parts.append(
-            "Active Hermes profile: default. Other profiles (if any) live "
+            "Active PCBDraft profile: default. Other profiles (if any) live "
             "under " + _root_str + "/profiles/<name>/. Each profile has its own "
             "skills/, plugins/, cron/, and memories/ that affect a different "
             "session than this one. Do not modify another profile's "
@@ -738,7 +738,7 @@ def build_system_prompt_parts(
         profile_home = _home_str
         default_root = get_default_runtime_root()
         post_workspace_parts.append(
-            f"Active Hermes profile: {active_profile}. This session reads "
+            f"Active PCBDraft profile: {active_profile}. This session reads "
             f"and writes {profile_home}/. The default "
             f"profile's data lives at {default_root}/skills/, {default_root}/plugins/, "
             f"{default_root}/cron/, {default_root}/memories/ — those belong to a "
@@ -880,10 +880,10 @@ def build_system_prompt_parts(
         _plugin_section_blocks(_frozen_plugin_prompt_sections(agent), "after_memory")
     )
 
-    from pcbdraft.core.clock import get_timezone as _hermes_tz
-    from pcbdraft.core.clock import now as _hermes_now
+    from pcbdraft.core.clock import get_timezone as _pcbdraft_tz
+    from pcbdraft.core.clock import now as _pcbdraft_now
 
-    now = _hermes_now()
+    now = _pcbdraft_now()
     # Date-only (not minute-precision) so the system prompt is byte-stable
     # for the full day.  Minute-precision changes invalidate prefix-cache KV
     # on every rebuild path (compression boundary, fresh-agent gateway turns,
@@ -900,7 +900,7 @@ def build_system_prompt_parts(
     # ``get_timezone()`` returns None when no timezone is configured, in which
     # case we fall back to the abbreviation of the server-local (still tz-aware)
     # time.
-    _tz = _hermes_tz()
+    _tz = _pcbdraft_tz()
     _zone_bits = []
     _iana = getattr(_tz, "key", None)
     if _iana:

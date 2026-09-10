@@ -193,33 +193,35 @@ def _check_metadata_block(frontmatter: dict[str, Any]) -> list[LintFinding]:
                 )
             )
     meta = frontmatter.get("metadata")
-    hermes_meta = meta.get("hermes") if isinstance(meta, dict) else None
-    if not isinstance(hermes_meta, dict):
+    from pcbdraft.tools.legacy_metadata import read_pcbdraft_metadata
+
+    pcbdraft_meta = read_pcbdraft_metadata(meta)
+    if not pcbdraft_meta:
         findings.append(
             LintFinding(
                 WARNING,
                 "missing-metadata",
-                "frontmatter is missing metadata.hermes.{tags, related_skills}.",
+                "frontmatter is missing metadata.pcbdraft.{tags, related_skills}.",
             )
         )
     else:
-        if "tags" not in hermes_meta:
+        if "tags" not in pcbdraft_meta:
             findings.append(
                 LintFinding(
-                    WARNING, "missing-metadata", "metadata.hermes.tags is missing."
+                    WARNING, "missing-metadata", "metadata.pcbdraft.tags is missing."
                 )
             )
     author = str(frontmatter.get("author", ""))
     if (
         author
-        and author.strip().lower() in ("hermes", "agent", "hermes agent")
-        and (author != "Hermes Agent")
+        and author.strip().lower() in ("pcbdraft", "pcbdraft agent")
+        and (author != "PCBDraft")
     ):
         findings.append(
             LintFinding(
                 WARNING,
                 "author-caps",
-                f"author '{author}' should be 'Hermes Agent' (proper caps) "
+                f"author '{author}' should be 'PCBDraft' (proper caps) "
                 f"or a real contributor name.",
             )
         )

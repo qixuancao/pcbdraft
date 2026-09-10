@@ -66,7 +66,7 @@ def _relay_metadata(
     relay_metadata = _jsonable(metadata or {})
     if not isinstance(relay_metadata, dict):
         relay_metadata = {}
-    relay_metadata.setdefault("hermes.provider", provider_name)
+    relay_metadata.setdefault("pcbdraft.provider", provider_name)
     return relay_metadata
 
 
@@ -924,7 +924,7 @@ def _logical_parent(
                     metadata={
                         relay_runtime.RUNTIME_SCHEMA_KEY: relay_runtime.RUNTIME_SCHEMA_VERSION,
                         relay_runtime.RUNTIME_INSTANCE_KEY: runtime.runtime_id,
-                        "hermes.call_role": str(
+                        "pcbdraft.call_role": str(
                             (metadata or {}).get("call_role") or "primary"
                         ),
                     },
@@ -974,7 +974,7 @@ def _complete_logical(
             # The provider result is authoritative. Retain the handle so turn
             # finalization can retry cleanup without changing that result.
             logger.warning(
-                "Hermes Relay logical LLM finalization failed",
+                "PCBDraft Relay logical LLM finalization failed",
                 exc_info=True,
             )
             return

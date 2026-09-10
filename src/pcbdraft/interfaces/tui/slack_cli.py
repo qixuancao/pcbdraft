@@ -1,15 +1,15 @@
-"""``hermes slack ...`` CLI subcommands.
+"""``internal slack ...`` CLI subcommands.
 
-Today only ``hermes slack manifest`` is implemented — it generates the
+Today only ``internal slack manifest`` is implemented — it generates the
 Slack app manifest JSON for registering every gateway command as a native
 Slack slash (``/btw``, ``/stop``, ``/model``, …) so users get the same
 first-class slash UX Discord and Telegram already have.
 
 Typical workflow::
 
-    $ hermes slack manifest > slack-manifest.json
+    $ internal slack manifest > slack-manifest.json
     # or:
-    $ hermes slack manifest --write
+    $ internal slack manifest --write
 
 Then paste the printed JSON into the Slack app config (Features → App
 Manifest → Edit) and click Save. Slack diffs the manifest and prompts
@@ -37,12 +37,12 @@ def _build_full_manifest(
     """Build a full Slack manifest merging display info + our slash list.
 
     The slash-command list is always generated from ``COMMAND_REGISTRY`` so
-    it stays in sync with the rest of Hermes. Other manifest sections
+    it stays in sync with the rest of PCBDraft. Other manifest sections
     (display info, OAuth scopes, socket mode) are set to sensible defaults
-    for a Hermes deployment — users can tweak them in the Slack UI after
+    for a PCBDraft deployment — users can tweak them in the Slack UI after
     pasting.
 
-    By default, this keeps Hermes on Slack's older Assistant messaging
+    By default, this keeps PCBDraft on Slack's older Assistant messaging
     experience (``assistant_view``) for backward compatibility. Pass
     ``messaging_experience="agent"`` (``--agent-view``) to emit Slack's Agent
     messaging experience (``agent_view`` + ``app_home_opened``). Pass
@@ -105,7 +105,7 @@ def _build_full_manifest(
 
     if messaging_experience == "assistant":
         features["assistant_view"] = {
-            "assistant_description": "Chat with Hermes in threads and DMs.",
+            "assistant_description": "Chat with PCBDraft in threads and DMs.",
         }
         bot_scopes.append("assistant:write")
         bot_events.extend(
@@ -116,7 +116,7 @@ def _build_full_manifest(
         )
     elif messaging_experience == "agent":
         features["agent_view"] = {
-            "agent_description": "Chat with Hermes in Slack Messages.",
+            "agent_description": "Chat with PCBDraft in Slack Messages.",
         }
         bot_scopes.append("assistant:write")
         # Slack includes current viewing context in Agent DM events only after
@@ -129,7 +129,7 @@ def _build_full_manifest(
 
     display_information = {
         "name": bot_name[:35],
-        "description": (bot_description or "Your Hermes agent on Slack")[:140],
+        "description": (bot_description or "Your PCBDraft agent on Slack")[:140],
         "background_color": "#1a1a2e",
     }
     if long_description is not None:
@@ -164,10 +164,10 @@ def _build_full_manifest(
 def slack_manifest_command(args) -> int:
     """Print or write a Slack app manifest JSON.
 
-    Flags (all parsed in ``hermes_cli/main.py``):
+    Flags (all parsed in ``pcbdraft.interfaces.tui/main.py``):
       --write [PATH]  Write to file instead of stdout (default path:
                       ``$PCBDRAFT_RUNTIME_HOME/slack-manifest.json``)
-      --name NAME     Override the bot display name (default: "Hermes")
+      --name NAME     Override the bot display name (default: "PCBDraft")
       --description DESC  Override the bot description
       --long-description TEXT  Override the long app description (175-4,000 characters)
       --long-description-file PATH  Read the long app description from a UTF-8 file
@@ -181,16 +181,15 @@ def slack_manifest_command(args) -> int:
                       app_home_opened + message.im) instead of the legacy
                       Assistant messaging experience.
     """
-    name = getattr(args, "name", None) or "Hermes"
-    description = getattr(args, "description", None) or "Your Hermes agent on Slack"
+    name = getattr(args, "name", None) or "PCBDraft"
+    description = getattr(args, "description", None) or "Your PCBDraft agent on Slack"
     long_description = getattr(args, "long_description", None)
     long_description_file = getattr(args, "long_description_file", None)
     if getattr(args, "slashes_only", False) and (
         long_description is not None or long_description_file is not None
     ):
         print(
-            "hermes slack manifest: long description options cannot be used "
-            "with --slashes-only",
+            "pcbdraft --helpwith --slashes-only",
             file=sys.stderr,
         )
         return 2
@@ -202,7 +201,7 @@ def slack_manifest_command(args) -> int:
                 long_description = handle.read()
         except (OSError, UnicodeError, RuntimeError) as exc:
             print(
-                f"hermes slack manifest: cannot read long description from "
+                f"PCBDraft Slack adapter: cannot read long description from "
                 f"{source_arg}: {exc}",
                 file=sys.stderr,
             )
@@ -212,7 +211,7 @@ def slack_manifest_command(args) -> int:
         and len(long_description) < SLACK_LONG_DESCRIPTION_MIN_CHARACTERS
     ):
         print(
-            "hermes slack manifest: long description must be at least "
+            "pcbdraft --help"
             f"{SLACK_LONG_DESCRIPTION_MIN_CHARACTERS} characters "
             f"(got {len(long_description)})",
             file=sys.stderr,
@@ -223,7 +222,7 @@ def slack_manifest_command(args) -> int:
         and len(long_description) > SLACK_LONG_DESCRIPTION_MAX_CHARACTERS
     ):
         print(
-            "hermes slack manifest: long description must be at most "
+            "pcbdraft --help"
             f"{SLACK_LONG_DESCRIPTION_MAX_CHARACTERS} characters "
             f"(got {len(long_description)})",
             file=sys.stderr,
@@ -264,7 +263,7 @@ def slack_manifest_command(args) -> int:
         print(f"Slack manifest written to: {target}", file=sys.stderr)
         print(
             "\nNext steps:\n"
-            "  1. Open https://api.slack.com/apps and pick your Hermes app\n"
+            "  1. Open https://api.slack.com/apps and pick your PCBDraft app\n"
             "     (or create a new one: Create New App → From an app manifest).\n"
             f"  2. Features → App Manifest → paste the contents of\n"
             f"     {target}\n"
@@ -272,7 +271,7 @@ def slack_manifest_command(args) -> int:
             "     slash commands changed.\n"
             "  4. Make sure Socket Mode is enabled and you have a bot token\n"
             "     (xoxb-...) and app token (xapp-...) configured via\n"
-            "     `hermes setup`.\n",
+            "     `pcbdraft setup`.\n",
             file=sys.stderr,
         )
     else:

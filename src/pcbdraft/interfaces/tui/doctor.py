@@ -1,7 +1,7 @@
 """
-Doctor command for hermes CLI.
+Doctor command for pcbdraft CLI.
 
-Diagnoses issues with Hermes Agent setup.
+Diagnoses issues with PCBDraft Agent setup.
 """
 
 import importlib.util
@@ -22,23 +22,23 @@ from pcbdraft.model.configuration import (
     get_runtime_home,
     recommended_update_command_for_method,
 )
-from pcbdraft.model.env_loader import load_hermes_dotenv
+from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 
 PROJECT_ROOT = get_project_root()
 PCBDRAFT_RUNTIME_HOME = get_runtime_home()
 _DHH = (
     display_runtime_home()
-)  # user-facing display path (e.g. ~/.hermes or ~/.hermes/profiles/coder)
+)  # user-facing display path (e.g. ~/.pcbdraft or ~/.pcbdraft/profiles/coder)
 
-# Load environment variables from ~/.hermes/.env so API key checks work
+# Load environment variables from ~/.pcbdraft/.env so API key checks work
 _env_path = get_env_path()
-load_hermes_dotenv(runtime_home=_env_path.parent, project_env=PROJECT_ROOT / ".env")
+load_pcbdraft_dotenv(runtime_home=_env_path.parent, project_env=PROJECT_ROOT / ".env")
 
 from pcbdraft.core.runtime_environment import OPENROUTER_MODELS_URL
 from pcbdraft.core.runtime_utils import base_url_host_matches
 from pcbdraft.interfaces.tui.colors import Colors, color
 from pcbdraft.interfaces.tui.vercel_auth import describe_vercel_auth
-from pcbdraft.model.catalog import _HERMES_USER_AGENT
+from pcbdraft.model.catalog import _PCBDRAFT_USER_AGENT
 
 _PROVIDER_ENV_HINTS = (
     "DEEPINFRA_API_KEY",
@@ -92,22 +92,22 @@ def _sqlite_upgrade_hint(install_method: str | None = None) -> str:
     method = install_method or detect_install_method(PROJECT_ROOT)
     if method == "docker":
         command = recommended_update_command_for_method(method)
-        action = f"run `{command}`, then recreate all Hermes containers"
+        action = f"run `{command}`, then recreate all PCBDraft containers"
     elif method in {"nix", "nixos"}:
         # The Nix helper is prose guidance, not a literal shell command.
         action = recommended_update_command_for_method(method)
     elif method == "apt":
         action = f"run `{recommended_update_command_for_method(method)}`"
     else:
-        action = "run `hermes update`"
+        action = "run `pcbdraft --help`"
     return (
         f"({action}; fixed versions: 3.51.3+ / 3.50.7 / 3.44.6 — "
         "see https://sqlite.org/wal.html#walresetbug)"
     )
 
 
-def _hermes_database_paths(runtime_home: Path) -> list[tuple[str, Path]]:
-    """Return (display name, path) pairs for Hermes-managed SQLite databases."""
+def _pcbdraft_database_paths(runtime_home: Path) -> list[tuple[str, Path]]:
+    """Return (display name, path) pairs for PCBDraft-managed SQLite databases."""
     # backup.py owns the canonical list of per-profile stores; reuse it.
     from pcbdraft.interfaces.tui.backup import _QUICK_STATE_FILES
 
@@ -152,7 +152,7 @@ def _read_journal_mode(db_path: Path) -> tuple[str | None, str | None]:
     The byte read is routed through ``read_header_bytes_preopen`` rather than
     a bare ``open()``: closing *any* descriptor for a database file cancels
     this process's POSIX advisory locks on it, so a raw read would drop the
-    locks a live connection is holding (see ``hermes_cli.sqlite_safe_read``).
+    locks a live connection is holding (see ``pcbdraft.interfaces.tui.sqlite_safe_read``).
     ``run_doctor`` is also called in-process by the dashboard console, which
     holds live ``SessionDB`` connections. The helper refuses in that case and
     the mode is reported as unreadable instead.
@@ -203,9 +203,9 @@ def _report_database_journal_modes(
     vulnerable = is_sqlite_wal_reset_vulnerable(version_info)
     home = runtime_home if runtime_home is not None else PCBDRAFT_RUNTIME_HOME
     try:
-        databases = _hermes_database_paths(home)
+        databases = _pcbdraft_database_paths(home)
     except Exception as exc:
-        check_warn(f"Could not list Hermes databases: {exc}")
+        check_warn(f"Could not list PCBDraft databases: {exc}")
         return
     exposed = []
     for name, path in databases:
@@ -267,7 +267,7 @@ def _termux_install_all_fallback_notes() -> list[str]:
 
 
 def _has_provider_env_config(content: str) -> bool:
-    """Return True when ~/.hermes/.env contains provider auth/base URL settings."""
+    """Return True when ~/.pcbdraft/.env contains provider auth/base URL settings."""
     return any(key in content for key in _PROVIDER_ENV_HINTS)
 
 
@@ -443,7 +443,7 @@ def _render_state_db_stats(stats: dict, holders=None) -> list:
         )
         if stats.get("fts_rebuild_pending") or legacy_trigram:
             detail += (
-                "; run 'hermes sessions optimize-storage' offline "
+                "; run 'pcbdraft --help' offline "
                 "(with the gateway stopped) to compact FTS storage"
             )
         lines.append(
@@ -632,10 +632,10 @@ def _read_pyproject_version() -> str | None:
 
 
 def _check_version_consistency(issues: list[str]) -> None:
-    """Verify pyproject.toml version matches hermes_cli.__version__.
+    """Verify pyproject.toml version matches pcbdraft.interfaces.tui.__version__.
 
     A git conflict resolution (reset/merge) can revert one file without the
-    other, leaving ``hermes --version`` reporting a stale version while
+    other, leaving ``pcbdraft --version`` reporting a stale version while
     ``pyproject.toml`` is current. Detect that drift so users can re-sync.
     Silent no-op for installed wheels where pyproject.toml isn't present.
     """
@@ -652,9 +652,9 @@ def _check_version_consistency(issues: list[str]) -> None:
     else:
         _fail_and_issue(
             "Version mismatch between source files",
-            f"(pyproject.toml {pyproject_version} != hermes_cli/__init__.py {init_version})",
-            "Re-sync version files (e.g. run 'hermes update', or set "
-            "hermes_cli/__init__.py __version__ to match pyproject.toml)",
+            f"(pyproject.toml {pyproject_version} != pcbdraft.interfaces.tui/__init__.py {init_version})",
+            "Re-sync version files (e.g. run 'pcbdraft --help', or set "
+            "pcbdraft.interfaces.tui/__init__.py __version__ to match pyproject.toml)",
             issues,
         )
 
@@ -667,7 +667,7 @@ def _check_s6_supervision(issues: list[str]) -> None:
     container so host runs aren't cluttered with irrelevant output.
 
     Reports:
-      - Whether the main-hermes and dashboard static services are up
+      - Whether the main-pcbdraft and dashboard static services are up
       - How many per-profile gateway slots are registered (via
         ``S6ServiceManager.list_profile_gateways()``) and how many are
         currently supervised as ``up``
@@ -689,7 +689,7 @@ def _check_s6_supervision(issues: list[str]) -> None:
 
     # Static services. They live under /run/service/ via s6-rc symlinks,
     # so the same s6-svstat probe works.
-    for static in ("main-hermes", "dashboard"):
+    for static in ("main-pcbdraft", "dashboard"):
         if mgr.is_running(static):
             check_ok(f"{static}: up")
         else:
@@ -698,7 +698,7 @@ def _check_s6_supervision(issues: list[str]) -> None:
     profiles = mgr.list_profile_gateways()
     if not profiles:
         check_info(
-            "No per-profile gateways registered yet — create one with `hermes profile create <name>`"
+            "No per-profile gateways registered yet — create one with `pcbdraft --help`"
         )
         return
 
@@ -741,7 +741,7 @@ def check_certificates(should_fix: bool = False, issues: "list | None" = None) -
         check_fail("SSL CA certificate bundle is broken", first_error)
         if issues is not None:
             issues.append(
-                "Repair the CA bundle: run `hermes doctor --fix`, or "
+                "Repair the CA bundle: run `pcbdraft doctor`, or "
                 f"`{sys.executable} -m pip install --force-reinstall certifi`"
             )
         return
@@ -1086,10 +1086,10 @@ def run_doctor(args):
     ack_target = getattr(args, "ack", None)
 
     # Doctor runs from the interactive CLI, so CLI-gated tool availability
-    # checks (like cronjob management) should see the same context as `hermes`.
+    # checks (like cronjob management) should see the same context as `pcbdraft`.
     os.environ.setdefault("PCBDRAFT_RUNTIME_INTERACTIVE", "1")
 
-    # Handle `hermes doctor --ack <id>` as a fast path. Persist the ack and
+    # Handle `pcbdraft doctor --ack <id>` as a fast path. Persist the ack and
     # return without running the rest of the diagnostics — the user has
     # already seen the advisory and just wants to silence it.
     if ack_target:
@@ -1117,7 +1117,7 @@ def run_doctor(args):
             print(
                 color(
                     f"  ✗ Failed to persist ack for {ack_target}. "
-                    f"Check ~/.hermes/config.yaml is writable.",
+                    f"Check ~/.pcbdraft/config.yaml is writable.",
                     Colors.RED,
                 )
             )
@@ -1136,7 +1136,7 @@ def run_doctor(args):
     )
     print(
         color(
-            "│                 🩺 Hermes Doctor                        │", Colors.CYAN
+            "│                 🩺 PCBDraft Doctor                        │", Colors.CYAN
         )
     )
     print(
@@ -1175,7 +1175,7 @@ def run_doctor(args):
                     f"Resolve security advisory {hit.advisory.id}: "
                     f"uninstall {hit.package}=={hit.installed_version} and "
                     f"rotate credentials, then run "
-                    f"`hermes doctor --ack {hit.advisory.id}`."
+                    f"`pcbdraft doctor`."
                 )
             # Acked-but-still-installed: show as informational so the user
             # knows the package is still on disk after the ack.
@@ -1258,7 +1258,7 @@ def run_doctor(args):
             (_sqlite_src[:48] + "…") if len(_sqlite_src) > 48 else _sqlite_src
         )
         if is_sqlite_wal_reset_vulnerable():
-            # Warn-only: Hermes already refuses to enable WAL on fresh DBs.
+            # Warn-only: PCBDraft already refuses to enable WAL on fresh DBs.
             # Do not append to ``issues`` because runtime repair remains
             # best-effort and unsupported installs may need manual action.
             check_warn(
@@ -1279,7 +1279,7 @@ def run_doctor(args):
     else:
         check_warn("Not in virtual environment", "(recommended)")
 
-    # Detect drift between pyproject.toml and hermes_cli/__init__.py versions
+    # Detect drift between pyproject.toml and pcbdraft.interfaces.tui/__init__.py versions
     # (a git conflict resolution can silently revert one but not the other).
     _check_version_consistency(issues)
 
@@ -1323,14 +1323,14 @@ def run_doctor(args):
     _section("Configuration Files")
     # Managed scope (administrator-pinned config/env), when present.
     managed_scope_check()
-    # Check ~/.hermes/.env (primary location for user config)
+    # Check ~/.pcbdraft/.env (primary location for user config)
     env_path = PCBDRAFT_RUNTIME_HOME / ".env"
     if env_path.exists():
         check_ok(f"{_DHH}/.env file exists")
 
         # Prefer UTF-8 (.env is written as UTF-8 elsewhere). Fall back to
         # latin-1 for Windows Notepad/cp1252 files that are not valid UTF-8 —
-        # matches hermes_cli.env_loader._load_dotenv_with_fallback.
+        # matches pcbdraft.interfaces.tui.env_loader._load_dotenv_with_fallback.
         try:
             content = env_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
@@ -1339,7 +1339,7 @@ def run_doctor(args):
             check_ok("API key or custom endpoint configured")
         else:
             check_warn(f"No API key found in {_DHH}/.env")
-            issues.append("Run 'hermes setup' to configure API keys")
+            issues.append("Run 'pcbdraft setup' to configure API keys")
     else:
         # Also check project root as fallback
         fallback_env = PROJECT_ROOT / ".env"
@@ -1358,13 +1358,13 @@ def run_doctor(args):
                 except OSError:
                     pass
                 check_ok(f"Created empty {_DHH}/.env")
-                check_info("Run 'hermes setup' to configure API keys")
+                check_info("Run 'pcbdraft setup' to configure API keys")
                 fixed_count += 1
             else:
-                check_info("Run 'hermes setup' to create one")
-                issues.append("Run 'hermes setup' to create .env")
+                check_info("Run 'pcbdraft setup' to create one")
+                issues.append("Run 'pcbdraft setup' to create .env")
 
-    # Check ~/.hermes/config.yaml (primary) or project cli-config.yaml (fallback)
+    # Check ~/.pcbdraft/config.yaml (primary) or project cli-config.yaml (fallback)
     config_path = PCBDRAFT_RUNTIME_HOME / "config.yaml"
     if config_path.exists():
         check_ok(f"{_DHH}/config.yaml exists")
@@ -1493,7 +1493,7 @@ def run_doctor(args):
                         (
                             f"model.provider '{provider_raw}' is unknown. "
                             f"Valid providers: {known_list}. "
-                            f"Fix: run 'hermes config set model.provider <valid_provider>'"
+                            "Choose a provider with 'pcbdraft connect'"
                         ),
                         issues,
                     )
@@ -1576,11 +1576,11 @@ def run_doctor(args):
                     if not configured:
                         _fail_and_issue(
                             f"model.provider '{runtime_provider}' is set but no API key is configured",
-                            "(check ~/.hermes/.env or run 'hermes setup')",
+                            "(check ~/.pcbdraft/.env or run 'pcbdraft setup')",
                             (
                                 f"No credentials found for provider '{runtime_provider}'. "
-                                f"Run 'hermes setup' or set the provider's API key in {_DHH}/.env, "
-                                f"or switch providers with 'hermes config set model.provider <name>'"
+                                f"Run 'pcbdraft setup' or set the provider's API key in {_DHH}/.env, "
+                                "or switch providers with 'pcbdraft connect'"
                             ),
                             issues,
                         )
@@ -1631,10 +1631,10 @@ def run_doctor(args):
                         fixed_count += 1
                     except Exception as mig_err:
                         check_warn(f"Auto-migration failed: {mig_err}")
-                        issues.append("Run 'hermes setup' to migrate config")
+                        issues.append("Run 'pcbdraft setup' to migrate config")
                 else:
                     issues.append(
-                        "Run 'hermes doctor --fix' or 'hermes setup' to migrate config"
+                        "Run 'pcbdraft doctor' or 'pcbdraft setup' to migrate config"
                     )
             else:
                 check_ok(f"Config version up to date (v{current_ver})")
@@ -1682,7 +1682,7 @@ def run_doctor(args):
                     fixed_count += 1
                 else:
                     issues.append(
-                        "Stale root-level provider/base_url in config.yaml — run 'hermes doctor --fix'"
+                        "Stale root-level provider/base_url in config.yaml — run 'pcbdraft doctor'"
                     )
         except Exception:
             pass
@@ -1723,7 +1723,7 @@ def run_doctor(args):
                 check_warn(
                     f"PCBDRAFT_RUNTIME_MAX_ITERATIONS={env_ghost} in .env shadows "
                     f"agent.max_turns={cfg_max_turns} in config.yaml",
-                    "(stale ghost from an earlier `hermes setup` run)",
+                    "(stale ghost from an earlier `pcbdraft setup` run)",
                 )
                 if should_fix:
                     if remove_env_value("PCBDRAFT_RUNTIME_MAX_ITERATIONS"):
@@ -1743,7 +1743,7 @@ def run_doctor(args):
                 else:
                     issues.append(
                         "Stale PCBDRAFT_RUNTIME_MAX_ITERATIONS in .env shadows config.yaml — "
-                        "run 'hermes doctor --fix'"
+                        "run 'pcbdraft doctor'"
                     )
         except Exception:
             pass
@@ -1850,7 +1850,7 @@ def run_doctor(args):
             check_warn("OpenAI Codex auth", "(not logged in)")
             if codex_status.get("error"):
                 check_info(codex_status["error"])
-            # Native OAuth uses Hermes' own device-code flow — the Codex CLI is
+            # Native OAuth uses PCBDraft' own device-code flow — the Codex CLI is
             # only needed to import existing tokens from ~/.codex/auth.json.
             # Attach the hint to the Codex auth row so it doesn't read as
             # remediation for whichever provider happens to print next (#27975).
@@ -1930,14 +1930,14 @@ def run_doctor(args):
     else:
         check_warn(
             f"{_DHH}/SOUL.md not found",
-            "(create it to give Hermes a custom personality)",
+            "(create it to give PCBDraft a custom personality)",
         )
         if should_fix:
             soul_path.parent.mkdir(parents=True, exist_ok=True)
             soul_path.write_text(
-                "# Hermes Agent Persona\n\n"
-                "<!-- Edit this file to customize how Hermes communicates. -->\n\n"
-                "You are Hermes, a helpful AI assistant.\n",
+                "# PCBDraft Agent Persona\n\n"
+                "<!-- Edit this file to customize how PCBDraft communicates. -->\n\n"
+                "You are PCBDraft, a helpful AI assistant.\n",
                 encoding="utf-8",
             )
             check_ok(f"Created {_DHH}/SOUL.md with basic template")
@@ -2022,8 +2022,8 @@ def run_doctor(args):
                         )
                 else:
                     issues.append(
-                        "state.db FTS write corruption — run 'hermes doctor --fix' "
-                        "(or 'hermes sessions repair') to rebuild the FTS index"
+                        "state.db FTS write corruption — run 'pcbdraft doctor' "
+                        "(or 'pcbdraft --help') to rebuild the FTS index"
                     )
         except Exception as e:
             from pcbdraft.services.session_db import (
@@ -2072,14 +2072,14 @@ def run_doctor(args):
                         )
                 else:
                     issues.append(
-                        "state.db schema malformed — run 'hermes doctor --fix' "
-                        "(or 'hermes sessions repair') to recover hidden sessions"
+                        "state.db schema malformed — run 'pcbdraft doctor' "
+                        "(or 'pcbdraft --help') to recover hidden sessions"
                     )
             else:
                 check_warn(f"{_DHH}/state.db exists but has issues: {e}")
 
         # Health/stats snapshot (#statedb-visibility): a multi-GB state.db
-        # with a runaway WAL was previously invisible to every Hermes
+        # with a runaway WAL was previously invisible to every PCBDraft
         # surface. Strictly read-only (mode=ro) so it is safe against a
         # live DB held by the gateway; any failure degrades to one info
         # line rather than failing doctor.
@@ -2101,8 +2101,7 @@ def run_doctor(args):
                             "state.db is large — enable sessions.auto_prune "
                             "in config.yaml"
                             + (
-                                " and run 'hermes sessions optimize-storage' "
-                                "offline (gateway stopped)"
+                                " and run 'pcbdraft --help' offline (gateway stopped)"
                                 if "optimize-storage" in _detail
                                 else ""
                             )
@@ -2139,7 +2138,7 @@ def run_doctor(args):
                     fixed_count += 1
                 else:
                     issues.append(
-                        "Large WAL file — run 'hermes doctor --fix' to checkpoint"
+                        "Large WAL file — run 'pcbdraft doctor' to checkpoint"
                     )
             elif wal_size > 10 * 1024 * 1024:  # 10 MB
                 check_info(
@@ -2156,7 +2155,7 @@ def run_doctor(args):
         # Determine the venv entry point location
         _venv_bin = None
         for _venv_name in ("venv", ".venv"):
-            _candidate = PROJECT_ROOT / _venv_name / "bin" / "hermes"
+            _candidate = PROJECT_ROOT / _venv_name / "bin" / "pcbdraft"
             if _candidate.exists():
                 _venv_bin = _candidate
                 break
@@ -2172,12 +2171,12 @@ def run_doctor(args):
         else:
             _cmd_link_dir = Path.home() / ".local" / "bin"
             _cmd_link_display = "~/.local/bin"
-        _cmd_link = _cmd_link_dir / "hermes"
+        _cmd_link = _cmd_link_dir / "pcbdraft"
 
         if _venv_bin is None:
             check_warn(
                 "Venv entry point not found",
-                "(hermes not in venv/bin/ or .venv/bin/ — reinstall with pip install -e '.[all]')",
+                "(pcbdraft not in venv/bin/ or .venv/bin/ — reinstall with pip install -e '.[all]')",
             )
             manual_issues.append(
                 f"Reinstall entry point: cd {PROJECT_ROOT} && source venv/bin/activate && pip install -e '.[all]'"
@@ -2190,36 +2189,36 @@ def run_doctor(args):
                 _target = _cmd_link.resolve()
                 _expected = _venv_bin.resolve()
                 if _target == _expected:
-                    check_ok(f"{_cmd_link_display}/hermes → correct target")
+                    check_ok(f"{_cmd_link_display}/pcbdraft → correct target")
                 else:
                     check_warn(
-                        f"{_cmd_link_display}/hermes points to wrong target",
+                        f"{_cmd_link_display}/pcbdraft points to wrong target",
                         f"(→ {_target}, expected → {_expected})",
                     )
                     if should_fix:
                         _cmd_link.unlink()
                         _cmd_link.symlink_to(_venv_bin)
                         check_ok(
-                            f"Fixed symlink: {_cmd_link_display}/hermes → {_venv_bin}"
+                            f"Fixed symlink: {_cmd_link_display}/pcbdraft → {_venv_bin}"
                         )
                         fixed_count += 1
                     else:
                         issues.append(
-                            f"Broken symlink at {_cmd_link_display}/hermes — run 'hermes doctor --fix'"
+                            f"Broken symlink at {_cmd_link_display}/pcbdraft — run 'pcbdraft doctor'"
                         )
             elif _cmd_link.exists():
                 # It's a regular file, not a symlink — possibly a wrapper script
-                check_ok(f"{_cmd_link_display}/hermes exists (non-symlink)")
+                check_ok(f"{_cmd_link_display}/pcbdraft exists (non-symlink)")
             else:
                 check_fail(
-                    f"{_cmd_link_display}/hermes not found",
-                    "(hermes command may not work outside the venv)",
+                    f"{_cmd_link_display}/pcbdraft not found",
+                    "(pcbdraft command may not work outside the venv)",
                 )
                 if should_fix:
                     _cmd_link_dir.mkdir(parents=True, exist_ok=True)
                     _cmd_link.symlink_to(_venv_bin)
                     check_ok(
-                        f"Created symlink: {_cmd_link_display}/hermes → {_venv_bin}"
+                        f"Created symlink: {_cmd_link_display}/pcbdraft → {_venv_bin}"
                     )
                     fixed_count += 1
 
@@ -2233,7 +2232,7 @@ def run_doctor(args):
                         manual_issues.append(f"Add {_cmd_link_display} to your PATH")
                 else:
                     issues.append(
-                        f"Missing {_cmd_link_display}/hermes symlink — run 'hermes doctor --fix'"
+                        f"Missing {_cmd_link_display}/pcbdraft symlink — run 'pcbdraft doctor'"
                     )
 
     _section("External Tools")
@@ -2408,8 +2407,8 @@ def run_doctor(args):
         else:
             _fail_and_issue(
                 "vercel SDK not installed",
-                "(pip install 'hermes-agent[vercel]')",
-                "Install the Vercel optional dependency: pip install 'hermes-agent[vercel]'",
+                "(pip install 'pcbdraft[vercel]')",
+                "Install the Vercel optional dependency: pip install 'pcbdraft[vercel]'",
                 issues,
             )
 
@@ -2450,7 +2449,7 @@ def run_doctor(args):
     if _safe_which("node"):
         check_ok("Node.js")
         # agent-browser is no longer a root package.json dependency (#43564)
-        # — it resolves lazily via npx (or a global/Hermes-managed install)
+        # — it resolves lazily via npx (or a global/PCBDraft-managed install)
         # at first use. Mirror tools.browser_tool._find_agent_browser's own
         # resolution cascade here so doctor can't diverge from what browser
         # tools will actually find; validate=False keeps this a cheap
@@ -2472,7 +2471,7 @@ def run_doctor(args):
             if should_fix:
                 # Doctor can't tell from here whether npx's cache already
                 # has agent-browser warm — just fire the same warm-up
-                # `hermes update` does, so a session's first browser call
+                # `internal update` does, so a session's first browser call
                 # doesn't pay the registry fetch either way.
                 from pcbdraft.tools.browser_tool import warm_agent_browser_npx_cache
 
@@ -2488,7 +2487,7 @@ def run_doctor(args):
         elif _resolved_ab:
             # Found on PATH but won't run — almost always a dangling global
             # symlink left behind by agent-browser's npm postinstall after a
-            # `hermes update` wiped node_modules (issue #48521).
+            # `internal update` wiped node_modules (issue #48521).
             check_warn(
                 "agent-browser found but not runnable",
                 f"(broken symlink at {_resolved_ab}? run: npx agent-browser --version)",
@@ -2515,7 +2514,7 @@ def run_doctor(args):
         if agent_browser_ok and not _is_termux():
             try:
                 # Lazy import: browser_tool is a ~150KB module we don't want
-                # to eagerly load in every `hermes doctor` invocation.
+                # to eagerly load in every `pcbdraft doctor` invocation.
                 from pcbdraft.tools.browser_tool import (
                     _chromium_installed,
                     _get_cdp_override_raw,
@@ -2654,7 +2653,7 @@ def run_doctor(args):
                         # tooling (esbuild/vite, etc.), not runtime code that ships
                         # to users. Manual npm remediation may error with a known
                         # arborist crash (edgesOut / isDescendantOf) on this monorepo
-                        # tree — in that case it is an npm bug, not a Hermes one.
+                        # tree — in that case it is an npm bug, not a PCBDraft one.
                         check_info(
                             "  ^ build-time tooling (not runtime); if manual npm remediation "
                             "errors with an arborist crash it's a known npm bug — clears "
@@ -2750,7 +2749,7 @@ def run_doctor(args):
                     ],
                     [
                         "OpenRouter account has insufficient credits. "
-                        "Fix: run 'hermes config set model.provider <provider>' "
+                        "Choose a provider with 'pcbdraft connect' "
                         "to switch providers, or fund your OpenRouter account "
                         "at https://openrouter.ai/settings/credits"
                     ],
@@ -2928,7 +2927,7 @@ def run_doctor(args):
             url = (base.rstrip("/") + "/models") if base else default_url
             headers = {
                 "Authorization": f"Bearer {key}",
-                "User-Agent": _HERMES_USER_AGENT,
+                "User-Agent": _PCBDRAFT_USER_AGENT,
             }
             if base_url_host_matches(base, "api.kimi.com"):
                 headers["User-Agent"] = "claude-code/0.1.0"
@@ -2937,7 +2936,7 @@ def run_doctor(args):
             # ``ACCESS_TOKEN_TYPE_UNSUPPORTED`` — that header is reserved for
             # OAuth 2 access tokens, not plain API keys. Plain keys use
             # ``x-goog-api-key`` (or ``?key=``). Without this, a perfectly valid
-            # GOOGLE_API_KEY/GEMINI_API_KEY always shows red in ``hermes doctor``.
+            # GOOGLE_API_KEY/GEMINI_API_KEY always shows red in ``pcbdraft doctor``.
             if url and base_url_host_matches(url, "generativelanguage.googleapis.com"):
                 headers.pop("Authorization", None)
                 headers["x-goog-api-key"] = key
@@ -3189,7 +3188,7 @@ def run_doctor(args):
     # Set on the parent thread before submitting work so the env-var
     # mutation never races with another worker. has_aws_credentials() in
     # the bedrock probe already gates on real env-var creds, so IMDS is
-    # never the legitimate source for `hermes doctor`.
+    # never the legitimate source for `pcbdraft doctor`.
     _imds_prev = os.environ.get("AWS_EC2_METADATA_DISABLED")
     os.environ["AWS_EC2_METADATA_DISABLED"] = "true"
     try:
@@ -3251,7 +3250,7 @@ def run_doctor(args):
         api_disabled = _missing_api_key_toolsets_for_summary(unavailable)
         if api_disabled:
             issues.append(
-                "Run 'hermes setup' to configure missing API keys for full tool access"
+                "Run 'pcbdraft setup' to configure missing API keys for full tool access"
             )
     except Exception as e:
         check_warn("Could not check tool availability", f"({e})")
@@ -3279,7 +3278,7 @@ def run_doctor(args):
         if q_count > 0:
             check_warn(f"{q_count} skill(s) in quarantine", "(pending review)")
     else:
-        check_warn("Skills Hub directory not initialized", "(run: hermes skills list)")
+        check_warn("Skills Hub directory not initialized", "(run: pcbdraft --help)")
 
     from pcbdraft.model.configuration import get_env_value
 
@@ -3352,7 +3351,7 @@ def run_doctor(args):
                         f"config file {_honcho_cfg_path} not found, using HONCHO_API_KEY env var",
                     )
                 else:
-                    check_warn("Honcho config not found", "run: hermes memory setup")
+                    check_warn("Honcho config not found", "run: pcbdraft --help")
             elif not hcfg.enabled:
                 check_info(
                     f"Honcho disabled (set enabled: true in {_honcho_cfg_path} to activate)"
@@ -3360,8 +3359,8 @@ def run_doctor(args):
             elif not (hcfg.api_key or hcfg.base_url):
                 _fail_and_issue(
                     "Honcho API key or base URL not set",
-                    "run: hermes memory setup",
-                    "No Honcho API key — run 'hermes memory setup'",
+                    "run: pcbdraft --help",
+                    "No Honcho API key — run 'pcbdraft --help'",
                     issues,
                 )
             else:
@@ -3409,7 +3408,7 @@ def run_doctor(args):
             else:
                 _fail_and_issue(
                     "Mem0 API key not set",
-                    "(set MEM0_API_KEY in .env or run hermes memory setup)",
+                    "(set MEM0_API_KEY in .env or run pcbdraft --help)",
                     "Mem0 is set as memory provider but API key is missing",
                     issues,
                 )
@@ -3433,12 +3432,12 @@ def run_doctor(args):
             elif _provider:
                 check_warn(
                     f"{_active_memory_provider} configured but not available",
-                    "run: hermes memory status",
+                    "run: pcbdraft --help",
                 )
             else:
                 check_warn(
                     f"{_active_memory_provider} plugin not found",
-                    "run: hermes memory setup",
+                    "run: pcbdraft --help",
                 )
         except Exception as _e:
             check_warn(f"{_active_memory_provider} check failed", str(_e))
@@ -3480,8 +3479,8 @@ def run_doctor(args):
                         continue
                     try:
                         content = wrapper.read_text(encoding="utf-8")
-                        if "hermes -p" in content:
-                            _m = _re.search(r"hermes -p (\S+)", content)
+                        if "pcbdraft --help" in content:
+                            _m = _re.search(r"pcbdraft --help)", content)
                             if _m and not profile_exists(_m.group(1)):
                                 check_warn(
                                     f"Orphan alias: {wrapper.name} → profile '{_m.group(1)}' no longer exists"
@@ -3494,7 +3493,7 @@ def run_doctor(args):
         pass
 
     # Opt-in live backend probes run AFTER all static checks, only with
-    # `hermes doctor --live` (real network calls; bounded + read-only).
+    # `pcbdraft doctor --live` (real network calls; bounded + read-only).
     try:
         from pcbdraft.interfaces.tui.doctor_live import maybe_run_live_checks
 
@@ -3540,7 +3539,7 @@ def run_doctor(args):
         if not should_fix:
             print(
                 color(
-                    "  Tip: run 'hermes doctor --fix' to auto-fix what's possible.",
+                    "  Tip: run 'pcbdraft doctor' to auto-fix what's possible.",
                     Colors.DIM,
                 )
             )

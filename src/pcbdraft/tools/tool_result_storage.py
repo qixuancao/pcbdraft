@@ -38,7 +38,7 @@ from pcbdraft.tools.budget_config import (
 logger = logging.getLogger(__name__)
 PERSISTED_OUTPUT_TAG = "<persisted-output>"
 PERSISTED_OUTPUT_CLOSING_TAG = "</persisted-output>"
-STORAGE_DIR = "/tmp/hermes-results"
+STORAGE_DIR = "/tmp/pcbdraft-results"
 HEREDOC_MARKER = "PCBDRAFT_RUNTIME_PERSIST_EOF"
 _BUDGET_TOOL_NAME = "__budget_enforcement__"
 _UNSAFE_RESULT_FILENAME_CHARS = re.compile(r"[^A-Za-z0-9_.-]+")
@@ -57,7 +57,7 @@ def _resolve_storage_dir(env) -> str:
             else:
                 if temp_dir:
                     temp_dir = temp_dir.rstrip("/") or "/"
-                    return f"{temp_dir}/hermes-results"
+                    return f"{temp_dir}/pcbdraft-results"
     return STORAGE_DIR
 
 

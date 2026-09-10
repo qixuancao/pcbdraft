@@ -1,6 +1,6 @@
 """Nous Portal upstream adapter.
 
-Reads the user's Nous OAuth state from ``~/.hermes/auth.json`` through the
+Reads the user's Nous OAuth state from ``~/.pcbdraft/auth.json`` through the
 shared runtime resolver, validates or refreshes the inference JWT, then exposes
 the upstream base URL plus bearer for the proxy server to forward to.
 """
@@ -102,7 +102,7 @@ class NousPortalAdapter(UpstreamAdapter):
             state = self._read_state()
             if state is None:
                 raise RuntimeError(
-                    "Not logged into Nous Portal. Run `hermes auth add nous` first."
+                    "Not logged into Nous Portal. Run `pcbdraft connect` first."
                 )
 
             try:
@@ -133,7 +133,7 @@ class NousPortalAdapter(UpstreamAdapter):
             if not runtime_key:
                 raise RuntimeError(
                     "Nous Portal refresh did not return a usable inference JWT. "
-                    "Try `hermes auth add nous` to re-authenticate."
+                    "Try `pcbdraft connect` to re-authenticate."
                 )
 
             # base_url returned by resolve_nous_runtime_credentials() already
@@ -159,7 +159,7 @@ class NousPortalAdapter(UpstreamAdapter):
 
     # ------------------------------------------------------------------
     # Internal helpers — auth.json access. Kept local rather than added
-    # to hermes_cli.auth to avoid expanding that module's public surface.
+    # to pcbdraft.interfaces.tui.auth to avoid expanding that module's public surface.
     # ------------------------------------------------------------------
 
     def _read_state(self) -> dict[str, Any] | None:

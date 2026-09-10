@@ -1,9 +1,9 @@
 """Shared module-level constants for the SessionDB family of modules.
 
-Extracted verbatim from hermes_state.py so the SessionDB mixin modules
-(hermes_state_search / hermes_state_schema / hermes_state_portability) can
-reference them without importing hermes_state (which would be a cycle).
-hermes_state re-imports every name here for backward compatibility.
+Originally extracted from upstream hermes_state.py. Shared by the SessionDB
+search, schema and portability mixins without
+importing session_db (which would be a cycle). The session_db module
+re-exports these names for callers.
 """
 
 from typing import Any
@@ -237,7 +237,7 @@ SCHEMA_VERSION = 26
 # state_meta key ``fts_storage_version``. The main schema version advances
 # freely on open (so future migrations always land); the FTS *layout* only
 # reaches the current version when a DB is either born fresh or explicitly
-# optimized via ``hermes sessions optimize-storage``. A legacy DB sits at
+# optimized via the offline storage helper. A legacy DB sits at
 # layout 0 (marker absent) with a working inline index until the user opts in.
 #   1 = v23 external-content layout (content/tool_name/tool_calls,
 #       tool-row-excluded trigram)
@@ -626,7 +626,7 @@ _FTS_CJK_TRIGGERS = (
 # state_meta breadcrumb set when a tokenizer-less process had to drop the
 # cjk triggers to keep message writes alive: rows written from that moment
 # on are missing from the cjk index, so it must not serve reads until
-# `hermes sessions optimize-storage` rebuilds it on a capable host.
+# The offline storage helper rebuilds it on a capable host.
 FTS_CJK_STALE_KEY = "fts_cjk_stale"
 
 
@@ -640,7 +640,7 @@ FTS_STALE_KEY = "fts_stale"
 
 # ── Legacy (v22 / inline-content) FTS DDL ──────────────────────────────
 # Used ONLY to keep an existing pre-v23 install's search working and its
-# triggers repairable UNTIL the user opts into `hermes db optimize`. This is
+# triggers repairable UNTIL the user opts into storage optimization. This is
 # the exact inline shape v11..v22 shipped: each virtual table stores its own
 # copy of ``content || tool_name || tool_calls`` and the trigram table indexes
 # every row (including role='tool'). We never CREATE these on a fresh install —

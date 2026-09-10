@@ -537,7 +537,7 @@ async def _handle_yb_send_sticker(args, **kw):
     )
 
 
-_TOOLSET = "hermes-yuanbao"
+_TOOLSET = "pcbdraft-yuanbao"
 
 registry.register(
     name="yb_query_group_info",

@@ -144,7 +144,7 @@ def _delete_skill(name: str) -> dict[str, Any]:
     if skill_usage.get_record(name).get("pinned"):
         return {
             "ok": False,
-            "message": f"'{name}' is pinned — unpin it first (hermes curator unpin {name})",
+            "message": f"'{name}' is pinned — unpin it first in curator settings",
         }
 
     ok, message = skill_usage.archive_skill(name)
@@ -153,7 +153,7 @@ def _delete_skill(name: str) -> dict[str, Any]:
 
     return {
         "ok": ok,
-        "message": f"archived '{name}' — restore with: hermes curator restore {name}"
+        "message": f"archived '{name}' — restore through the curator"
         if ok
         else message,
     }

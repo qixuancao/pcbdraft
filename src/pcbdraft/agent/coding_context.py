@@ -62,7 +62,7 @@ from typing import Any
 
 from pcbdraft.interfaces.tui._subprocess_compat import bounded_git_probe
 
-logger = logging.getLogger("hermes.coding_context")
+logger = logging.getLogger("pcbdraft.coding_context")
 
 CODING_TOOLSET = "coding"
 
@@ -276,7 +276,7 @@ _EDIT_FORMAT_GUIDANCE: dict[str, tuple[tuple[str, ...], str]] = {
             "kimi",
             "glm",
             "grok",
-            "hermes",
+            "pcbdraft",
             "llama",
             "mistral",
             "devstral",

@@ -2054,7 +2054,7 @@ def build_api_kwargs(
     _qwen_meta = None
     if _is_qwen:
         _qwen_meta = {
-            "sessionId": agent.session_id or "hermes",
+            "sessionId": agent.session_id or "pcbdraft",
             "promptId": str(uuid.uuid4()),
         }
 

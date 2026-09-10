@@ -1,6 +1,6 @@
-"""``hermes debug`` subcommand parser.
+"""``pcbdraft doctor`` subcommand parser.
 
-Extracted verbatim from ``hermes_cli/main.py:main()`` (god-file Phase 2).
+Extracted verbatim from ``pcbdraft.interfaces.tui/main.py:main()`` (god-file Phase 2).
 Handler injected to avoid importing ``main``.
 """
 
@@ -18,20 +18,20 @@ def build_debug_parser(subparsers, *, cmd_debug: Callable) -> None:
     debug_parser = subparsers.add_parser(
         "debug",
         help="Debug tools — upload logs and system info for support",
-        description="Debug utilities for Hermes Agent. Use 'hermes debug share' to "
+        description="Debug utilities for PCBDraft Agent. Use 'pcbdraft doctor' to "
         "upload a debug report (system info + recent logs) to a paste "
         "service and get a shareable URL.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 Examples:
-    hermes debug share              Upload debug report (asks for confirmation)
-    hermes debug share --yes        Skip confirmation (for scripts/CI)
-    hermes debug share --lines 500  Include more log lines
-    hermes debug share --expire 30  Keep paste for 30 days
-    hermes debug share --local      Print report locally (no upload)
-    hermes debug share --no-redact  Disable upload-time secret redaction
-    hermes debug share --nous       Upload to Nous-internal storage (private)
-    hermes debug delete <url>       Delete a previously uploaded paste
+    pcbdraft doctor for confirmation)
+    pcbdraft doctor)
+    pcbdraft doctor
+    pcbdraft doctor for 30 days
+    pcbdraft doctor)
+    pcbdraft doctor
+    pcbdraft doctor to Nous-internal storage (private)
+    pcbdraft doctor
 """,
     )
     debug_sub = debug_parser.add_subparsers(dest="debug_command")
@@ -89,7 +89,7 @@ Examples:
     )
     delete_parser = debug_sub.add_parser(
         "delete",
-        help="Delete a paste uploaded by 'hermes debug share'",
+        help="Delete a paste uploaded by 'pcbdraft doctor'",
     )
     delete_parser.add_argument(
         "urls",

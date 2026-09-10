@@ -132,7 +132,7 @@ def get_provider_config_schema(name: str) -> ProviderConfigSchema | None:
 
     try:
         spec = importlib.util.spec_from_file_location(
-            f"_hermes_memory_config_schema.{name}", path
+            f"_pcbdraft_memory_config_schema.{name}", path
         )
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)

@@ -1,12 +1,12 @@
-"""``hermes debug`` debug tools for Hermes Agent.
+"""``pcbdraft doctor`` debug tools for PCBDraft Agent.
 
 Currently supports:
-    hermes debug share    Upload debug report (system info + logs) to a
+    pcbdraft doctor) to a
                           paste service and print a shareable URL.
                           By default, log content is run through
                           ``agent.redact.redact_sensitive_text`` with
                           ``force=True`` before upload so credentials in
-                          ``~/.hermes/logs/*.log`` are not leaked into
+                          ``~/.pcbdraft/logs/*.log`` are not leaked into
                           the public paste service. Pass ``--no-redact``
                           to disable.
                           Pass ``--nous`` to upload instead to Nous-internal
@@ -37,10 +37,7 @@ logger = logging.getLogger(__name__)
 # Banner prepended to upload-bound log content when redaction is enabled.
 # Visible in the public paste so reviewers know the content was sanitized.
 # Kept short; the trailing newline guarantees the banner sits on its own line.
-_REDACTION_BANNER = (
-    "[hermes debug share: log content redacted at upload time. "
-    "run with --no-redact to disable]\n"
-)
+_REDACTION_BANNER = "[pcbdraft doctor. run with --no-redact to disable]\n"
 
 _EMAIL_ADDRESS_RE = re.compile(
     r"(?<![A-Za-z0-9._%+-])"
@@ -70,16 +67,16 @@ _AUTO_DELETE_SECONDS = 21600
 
 
 def _pending_file() -> Path:
-    """Path to ``~/.hermes/pastes/pending.json``.
+    """Path to ``~/.pcbdraft/pastes/pending.json``.
 
     Each entry: ``{"url": "...", "expire_at": <unix_ts>}``.  Scheduled
     DELETEs used to be handled by spawning a detached Python process per
     paste that slept for 6 hours; those accumulated forever if the user
-    ran ``hermes debug share`` repeatedly.
+    ran ``pcbdraft doctor`` repeatedly.
 
     Deletion is now driven by the gateway's cron ticker
     (``gateway/run.py::_start_cron_ticker``) which calls
-    ``_sweep_expired_pastes`` once per hour.  ``hermes debug share`` also
+    ``_sweep_expired_pastes`` once per hour.  ``pcbdraft doctor`` also
     runs an opportunistic sweep on entry as a fallback for CLI-only users
     who never start the gateway.
     """
@@ -112,7 +109,7 @@ def _save_pending(entries: list[dict]) -> None:
         tmp.write_text(json.dumps(entries, indent=2), encoding="utf-8")
         atomic_replace(tmp, path)
     except OSError:
-        # Non-fatal — worst case the user has to run ``hermes debug delete``
+        # Non-fatal — worst case the user has to run ``pcbdraft debug delete``
         # manually.
         pass
 
@@ -142,7 +139,7 @@ def _sweep_expired_pastes(now: float | None = None) -> tuple[int, int]:
 
     Returns ``(deleted, remaining)``.  Best-effort: failed deletes stay in
     the pending file and will be retried on the next sweep.  Silent —
-    intended to be called from every ``hermes debug`` invocation with
+    intended to be called from every ``pcbdraft doctor`` invocation with
     minimal noise.
     """
     entries = _load_pending()
@@ -215,7 +212,7 @@ Use --local to view the report without uploading.
 _GATEWAY_PRIVACY_NOTICE = (
     "⚠️ **Privacy notice:** This uploads system info + recent log tails "
     "(may contain conversation fragments) to a public paste service. "
-    "Full logs are NOT included from the gateway — use `hermes debug share` "
+    "Full logs are NOT included from the gateway — use `pcbdraft doctor` "
     "from the CLI for full log uploads.\n"
     "Pastes auto-delete after 6 hours."
 )
@@ -249,7 +246,7 @@ def delete_paste(url: str) -> bool:
     req = urllib.request.Request(
         target,
         method="DELETE",
-        headers={"User-Agent": "hermes-agent/debug-share"},
+        headers={"User-Agent": "pcbdraft/debug-share"},
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         return 200 <= resp.status < 300
@@ -260,12 +257,12 @@ def _schedule_auto_delete(urls: list[str], delay_seconds: int = _AUTO_DELETE_SEC
 
     Previously this spawned a detached Python subprocess per call that slept
     for 6 hours and then issued DELETE requests.  Those subprocesses leaked —
-    every ``hermes debug share`` invocation added ~20 MB of resident Python
+    every ``pcbdraft doctor`` invocation added ~20 MB of resident Python
     interpreters that never exited until the sleep completed.
 
-    The replacement is stateless: we append to ``~/.hermes/pastes/pending.json``
+    The replacement is stateless: we append to ``~/.pcbdraft/pastes/pending.json``
     and the gateway's cron ticker sweeps expired entries once per hour.
-    ``hermes debug share`` also runs an opportunistic sweep as a fallback
+    ``pcbdraft doctor`` also runs an opportunistic sweep as a fallback
     for CLI-only users.  If neither runs again, paste.rs's own retention
     policy handles cleanup.
     """
@@ -284,7 +281,7 @@ def _upload_paste_rs(content: str) -> str:
         method="POST",
         headers={
             "Content-Type": "text/plain; charset=utf-8",
-            "User-Agent": "hermes-agent/debug-share",
+            "User-Agent": "pcbdraft/debug-share",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -299,7 +296,7 @@ def _upload_dpaste_com(content: str, expiry_days: int = 7) -> str:
 
     dpaste.com uses multipart form data.
     """
-    boundary = "----HermesDebugBoundary9f3c"
+    boundary = "----PCBDraftDebugBoundary9f3c"
 
     def _field(name: str, value: str) -> str:
         return (
@@ -322,7 +319,7 @@ def _upload_dpaste_com(content: str, expiry_days: int = 7) -> str:
         method="POST",
         headers={
             "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "hermes-agent/debug-share",
+            "User-Agent": "pcbdraft/debug-share",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -379,13 +376,13 @@ def _primary_log_path(log_name: str) -> Path | None:
 
 
 # Logs written by a client process rather than by this backend. When the
-# desktop app talks to a remote/docker/SSH backend, `hermes debug share` runs
+# desktop app talks to a remote/docker/SSH backend, `pcbdraft debug share` runs
 # on the *backend* and can never see them — a bare "(file not found)" then
 # reads as "the app logged nothing" and sends triage down a dead end, which is
 # exactly the wrong answer when the client is the thing being debugged.
 _CLIENT_SIDE_LOGS = {
     "desktop": (
-        "written by Hermes Desktop on the machine running the app, not by this "
+        "written by PCBDraft Desktop on the machine running the app, not by this "
         "backend. If the desktop connects to a remote/docker/SSH backend, collect "
         "it on that client machine"
     ),
@@ -462,7 +459,7 @@ def _capture_log_snapshot(
     ``full_text`` are run through ``_redact_log_text`` so the snapshot
     returned is upload-safe. The on-disk log file is never modified.
     Pass ``redact=False`` to capture original log content (used by
-    ``hermes debug share --no-redact``).
+    ``pcbdraft doctor``).
     """
     log_path = _resolve_log_path(log_name)
     if log_path is None:
@@ -573,7 +570,7 @@ def _capture_default_log_snapshots(
 
 
 def _capture_dump() -> str:
-    """Run ``hermes dump`` and return its stdout as a string."""
+    """Run ``internal dump`` and return its stdout as a string."""
     from pcbdraft.interfaces.tui.dump import run_dump
 
     class _FakeArgs:
@@ -604,7 +601,7 @@ def collect_debug_report(
     log_lines
         Number of recent lines to include per log file.
     dump_text
-        Pre-captured dump output.  If empty, ``hermes dump`` is run
+        Pre-captured dump output.  If empty, ``internal dump`` is run
         internally.
 
     Returns the report as a plain-text string ready for upload.
@@ -650,7 +647,7 @@ def collect_debug_report(
 
 # Bundle format identifier embedded in the Nous-S3 JSON envelope. The
 # discord-support viewer keys off this string to parse the bundle.
-_NOUS_BUNDLE_FORMAT = "hermes-debug-share/1"
+_NOUS_BUNDLE_FORMAT = "pcbdraft-debug-share/1"
 
 
 def collect_share_bundle(
@@ -727,7 +724,7 @@ def build_nous_bundle(bundle: dict[str, str], redact: bool = True) -> bytes:
 
     The JSON shape is what the discord-support viewer (Repo 3) parses::
 
-        {"format": "hermes-debug-share/1",
+        {"format": "pcbdraft-debug-share/1",
          "redacted": <bool>,
          "created": <iso8601>,
          "files": {"report": ..., "agent.log": ..., ...}}
@@ -771,7 +768,7 @@ def build_debug_share(
 ) -> DebugShareResult:
     """Collect the debug report + full logs, upload each, return the URLs.
 
-    This is the shared core behind ``hermes debug share`` (CLI) and the
+    This is the shared core behind ``pcbdraft doctor`` (CLI) and the
     dashboard ``POST /api/ops/debug-share`` endpoint. It performs blocking
     network I/O (paste uploads) — callers inside an event loop must run it in
     a worker thread.
@@ -789,9 +786,7 @@ def build_debug_share(
     bundle = collect_share_bundle(log_lines=log_lines, redact=redact)
 
     if redact:
-        logger.info(
-            "hermes debug share: applied force-mode redaction to log snapshots before upload"
-        )
+        logger.info("pcbdraft doctor to log snapshots before upload")
 
     report = bundle["report"]
 
@@ -903,7 +898,7 @@ def run_debug_share(args):
         )
     except RuntimeError as exc:
         print(f"\nUpload failed: {exc}", file=sys.stderr)
-        print("\nRun `hermes debug share --local` to print the report instead.\n")
+        print("\nRun `pcbdraft doctor` to print the report instead.\n")
         sys.exit(1)
 
     # Print results
@@ -919,15 +914,15 @@ def run_debug_share(args):
     print(f"\n⏱  Pastes will auto-delete in {hours} hours.")
 
     # Manual delete fallback
-    print("To delete now:  hermes debug delete <url>")
+    print("To delete now:  pcbdraft doctor")
 
-    print("\nShare these links with the Hermes team for support.")
+    print("\nShare these links with the PCBDraft team for support.")
 
 
 _NOUS_PRIVACY_NOTICE = """\
 ⚠️  --nous: This uploads your debug bundle to Nous-INTERNAL storage (AWS S3),
     NOT a public paste service. The following is included:
-  • System info (OS, Python/Hermes version, provider, which API keys are
+  • System info (OS, Python/PCBDraft version, provider, which API keys are
     configured — NOT the actual keys)
   • Full agent.log, gateway.log, and desktop.log (up to 512 KB each — likely
     contains conversation content, tool outputs, and file paths)
@@ -940,7 +935,7 @@ _NOUS_PRIVACY_NOTICE = """\
 
 
 def _run_debug_share_nous(args, *, log_lines: int, redact: bool) -> None:
-    """Handle ``hermes debug share --nous``: upload the bundle to Nous-S3.
+    """Handle ``pcbdraft doctor``: upload the bundle to Nous-S3.
 
     Collects the same force-redacted bundle as the paste path, gzips it into
     the Nous envelope, requests a signed URL from NAS, uploads, and prints the
@@ -962,9 +957,7 @@ def _run_debug_share_nous(args, *, log_lines: int, redact: bool) -> None:
 
     bundle = collect_share_bundle(log_lines=log_lines, redact=redact)
     if redact:
-        logger.info(
-            "hermes debug share --nous: applied force-mode redaction before upload"
-        )
+        logger.info("pcbdraft doctor before upload")
     blob = build_nous_bundle(bundle, redact=redact)
 
     print("Uploading to Nous diagnostics storage...")
@@ -975,8 +968,8 @@ def _run_debug_share_nous(args, *, log_lines: int, redact: bool) -> None:
             f"\nNous upload failed: {exc}\n"
             "\nThe Nous diagnostics service may be unavailable or not yet "
             "provisioned.\n"
-            "Run `hermes debug share --local` to print the report instead, "
-            "or `hermes debug share` to upload to a public paste service.\n",
+            "Run `pcbdraft doctor` to print the report instead, "
+            "or `pcbdraft doctor` to upload to a public paste service.\n",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -1004,8 +997,8 @@ def run_debug_delete(args):
     """Delete one or more paste URLs uploaded by /debug."""
     urls = getattr(args, "urls", [])
     if not urls:
-        print("Usage: hermes debug delete <url> [<url> ...]")
-        print("  Deletes paste.rs pastes uploaded by 'hermes debug share'.")
+        print("Usage: pcbdraft doctor...]")
+        print("  Deletes paste.rs pastes uploaded by 'pcbdraft doctor'.")
         return
 
     for url in urls:
@@ -1023,10 +1016,10 @@ def run_debug_delete(args):
 
 def run_debug(args):
     """Route debug subcommands."""
-    # Opportunistic sweep of expired pastes on every ``hermes debug`` call.
+    # Opportunistic sweep of expired pastes on every ``pcbdraft debug`` call.
     # Replaces the old per-paste sleeping subprocess that used to leak as
     # one orphaned Python interpreter per scheduled deletion.  Silent and
-    # best-effort — any failure is swallowed so ``hermes debug`` stays
+    # best-effort — any failure is swallowed so ``pcbdraft debug`` stays
     # reliable even when offline.
     try:
         _sweep_expired_pastes()
@@ -1040,7 +1033,7 @@ def run_debug(args):
         run_debug_delete(args)
     else:
         # Default: show help
-        print("Usage: hermes debug <command>")
+        print("Usage: pcbdraft doctor")
         print()
         print("Commands:")
         print("  share    Upload debug report to a paste service and print URL")

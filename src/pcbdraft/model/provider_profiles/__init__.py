@@ -4,7 +4,7 @@ Provider profiles can live in three places:
 
 1. Bundled plugins: ``plugins/model-providers/<name>/`` (shipped with hermes-agent)
 2. User plugins: ``$PCBDRAFT_RUNTIME_HOME/plugins/model-providers/<name>/``
-3. Pip-installed plugins: distributions exposing a ``hermes_agent.plugins``
+3. Pip-installed plugins: distributions exposing a ``pcbdraft.plugins``
    entry point (``module:func`` callable or a self-registering ``module``)
 
 Each plugin directory contains:
@@ -135,7 +135,7 @@ def _import_plugin_dir(plugin_dir: Path, source: str) -> None:
     if source == "bundled":
         module_name = f"pcbdraft.model.provider_profiles.builtins.{safe_name}"
     else:
-        module_name = f"_hermes_user_provider_{safe_name}"
+        module_name = f"_pcbdraft_user_provider_{safe_name}"
 
     if module_name in sys.modules:
         return  # already imported
@@ -161,13 +161,13 @@ def _import_plugin_dir(plugin_dir: Path, source: str) -> None:
 
 
 def _discover_entry_point_providers() -> None:
-    """Import pip-installed provider plugins via the ``hermes_agent.plugins``
+    """Import pip-installed provider plugins via the ``pcbdraft.plugins``
     entry-point group so they self-register.
 
     A distribution ships::
 
-        [project.entry-points."hermes_agent.plugins"]
-        acme-inference = "acme_hermes_plugin:register"
+        [project.entry-points."pcbdraft.plugins"]
+        acme-inference = "acme_pcbdraft_plugin:register"
 
     The target may be either a **callable** (``module:func`` — invoked with no
     args; typically calls ``register_provider(profile)``) or a **module**
@@ -181,7 +181,7 @@ def _discover_entry_point_providers() -> None:
       general PluginManager enforces — a pip package is never imported just
       because it is installed. An entry point whose name is not enabled is
       skipped without loading.
-    * **Provider targets only.** The ``hermes_agent.plugins`` group is shared
+    * **Provider targets only.** The ``pcbdraft.plugins`` group is shared
       with general plugins whose target is ``register(ctx)``. Callables that
       require arguments are skipped here (the PluginManager owns them);
       provider registration hooks take no arguments by contract.
@@ -215,7 +215,7 @@ def _discover_entry_point_providers() -> None:
     if not enabled:
         return
 
-    group = "hermes_agent.plugins"
+    group = "pcbdraft.plugins"
     try:
         eps = _md.entry_points()
         # Python 3.10+ exposes .select(); older returns a dict-like mapping.
@@ -311,7 +311,7 @@ def _discover_providers() -> None:
         return
     _discovered = True
 
-    # 0. Pip-installed plugins — entry points in the ``hermes_agent.plugins``
+    # 0. Pip-installed plugins — entry points in the ``pcbdraft.plugins``
     #    group (the same group the general PluginManager uses). The manager
     #    records model-provider manifests for introspection but deliberately
     #    does NOT import them — provider lifecycle is owned here — so without

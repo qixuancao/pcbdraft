@@ -130,7 +130,7 @@ class MemoryProvider(ABC):
 
         kwargs always include:
           - runtime_home (str): The active PCBDRAFT_RUNTIME_HOME directory path. Use this
-            for profile-scoped storage instead of hardcoding ``~/.hermes``.
+            for profile-scoped storage instead of hardcoding a home directory.
           - platform (str): "cli", "telegram", "discord", "cron", etc.
 
         kwargs may also include:

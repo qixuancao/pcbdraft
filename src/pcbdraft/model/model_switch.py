@@ -204,9 +204,9 @@ def _bare_custom_provider_def(current_base_url: str) -> ProviderDef | None:
 # Non-agentic model warning
 # ---------------------------------------------------------------------------
 
-_HERMES_MODEL_WARNING = (
+_PCBDRAFT_MODEL_WARNING = (
     "Nous Research Hermes 3 & 4 models are NOT agentic and are not designed "
-    "for use with Hermes Agent. They lack the tool-calling capabilities "
+    "for use with PCBDraft. They lack the tool-calling capabilities "
     "required for agent workflows. Consider using an agentic model instead "
     "(Claude, GPT, Gemini, DeepSeek, etc.)."
 )
@@ -220,7 +220,7 @@ _HERMES_MODEL_WARNING = (
 #   NousResearch/Hermes-3-Llama-3.1-70B, hermes-4-405b, openrouter/hermes3:70b
 # Negative examples it must NOT match:
 #   hermes-brain:qwen3-14b-ctx16k, qwen3:14b, claude-opus-4-6
-_NOUS_HERMES_NON_AGENTIC_RE = re.compile(
+_NOUS_PCBDRAFT_NON_AGENTIC_RE = re.compile(
     r"(?:^|[/:])hermes[-_ ]?[34](?:[-_.:]|$)",
     re.IGNORECASE,
 )
@@ -271,7 +271,7 @@ def format_model_for_display(model_name: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-def is_nous_hermes_non_agentic(model_name: str) -> bool:
+def is_nous_pcbdraft_non_agentic(model_name: str) -> bool:
     """Return True if *model_name* is a real Nous Hermes 3/4 chat model.
 
     Used to decide whether to surface the non-agentic warning at startup.
@@ -280,13 +280,13 @@ def is_nous_hermes_non_agentic(model_name: str) -> bool:
     """
     if not model_name:
         return False
-    return bool(_NOUS_HERMES_NON_AGENTIC_RE.search(model_name))
+    return bool(_NOUS_PCBDRAFT_NON_AGENTIC_RE.search(model_name))
 
 
-def _check_hermes_model_warning(model_name: str) -> str:
+def _check_pcbdraft_model_warning(model_name: str) -> str:
     """Return a warning string if *model_name* is a Nous Hermes 3/4 chat model."""
-    if is_nous_hermes_non_agentic(model_name):
-        return _HERMES_MODEL_WARNING
+    if is_nous_pcbdraft_non_agentic(model_name):
+        return _PCBDRAFT_MODEL_WARNING
     return ""
 
 
@@ -1325,7 +1325,7 @@ def switch_model(
         if pdef is None:
             _switch_err = (
                 f"Unknown provider '{explicit_provider}'. "
-                f"Check 'hermes model' for available providers, or define it "
+                f"Check 'pcbdraft connect' for available providers, or define it "
                 f"in config.yaml under 'providers:'."
             )
             # Check for common config issues that cause provider resolution failures
@@ -1334,7 +1334,7 @@ def switch_model(
 
                 _cfg_issues = validate_config_structure()
                 if _cfg_issues:
-                    _switch_err += "\n\nRun 'hermes doctor' — config issues detected:"
+                    _switch_err += "\n\nRun 'pcbdraft doctor' — config issues detected:"
                     for _ci in _cfg_issues[:3]:
                         _switch_err += f"\n  • {_ci.message}"
             except Exception:
@@ -1916,9 +1916,9 @@ def switch_model(
     warnings: list[str] = []
     if validation.get("message"):
         warnings.append(validation["message"])
-    hermes_warn = _check_hermes_model_warning(new_model)
-    if hermes_warn:
-        warnings.append(hermes_warn)
+    pcbdraft_warn = _check_pcbdraft_model_warning(new_model)
+    if pcbdraft_warn:
+        warnings.append(pcbdraft_warn)
 
     # --- Build result ---
     return ModelSwitchResult(
@@ -2173,38 +2173,38 @@ def _collect_authed_provider_slugs(
     seen: set[str] = set()
 
     # --- Section 1: Hermes-mapped providers (PROVIDER_TO_MODELS_DEV) ---
-    for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
-        _alias_target = _PROVIDER_ALIAS_TABLE.get(hermes_id)
+    for pcbdraft_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+        _alias_target = _PROVIDER_ALIAS_TABLE.get(pcbdraft_id)
         if (
             _alias_target
-            and _alias_target != hermes_id
+            and _alias_target != pcbdraft_id
             and _alias_target in _AGG_PROVIDERS
         ):
             continue
-        _canonical = hermes_id
+        _canonical = pcbdraft_id
         try:
             from pcbdraft.model.provider_profiles import get_provider_profile as _gpp
 
-            _prof = _gpp(hermes_id)
+            _prof = _gpp(pcbdraft_id)
             if _prof is not None:
                 _canonical = _prof.name
         except Exception:
             pass
-        if _canonical != hermes_id:
+        if _canonical != pcbdraft_id:
             continue
-        if hermes_id.lower() in seen:
+        if pcbdraft_id.lower() in seen:
             continue
-        if hermes_id.lower() in _excluded_set or mdev_id.lower() in _excluded_set:
+        if pcbdraft_id.lower() in _excluded_set or mdev_id.lower() in _excluded_set:
             continue
         pdata = models_dev_data.get(mdev_id)
         if not isinstance(pdata, dict):
             continue
-        pconfig = PROVIDER_REGISTRY.get(hermes_id)
+        pconfig = PROVIDER_REGISTRY.get(pcbdraft_id)
         if pconfig and pconfig.auth_type != "api_key":
             continue
         from pcbdraft.model.auth import is_runtime_provider_routable
 
-        if not is_runtime_provider_routable(hermes_id):
+        if not is_runtime_provider_routable(pcbdraft_id):
             continue
         if pconfig and pconfig.api_key_env_vars:
             env_vars = list(pconfig.api_key_env_vars)
@@ -2217,27 +2217,27 @@ def _collect_authed_provider_slugs(
             try:
                 store = _load_auth_store()
                 raw_pool_present = bool(
-                    store and store.get("credential_pool", {}).get(hermes_id)
+                    store and store.get("credential_pool", {}).get(pcbdraft_id)
                 )
                 if raw_pool_present:
                     has_creds = _credential_pool_is_usable(
-                        hermes_id, raw_pool_present=True
+                        pcbdraft_id, raw_pool_present=True
                     )
             except Exception:
                 pass
         if has_creds:
-            slugs.append(hermes_id)
-            seen.add(hermes_id.lower())
+            slugs.append(pcbdraft_id)
+            seen.add(pcbdraft_id.lower())
 
     # --- Section 2: Hermes-only providers (PCBDRAFT_RUNTIME_OVERLAYS) ---
-    _mdev_to_hermes = {v: k for k, v in PROVIDER_TO_MODELS_DEV.items()}
+    _mdev_to_pcbdraft = {v: k for k, v in PROVIDER_TO_MODELS_DEV.items()}
     for pid, overlay in PCBDRAFT_RUNTIME_OVERLAYS.items():
         if pid.lower() in seen:
             continue
-        hermes_slug = _mdev_to_hermes.get(pid, pid)
-        if hermes_slug.lower() in seen:
+        pcbdraft_slug = _mdev_to_pcbdraft.get(pid, pid)
+        if pcbdraft_slug.lower() in seen:
             continue
-        if pid.lower() in _excluded_set or hermes_slug.lower() in _excluded_set:
+        if pid.lower() in _excluded_set or pcbdraft_slug.lower() in _excluded_set:
             continue
         has_creds = False
         if overlay.auth_type == "aws_sdk":
@@ -2253,7 +2253,7 @@ def _collect_authed_provider_slugs(
         elif overlay.extra_env_vars:
             has_creds = any(_scoped_key_env(ev) for ev in overlay.extra_env_vars)
         if not has_creds and overlay.auth_type == "api_key":
-            for _key in (pid, hermes_slug):
+            for _key in (pid, pcbdraft_slug):
                 pcfg = PROVIDER_REGISTRY.get(_key)
                 if pcfg and pcfg.api_key_env_vars:
                     if any(_scoped_key_env(ev) for ev in pcfg.api_key_env_vars):
@@ -2263,20 +2263,20 @@ def _collect_authed_provider_slugs(
             try:
                 store = _load_auth_store()
                 providers_store = store.get("providers", {}) if store else {}
-                if pid in providers_store or hermes_slug in providers_store:
+                if pid in providers_store or pcbdraft_slug in providers_store:
                     has_creds = True
             except Exception:
                 pass
         if not has_creds:
             try:
-                if _credential_pool_is_usable(hermes_slug):
+                if _credential_pool_is_usable(pcbdraft_slug):
                     has_creds = True
             except Exception:
                 pass
         if has_creds:
-            slugs.append(hermes_slug)
+            slugs.append(pcbdraft_slug)
             seen.add(pid.lower())
-            seen.add(hermes_slug.lower())
+            seen.add(pcbdraft_slug.lower())
 
     # --- Section 2b: Canonical providers cross-check ---
     for _cp in CANONICAL_PROVIDERS:
@@ -2556,7 +2556,7 @@ def list_authenticated_providers(
     from pcbdraft.model.catalog import _AGGREGATOR_PROVIDERS as _AGG_PROVIDERS
     from pcbdraft.model.provider_config import ALIASES as _PROVIDER_ALIAS_TABLE
 
-    for hermes_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
+    for pcbdraft_id, mdev_id in PROVIDER_TO_MODELS_DEV.items():
         # Skip vendor names that are merely aliases routing through an
         # aggregator (e.g. bare "openai" → "openrouter"). These are NOT
         # directly-routable providers: emitting them as their own picker
@@ -2565,10 +2565,10 @@ def list_authenticated_providers(
         # switching a user off their real provider onto an endpoint they
         # may have no key for (HTTP 401). The user's real provider (e.g.
         # openai-api, or a providers.openai config row) covers this vendor.
-        _alias_target = _PROVIDER_ALIAS_TABLE.get(hermes_id)
+        _alias_target = _PROVIDER_ALIAS_TABLE.get(pcbdraft_id)
         if (
             _alias_target
-            and _alias_target != hermes_id
+            and _alias_target != pcbdraft_id
             and _alias_target in _AGG_PROVIDERS
         ):
             continue
@@ -2578,16 +2578,16 @@ def list_authenticated_providers(
         # entries whose hermes_id matches the canonical profile name so
         # distinct profiles (e.g. kimi-coding, kimi-coding-cn) each get
         # their own picker row.
-        _canonical = hermes_id
+        _canonical = pcbdraft_id
         try:
             from pcbdraft.model.provider_profiles import get_provider_profile as _gpp
 
-            _prof = _gpp(hermes_id)
+            _prof = _gpp(pcbdraft_id)
             if _prof is not None:
                 _canonical = _prof.name
         except Exception:
             pass
-        if _canonical != hermes_id:
+        if _canonical != pcbdraft_id:
             continue
 
         # Skip duplicates: another entry with the same slug was already
@@ -2595,10 +2595,10 @@ def list_authenticated_providers(
         # same hermes_id).  Distinct canonical profiles that share a
         # models.dev ID (e.g. kimi-coding and kimi-coding-cn → kimi-for-coding)
         # are both allowed through since they have different slugs.
-        slug = hermes_id
+        slug = pcbdraft_id
         if slug.lower() in seen_slugs:
             continue
-        if hermes_id.lower() in _excluded or mdev_id.lower() in _excluded:
+        if pcbdraft_id.lower() in _excluded or mdev_id.lower() in _excluded:
             continue
         pdata = data.get(mdev_id)
         if not isinstance(pdata, dict):
@@ -2607,7 +2607,7 @@ def list_authenticated_providers(
         # Prefer auth.py PROVIDER_REGISTRY for env var names — it's our
         # source of truth.  models.dev can have wrong mappings (e.g.
         # minimax-cn → MINIMAX_API_KEY instead of MINIMAX_CN_API_KEY).
-        pconfig = PROVIDER_REGISTRY.get(hermes_id)
+        pconfig = PROVIDER_REGISTRY.get(pcbdraft_id)
         # Skip non-API-key auth providers here — they are handled in
         # section 2 (PCBDRAFT_RUNTIME_OVERLAYS) with proper auth store checking.
         if pconfig and pconfig.auth_type != "api_key":
@@ -2617,7 +2617,7 @@ def list_authenticated_providers(
         # providers and plugin aliases can be routable without a registry row.
         from pcbdraft.model.auth import is_runtime_provider_routable
 
-        if not is_runtime_provider_routable(hermes_id):
+        if not is_runtime_provider_routable(pcbdraft_id):
             continue
         if pconfig and pconfig.api_key_env_vars:
             env_vars = list(pconfig.api_key_env_vars)
@@ -2634,11 +2634,11 @@ def list_authenticated_providers(
 
                 store = _load_auth_store()
                 raw_pool_present = bool(
-                    store and store.get("credential_pool", {}).get(hermes_id)
+                    store and store.get("credential_pool", {}).get(pcbdraft_id)
                 )
                 if raw_pool_present:
                     has_creds = _credential_pool_is_usable(
-                        hermes_id, raw_pool_present=True
+                        pcbdraft_id, raw_pool_present=True
                     )
             except Exception:
                 pass
@@ -2649,22 +2649,22 @@ def list_authenticated_providers(
         # /model picker sees the SAME list `hermes model` would build, with
         # disk caching to keep the picker open snappy. Falls back to the
         # curated static list when the live fetcher returns nothing.
-        model_ids = cached_provider_model_ids(hermes_id)
+        model_ids = cached_provider_model_ids(pcbdraft_id)
         if not model_ids:
-            model_ids = curated.get(hermes_id, [])
-            if hermes_id in _MODELS_DEV_PREFERRED:
-                model_ids = _merge_with_models_dev(hermes_id, model_ids)
+            model_ids = curated.get(pcbdraft_id, [])
+            if pcbdraft_id in _MODELS_DEV_PREFERRED:
+                model_ids = _merge_with_models_dev(pcbdraft_id, model_ids)
         # A providers.<built-in>.models block extends the provider's discovered
         # catalog. Section 3 cannot emit it later because this built-in row owns
         # the slug, so merge declarations here before applying max_models.
         configured_models: list[str] = []
         if isinstance(user_providers, dict):
-            configured = user_providers.get(hermes_id)
+            configured = user_providers.get(pcbdraft_id)
             if isinstance(configured, dict):
                 configured_models = _declared_model_ids(configured.get("models"))
         model_ids = list(dict.fromkeys([*configured_models, *model_ids]))
         total = len(model_ids)
-        if hermes_id in _UNCAPPED_PICKER_PROVIDERS:
+        if pcbdraft_id in _UNCAPPED_PICKER_PROVIDERS:
             top = model_ids  # Aggregator: show full catalog regardless of max_models
         else:
             top = model_ids[:max_models] if max_models is not None else model_ids
@@ -2682,7 +2682,7 @@ def list_authenticated_providers(
                 "name": display_name,
                 "is_current": (
                     slug == current_provider
-                    or hermes_id == current_provider
+                    or pcbdraft_id == current_provider
                     or mdev_id == current_provider
                 ),
                 "is_user_defined": False,
@@ -2701,23 +2701,23 @@ def list_authenticated_providers(
     # Build reverse mapping: models.dev ID → Hermes provider ID.
     # PCBDRAFT_RUNTIME_OVERLAYS keys may be models.dev IDs (e.g. "github-copilot")
     # while _PROVIDER_MODELS and config.yaml use Hermes IDs ("copilot").
-    _mdev_to_hermes = {v: k for k, v in PROVIDER_TO_MODELS_DEV.items()}
+    _mdev_to_pcbdraft = {v: k for k, v in PROVIDER_TO_MODELS_DEV.items()}
 
     for pid, overlay in PCBDRAFT_RUNTIME_OVERLAYS.items():
         if pid.lower() in seen_slugs:
             continue
 
         # Resolve Hermes slug — e.g. "github-copilot" → "copilot"
-        hermes_slug = _mdev_to_hermes.get(pid, pid)
-        if hermes_slug.lower() in seen_slugs:
+        pcbdraft_slug = _mdev_to_pcbdraft.get(pid, pid)
+        if pcbdraft_slug.lower() in seen_slugs:
             continue
-        if pid.lower() in _excluded or hermes_slug.lower() in _excluded:
+        if pid.lower() in _excluded or pcbdraft_slug.lower() in _excluded:
             continue
 
         # Check if credentials exist
         has_creds = False
         if overlay.auth_type == "aws_sdk":
-            has_creds = _has_aws_sdk_creds_for_listing(hermes_slug)
+            has_creds = _has_aws_sdk_creds_for_listing(pcbdraft_slug)
         elif overlay.auth_type == "vertex":
             # Vertex authenticates via OAuth2 (service-account JSON / ADC),
             # not an API key — mirror the aws_sdk gate above, otherwise the
@@ -2733,7 +2733,7 @@ def list_authenticated_providers(
             has_creds = any(os.environ.get(ev) for ev in overlay.extra_env_vars)
         # Also check api_key_env_vars from PROVIDER_REGISTRY for api_key auth_type
         if not has_creds and overlay.auth_type == "api_key":
-            for _key in (pid, hermes_slug):
+            for _key in (pid, pcbdraft_slug):
                 pcfg = _auth_registry.get(_key)
                 if pcfg and pcfg.api_key_env_vars:
                     if any(os.environ.get(ev) for ev in pcfg.api_key_env_vars):
@@ -2749,7 +2749,9 @@ def list_authenticated_providers(
 
                 store = _load_auth_store()
                 providers_store = store.get("providers", {})
-                if store and (pid in providers_store or hermes_slug in providers_store):
+                if store and (
+                    pid in providers_store or pcbdraft_slug in providers_store
+                ):
                     has_creds = True
             except Exception as exc:
                 logger.debug("Auth store check failed for %s: %s", pid, exc)
@@ -2759,7 +2761,7 @@ def list_authenticated_providers(
         # imports on demand but aren't in the raw auth.json yet.
         if not has_creds:
             try:
-                if _credential_pool_is_usable(hermes_slug):
+                if _credential_pool_is_usable(pcbdraft_slug):
                     has_creds = True
                 elif for_picker:
                     # For the interactive /model picker, also show providers
@@ -2771,14 +2773,14 @@ def list_authenticated_providers(
                     try:
                         from pcbdraft.model.credential_pool import load_pool
 
-                        _pool = load_pool(hermes_slug)
+                        _pool = load_pool(pcbdraft_slug)
                         if _pool.has_credentials():
                             has_creds = True
                     except Exception:
                         pass
             except Exception as exc:
                 logger.debug(
-                    "Credential pool check failed for %s: %s", hermes_slug, exc
+                    "Credential pool check failed for %s: %s", pcbdraft_slug, exc
                 )
         # Fallback: check external credential files directly.
         # The credential pool gates anthropic behind
@@ -2787,16 +2789,16 @@ def list_authenticated_providers(
         # But the /model picker is discovery-oriented — we WANT to show
         # providers the user can switch to, even if they aren't currently
         # configured.
-        if not has_creds and hermes_slug == "anthropic":
+        if not has_creds and pcbdraft_slug == "anthropic":
             try:
                 from pcbdraft.model.anthropic_adapter import (
                     read_claude_code_credentials,
-                    read_hermes_oauth_credentials,
+                    read_pcbdraft_oauth_credentials,
                 )
 
-                hermes_creds = read_hermes_oauth_credentials()
+                pcbdraft_creds = read_pcbdraft_oauth_credentials()
                 cc_creds = read_claude_code_credentials()
-                if (hermes_creds and hermes_creds.get("accessToken")) or (
+                if (pcbdraft_creds and pcbdraft_creds.get("accessToken")) or (
                     cc_creds and cc_creds.get("accessToken")
                 ):
                     has_creds = True
@@ -2805,7 +2807,7 @@ def list_authenticated_providers(
         if not has_creds:
             continue
 
-        if hermes_slug in {"openai-codex", "copilot", "copilot-acp"}:
+        if pcbdraft_slug in {"openai-codex", "copilot", "copilot-acp"}:
             # Use live OAuth-backed discovery so the gateway /model picker
             # matches what the user's authenticated Codex/Copilot backend
             # actually serves — including ChatGPT-Pro-only Codex slugs
@@ -2813,20 +2815,20 @@ def list_authenticated_providers(
             # catalog. ``cached_provider_model_ids()`` falls back to the
             # curated list when the live endpoint is unreachable, so this
             # is safe for unauthenticated and offline cases too.
-            model_ids = cached_provider_model_ids(hermes_slug)
+            model_ids = cached_provider_model_ids(pcbdraft_slug)
         # For aws_sdk providers (bedrock), use live discovery so the list
         # reflects the active region (eu.*, ap.*) not the static us.* list.
         elif overlay.auth_type == "aws_sdk":
             try:
-                _ids = cached_provider_model_ids(hermes_slug)
+                _ids = cached_provider_model_ids(pcbdraft_slug)
                 model_ids = (
                     _ids
                     if _ids
-                    else (curated.get(hermes_slug, []) or curated.get(pid, []))
+                    else (curated.get(pcbdraft_slug, []) or curated.get(pid, []))
                 )
             except Exception:
-                model_ids = curated.get(hermes_slug, []) or curated.get(pid, [])
-        elif hermes_slug == "nous":
+                model_ids = curated.get(pcbdraft_slug, []) or curated.get(pid, [])
+        elif pcbdraft_slug == "nous":
             # Nous serves a large live /v1/models catalog (vendor-prefixed
             # models from many providers, returned alphabetically). The
             # `hermes model` picker deliberately shows ONLY the curated agentic
@@ -2871,32 +2873,32 @@ def list_authenticated_providers(
             # Unified pathway — see Section 1 rationale. Fall back to the
             # curated dict (with models.dev merge for preferred providers)
             # when the live fetcher comes up empty.
-            model_ids = cached_provider_model_ids(hermes_slug)
+            model_ids = cached_provider_model_ids(pcbdraft_slug)
             if not model_ids:
-                model_ids = curated.get(hermes_slug, []) or curated.get(pid, [])
-                if hermes_slug in _MODELS_DEV_PREFERRED:
-                    model_ids = _merge_with_models_dev(hermes_slug, model_ids)
+                model_ids = curated.get(pcbdraft_slug, []) or curated.get(pid, [])
+                if pcbdraft_slug in _MODELS_DEV_PREFERRED:
+                    model_ids = _merge_with_models_dev(pcbdraft_slug, model_ids)
         total = len(model_ids)
-        if hermes_slug in _UNCAPPED_PICKER_PROVIDERS:
+        if pcbdraft_slug in _UNCAPPED_PICKER_PROVIDERS:
             top = model_ids  # Aggregator: show full catalog regardless of max_models
         else:
             top = model_ids[:max_models] if max_models is not None else model_ids
 
         results.append(
             {
-                "slug": hermes_slug,
-                "name": get_label(hermes_slug),
-                "is_current": hermes_slug == current_provider
+                "slug": pcbdraft_slug,
+                "name": get_label(pcbdraft_slug),
+                "is_current": pcbdraft_slug == current_provider
                 or pid == current_provider,
                 "is_user_defined": False,
                 "models": top,
                 "total_models": total,
-                "source": "hermes",
+                "source": "pcbdraft",
             }
         )
         seen_slugs.add(pid.lower())
-        seen_slugs.add(hermes_slug.lower())
-        _record_builtin_endpoint(hermes_slug)
+        seen_slugs.add(pcbdraft_slug.lower())
+        _record_builtin_endpoint(pcbdraft_slug)
 
     # --- 2b. Cross-check canonical provider list ---
     # Catches providers that are in CANONICAL_PROVIDERS but weren't found

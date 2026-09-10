@@ -81,7 +81,7 @@ def get_conversation_context() -> str | None:
     return _conversation_id.get()
 
 
-def _hermes_version() -> str:
+def _pcbdraft_version() -> str:
     """Return the current Hermes release version, e.g. ``"0.13.0"``.
 
     Falls back to ``"unknown"`` if ``hermes_cli`` cannot be imported (should
@@ -95,12 +95,12 @@ def _hermes_version() -> str:
         return "unknown"
 
 
-def hermes_client_tag() -> str:
+def pcbdraft_client_tag() -> str:
     """Return the ``client=...`` tag for Nous Portal requests.
 
     Format: ``client=hermes-client-v<MAJOR>.<MINOR>.<PATCH>``.
     """
-    return f"client=hermes-client-v{_hermes_version()}"
+    return f"client=pcbdraft-client-v{_pcbdraft_version()}"
 
 
 def conversation_tag(session_id: str) -> str:
@@ -108,7 +108,7 @@ def conversation_tag(session_id: str) -> str:
 
     Format: ``conversation=<session_id>``. ``session_id`` is the canonical
     Hermes conversation identifier (``AIAgent.session_id``) — the same value
-    used for ``~/.hermes/sessions/`` storage, session logs, and lineage.
+    used for runtime ``sessions/`` storage, session logs, and lineage.
 
     Unlike the product/client tags this is high-cardinality (one value per
     conversation), so it is only appended when a session id is actually
@@ -132,7 +132,7 @@ def nous_portal_tags(session_id: str | None = None) -> list[str]:
     per-call-site plumbing. Callers outside any conversation (e.g. the
     auxiliary client's import-time base tags) get the canonical two-tag set.
     """
-    tags = ["product=hermes-agent", hermes_client_tag()]
+    tags = ["product=pcbdraft", pcbdraft_client_tag()]
     # Ambient context first: the agent loop publishes the lineage ROOT id
     # (stable across context-compression rotation and delegate subagent
     # trees), which is the better conversation key than a per-segment

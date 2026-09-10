@@ -139,7 +139,7 @@ def fetch_manifest(
             MANIFEST_URL,
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": "hermes-agent-petdex"},
+            headers={"User-Agent": "PCBDraft-Petdex"},
         )
         resp.raise_for_status()
         payload = resp.json()

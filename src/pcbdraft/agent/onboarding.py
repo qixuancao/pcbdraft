@@ -121,10 +121,10 @@ def openclaw_residue_hint_cli() -> str:
     """
     return (
         "A legacy OpenClaw directory was detected at ~/.openclaw/.\n"
-        "To port your config, memory, and skills over to Hermes, run "
-        "`hermes claw migrate`.\n"
+        "To port your config, memory, and skills over to PCBDraft, review "
+        "`pcbdraft --help` and migrate the selected data explicitly.\n"
         "If you've already migrated and want to archive the old directory, "
-        "run `hermes claw cleanup` (renames it to ~/.openclaw.pre-migration — "
+        "archive it explicitly (for example as ~/.openclaw.pre-migration — "
         "OpenClaw will stop working after this).\n"
         "This tip only shows once."
     )

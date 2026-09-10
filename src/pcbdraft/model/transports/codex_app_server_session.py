@@ -53,7 +53,7 @@ _STDERR_TAIL_LINES = 12
 # Permission profile mapping mirrors the docstring in PR proposal:
 # Hermes' tools.terminal.security_mode → Codex's permissions profile id.
 # Defaults if config is missing → workspace-write (matches Codex's own default).
-_HERMES_TO_CODEX_PERMISSION_PROFILE = {
+_PCBDRAFT_TO_CODEX_PERMISSION_PROFILE = {
     "auto": "workspace-write",
     "approval-required": "read-only-with-approval",
     "unrestricted": "full-access",
@@ -280,7 +280,7 @@ class CodexAppServerSession:
         self._codex_home = codex_home
         self._permission_profile = (
             permission_profile
-            or _HERMES_TO_CODEX_PERMISSION_PROFILE.get(
+            or _PCBDRAFT_TO_CODEX_PERMISSION_PROFILE.get(
                 os.environ.get("PCBDRAFT_RUNTIME_TERMINAL_SECURITY_MODE", "auto"),
                 "workspace-write",
             )
@@ -316,9 +316,9 @@ class CodexAppServerSession:
                 codex_bin=self._codex_bin, codex_home=self._codex_home
             )
         self._client.initialize(
-            client_name="hermes",
-            client_title="Hermes Agent",
-            client_version=_get_hermes_version(),
+            client_name="pcbdraft",
+            client_title="PCBDraft",
+            client_version=_get_pcbdraft_version(),
         )
         # Permission selection is intentionally NOT sent on thread/start.
         # Two reasons (live-tested against codex 0.130.0):
@@ -1006,7 +1006,7 @@ class CodexAppServerSession:
             # servers we decline so the user explicitly opts in via
             # codex's own auth flow.
             server_name = params.get("serverName") or ""
-            if server_name == "hermes-tools":
+            if server_name == "pcbdraft-tools":
                 self._client.respond(
                     rid,
                     {"action": "accept", "content": None, "_meta": None},
@@ -1257,11 +1257,11 @@ def _has_turn_aborted_marker(text: str) -> bool:
     return False
 
 
-def _get_hermes_version() -> str:
-    """Best-effort Hermes version string for codex's userAgent line."""
+def _get_pcbdraft_version() -> str:
+    """Best-effort PCBDraft version string for codex's userAgent line."""
     try:
         from importlib.metadata import version
 
-        return version("hermes-agent")
+        return version("pcbdraft")
     except Exception:  # pragma: no cover
         return "0.0.0"

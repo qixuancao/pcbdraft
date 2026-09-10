@@ -1,51 +1,8 @@
-"""Cross-process mutual exclusion for in-flight Hermes updates.
+"""Native installation-marker helpers retained for internal consumers.
 
-Three different surfaces can start an update of the same install tree:
-
-* ``hermes update`` from a terminal,
-* the dashboard's Update button (``POST /api/hermes/update`` →
-  ``_spawn_hermes_action(["update"])``, detached),
-* the desktop's Update button, which hands off to the Tauri
-  ``hermes-setup --update`` and, on its failure screen, to install-mode
-  bootstrap (``install.ps1`` / ``install.sh``).
-
-Until now only the Tauri updater published an "update in progress" marker
-(``UpdateMarkerGuard`` in ``apps/bootstrap-installer/src-tauri/src/update.rs``),
-and only the Electron desktop consumed it (``electron/update-marker.ts``, to
-gate local backend startup). Nothing stopped two *updaters* from running at
-once — so a dashboard-spawned ``hermes update`` and an installer-driven
-``git checkout`` could mutate the same checkout concurrently, rewriting source
-under a live interpreter and leaving the tree half-updated.
-
-This module makes that same marker the single lock for **all** update
-entrypoints instead of adding a fourth mechanism. Format and location are
-unchanged and remain byte-compatible with the Rust and Electron readers:
-
-    <PCBDRAFT_RUNTIME_HOME>/.hermes-update-in-progress   body: "<pid>\\n<started_at_unix>"
-
-A marker only counts as a live update when its pid is alive AND it is younger
-than :data:`UPDATE_MARKER_MAX_AGE_MS` — mirroring ``readLiveUpdateMarker`` so a
-crashed updater self-heals instead of wedging every future update. A stale
-marker is removed on read by whoever notices it first.
-
-One layering wrinkle: the Tauri updater holds this marker for its WHOLE run and
-then spawns ``hermes update`` as a child stage. Without a handoff the child
-sees its own parent's live marker and refuses — the GUI update deadlocks
-against itself on every attempt ("Hermes is still running", retry forever).
-Two mechanisms recognize the orchestrating parent, and either suffices:
-
-* The updater exports :data:`HANDOFF_PID_ENV` naming its own pid, and
-  ``acquire`` treats a live holder matching that pid as the lock we are
-  already running under. The env var alone grants nothing: the pid must also
-  be the live marker owner, so a stale or forged value cannot bypass the lock.
-* A live holder that is a *process ancestor* of ours is likewise our own
-  orchestrator. This is the load-bearing path for the fleet: the staged
-  ``hermes-setup`` binary under ``~/.hermes`` is only refreshed by a full
-  installer run (``copy_self_to_runtime_home`` deliberately no-ops during
-  ``--update``), so every desktop whose staged updater predates the
-  HANDOFF_PID_ENV export runs an old parent against a new child. Without the
-  ancestry check those users get exit 2 ("Hermes is still running") on every
-  GUI update forever, with no Hermes process actually running.
+This module does not implement an updater. Its marker is product-owned; old
+application markers are neither recognized nor removed. Marker bodies retain
+the two-line PID/start-time format for native installation integrations.
 """
 
 from __future__ import annotations
@@ -55,6 +12,7 @@ import os
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Self
 
 logger = logging.getLogger(__name__)
 
@@ -64,10 +22,10 @@ logger = logging.getLogger(__name__)
 # live. A full update (git pull + uv sync + desktop rebuild) is minutes.
 UPDATE_MARKER_MAX_AGE_SECONDS = 20 * 60
 
-MARKER_NAME = ".hermes-update-in-progress"
+MARKER_NAME = ".pcbdraft-update-in-progress"
 
-# Set by an orchestrating updater (the Tauri `hermes-setup --update` flow) to
-# its own pid before spawning `hermes update` as a child stage. The parent
+# Set by an orchestrating native installer to
+# its own pid before spawning a child stage. The parent
 # holds the marker for its whole run, so without this the child refuses its
 # own parent's lock and the GUI update can never complete. See update_child_env
 # in apps/bootstrap-installer/src-tauri/src/update.rs — keep the name in sync.
@@ -77,7 +35,7 @@ HANDOFF_PID_ENV = "PCBDRAFT_RUNTIME_UPDATE_HANDOFF_PID"
 # Already the de-facto contract: the Windows shim + venv-holder guards in
 # _cmd_update_impl exit 2, and the Tauri updater matches on it
 # (UPDATE_EXIT_CONCURRENT in apps/bootstrap-installer/src-tauri/src/update.rs)
-# to show "Hermes is still running" instead of a generic failure. Naming it
+# to show a concurrent-operation error instead of a generic failure. Naming it
 # here keeps the concurrent-update refusal on that same understood contract.
 UPDATE_EXIT_CONCURRENT = 2
 
@@ -85,7 +43,7 @@ UPDATE_EXIT_CONCURRENT = 2
 def update_marker_path() -> Path:
     """Path of the shared update marker.
 
-    Uses the *process* Hermes home (never the context-local profile override):
+    Uses the *process* PCBDraft home (never the context-local profile override):
     the Rust updater resolves ``$PCBDRAFT_RUNTIME_HOME`` or the platform default, and the
     desktop pins that same value into the updater's env. A profile-scoped path
     here would put the lock somewhere the other two owners never look.
@@ -114,7 +72,7 @@ def _pid_alive(pid: int) -> bool:
         from pcbdraft.core.runtime_process import _pid_exists
 
         return bool(_pid_exists(pid))
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — cross-platform PID probe boundary
         # Import failure or an unusable pid (e.g. larger than the platform's
         # pid_t). Treat the marker as stale rather than blocking updates.
         logger.debug("Could not probe pid %s: %s", pid, exc)
@@ -140,11 +98,10 @@ def _handoff_pid() -> int | None:
 def _is_ancestor_pid(pid: int) -> bool:
     """True when ``pid`` is a live ancestor (parent chain) of this process.
 
-    The orchestrating updater spawns ``hermes update`` as a (grand)child, so a
+    The orchestrating installer spawns an installation stage as a child, so a
     live marker owned by one of our ancestors can only be the claim we are
     already running under — an unrelated concurrent updater is never in our
-    parent chain. This heals the fleet of staged ``hermes-setup`` binaries
-    that predate the HANDOFF_PID_ENV export and can never send it.
+    parent chain. This also supports installers using process ancestry.
 
     Never includes our own pid, and any failure counts as "not an ancestor":
     an unprovable ancestry must fall back to the normal refusal.
@@ -155,7 +112,7 @@ def _is_ancestor_pid(pid: int) -> bool:
         import psutil
 
         return any(parent.pid == pid for parent in psutil.Process().parents())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — optional psutil ancestry probe
         logger.debug("Could not walk process ancestry for pid %s: %s", pid, exc)
         return False
 
@@ -177,6 +134,8 @@ def read_live_update(*, path: Path | None = None) -> UpdateHolder | None:
     Never raises.
     """
     marker = path or update_marker_path()
+    if marker.name != MARKER_NAME or marker.is_symlink():
+        return None
     try:
         raw = marker.read_text(encoding="utf-8")
     except OSError:
@@ -208,7 +167,7 @@ def describe_holder(holder: UpdateHolder) -> str:
     minutes, seconds = divmod(int(max(holder.age_seconds, 0)), 60)
     elapsed = f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
     return (
-        f"✗ Another Hermes update is already running (PID {holder.pid}, "
+        f"✗ Another PCBDraft installation operation is already running (PID {holder.pid}, "
         f"started {elapsed} ago).\n"
         "\n"
         "  Two updates mutating the same checkout corrupt it: one rewrites\n"
@@ -237,11 +196,13 @@ class UpdateLock:
 
         A live holder whose pid matches :data:`HANDOFF_PID_ENV` — or is a
         process ancestor of ours — is our own orchestrating parent (the Tauri
-        updater spawning `hermes update` as a stage): we run under ITS claim
+        installer spawning a child stage): we run under ITS claim
         rather than refusing or re-writing the marker, and ``release`` leaves
         the parent's marker untouched. The ancestry path exists because staged
         updaters older than the HANDOFF_PID_ENV export never send the env var.
         """
+        if self.path.name != MARKER_NAME or self.path.is_symlink():
+            return False
         existing = read_live_update(path=self.path)
         if existing is not None:
             if existing.pid == _handoff_pid() or _is_ancestor_pid(existing.pid):
@@ -281,7 +242,7 @@ class UpdateLock:
         except OSError:
             pass
 
-    def __enter__(self) -> UpdateLock:
+    def __enter__(self) -> Self:
         self.acquire()
         return self
 

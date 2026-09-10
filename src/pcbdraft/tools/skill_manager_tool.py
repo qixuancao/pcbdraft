@@ -303,7 +303,7 @@ def _pinned_guard(name: str) -> str | None:
             return (
                 f"Skill '{name}' is pinned and cannot be deleted by "
                 f"skill_manage. Ask the user to run "
-                f"`hermes curator unpin {name}` if they want to delete it. "
+                f"the configured curator controls to unpin {name} if they want to delete it. "
                 f"Patches and edits are allowed on pinned skills; only "
                 f"deletion is blocked."
             )
@@ -348,7 +348,7 @@ def _background_review_write_guard(
                     f"Refusing background curator {action} for pinned skill "
                     f"'{name}': pinned skills are off-limits to autonomous "
                     "maintenance. Ask the user to run "
-                    f"`hermes curator unpin {name}` if they want it changed."
+                    f"the configured curator controls to unpin {name} if they want it changed."
                 ),
             }
     except Exception:
@@ -422,7 +422,7 @@ def _background_review_write_guard(
                     f"Refusing background curator {action} for skill "
                     f"'{name}': the skill is not curator-managed ({_detail}). "
                     "User-owned skills are off-limits to autonomous curation. "
-                    f"Run `hermes curator adopt {name}` to opt it in."
+                    f"Use the configured curator controls to opt {name} in."
                 ),
             }
     except Exception:
@@ -702,7 +702,7 @@ def _maybe_auto_propose_org_edit(name: str, skill_path: Path) -> str | None:
             return (
                 f"This skill is shared by your organisation. Your edit is "
                 f"saved locally and will not be overwritten by org updates. "
-                f"Run `hermes sync propose {name}` to share it back."
+                f"Use the explicitly configured sync integration to share {name} back."
             )
         result = ssc.propose_skill(name)
         if result.get("proposal_pending"):
@@ -715,7 +715,7 @@ def _maybe_auto_propose_org_edit(name: str, skill_path: Path) -> str | None:
         logger.debug("auto-propose skipped for %s: %s", name, e)
         return (
             f"Edit saved locally. Could not submit it to your organisation "
-            f"right now — run `hermes sync propose {name}` to retry."
+            f"right now — retry {name} through the configured sync integration."
         )
 
 
@@ -753,8 +753,8 @@ def _org_mirror_write_guard(
                     "organisation, so a local delete would just come back on "
                     "the next sync. Ask an org admin to remove it for "
                     "everyone. (Editing it IS allowed — your changes are kept "
-                    "and can be proposed back with `hermes sync propose "
-                    f"{name}`.)"
+                    "and can be proposed back through the configured sync "
+                    f"integration for {name}.)"
                 ),
             }
     except Exception:
@@ -848,15 +848,15 @@ def _skill_not_found_error(name: str, suffix: str = "") -> str:
             base += (
                 f" A skill by that name exists in profile "
                 f"'{other_profile}' ({other_path}). To edit a skill in "
-                f"another profile, switch profiles (`hermes -p "
-                f"{other_profile}`) or operate via explicit file tools "
+                f"another profile, select {other_profile} in your integration "
+                f"or operate via explicit file tools "
                 f"with ``cross_profile=True``."
             )
         else:
             names = ", ".join(f"'{p}'" for p, _ in others)
             base += (
                 f" Skills by that name exist in other profiles: {names}. "
-                f"Switch profiles (`hermes -p <name>`) to edit there, or "
+                f"Select the target profile in your integration to edit there, or "
                 f"operate via explicit file tools with ``cross_profile=True``."
             )
     else:
@@ -1032,7 +1032,7 @@ def _attach_lint_findings(result: dict[str, Any], skill_md: Path) -> None:
     result["lint_hint"] = (
         "The skill was created. These are advisory authoring-convention "
         "findings (not blockers) — fix them with skill_manage(action='patch') "
-        "to match Hermes skill standards."
+        "to match PCBDraft skill standards."
     )
 
 
@@ -1828,7 +1828,7 @@ SKILL_MANAGE_SCHEMA = {
         "via skills_list/skill_view. Keep the trigger self-contained in that "
         "first 57-char window: 'Use when <trigger>. <one-line behavior>.'\n\n"
         "Pinned skills are protected from deletion only — skill_manage(action='delete') "
-        "will refuse with a message pointing the user to `hermes curator unpin <name>`. "
+        "will refuse with a message asking the user to unpin it through curator controls. "
         "Patches and edits go through on pinned skills so you can still improve them as "
         "pitfalls come up; pin only guards against irrecoverable loss."
     ),

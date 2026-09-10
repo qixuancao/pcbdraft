@@ -131,7 +131,7 @@ def resolve_provider(
 
     raise GenerationError(
         "Pet generation needs an image backend that supports reference images. "
-        "Open `hermes tools` → Image Generation and configure Nous Portal, "
+        "Review `pcbdraft --help` and configure Image Generation using Nous Portal, "
         "OpenRouter, or OpenAI (gpt-image-2) with an API key."
     )
 

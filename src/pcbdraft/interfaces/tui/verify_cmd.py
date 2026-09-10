@@ -1,12 +1,12 @@
-"""``hermes verify`` — detect a project's run recipe and smoke-test it.
+"""``internal verify`` — detect a project's run recipe and smoke-test it.
 
 Scoped port of superagent-ai/grok-cli's verify subsystem entrypoint.
 Statically detects the project kind (or loads the saved manifest at
-``.hermes/environment.json``), then runs bootstrap/build/test phases and an
+``.pcbdraft/environment.json``), then runs bootstrap/build/test phases and an
 optional background start + readiness poll, printing an evidence summary.
 
 Completed runs are recorded into the coding verification evidence ledger
-(:mod:`agent.verification_evidence`), so a passing ``hermes verify`` satisfies
+(:mod:`agent.verification_evidence`), so a passing ``internal verify`` satisfies
 the verify-on-stop guard the same way a passing canonical test command does.
 """
 
@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 from pathlib import Path
 
@@ -73,7 +74,7 @@ def run_verify_command(args) -> int:
         port_override=args.port,
     )
 
-    _record_evidence(root, recipe, result, partial=bool(phases or args.skip_start))
+    _record_evidence(root, recipe, result, args=args)
 
     if args.json:
         payload = result.to_dict()
@@ -116,16 +117,37 @@ def _merge_project_facts_commands(root: Path, recipe) -> None:
             existing.add(command)
 
 
-def _record_evidence(root: Path, recipe, result, *, partial: bool) -> None:
+def _record_evidence(root: Path, recipe, result, *, args) -> None:
     """Record the completed run into the verification evidence ledger.
 
     Best-effort and fail-silent: a ledger problem must never change the CLI's
-    exit code or output. ``partial`` (an explicit ``--phase`` subset or
-    ``--skip-start``) downgrades the scope to ``targeted`` so a partial pass
-    is never presented as a full workspace green.
+    exit code or output. Record the native module invocation and its effective
+    root, phases, timeouts, start policy and port. Derive ``targeted`` from the
+    same arguments, so a partial pass is never presented as full workspace green.
     """
     try:
         from pcbdraft.agent.verification_evidence import record_verify_run
+
+        argv = [
+            sys.executable,
+            "-m",
+            "pcbdraft.agent.verify",
+            str(root),
+            "--timeout",
+            str(args.timeout),
+            "--ready-timeout",
+            str(args.ready_timeout),
+        ]
+        for phase in args.phase or ():
+            argv.extend(["--phase", phase])
+        if args.skip_start:
+            argv.append("--skip-start")
+        if args.port is not None:
+            argv.extend(["--port", str(args.port)])
+        if args.save:
+            argv.append("--save")
+        if args.json:
+            argv.append("--json")
 
         tails: list[str] = []
         for p in result.phases:
@@ -143,8 +165,8 @@ def _record_evidence(root: Path, recipe, result, *, partial: bool) -> None:
             root=root,
             session_id=os.environ.get("PCBDRAFT_RUNTIME_SESSION_ID"),
             ok=result.ok,
-            command="hermes verify",
-            scope="targeted" if partial else "full",
+            command=shlex.join(argv),
+            scope="targeted" if args.phase or args.skip_start else "full",
             output="\n".join(tails),
         )
     except Exception:

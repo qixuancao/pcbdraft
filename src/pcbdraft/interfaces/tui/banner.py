@@ -12,7 +12,6 @@ import threading
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 
@@ -47,7 +46,7 @@ def cprint(text: str):
         _pt_print(_PT_ANSI(text))
     except Exception:
         # prompt_toolkit needs a real console. On Windows, a redirected or
-        # absent stdout (pythonw.exe, CI, `hermes ... > file`) raises
+        # absent stdout (pythonw.exe, CI, `pcbdraft ... > file`) raises
         # NoConsoleScreenBufferError from its Win32Output — display helpers
         # must never crash the caller over that, so degrade to plain print.
         print(text)
@@ -120,270 +119,9 @@ def get_available_skills() -> dict[str, list[str]]:
 # Update check
 # =========================================================================
 
-# Cache update check results for 6 hours to avoid repeated git fetches
-_UPDATE_CHECK_CACHE_SECONDS = 6 * 3600
-
 # Sentinel returned when we know an update exists but can't count commits
-# (e.g. nix-built hermes — no local git history to count against).
+# (e.g. nix-built pcbdraft — no local git history to count against).
 UPDATE_AVAILABLE_NO_COUNT = -1
-
-_UPSTREAM_REPO_URL = "https://github.com/NousResearch/hermes-agent.git"
-_OFFICIAL_REPO_CANONICAL = "github.com/nousresearch/hermes-agent"
-
-
-def _canonical_github_remote(url: str | None) -> str:
-    """Return ``host/owner/repo`` for common GitHub remote URL forms."""
-    if not url:
-        return ""
-    value = url.strip()
-    if value.startswith("git@github.com:"):
-        value = "github.com/" + value[len("git@github.com:") :]
-    elif value.startswith("ssh://git@github.com/"):
-        value = "github.com/" + value[len("ssh://git@github.com/") :]
-    else:
-        parsed = urlparse(value)
-        if parsed.netloc and parsed.path:
-            value = f"{parsed.netloc}{parsed.path}"
-    value = value.strip().rstrip("/")
-    value = value.removesuffix(".git")
-    return value.lower()
-
-
-def _is_ssh_remote(url: str | None) -> bool:
-    if not url:
-        return False
-    value = url.strip().lower()
-    return value.startswith("git@") or value.startswith("ssh://")
-
-
-def _is_official_ssh_remote(url: str | None) -> bool:
-    return (
-        _is_ssh_remote(url)
-        and _canonical_github_remote(url) == _OFFICIAL_REPO_CANONICAL
-    )
-
-
-def _git_stdout(args: list[str], *, cwd: Path, timeout: int = 5) -> str | None:
-    try:
-        result = subprocess.run(
-            ["git", *args],
-            check=False,
-            capture_output=True,
-            text=True,
-            # git output is UTF-8; on Windows text=True defaults to the ANSI
-            # code page and bytes like 0x90 (3rd byte of 🐛 in a commit
-            # subject) crash the stdlib reader thread (#52649).
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-            cwd=str(cwd),
-        )
-    except Exception:
-        return None
-    if result.returncode != 0:
-        return None
-    return (result.stdout or "").strip()
-
-
-def _github_compare_behind(current_rev: str, target_rev: str) -> int | None:
-    """Exact behind-count via the GitHub compare API for uncountable graphs.
-
-    Shallow installer clones and ls-remote-only probes know the two tip SHAs
-    but have no local history to run ``rev-list --count`` across. GitHub's
-    ``GET /repos/<owner>/<repo>/compare/<current>...<target>`` knows the full
-    graph regardless of local clone depth and returns ``ahead_by`` — exactly
-    the behind count the local graph lost. Unauthenticated, bounded, and
-    best-effort: any failure (offline, rate limit, diverged/unknown SHAs)
-    returns None so callers keep the honest UPDATE_AVAILABLE_NO_COUNT.
-    """
-    if not (_is_full_sha(current_rev) and _is_full_sha(target_rev)):
-        return None
-    url = (
-        "https://api.github.com/repos/nousresearch/hermes-agent/"
-        f"compare/{current_rev}...{target_rev}"
-    )
-    try:
-        import urllib.request
-
-        req = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                # api.github.com 403s requests without a User-Agent.
-                "User-Agent": "hermes-cli-update-check",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            payload = json.loads(resp.read().decode("utf-8"))
-    except Exception:
-        return None
-    ahead = payload.get("ahead_by") if isinstance(payload, dict) else None
-    if isinstance(ahead, int) and not isinstance(ahead, bool) and ahead >= 0:
-        return ahead
-    return None
-
-
-def _is_full_sha(value: str | None) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value) == 40
-        and all(c in "0123456789abcdefABCDEF" for c in value)
-    )
-
-
-def _upstream_main_sha() -> str | None:
-    """Tip SHA of upstream main via HTTPS ls-remote (no auth, no prompts)."""
-    try:
-        result = subprocess.run(
-            ["git", "ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=10,
-        )
-    except Exception:
-        return None
-    if result.returncode != 0 or not result.stdout:
-        return None
-    upstream_rev = result.stdout.split()[0]
-    return upstream_rev or None
-
-
-def _check_via_rev(local_rev: str) -> int | None:
-    """Compare an embedded git revision to upstream main via ls-remote.
-
-    Returns 0 if up-to-date, the exact behind-count when the GitHub compare
-    API can recover it, ``UPDATE_AVAILABLE_NO_COUNT`` if behind by an unknown
-    amount, or ``None`` on failure.
-    """
-    upstream_rev = _upstream_main_sha()
-    if not upstream_rev:
-        return None
-    if upstream_rev == local_rev:
-        return 0
-    # Behind, but ls-remote only knows tip SHAs. Try to recover the exact
-    # count from the GitHub compare API before falling back to the sentinel.
-    # ahead_by == 0 with differing tips means the remote tip is reachable from
-    # our HEAD — a local-ahead checkout, i.e. NOT behind.
-    counted = _github_compare_behind(local_rev, upstream_rev)
-    return counted if counted is not None else UPDATE_AVAILABLE_NO_COUNT
-
-
-def _check_via_local_git(repo_dir: Path) -> int | None:
-    """Count commits behind origin/main in a local checkout."""
-    origin_url = _git_stdout(["remote", "get-url", "origin"], cwd=repo_dir)
-    if _is_official_ssh_remote(origin_url):
-        head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
-        if not head_rev:
-            return None
-        # Passive probe via HTTPS ls-remote (never SSH — no hardware-key
-        # prompts). Tip SHAs alone can't distinguish "behind" from a local
-        # carried commit sitting AHEAD of origin/main, and misreporting an
-        # ahead checkout as behind nudges the user into `hermes update`,
-        # which can wipe their carried work.
-        upstream_rev = _upstream_main_sha()
-        if upstream_rev is None:
-            return None
-        if upstream_rev == head_rev:
-            return 0
-        # Local-ahead: the remote tip is an ancestor of HEAD. Checked against
-        # the FRESH upstream SHA (not the possibly stale origin/main tracking
-        # ref) so a stale ref can't fake an up-to-date report.
-        ancestor = subprocess.run(
-            ["git", "merge-base", "--is-ancestor", upstream_rev, "HEAD"],
-            check=False,
-            capture_output=True,
-            timeout=5,
-            cwd=str(repo_dir),
-        )
-        if ancestor.returncode == 0:
-            return 0
-        # Genuinely behind (or diverged). Recover the exact count via the
-        # GitHub compare API; a local-only HEAD 404s there, which safely
-        # degrades to the honest no-count sentinel — never a fabricated 1.
-        counted = _github_compare_behind(head_rev, upstream_rev)
-        return counted if counted is not None else UPDATE_AVAILABLE_NO_COUNT
-
-    # Installer checkouts are shallow (`git clone --depth 1`). On a shallow
-    # clone the history stops at a single commit, so a plain `git fetch` would
-    # unshallow the repo (dragging in the whole history) and
-    # `rev-list --count HEAD..origin/main` would report a huge bogus "behind"
-    # number (e.g. "12492 commits behind"). Detect shallow up front: fetch with
-    # --depth 1 to preserve the boundary and compare tip SHAs instead of
-    # counting. Full clones (developers, Docker dev images) keep the exact
-    # count path unchanged. Mirrors the desktop fix in apps/desktop/electron/main.cjs.
-    shallow = _git_stdout(["rev-parse", "--is-shallow-repository"], cwd=repo_dir)
-    is_shallow = shallow == "true"
-
-    try:
-        # Self-heal abandoned git lock files before fetching. A stale
-        # .git/shallow.lock from a crashed fetch makes the fetch fail, the
-        # exception below is swallowed, and stale refs get compared against
-        # HEAD — silently degrading the passive check until a human removes
-        # the lock (git never self-heals these).
-        from pcbdraft.interfaces.tui.gitlock import clear_stale_git_locks
-
-        clear_stale_git_locks(repo_dir)
-
-        # Scope the fetch to the one branch the behind-count compares against.
-        # An unscoped ``git fetch origin`` transfers every remote head (~1,400
-        # on this repo — measured 3.0 s vs 0.55 s scoped) and can burn the full
-        # 10 s timeout on slow links. ``cmd_update`` already scopes its fetch
-        # for the same reason. Modern git updates the ``origin/main`` tracking
-        # ref on a scoped fetch, so the ``HEAD..origin/main`` count below is
-        # unaffected; the shallow path compares against FETCH_HEAD, which a
-        # scoped fetch also updates.
-        fetch_args = ["git", "fetch", "origin", "main"]
-        if is_shallow:
-            fetch_args += ["--depth", "1"]
-        fetch_args.append("--quiet")
-        subprocess.run(
-            fetch_args,
-            check=False,
-            capture_output=True,
-            timeout=10,
-            cwd=str(repo_dir),
-        )
-    except Exception:
-        pass  # Offline or timeout — use stale refs, that's fine
-
-    if is_shallow:
-        # No history to count across the shallow boundary. `origin/main` may not
-        # be a tracking ref in a `clone --depth 1`, so prefer FETCH_HEAD (just
-        # updated by the fetch above) and fall back to origin/main.
-        head_rev = _git_stdout(["rev-parse", "HEAD"], cwd=repo_dir)
-        target_rev = _git_stdout(
-            ["rev-parse", "FETCH_HEAD"], cwd=repo_dir
-        ) or _git_stdout(["rev-parse", "origin/main"], cwd=repo_dir)
-        if not head_rev or not target_rev:
-            return None
-        if head_rev == target_rev:
-            return 0
-        # Tips differ but the shallow boundary hides the history between them.
-        # Recover the exact count from the GitHub compare API when possible
-        # (ahead_by == 0 means local-ahead ⇒ up to date); otherwise report the
-        # honest "update available, count unknown" sentinel.
-        counted = _github_compare_behind(head_rev, target_rev)
-        return counted if counted is not None else UPDATE_AVAILABLE_NO_COUNT
-
-    try:
-        result = subprocess.run(
-            ["git", "rev-list", "--count", "HEAD..origin/main"],
-            check=False,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=5,
-            cwd=str(repo_dir),
-        )
-        if result.returncode == 0:
-            return int(result.stdout.strip())
-    except Exception:
-        pass
-    return None
 
 
 def check_for_updates() -> int | None:
@@ -392,17 +130,20 @@ def check_for_updates() -> int | None:
 
 
 def _resolve_repo_dir() -> Path | None:
-    """Return the active Hermes git checkout, or None if this isn't a git install.
+    """Return the active PCBDraft git checkout, or None if this isn't a git install.
 
     Prefers the running code's location over the profile-scoped path
-    because ``$PCBDRAFT_RUNTIME_HOME/hermes-agent/`` may be a stale copy carried
+    because ``$PCBDRAFT_RUNTIME_HOME/pcbdraft/`` may be a stale copy carried
     over by ``--clone-all``.
     """
-    repo_dir = Path(__file__).parent.parent.resolve()
-    if not (repo_dir / ".git").exists():
-        runtime_home = get_runtime_home()
-        repo_dir = runtime_home / "hermes-agent"
-    return repo_dir if (repo_dir / ".git").exists() else None
+    return next(
+        (
+            parent
+            for parent in Path(__file__).resolve().parents
+            if (parent / ".git").exists()
+        ),
+        None,
+    )
 
 
 def _git_short_hash(repo_dir: Path, rev: str) -> str | None:
@@ -436,7 +177,7 @@ def get_git_banner_state(repo_dir: Path | None = None) -> dict | None:
     the active checkout.  When no checkout is available — the canonical case
     is the published Docker image, which excludes ``.git`` from the build
     context — we fall back to the baked-in build SHA (see
-    ``hermes_cli/build_info.py``) and return it as a frozen
+    ``pcbdraft.interfaces.tui/build_info.py``) and return it as a frozen
     ``upstream == local`` state with ``ahead=0``.  A built image is by
     definition pinned to one commit, so "ahead" is always zero and the
     banner correctly shows ``· upstream <sha>`` with no carried-commits
@@ -506,7 +247,7 @@ def _compute_git_banner_state(repo_dir: Path | None = None) -> dict | None:
     return {"upstream": upstream, "local": local, "ahead": max(ahead, 0)}
 
 
-_RELEASE_URL_BASE = "https://github.com/NousResearch/hermes-agent/releases/tag"
+_RELEASE_URL_BASE = "https://github.com/qixuancao/pcbdraft/releases/tag"
 _latest_release_cache: tuple | None = None  # (tag, url) once resolved
 
 
@@ -514,8 +255,8 @@ def get_latest_release_tag(repo_dir: Path | None = None) -> tuple | None:
     """Return ``(tag, release_url)`` for the latest git tag, or None.
 
     Local-only — runs ``git describe --tags --abbrev=0`` against the
-    Hermes checkout. Cached per-process. Release URL always points at the
-    canonical NousResearch/hermes-agent repo (forks don't get a link).
+    PCBDraft checkout. Cached per-process. Release URL always points at the
+    PCBDraft repository.
     """
     global _latest_release_cache
     if _latest_release_cache is not None:
@@ -618,7 +359,7 @@ def _format_update_notice(behind: int) -> str:
             f"[bold yellow]⚠ {behind} {commits_word} behind[/]"
             f"[dim yellow] — run [bold]{recommended_update_command()}[/bold] to update[/]"
         )
-    # UPDATE_AVAILABLE_NO_COUNT: nix-built hermes; we know an update
+    # UPDATE_AVAILABLE_NO_COUNT: nix-built pcbdraft; we know an update
     # exists but not by how much, and we don't know how the user
     # installed it (nix run, profile, system flake, home-manager).
     managed_cmd = get_managed_update_command()

@@ -131,7 +131,7 @@ def check_bang_approval(command: str) -> dict:
 
 
 def _bang_env() -> dict:
-    """Environment for a bang command, with Hermes-managed secrets filtered.
+    """Environment for a bang command, with PCBDraft-managed secrets filtered.
 
     The CLI process holds every configured provider API key in ``os.environ``.
     A bang command is user-typed, but it can still be a third-party script, so
@@ -202,7 +202,7 @@ def run_bang_command(
         emit(f"!: command timed out after {timeout}s")
         return 124
     except KeyboardInterrupt:
-        # Ctrl+C interrupts the command, not the Hermes session.
+        # Ctrl+C interrupts the command, not the PCBDraft session.
         proc.kill()
         emit("!: interrupted")
         return 130

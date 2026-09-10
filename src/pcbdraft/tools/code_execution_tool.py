@@ -192,7 +192,7 @@ _SECRET_SUBSTRINGS = (
 # are non-secret runtime-location flags (the same set hermes_cli treats as the
 # runtime location) that repo-root modules a sandbox script imports may read at
 # import time.  None match _SECRET_SUBSTRINGS.
-_HERMES_CHILD_ALLOWED = frozenset(
+_PCBDRAFT_CHILD_ALLOWED = frozenset(
     {
         "PCBDRAFT_RUNTIME_HOME",
         "PCBDRAFT_RUNTIME_PROFILE",
@@ -278,7 +278,7 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
     # that imports a repo module reading one at import time would otherwise see
     # it silently unset. Surface the drop once so the behavior change is
     # diagnosable and points at the env_passthrough opt-in escape hatch.
-    _dropped_hermes = []
+    _dropped_pcbdraft = []
     for k, v in source_env.items():
         if is_passthrough(k):
             resolved = resolve_passthrough_value(k, v)
@@ -290,7 +290,7 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
         if any(k.startswith(p) for p in _SAFE_ENV_PREFIXES):
             scrubbed[k] = v
             continue
-        if k in _HERMES_CHILD_ALLOWED:
+        if k in _PCBDRAFT_CHILD_ALLOWED:
             scrubbed[k] = v
             continue
         if is_windows and k.upper() in _WINDOWS_ESSENTIAL_ENV_VARS:
@@ -299,15 +299,15 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
         if k.startswith("PCBDRAFT_RUNTIME_"):
             # Non-secret (secrets were already dropped above) and not in any
             # allowlist — a deliberately-dropped PCBDRAFT_RUNTIME_* var.
-            _dropped_hermes.append(k)
-    if _dropped_hermes:
+            _dropped_pcbdraft.append(k)
+    if _dropped_pcbdraft:
         logger.debug(
             "execute_code: dropped %d non-allowlisted PCBDRAFT_RUNTIME_* var(s) from the "
             "sandbox child env (%s). This is intentional hardening (#27303); if "
             "a sandbox script legitimately needs one, declare it via "
             "env_passthrough in the skill/config so it passes by explicit opt-in.",
-            len(_dropped_hermes),
-            ", ".join(sorted(_dropped_hermes)),
+            len(_dropped_pcbdraft),
+            ", ".join(sorted(_dropped_pcbdraft)),
         )
 
     # delegate_task children are marked with a ContextVar, not os.environ, while
@@ -381,7 +381,7 @@ _TOOL_STUBS = {
     "write_file": (
         "write_file",
         "path: str, content: str, cross_profile: bool = False",
-        '"""Write content to a file (always overwrites). Returns dict with status. cross_profile=True opts out of the cross-Hermes-profile soft guard."""',
+        '"""Write content to a file (always overwrites). Returns dict with status. cross_profile=True opts out of the cross-PCBDraft-profile soft guard."""',
         '{"path": path, "content": content, "cross_profile": cross_profile}',
     ),
     "search_files": (
@@ -393,7 +393,7 @@ _TOOL_STUBS = {
     "patch": (
         "patch",
         'path: str = None, old_string: str = None, new_string: str = None, replace_all: bool = False, mode: str = "replace", patch: str = None, cross_profile: bool = False',
-        '"""Targeted find-and-replace (mode="replace") or V4A multi-file patches (mode="patch"). Returns dict with status. cross_profile=True opts out of the cross-Hermes-profile soft guard."""',
+        '"""Targeted find-and-replace (mode="replace") or V4A multi-file patches (mode="patch"). Returns dict with status. cross_profile=True opts out of the cross-PCBDraft-profile soft guard."""',
         '{"path": path, "old_string": old_string, "new_string": new_string, "replace_all": replace_all, "mode": mode, "patch": patch, "cross_profile": cross_profile}',
     ),
     "terminal": (
@@ -419,7 +419,7 @@ def _sandbox_failure_hint(stderr_text: str, enabled_tools=None) -> str | None:
         return None
     window = stderr_text[:4000]
     try:
-        m = re.search(r"cannot import name '(\w+)' from 'hermes_tools'", window)
+        m = re.search(r"cannot import name '(\w+)' from 'pcbdraft_tools'", window)
         if m:
             missing = m.group(1)
             available = sorted(
@@ -465,7 +465,7 @@ def _sandbox_failure_hint(stderr_text: str, enabled_tools=None) -> str | None:
     return None
 
 
-def generate_hermes_tools_module(
+def generate_pcbdraft_tools_module(
     enabled_tools: list[str], transport: str = "uds"
 ) -> str:
     """
@@ -548,7 +548,7 @@ def retry(fn, max_attempts=3, delay=2):
 
 _UDS_TRANSPORT_HEADER = (
     '''\
-"""Auto-generated Hermes tools RPC stubs."""
+"""Auto-generated PCBDraft tools RPC stubs."""
 import json, os, socket, shlex, threading, time
 
 _sock = None
@@ -620,10 +620,10 @@ def _call(tool_name, args):
 
 _FILE_TRANSPORT_HEADER = (
     '''\
-"""Auto-generated Hermes tools RPC stubs (file-based transport)."""
+"""Auto-generated PCBDraft tools RPC stubs (file-based transport)."""
 import json, os, shlex, tempfile, threading, time
 
-_RPC_DIR = os.environ.get("PCBDRAFT_RUNTIME_RPC_DIR") or os.path.join(tempfile.gettempdir(), "hermes_rpc")
+_RPC_DIR = os.environ.get("PCBDRAFT_RUNTIME_RPC_DIR") or os.path.join(tempfile.gettempdir(), "pcbdraft_rpc")
 _seq = 0
 # `_seq += 1` is not atomic (read-modify-write), so concurrent _call()
 # invocations from multiple threads could allocate the same sequence number
@@ -1160,7 +1160,7 @@ def _execute_remote(
 
     sandbox_id = uuid.uuid4().hex[:12]
     temp_dir = _env_temp_dir(env)
-    sandbox_dir = f"{temp_dir}/hermes_exec_{sandbox_id}"
+    sandbox_dir = f"{temp_dir}/pcbdraft_exec_{sandbox_id}"
     quoted_sandbox_dir = shlex.quote(sandbox_dir)
     quoted_rpc_dir = shlex.quote(f"{sandbox_dir}/rpc")
 
@@ -1201,11 +1201,11 @@ def _execute_remote(
         rpc_token = secrets.token_urlsafe(32)
 
         # Generate and ship files
-        tools_src = generate_hermes_tools_module(
+        tools_src = generate_pcbdraft_tools_module(
             list(sandbox_tools),
             transport="file",
         )
-        _ship_file_to_remote(env, f"{sandbox_dir}/hermes_tools.py", tools_src)
+        _ship_file_to_remote(env, f"{sandbox_dir}/pcbdraft_tools.py", tools_src)
         _ship_file_to_remote(env, f"{sandbox_dir}/script.py", code)
 
         # Wrapped so the thread inherits the turn's approval context + callbacks
@@ -1449,7 +1449,7 @@ def execute_code(
         sandbox_tools = SANDBOX_ALLOWED_TOOLS
 
     # --- Set up temp directory with hermes_tools.py and script.py ---
-    tmpdir = tempfile.mkdtemp(prefix="hermes_sandbox_")
+    tmpdir = tempfile.mkdtemp(prefix="pcbdraft_sandbox_")
     # Use /tmp on macOS to avoid the long /var/folders/... path that pushes
     # Unix domain socket paths past the 104-byte macOS AF_UNIX limit.
     # On Linux, tempfile.gettempdir() already returns /tmp.
@@ -1467,7 +1467,7 @@ def execute_code(
         sock_path = None  # not used on Windows; TCP endpoint stored below
         rpc_endpoint = None  # set after bind()
     else:
-        sock_path = os.path.join(_sock_tmpdir, f"hermes_rpc_{uuid.uuid4().hex}.sock")
+        sock_path = os.path.join(_sock_tmpdir, f"pcbdraft_rpc_{uuid.uuid4().hex}.sock")
         rpc_endpoint = sock_path
 
     tool_call_log: list = []
@@ -1487,8 +1487,10 @@ def execute_code(
         # Python source files are decoded as UTF-8 by default (PEP 3120).
         # sandbox_tools is already the correct set (intersection with session
         # tools, or SANDBOX_ALLOWED_TOOLS as fallback — see lines above).
-        tools_src = generate_hermes_tools_module(list(sandbox_tools))
-        with open(os.path.join(tmpdir, "hermes_tools.py"), "w", encoding="utf-8") as f:
+        tools_src = generate_pcbdraft_tools_module(list(sandbox_tools))
+        with open(
+            os.path.join(tmpdir, "pcbdraft_tools.py"), "w", encoding="utf-8"
+        ) as f:
             f.write(tools_src)
 
         # Write the user's script
@@ -1605,13 +1607,13 @@ def execute_code(
         # environment children and may be incompatible with external
         # interpreters (project mode can select a different venv), so they
         # must not shadow or poison the child's sys.path (#74817).
-        from pcbdraft.tools.environments.local import _strip_hermes_owned_pythonpath
+        from pcbdraft.tools.environments.local import _strip_pcbdraft_owned_pythonpath
 
-        _strip_hermes_owned_pythonpath(child_env)
+        _strip_pcbdraft_owned_pythonpath(child_env)
         _runtime_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         _existing_pp = child_env.get("PYTHONPATH", "")
         _pp_parts = [tmpdir]
-        if _uses_hermes_python_environment(_child_python):
+        if _uses_pcbdraft_python_environment(_child_python):
             _pp_parts.append(_runtime_root)
         elif _child_python not in _external_env_logged:
             # Import behavior changes silently otherwise — surface it (once
@@ -1619,8 +1621,8 @@ def execute_code(
             # fails" reports are diagnosable without log spam.
             _external_env_logged.add(_child_python)
             logger.info(
-                "execute_code: child interpreter %s is outside the Hermes "
-                "environment; hermes root omitted from PYTHONPATH",
+                "execute_code: child interpreter %s is outside the PCBDraft "
+                "environment; pcbdraft root omitted from PYTHONPATH",
                 _child_python,
             )
         if _existing_pp:
@@ -2074,7 +2076,7 @@ def _python_environment_prefix(python_path: str) -> str:
     return ""
 
 
-def _uses_hermes_python_environment(python_path: str) -> bool:
+def _uses_pcbdraft_python_environment(python_path: str) -> bool:
     """Whether *python_path* belongs to Hermes's active Python environment.
 
     Short-circuits when *python_path* IS the running interpreter (by path or
@@ -2272,7 +2274,7 @@ def build_execute_code_schema(
     if mode == "strict":
         cwd_note = (
             "Scripts run in their own temp dir, not the session's CWD — use absolute paths "
-            "(os.path.expanduser('~/.hermes/.env')) or terminal()/read_file() for user files."
+            "(PCBDRAFT_RUNTIME_HOME) or terminal()/read_file() for user files."
         )
     else:
         cwd_note = (
@@ -2281,13 +2283,13 @@ def build_execute_code_schema(
         )
 
     description = (
-        "Run a Python script that calls Hermes tools programmatically. "
+        "Run a Python script that calls PCBDraft tools programmatically. "
         "Use when you need 3+ tool calls with logic between them: "
         "filtering/reducing large outputs before they enter context, "
         "conditional branching, or loops (N pages/files, retry on failure). "
         "Use normal tool calls for single calls, results you must reason "
         "over in full, or anything needing user interaction.\n\n"
-        f"Available via `from hermes_tools import ...`:\n\n"
+        f"Available via `from pcbdraft_tools import ...`:\n\n"
         f"{tool_lines}\n\n"
         "Limits: 5-minute timeout, 50KB stdout cap, max 50 tool calls per script. "
         "terminal() is foreground-only (no background or pty).\n\n"
@@ -2309,7 +2311,7 @@ def build_execute_code_schema(
                     "type": "string",
                     "description": (
                         "Python code to execute. Import tools with "
-                        f"`from hermes_tools import {import_str}` "
+                        f"`from pcbdraft_tools import {import_str}` "
                         "and print your final result to stdout."
                     ),
                 },

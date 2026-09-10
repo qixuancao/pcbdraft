@@ -1,7 +1,7 @@
-"""CLI for the Hermes Kanban board — ``hermes kanban …`` subcommand.
+"""CLI for the PCBDraft Kanban board — ``internal kanban …`` subcommand.
 
 Exposes the full Kanban command surface documented in the design spec
-(``docs/hermes-kanban-v1-spec.pdf``).  All DB work is delegated to
+(``docs/pcbdraft-kanban-v1-spec.pdf``).  All DB work is delegated to
 ``kanban_db``.  This module adds:
 
   * Argparse subcommand construction (``build_parser``).
@@ -144,7 +144,7 @@ def _check_dispatcher_presence(
       is running but the config flag is off. Message is human guidance
       explaining the next step.
 
-    Used by ``hermes kanban create`` (and callers) to warn when a task
+    Used by ``internal kanban create`` (and callers) to warn when a task
     will sit in ``ready`` because nothing is there to pick it up.
     Defensive against import failures and config-read errors — if the
     probe itself errors, we return ``(True, "")`` so we don't spam
@@ -196,13 +196,13 @@ def _check_dispatcher_presence(
             "Gateway is running but kanban.dispatch_in_gateway=false in "
             "config.yaml — the task will sit in 'ready' until you flip it "
             "back on and restart the gateway, OR run the legacy "
-            "standalone daemon (`hermes kanban daemon --force`).",
+            "standalone daemon (`pcbdraft --help`).",
         )
     return (
         False,
         "No gateway is running — the task will sit in 'ready' until you "
         "start it. Run:\n"
-        "    hermes gateway start\n"
+        "    pcbdraft --help\n"
         "The gateway hosts an embedded dispatcher (tick interval 60s by "
         "default); your task will be picked up on the next tick after "
         "the gateway comes up.",
@@ -225,11 +225,11 @@ def build_parser(
         "kanban",
         help="Multi-profile collaboration board (tasks, links, comments)",
         description=(
-            "Durable SQLite-backed task board shared across Hermes profiles. "
+            "Durable SQLite-backed task board shared across PCBDraft profiles. "
             "Tasks are claimed atomically, can depend on other tasks, and "
             "are executed by a named profile in an isolated workspace. "
-            "See https://hermes-agent.nousresearch.com/docs/user-guide/features/kanban "
-            "or docs/hermes-kanban-v1-spec.pdf for the full design."
+            "See https://github.com/qixuancao/pcbdraft#readme "
+            "or docs/pcbdraft-kanban-v1-spec.pdf for the full design."
         ),
     )
     # --- global --board flag ---
@@ -243,8 +243,8 @@ def build_parser(
         metavar="<slug>",
         help=(
             "Board slug to operate on. Defaults to the current board "
-            "(set via `hermes kanban boards switch <slug>` or the "
-            "PCBDRAFT_RUNTIME_KANBAN_BOARD env var). Use `hermes kanban boards list` "
+            "(set via `pcbdraft --help` or the "
+            "PCBDRAFT_RUNTIME_KANBAN_BOARD env var). Use `pcbdraft --help` "
             "to see all boards."
         ),
     )
@@ -376,7 +376,7 @@ def build_parser(
         default=None,
         help="Link to a project (id or slug). Anchors the task's "
         "worktree under the project's primary repo with a "
-        "deterministic branch. See `hermes project list`.",
+        "deterministic branch. See `pcbdraft --help`.",
     )
     p_create.add_argument("--tenant", default=None, help="Tenant namespace")
     p_create.add_argument("--priority", type=int, default=0, help="Priority tiebreaker")
@@ -919,7 +919,7 @@ def build_parser(
     # --- daemon (deprecated) ---
     p_daemon = sub.add_parser(
         "daemon",
-        help="DEPRECATED — dispatcher now runs in the gateway. Use `hermes gateway start`.",
+        help="DEPRECATED — dispatcher now runs in the gateway. Use `pcbdraft --help`.",
     )
     p_daemon.add_argument(
         "--interval",
@@ -1078,7 +1078,7 @@ def build_parser(
     p_asg = sub.add_parser(
         "assignees",
         help="List known profiles + per-profile task counts "
-        "(union of ~/.hermes/profiles/ and current assignees on the board)",
+        "(union of ~/.pcbdraft/profiles/ and current assignees on the board)",
     )
     p_asg.add_argument("--json", action="store_true")
 
@@ -1211,7 +1211,7 @@ def build_parser(
 
 
 def kanban_command(args: argparse.Namespace) -> int:
-    """Entry point from ``hermes kanban …`` argparse dispatch.
+    """Entry point from ``internal kanban …`` argparse dispatch.
 
     Returns a shell-style exit code (0 on success, non-zero on error).
     """
@@ -1223,14 +1223,14 @@ def kanban_command(args: argparse.Namespace) -> int:
             parser.print_help()
         else:
             print(
-                "usage: hermes kanban <action> [options]\n"
-                "Run 'hermes kanban --help' for the full list of actions.",
+                "usage: pcbdraft --help\n"
+                "Run 'pcbdraft --help' for the full list of actions.",
                 file=sys.stderr,
             )
         return 0
 
     # Fast-fail for clearer CLI UX only. The durable trust boundary is lower in
-    # hermes_cli.kanban_db, because children can import DB mutators directly.
+    # pcbdraft.interfaces.tui.kanban_db, because children can import DB mutators directly.
     if _is_delegated_child_cli_mutation(args):
         print(
             "kanban: delegate_task child contexts cannot mutate Kanban tasks via the CLI",
@@ -1267,7 +1267,7 @@ def kanban_command(args: argparse.Namespace) -> int:
         if normed != kb.DEFAULT_BOARD and not kb.board_exists(normed):
             print(
                 f"kanban: board {normed!r} does not exist. "
-                f"Create it with `hermes kanban boards create {normed}`.",
+                f"Create it with `pcbdraft --help`.",
                 file=sys.stderr,
             )
             return 1
@@ -1283,7 +1283,7 @@ def kanban_command(args: argparse.Namespace) -> int:
     with board_scope:
         # `repair` must dispatch BEFORE the auto-init below: on a corrupt DB
         # init_db() itself raises KanbanDbCorruptError, which would turn
-        # every `hermes kanban repair` into "could not initialize database"
+        # every `internal kanban repair` into "could not initialize database"
         # without ever reaching the repair path.
         if action == "repair":
             return _cmd_repair(args)
@@ -1435,12 +1435,12 @@ def _is_delegated_child_cli_mutation(args: argparse.Namespace) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Boards management (hermes kanban boards …)
+# Boards management (internal kanban boards …)
 # ---------------------------------------------------------------------------
 
 
 def _dispatch_boards(args: argparse.Namespace) -> int:
-    """Handle ``hermes kanban boards <action>``.
+    """Handle ``internal kanban boards <action>``.
 
     Boards management is deliberately separate from the task-level
     commands: it operates on the filesystem (board directories,
@@ -1496,7 +1496,7 @@ def _cmd_boards_list(args: argparse.Namespace) -> int:
         return 0
     # Human table: marker (•) for current, slug, display name, counts.
     if not boards:
-        print("(no boards — create one with `hermes kanban boards create <slug>`)")
+        print("(no boards — create one with `pcbdraft --help`)")
         return 0
     print(f"{'':2s}  {'SLUG':24s}  {'NAME':28s}  COUNTS")
     for b in boards:
@@ -1512,7 +1512,7 @@ def _cmd_boards_list(args: argparse.Namespace) -> int:
     print()
     print(f"Current board: {current}")
     if len(boards) > 1:
-        print("Switch boards with `hermes kanban boards switch <slug>`.")
+        print("Switch boards with `pcbdraft --help`.")
     return 0
 
 
@@ -1542,12 +1542,12 @@ def _cmd_boards_create(args: argparse.Namespace) -> int:
         kb.set_current_board(meta["slug"])
         print(f"  Switched to {meta['slug']!r}.")
     else:
-        print(f"  Use `hermes kanban boards switch {meta['slug']}` to make it current.")
+        print("  Use `pcbdraft --help` to make it current.")
     return 0
 
 
 def _cmd_boards_rm(args: argparse.Namespace) -> int:
-    # When the user runs `hermes kanban boards delete <slug>` (alias), the
+    # When the user runs `internal kanban boards delete <slug>` (alias), the
     # boards_action is 'delete' but args.delete is never set to True because
     # the --delete flag belongs to the 'rm' subparser only.  Detect the alias
     # and treat it identically to `boards rm --delete` (fixes #23139).
@@ -1579,7 +1579,7 @@ def _cmd_boards_switch(args: argparse.Namespace) -> int:
     if not kb.board_exists(normed):
         print(
             f"kanban boards switch: board {normed!r} does not exist. "
-            f"Create it with `hermes kanban boards create {normed}`.",
+            f"Create it with `pcbdraft --help`.",
             file=sys.stderr,
         )
         return 1
@@ -1685,7 +1685,7 @@ def _cmd_init(args: argparse.Namespace) -> int:
     # already addressable. Multica does this auto-detection on its
     # daemon start; we do it here at init time instead because our
     # dispatcher doesn't need to enumerate — we just pass the name
-    # through to `hermes -p <name>`.
+    # through to `internal -p <name>`.
     try:
         profiles = kb.list_profiles_on_disk()
     except Exception:
@@ -1698,11 +1698,11 @@ def _cmd_init(args: argparse.Namespace) -> int:
         for name in profiles:
             print(f"  {name}")
     else:
-        print("No profiles found under ~/.hermes/profiles/.")
-        print("Create one with `hermes -p <name> setup` before assigning tasks.")
+        print("No profiles found under ~/.pcbdraft/profiles/.")
+        print("Create one with `pcbdraft --help` before assigning tasks.")
     print()
     print("Next step: start the gateway so ready tasks actually get picked up.")
-    print("  hermes gateway start")
+    print("  pcbdraft --help")
     print()
     print(
         "The gateway hosts an embedded dispatcher that ticks every 60 seconds\n"
@@ -1734,7 +1734,7 @@ def _cmd_assignees(args: argparse.Namespace) -> int:
         print(json.dumps(data, indent=2, ensure_ascii=False))
         return 0
     if not data:
-        print("(no assignees — create a profile with `hermes -p <name> setup`)")
+        print("(no assignees — create a profile with `pcbdraft --help`)")
         return 0
     # Header
     print(f"{'NAME':20s}  {'ON DISK':8s}  COUNTS")
@@ -1884,7 +1884,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
         print(
             f"Board: {current} "
             f"({other_count} other board{'s' if other_count != 1 else ''} — "
-            f"`hermes kanban boards list`)\n"
+            f"`pcbdraft --help`)\n"
         )
     if not tasks:
         print("(no matching tasks)")
@@ -2040,7 +2040,7 @@ def _cmd_show(args: argparse.Namespace) -> int:
         print(task.result)
     elif latest_summary:
         # Worker handoff lives on the latest run, not on tasks.result.
-        # Surface it at top-level so a glance at ``hermes kanban show <id>``
+        # Surface it at top-level so a glance at ``internal kanban show <id>``
         # tells you what the worker did even if tasks.result is empty.
         print()
         print("Latest summary:")
@@ -3003,10 +3003,10 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
     # casually — intentional.
     if not getattr(args, "force", False):
         print(
-            "hermes kanban daemon: DEPRECATED — the dispatcher now runs\n"
+            "pcbdraft --help\n"
             "inside the gateway. To use kanban:\n"
             "\n"
-            "    hermes gateway start       # starts the gateway + embedded dispatcher\n"
+            "    pcbdraft --help\n"
             "\n"
             "Ready tasks will be picked up on the next dispatcher tick\n"
             "(default: every 60 seconds). Configure via config.yaml:\n"
@@ -3072,8 +3072,8 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
                     f"ready queue non-empty for {health_state['bad_ticks']} "
                     f"consecutive ticks but 0 workers spawned successfully. "
                     f"Check profile health (venv, PATH, credentials) and "
-                    f"`hermes kanban list --status ready` / "
-                    f"`hermes kanban list --status blocked` for recent "
+                    f"`pcbdraft --help` / "
+                    f"`pcbdraft --help` for recent "
                     f"spawn_failed tasks.",
                     file=sys.stderr,
                     flush=True,
@@ -3102,7 +3102,7 @@ def _cmd_daemon(args: argparse.Namespace) -> int:
 
     def _ready_queue_nonempty() -> bool:
         """Cheap probe — is there at least one ready+assigned+unclaimed
-        task whose assignee maps to a real Hermes profile (i.e. one the
+        task whose assignee maps to a real PCBDraft profile (i.e. one the
         dispatcher would actually try to spawn for)?
 
         Filters out tasks assigned to control-plane lanes

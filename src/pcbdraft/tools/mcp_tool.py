@@ -1050,12 +1050,9 @@ def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
         if which_hit:
             resolved_command = which_hit
         elif resolved_command in {"npx", "npm", "node"}:
-            runtime_home = os.path.expanduser(
-                os.getenv(
-                    "PCBDRAFT_RUNTIME_HOME",
-                    os.path.join(os.path.expanduser("~"), ".hermes"),
-                )
-            )
+            from pcbdraft.core.runtime_environment import get_runtime_home
+
+            runtime_home = str(get_runtime_home())
             candidates = [
                 os.path.join(runtime_home, "node", "bin", resolved_command),
                 os.path.join(
@@ -1167,6 +1164,15 @@ def _mcp_image_extension_for_mime_type(mime_type: str) -> str:
     return mimetypes.guess_extension(normalized) or ".png"
 
 
+def _pcbdraft_mcp_client_info():
+    """Identify real MCP sessions natively without changing the wire protocol."""
+    from mcp.types import Implementation
+
+    from pcbdraft import __version__
+
+    return Implementation(name="PCBDraft", version=__version__)
+
+
 def _cache_mcp_image_block(block) -> str:
     """Cache an MCP ``ImageContent`` block to the shared image cache and
     return a ``MEDIA:<path>`` tag that Hermes gateways know how to render.
@@ -1184,15 +1190,17 @@ def _cache_mcp_image_block(block) -> str:
     normalized_mime = str(mime_type or "").split(";", 1)[0].strip().lower()
     if data is None or not normalized_mime.startswith("image/"):
         return ""
+    if len(data) > _MCP_RESOURCE_MAX_B64_CHARS:
+        return "[MCP image resource too large to cache]"
 
     try:
-        raw_bytes = base64.b64decode(data)
+        raw_bytes = base64.b64decode(data, validate=True)
     except (TypeError, ValueError) as exc:
         logger.warning("MCP image block decode failed (%s): %s", normalized_mime, exc)
         return ""
 
     try:
-        from pcbdraft.services.messaging.platforms.base import cache_image_from_bytes
+        from pcbdraft.tools.media_cache import cache_image_from_bytes
 
         image_path = cache_image_from_bytes(
             raw_bytes,
@@ -1288,7 +1296,7 @@ def _cache_mcp_audio_block(block) -> str:
     try:
         import mimetypes
 
-        from pcbdraft.services.messaging.platforms.base import cache_audio_from_bytes
+        from pcbdraft.tools.media_cache import cache_audio_from_bytes
 
         ext = (
             {"audio/wav": ".wav", "audio/x-wav": ".wav", "audio/wave": ".wav"}.get(
@@ -1371,7 +1379,7 @@ def _render_mcp_resource_block(block, server_name: str = "") -> str:
     if len(raw_bytes) > _MCP_RESOURCE_MAX_BYTES:
         return f"[MCP embedded resource too large to cache: {len(raw_bytes)} bytes, uri={uri}]"
     try:
-        from pcbdraft.services.messaging.platforms.base import cache_document_from_bytes
+        from pcbdraft.tools.media_cache import cache_document_from_bytes
 
         path = cache_document_from_bytes(raw_bytes, _mcp_resource_filename(uri, mime))
     except ImportError:
@@ -3169,7 +3177,7 @@ class MCPServerTask:
         if not _ensure_mcp_sdk():
             raise ImportError(
                 f"MCP server '{self.name}' requires the 'mcp' Python SDK, but "
-                "it is not installed. Run `hermes setup` to install MCP support, "
+                "it is not installed. Run `pcbdraft doctor` for dependency diagnostics, "
                 "then retry."
             )
 
@@ -3292,7 +3300,10 @@ class MCPServerTask:
                             _stdio_pids[_pid] = self.name
                         _stdio_pgids.update(new_pgids)
                 async with ClientSession(
-                    read_stream, write_stream, **sampling_kwargs
+                    read_stream,
+                    write_stream,
+                    client_info=_pcbdraft_mcp_client_info(),
+                    **sampling_kwargs,
                 ) as session:
                     # Bound the MCP handshake. A stdio server that never
                     # completes ``initialize`` (e.g. emits a non-JSON-RPC frame
@@ -3452,7 +3463,7 @@ class MCPServerTask:
                             '"method":"initialize",'
                             '"params":{"protocolVersion":"2025-03-26",'
                             '"capabilities":{},'
-                            '"clientInfo":{"name":"hermes-probe",'
+                            '"clientInfo":{"name":"pcbdraft-probe",'
                             '"version":"0.1"}}}'
                         ),
                     )
@@ -3676,7 +3687,10 @@ class MCPServerTask:
             try:
                 async with sse_client(**_sse_kwargs) as (read_stream, write_stream):
                     async with ClientSession(
-                        read_stream, write_stream, **sampling_kwargs
+                        read_stream,
+                        write_stream,
+                        client_info=_pcbdraft_mcp_client_info(),
+                        **sampling_kwargs,
                     ) as session:
                         # Bound the handshake — same orphaned-task hang as the
                         # stdio path (#59349): an endpoint that accepts the
@@ -3749,7 +3763,10 @@ class MCPServerTask:
                     ) as _streams:
                         read_stream, write_stream = _streams[0], _streams[1]
                         async with ClientSession(
-                            read_stream, write_stream, **sampling_kwargs
+                            read_stream,
+                            write_stream,
+                            client_info=_pcbdraft_mcp_client_info(),
+                            **sampling_kwargs,
                         ) as session:
                             # Bound the handshake (#59349) — see stdio path.
                             self.initialize_result = await self._negotiate_session(
@@ -3801,7 +3818,10 @@ class MCPServerTask:
                     _get_session_id,
                 ):
                     async with ClientSession(
-                        read_stream, write_stream, **sampling_kwargs
+                        read_stream,
+                        write_stream,
+                        client_info=_pcbdraft_mcp_client_info(),
+                        **sampling_kwargs,
                     ) as session:
                         # Bound the handshake (#59349) — see stdio path.
                         self.initialize_result = await self._negotiate_session(
@@ -4131,7 +4151,7 @@ class MCPServerTask:
                             logger.warning(
                                 "MCP server '%s' failed initial authentication, "
                                 "parking until credentials change; re-authenticate "
-                                "with `hermes mcp login %s` "
+                                "through the configured MCP integration for %s "
                                 "(state: connecting → parked): %s: %s",
                                 self.name,
                                 self.name,
@@ -4998,8 +5018,8 @@ def _handle_auth_error_and_retry(
     _bump_server_error(server_name)
     return tool_error(
         f"MCP server '{server_name}' requires re-authentication. "
-        f"Run `hermes mcp login {server_name}` (or delete the tokens "
-        f"file under ~/.hermes/mcp-tokens/ and restart). Do NOT retry "
+        f"Run `pcbdraft doctor`, then authorize {server_name} through the "
+        f"configured MCP integration. Do NOT retry "
         f"this tool — ask the user to re-authenticate.",
         needs_reauth=True,
         server=server_name,
@@ -5749,9 +5769,9 @@ def _load_mcp_config() -> dict[str, dict]:
             servers = {}
         # Ensure .env vars are available for interpolation
         try:
-            from pcbdraft.model.env_loader import load_hermes_dotenv
+            from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 
-            load_hermes_dotenv()
+            load_pcbdraft_dotenv()
         except Exception:
             pass
         safe_servers: dict[str, dict] = {}

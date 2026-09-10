@@ -1,4 +1,4 @@
-"""CLI handlers for ``hermes secrets bitwarden ...``.
+"""CLI handlers for ``internal secrets bitwarden ...``.
 
 Subcommands:
     setup    — interactive wizard: install bws, prompt for token + project, test fetch
@@ -25,9 +25,9 @@ from rich.table import Table
 # NOTE: the Bitwarden backend (``agent.secret_sources.bitwarden``) pulls in
 # ``cryptography`` at module-import time.  On Windows the resulting
 # ``cryptography._rust.pyd`` is mapped into the running process — and when
-# that process is ``hermes update``, the self-lock preflight detects the
+# that process is ``internal update``, the self-lock preflight detects the
 # loaded native module and defers (#86781).  Keep the backend import lazy:
-# this module is registered parse-time from ``hermes_cli.main`` and must not
+# this module is registered parse-time from ``pcbdraft.interfaces.tui.main`` and must not
 # touch ``bw`` until a handler actually runs.
 #
 # ``_BWS_VERSION`` is duplicated here (as a plain string) so ``register_cli``
@@ -56,10 +56,10 @@ def __getattr__(name: str):
     """PEP 562 module-level lazy resolver.
 
     Existing callers (and upstream tests) monkeypatch attributes on
-    ``hermes_cli.secrets_cli.bw`` directly.  Resolving that attribute at
+    ``pcbdraft.interfaces.tui.secrets_cli.bw`` directly.  Resolving that attribute at
     module-import time would re-import ``cryptography`` eagerly — the very
     self-lock we are preventing (#86781).  Defer the backend import until
-    the first actual attribute access, so ``import hermes_cli.secrets_cli``
+    the first actual attribute access, so ``import pcbdraft.interfaces.tui.secrets_cli``
     stays crypto-free while ``secrets_cli.bw.find_bws`` still resolves.
     """
     if name == "bw":
@@ -68,15 +68,15 @@ def __getattr__(name: str):
 
 
 # ---------------------------------------------------------------------------
-# Argparse wiring — called from hermes_cli.main
+# Argparse wiring — called from pcbdraft.interfaces.tui.main
 # ---------------------------------------------------------------------------
 
 
 def register_cli(parent_parser: argparse.ArgumentParser) -> None:
     """Attach the ``bitwarden`` subcommand tree to a parent parser.
 
-    Called from ``hermes_cli.main`` as part of building the top-level
-    ``hermes secrets`` parser.
+    Called from ``pcbdraft.interfaces.tui.main`` as part of building the top-level
+    ``internal secrets`` parser.
     """
     sub = parent_parser.add_subparsers(dest="secrets_bw_command")
 
@@ -197,7 +197,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
                 f"  [red]Non-interactive mode (no TTY) requires all setup flags.[/red]\n"
                 f"  Missing: {', '.join(missing)}\n\n"
                 "  Usage:\n"
-                "    hermes secrets bitwarden setup \\\n"
+                "    pcbdraft --help\n"
                 "      --access-token '0.xxx' \\\n"
                 "      --server-url 'https://vault.bitwarden.com' \\\n"
                 "      --project-id 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'"
@@ -332,12 +332,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
     console.print()
     console.print(
         "[green]✓ Bitwarden Secrets Manager is enabled.[/green]  "
-        "Secrets will be pulled at the start of every Hermes process."
+        "Secrets will be pulled at the start of every PCBDraft process."
     )
     console.print(
-        "  Status:  [cyan]hermes secrets bitwarden status[/cyan]\n"
-        "  Refresh: [cyan]hermes secrets bitwarden sync[/cyan]\n"
-        "  Disable: [cyan]hermes secrets bitwarden disable[/cyan]"
+        "  Status:  [cyan]pcbdraft --help[/cyan]\n"
+        "  Refresh: [cyan]pcbdraft --help[/cyan]\n"
+        "  Disable: [cyan]pcbdraft --help[/cyan]"
     )
     return 0
 
@@ -390,11 +390,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         console.print(message)
 
     if not enabled:
-        console.print("\n  Run [cyan]hermes secrets bitwarden setup[/cyan] to enable.")
+        console.print("\n  Run [cyan]pcbdraft --help[/cyan] to enable.")
         return 0
     if not token_set:
         console.print(
-            f"\n  [yellow]Enabled but {token_env} is not set — Hermes will skip BSM "
+            f"\n  [yellow]Enabled but {token_env} is not set — PCBDraft will skip BSM "
             "and warn on next startup.[/yellow]"
         )
     if not project_id:
@@ -460,7 +460,7 @@ def cmd_token(args: argparse.Namespace) -> int:
             console.print(
                 f"[yellow]Warning: configured project {project_id} is not visible "
                 "to this machine account.  Grant it access in the Bitwarden web "
-                "app or re-run `hermes secrets bitwarden setup` to pick a "
+                "app or re-run `pcbdraft --help` to pick a "
                 "different project.[/yellow]"
             )
 
@@ -471,12 +471,12 @@ def cmd_token(args: argparse.Namespace) -> int:
     bw.clear_caches()
     console.print(
         f"[green]✓[/green] stored in {get_env_path()} as {token_env}.  "
-        "Takes effect on the next Hermes invocation."
+        "Takes effect on the next PCBDraft invocation."
     )
     if not bw_cfg.get("enabled"):
         console.print(
             "[yellow]Note: the Bitwarden integration is currently disabled — "
-            "run `hermes secrets bitwarden setup` (or set "
+            "run `pcbdraft --help` (or set "
             "secrets.bitwarden.enabled: true) to turn it on.[/yellow]"
         )
     return 0
@@ -490,7 +490,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if not bw_cfg.get("enabled"):
         console.print(
             "[yellow]Bitwarden integration is disabled.  Run "
-            "`hermes secrets bitwarden setup` first.[/yellow]"
+            "`pcbdraft --help` first.[/yellow]"
         )
         return 1
 
@@ -553,7 +553,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     if not args.apply:
         console.print(
             "\n  This was a dry-run — secrets are picked up automatically on the "
-            "next [cyan]hermes[/cyan] invocation.  Re-run with [cyan]--apply[/cyan] "
+            "next [cyan]pcbdraft[/cyan] invocation.  Re-run with [cyan]--apply[/cyan] "
             "to export into the current shell instead."
         )
     else:
@@ -571,7 +571,7 @@ def cmd_disable(args: argparse.Namespace) -> int:
     save_config(cfg)
     console.print(
         "[green]Disabled.[/green]  Bitwarden secrets will NOT be pulled on the next "
-        "Hermes invocation.\n"
+        "PCBDraft invocation.\n"
         "  Your access token is left in .env — remove it manually if you also want "
         "to revoke the credential."
     )
@@ -685,7 +685,7 @@ def _list_projects(
             console.print(
                 "  [yellow]'invalid_client' from the US identity endpoint usually "
                 "means the token is for a different Bitwarden region.  Re-run "
-                "[cyan]hermes secrets bitwarden setup[/cyan] and pick EU or "
+                "[cyan]pcbdraft --help[/cyan] and pick EU or "
                 "self-hosted at the region prompt, or set [cyan]secrets.bitwarden."
                 "server_url[/cyan] in config.yaml.[/yellow]"
             )

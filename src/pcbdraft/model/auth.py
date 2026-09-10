@@ -84,6 +84,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 from pcbdraft.core.runtime_environment import OPENROUTER_BASE_URL, secure_parent_dir
+from pcbdraft.core.runtime_paths import default_runtime_home
 from pcbdraft.core.runtime_utils import (
     atomic_replace,
     atomic_yaml_write,
@@ -96,7 +97,12 @@ from pcbdraft.model.configuration import (
     read_raw_config,
     require_readable_config_before_write,
 )
-from pcbdraft.model.credential_persistence import sanitize_borrowed_credential_payload
+from pcbdraft.model.credential_persistence import (
+    normalize_auth_store_sources,
+    normalize_credential_source,
+    sanitize_borrowed_credential_payload,
+)
+from pcbdraft.model.protocol_identity import NOUS_REGISTERED_OAUTH_CLIENT_ID
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +125,7 @@ AUTH_LOCK_TIMEOUT_SECONDS = 15.0
 # Nous Portal defaults
 DEFAULT_NOUS_PORTAL_URL = "https://portal.nousresearch.com"
 DEFAULT_NOUS_INFERENCE_URL = "https://inference-api.nousresearch.com/v1"
-DEFAULT_NOUS_CLIENT_ID = "hermes-cli"
+DEFAULT_NOUS_CLIENT_ID = NOUS_REGISTERED_OAUTH_CLIENT_ID
 NOUS_INFERENCE_INVOKE_SCOPE = "inference:invoke"
 NOUS_BILLING_MANAGE_SCOPE = "billing:manage"
 DEFAULT_NOUS_SCOPE = NOUS_INFERENCE_INVOKE_SCOPE
@@ -149,10 +155,10 @@ STEPFUN_STEP_PLAN_CN_BASE_URL = "https://api.stepfun.com/step_plan/v1"
 CODEX_OAUTH_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 CODEX_OAUTH_TOKEN_URL = "https://auth.openai.com/oauth/token"
 try:  # Version tag for the Codex token-endpoint User-Agent; fall back if unavailable.
-    from pcbdraft.interfaces.tui import __version__ as _HERMES_CLI_VERSION
+    from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_CLI_VERSION
 except Exception:  # pragma: no cover - version import should always succeed
-    _HERMES_CLI_VERSION = "unknown"
-CODEX_OAUTH_USER_AGENT = f"hermes-cli/{_HERMES_CLI_VERSION}"
+    _PCBDRAFT_CLI_VERSION = "unknown"
+CODEX_OAUTH_USER_AGENT = f"pcbdraft/{_PCBDRAFT_CLI_VERSION}"
 CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 120
 XAI_OAUTH_ISSUER = "https://auth.x.ai"
 XAI_OAUTH_DISCOVERY_URL = f"{XAI_OAUTH_ISSUER}/.well-known/openid-configuration"
@@ -172,14 +178,12 @@ DEFAULT_SPOTIFY_ACCOUNTS_BASE_URL = "https://accounts.spotify.com"
 DEFAULT_SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
 DEFAULT_SPOTIFY_REDIRECT_URI = "http://127.0.0.1:43827/spotify/callback"
 SPOTIFY_DOCS_URL = (
-    "https://hermes-agent.nousresearch.com/docs/user-guide/features/spotify"
+    "https://developer.spotify.com/documentation/web-api/tutorials/code-pkce-flow"
 )
 SPOTIFY_DASHBOARD_URL = "https://developer.spotify.com/dashboard"
 SPOTIFY_ACCESS_TOKEN_REFRESH_SKEW_SECONDS = 120
 
-OAUTH_OVER_SSH_DOCS_URL = (
-    "https://hermes-agent.nousresearch.com/docs/guides/oauth-over-ssh"
-)
+OAUTH_OVER_SSH_DOCS_URL = "https://github.com/qixuancao/pcbdraft#readme"
 DEFAULT_SPOTIFY_SCOPE = " ".join(
     (
         "user-modify-playback-state",
@@ -1053,7 +1057,7 @@ def format_auth_error(error: Exception) -> str:
         return str(error)
 
     if error.relogin_required:
-        return f"{error} Run `hermes model` to re-authenticate."
+        return f"{error} Run `pcbdraft connect` to re-authenticate."
 
     if error.code == "subscription_required":
         if error.provider == "nous":
@@ -1139,7 +1143,7 @@ def _auth_file_path() -> Path:
     # hermetic conftest, or sandbox escapes via threads/subprocesses. In
     # production (no PYTEST_CURRENT_TEST) this is a single dict lookup.
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        real_home_auth = (Path.home() / ".hermes" / "auth.json").resolve(strict=False)
+        real_home_auth = (default_runtime_home() / "auth.json").resolve(strict=False)
         try:
             resolved = path.resolve(strict=False)
         except Exception:
@@ -1220,7 +1224,7 @@ def _load_global_auth_store() -> dict[str, Any]:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         real_home_env = os.environ.get("HOME", "")
         if real_home_env:
-            real_root = Path(real_home_env) / ".hermes" / "auth.json"
+            real_root = default_runtime_home() / "auth.json"
             try:
                 if global_path.resolve(strict=False) == real_root.resolve(strict=False):
                     _global_auth_store_cache = None
@@ -1429,6 +1433,7 @@ def _load_auth_store(auth_file: Path | None = None) -> dict[str, Any]:
         raw.setdefault("providers", {})
         if isinstance(raw.get("providers"), dict):
             _migrate_stale_nous_portal_url(raw["providers"])
+        normalize_auth_store_sources(raw)
         return raw
 
     # Migrate from PR's "systems" format if present
@@ -1462,6 +1467,17 @@ def _save_auth_store(
     secure_parent_dir(auth_file)
     auth_store["version"] = AUTH_STORE_VERSION
     auth_store["updated_at"] = datetime.now(UTC).isoformat()
+    normalize_auth_store_sources(auth_store)
+    pool = auth_store.get("credential_pool")
+    if isinstance(pool, dict):
+        for provider, entries in pool.items():
+            if isinstance(entries, list):
+                pool[provider] = [
+                    sanitize_borrowed_credential_payload(entry, provider)
+                    if isinstance(entry, dict)
+                    else entry
+                    for entry in entries
+                ]
     payload = json.dumps(auth_store, indent=2) + "\n"
     tmp_path = auth_file.with_name(
         f"{auth_file.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
@@ -1897,6 +1913,7 @@ def suppress_credential_source(provider_id: str, source: str) -> None:
     mapping.  Treat its keys as source names and migrate the value to the
     canonical list form before appending the requested source.
     """
+    source = normalize_credential_source(source)
     with _auth_store_lock():
         auth_store = _load_auth_store()
         suppressed = auth_store.get("suppressed_sources")
@@ -1914,6 +1931,10 @@ def suppress_credential_source(provider_id: str, source: str) -> None:
             provider_list = []
             suppressed[provider_id] = provider_list
 
+        provider_list = list(
+            dict.fromkeys(map(normalize_credential_source, provider_list))
+        )
+        suppressed[provider_id] = provider_list
         if source not in provider_list:
             provider_list.append(source)
         _save_auth_store(auth_store)
@@ -1924,7 +1945,10 @@ def is_source_suppressed(provider_id: str, source: str) -> bool:
     try:
         auth_store = _load_auth_store()
         suppressed = auth_store.get("suppressed_sources", {})
-        return source in suppressed.get(provider_id, [])
+        return normalize_credential_source(source) in {
+            normalize_credential_source(item)
+            for item in suppressed.get(provider_id, [])
+        }
     except Exception:
         return False
 
@@ -1934,6 +1958,7 @@ def unsuppress_credential_source(provider_id: str, source: str) -> bool:
 
     Returns True if a marker was cleared, False if no marker existed.
     """
+    source = normalize_credential_source(source)
     with _auth_store_lock():
         auth_store = _load_auth_store()
         suppressed = auth_store.get("suppressed_sources")
@@ -1947,6 +1972,10 @@ def unsuppress_credential_source(provider_id: str, source: str) -> bool:
             provider_list = raw_sources
         else:
             return False
+        provider_list = list(
+            dict.fromkeys(map(normalize_credential_source, provider_list))
+        )
+        suppressed[provider_id] = provider_list
         if source not in provider_list:
             return False
         provider_list.remove(source)
@@ -2076,7 +2105,9 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
         for entry in read_credential_pool(normalized):
             if not isinstance(entry, dict):
                 continue
-            source = str(entry.get("source") or "").strip().lower()
+            source = normalize_credential_source(
+                str(entry.get("source") or "").strip().lower()
+            )
             if not source:
                 continue
             if source.startswith("env:"):
@@ -2090,7 +2121,7 @@ def is_provider_explicitly_configured(provider_id: str) -> bool:
             if source in {
                 "device_code",
                 "loopback_pkce",
-                "hermes_pkce",
+                "pcbdraft_pkce",
                 "manual",
             } or source.startswith("manual:"):
                 return True
@@ -2170,7 +2201,7 @@ def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
         if not issues:
             return ""
 
-        lines = ["Config issue detected — run 'hermes doctor' for full diagnostics:"]
+        lines = ["Config issue detected — run 'pcbdraft doctor' for full diagnostics:"]
         for ci in issues:
             prefix = "ERROR" if ci.severity == "error" else "WARNING"
             lines.append(f"  [{prefix}] {ci.message}")
@@ -2315,7 +2346,7 @@ def resolve_provider(
         if _config_hint:
             msg += f"\n\n{_config_hint}"
         else:
-            msg += " Check 'hermes model' for available providers, or run 'hermes doctor' to diagnose config issues."
+            msg += " Check 'pcbdraft connect' for available providers, or run 'pcbdraft doctor' to diagnose config issues."
         raise AuthError(msg, code="invalid_provider")
 
     # Explicit one-off CLI creds always mean openrouter/custom
@@ -2467,9 +2498,9 @@ def resolve_provider(
         pass  # boto3 not installed — skip Bedrock auto-detection
 
     raise AuthError(
-        "No inference provider configured. Run 'hermes model' to choose a "
+        "No inference provider configured. Run 'pcbdraft connect' to choose a "
         "provider and model, or set an API key (OPENROUTER_API_KEY, "
-        "OPENAI_API_KEY, etc.) in ~/.hermes/.env.",
+        "OPENAI_API_KEY, etc.) in $PCBDRAFT_RUNTIME_HOME/.env.",
         code="no_provider_configured",
     )
 
@@ -2741,7 +2772,7 @@ def _assert_nous_inference_jwt_usable(
         return
     raise AuthError(
         "Nous Portal access token is not a usable inference JWT "
-        f"({reason}). Re-authenticate with: hermes auth add nous",
+        f"({reason}). Re-authenticate with: pcbdraft connect",
         provider="nous",
         code=reason,
         relogin_required=True,
@@ -3426,7 +3457,7 @@ def _refresh_spotify_oauth_state(
     refresh_token = str(state.get("refresh_token", "") or "").strip()
     if not refresh_token:
         raise AuthError(
-            "Spotify refresh token missing. Run `hermes auth spotify` again.",
+            "Spotify refresh token missing. Run `pcbdraft doctor` for diagnostics.",
             provider="spotify",
             code="spotify_refresh_token_missing",
             relogin_required=True,
@@ -3455,7 +3486,7 @@ def _refresh_spotify_oauth_state(
     if response.status_code >= 400:
         detail = response.text.strip()
         raise AuthError(
-            "Spotify token refresh failed. Run `hermes auth spotify` again."
+            "Spotify token refresh failed. Run `pcbdraft doctor` for diagnostics."
             + (f" Response: {detail}" if detail else ""),
             provider="spotify",
             code="spotify_refresh_failed",
@@ -3496,7 +3527,7 @@ def resolve_spotify_runtime_credentials(
         state = _load_provider_state(auth_store, "spotify")
         if not state:
             raise AuthError(
-                "Spotify is not authenticated. Run `hermes auth spotify` first.",
+                "Spotify is not authenticated. Run `pcbdraft doctor` for diagnostics.",
                 provider="spotify",
                 code="spotify_auth_missing",
                 relogin_required=True,
@@ -3546,7 +3577,7 @@ def resolve_spotify_runtime_credentials(
     access_token = str(state.get("access_token", "") or "").strip()
     if not access_token:
         raise AuthError(
-            "Spotify access token missing. Run `hermes auth spotify` again.",
+            "Spotify access token missing. Run `pcbdraft doctor` for diagnostics.",
             provider="spotify",
             code="spotify_access_token_missing",
             relogin_required=True,
@@ -3607,7 +3638,7 @@ def _spotify_interactive_setup(redirect_uri_hint: str) -> str:
     print("Steps:")
     print(f"  1. Opening {SPOTIFY_DASHBOARD_URL} in your browser...")
     print("  2. Click 'Create app' and fill in:")
-    print("       App name:     anything (e.g. hermes-agent)")
+    print("       App name:     anything (e.g. PCBDraft)")
     print("       Description:  anything")
     print(f"       Redirect URI: {redirect_uri_hint}")
     print("       API/SDK:      Web API")
@@ -3641,7 +3672,7 @@ def _spotify_interactive_setup(redirect_uri_hint: str) -> str:
         save_env_value("PCBDRAFT_RUNTIME_SPOTIFY_REDIRECT_URI", redirect_uri_hint)
 
     print()
-    print("Saved PCBDRAFT_RUNTIME_SPOTIFY_CLIENT_ID to ~/.hermes/.env")
+    print("Saved PCBDRAFT_RUNTIME_SPOTIFY_CLIENT_ID to $PCBDRAFT_RUNTIME_HOME/.env")
     print()
     return raw
 
@@ -3690,7 +3721,7 @@ def login_spotify_command(args) -> None:
     print(f"Redirect URI: {redirect_uri}")
     print("Make sure this redirect URI is allow-listed in your Spotify app settings.")
     print()
-    print("Open this URL to authorize Hermes:")
+    print("Open this URL to authorize PCBDraft:")
     print(authorize_url)
     print()
     print(f"Full setup guide: {SPOTIFY_DOCS_URL}")
@@ -3900,7 +3931,7 @@ def _print_loopback_ssh_hint(redirect_uri: str, *, docs_url: str | None = None) 
     print(divider)
     print("Remote session detected — SSH tunnel required")
     print(divider)
-    print(f"Hermes is waiting for the OAuth callback on {redirect_uri}")
+    print(f"PCBDraft is waiting for the OAuth callback on {redirect_uri}")
     print("but your browser is on a different machine. Run this command")
     print("in a NEW terminal on your local machine BEFORE opening the URL:")
     print()
@@ -4122,7 +4153,7 @@ def refresh_codex_oauth_pure(
     )  # Access token is only used by callers to decide whether to refresh.
     if not isinstance(refresh_token, str) or not refresh_token.strip():
         raise AuthError(
-            "Codex auth is missing refresh_token. Run `hermes auth` to re-authenticate.",
+            "Codex auth is missing refresh_token. Run `pcbdraft connect` to re-authenticate.",
             provider="openai-codex",
             code="codex_auth_missing_refresh_token",
             relogin_required=True,
@@ -4198,10 +4229,8 @@ def refresh_codex_oauth_pure(
             relogin_required = True
         if code == "refresh_token_reused":
             message = (
-                "Codex refresh token was already consumed by another client "
-                "(e.g. Codex CLI or VS Code extension). "
-                "Run `codex` in your terminal to generate fresh tokens, "
-                "then run `hermes auth` to re-authenticate."
+                "Codex refresh token was already consumed by another client. "
+                "Run `pcbdraft connect` to create a fresh PCBDraft-owned session."
             )
             relogin_required = True
         # A 401/403 from the token endpoint always means the refresh token
@@ -4422,7 +4451,7 @@ def resolve_codex_runtime_credentials(
         "provider": "openai-codex",
         "base_url": base_url,
         "api_key": access_token,
-        "source": "hermes-auth-store",
+        "source": "pcbdraft-auth-store",
         "last_refresh": data.get("last_refresh"),
         "auth_mode": "chatgpt",
     }
@@ -4793,7 +4822,7 @@ def _read_xai_oauth_tokens(*, _lock: bool = True) -> dict[str, Any]:
             state = global_state
     if not state:
         raise AuthError(
-            "No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `hermes model`.",
+            "No xAI OAuth credentials stored. Select xAI Grok OAuth (SuperGrok / Premium+) in `pcbdraft connect`.",
             provider="xai-oauth",
             code="xai_auth_missing",
             relogin_required=True,
@@ -4801,7 +4830,7 @@ def _read_xai_oauth_tokens(*, _lock: bool = True) -> dict[str, Any]:
     tokens = state.get("tokens")
     if not isinstance(tokens, dict):
         raise AuthError(
-            "xAI OAuth state is missing tokens. Re-authenticate with `hermes model`.",
+            "xAI OAuth state is missing tokens. Re-authenticate with `pcbdraft connect`.",
             provider="xai-oauth",
             code="xai_auth_invalid_shape",
             relogin_required=True,
@@ -4810,14 +4839,14 @@ def _read_xai_oauth_tokens(*, _lock: bool = True) -> dict[str, Any]:
     refresh_token = str(tokens.get("refresh_token", "") or "").strip()
     if not access_token:
         raise AuthError(
-            "xAI OAuth state is missing access_token. Re-authenticate with `hermes model`.",
+            "xAI OAuth state is missing access_token. Re-authenticate with `pcbdraft connect`.",
             provider="xai-oauth",
             code="xai_auth_missing_access_token",
             relogin_required=True,
         )
     if not refresh_token:
         raise AuthError(
-            "xAI OAuth state is missing refresh_token. Re-authenticate with `hermes model`.",
+            "xAI OAuth state is missing refresh_token. Re-authenticate with `pcbdraft connect`.",
             provider="xai-oauth",
             code="xai_auth_missing_refresh_token",
             relogin_required=True,
@@ -4867,7 +4896,7 @@ def _write_through_xai_oauth_to_global_root(state: dict[str, Any]) -> None:
     if os.environ.get("PYTEST_CURRENT_TEST"):
         real_home_env = os.environ.get("HOME", "")
         if real_home_env:
-            real_root = Path(real_home_env) / ".hermes" / "auth.json"
+            real_root = default_runtime_home() / "auth.json"
             try:
                 if global_path.resolve(strict=False) == real_root.resolve(strict=False):
                     return
@@ -5033,7 +5062,7 @@ def _xai_validate_oauth_endpoint(url: str, *, field: str) -> str:
             f"xAI OIDC discovery {field} host {host!r} is not on the xAI origin "
             f"(expected x.ai or a *.x.ai subdomain). Refusing to use a cached "
             f"endpoint that may have been substituted by a MITM during initial "
-            f"discovery; re-authenticate with `hermes model` to re-fetch.",
+            f"discovery; re-authenticate with `pcbdraft connect` to re-fetch.",
             provider="xai-oauth",
             code="xai_discovery_invalid",
         )
@@ -5162,7 +5191,7 @@ def refresh_xai_oauth_pure(
     del access_token
     if not isinstance(refresh_token, str) or not refresh_token.strip():
         raise AuthError(
-            "xAI OAuth is missing refresh_token. Re-authenticate with `hermes model`.",
+            "xAI OAuth is missing refresh_token. Re-authenticate with `pcbdraft connect`.",
             provider="xai-oauth",
             code="xai_auth_missing_refresh_token",
             relogin_required=True,
@@ -5396,7 +5425,7 @@ def resolve_xai_oauth_runtime_credentials(
         "provider": "xai-oauth",
         "base_url": base_url,
         "api_key": access_token,
-        "source": "hermes-auth-store",
+        "source": "pcbdraft-auth-store",
         "last_refresh": data.get("last_refresh"),
         # Display/telemetry only. Device-code is the only supported xAI OAuth
         # flow, so report it unconditionally — auth.json may still carry a
@@ -5515,7 +5544,7 @@ def _nous_device_auth_timeout_message(portal_base_url: str) -> str:
         "  Portal sign-in is required before the device code can be approved.\n"
         "  If the browser showed a CAPTCHA / 'You did not pass CAPTCHA' error,\n"
         "  finish signing in at the Portal in a normal browser tab, then retry:\n"
-        "    hermes portal\n"
+        "    pcbdraft connect\n"
         f"  Portal login: {portal}/login"
     )
 
@@ -6125,13 +6154,13 @@ def _refresh_access_token(
         description = (
             "Nous Portal detected refresh-token reuse and revoked this session.\n"
             "This usually means an external process (monitoring script, "
-            "custom self-heal hook, or another Hermes install sharing "
-            "~/.hermes/auth.json) called POST /api/oauth/token with Hermes's "
+            "custom self-heal hook, or another PCBDraft install sharing "
+            "$PCBDRAFT_RUNTIME_HOME/auth.json) called POST /api/oauth/token with PCBDraft's "
             "refresh token without persisting the rotated token back.\n"
-            "Nous refresh tokens are single-use — only Hermes may call the "
-            "refresh endpoint. For health checks, use `hermes auth status` "
+            "Nous refresh tokens are single-use — only PCBDraft may call the "
+            "refresh endpoint. For health checks, use `pcbdraft doctor` "
             "instead.\n"
-            "Re-authenticate with: hermes auth add nous"
+            "Re-authenticate with: pcbdraft connect"
         )
         relogin = True
 
@@ -6248,7 +6277,7 @@ def resolve_nous_access_token(
     ):
         if not state:
             raise AuthError(
-                "Hermes is not logged into Nous Portal.",
+                "PCBDraft is not logged into Nous Portal.",
                 provider="nous",
                 relogin_required=True,
             )
@@ -6443,7 +6472,7 @@ def refresh_nous_oauth_pure(
                     raise AuthError(
                         "Nous Portal access token is not a usable inference JWT "
                         f"({current_invoke_jwt_status}) and no refresh token is available. "
-                        "Re-authenticate with: hermes auth add nous",
+                        "Re-authenticate with: pcbdraft connect",
                         provider="nous",
                         code=current_invoke_jwt_status,
                         relogin_required=True,
@@ -6506,7 +6535,7 @@ def refresh_nous_oauth_from_state(
     return refresh_nous_oauth_pure(
         state.get("access_token", ""),
         state.get("refresh_token", ""),
-        state.get("client_id", "hermes-cli"),
+        state.get("client_id", DEFAULT_NOUS_CLIENT_ID),
         state.get("portal_base_url", DEFAULT_NOUS_PORTAL_URL),
         state.get("inference_base_url", DEFAULT_NOUS_INFERENCE_URL),
         token_type=state.get("token_type", "Bearer"),
@@ -6617,7 +6646,7 @@ def resolve_nous_runtime_credentials(
     ):
         if not state:
             raise AuthError(
-                "Hermes is not logged into Nous Portal.",
+                "PCBDraft is not logged into Nous Portal.",
                 provider="nous",
                 relogin_required=True,
             )
@@ -6801,7 +6830,7 @@ def resolve_nous_runtime_credentials(
                             raise AuthError(
                                 "Nous Portal access token is not a usable inference JWT "
                                 f"({reason}) and no refresh token is available. "
-                                "Re-authenticate with: hermes auth add nous",
+                                "Re-authenticate with: pcbdraft connect",
                                 provider="nous",
                                 code=reason,
                                 relogin_required=True,
@@ -7578,13 +7607,13 @@ def _get_azure_foundry_auth_status() -> dict[str, Any]:
             if not installed:
                 info["hint"] = (
                     "azure-identity not installed. Install with: "
-                    "pip install azure-identity  (or rely on Hermes' "
+                    "pip install azure-identity  (or rely on PCBDraft's "
                     "lazy-install at first use)."
                 )
             else:
                 info["hint"] = (
                     "azure-identity is installed; live credential validation "
-                    "is skipped here. Run `hermes doctor` to verify token acquisition."
+                    "is skipped here. Run `pcbdraft doctor` to verify token acquisition."
                 )
             return info
         except Exception as exc:
@@ -8210,10 +8239,9 @@ def _save_model_choice(model_id: str) -> None:
 
 
 def login_command(args) -> None:
-    """Deprecated: use 'hermes model' or 'hermes setup' instead."""
-    print("The 'hermes login' command has been removed.")
-    print("Use 'hermes auth' to manage credentials,")
-    print("'hermes model' to select a provider, or 'hermes setup' for full setup.")
+    """Guide callers of the legacy login handler to the product entrypoint."""
+    print("Use 'pcbdraft connect' to manage credentials and select a provider.")
+    print("Use 'pcbdraft doctor' for diagnostics or 'pcbdraft --help' for commands.")
     raise SystemExit(0)
 
 
@@ -8241,7 +8269,7 @@ def _login_openai_codex(
                 and _resolved_key
                 and not _codex_access_token_is_expiring(_resolved_key, 60)
             ):
-                print("Existing Codex credentials found in Hermes auth store.")
+                print("Existing Codex credentials found in PCBDraft auth store.")
                 try:
                     reuse = input("Use existing credentials? [Y/n]: ").strip().lower()
                 except (EOFError, KeyboardInterrupt):
@@ -8264,7 +8292,7 @@ def _login_openai_codex(
     # Run a fresh device code flow — Hermes gets its own OAuth session
     print()
     print("Signing in to OpenAI Codex...")
-    print("(Hermes creates its own session — won't affect Codex CLI or VS Code)")
+    print("(PCBDraft creates its own session — won't affect Codex CLI or VS Code)")
     print()
 
     creds = _codex_device_code_login()
@@ -8299,7 +8327,7 @@ def _login_xai_oauth(
                 and api_key
                 and not _xai_access_token_is_expiring(api_key, 60)
             ):
-                print("Existing xAI OAuth credentials found in Hermes auth store.")
+                print("Existing xAI OAuth credentials found in PCBDraft auth store.")
                 try:
                     reuse = input("Use existing credentials? [Y/n]: ").strip().lower()
                 except (EOFError, KeyboardInterrupt):
@@ -8318,7 +8346,7 @@ def _login_xai_oauth(
 
     print()
     print("Signing in to xAI Grok OAuth (SuperGrok / Premium+)...")
-    print("(Hermes creates its own local OAuth session)")
+    print("(PCBDraft creates its own local OAuth session)")
     print()
 
     timeout_seconds = float(getattr(args, "timeout", None) or 20.0)
@@ -9002,7 +9030,7 @@ def _minimax_oauth_login(
     if _is_remote_session():
         open_browser = False
 
-    print(f"Starting Hermes login via MiniMax ({region}) OAuth...")
+    print(f"Starting PCBDraft login via MiniMax ({region}) OAuth...")
     print(f"Portal: {portal_base_url}")
 
     with httpx.Client(
@@ -9225,7 +9253,7 @@ def build_minimax_oauth_token_provider() -> Callable[[], str]:
         state = get_provider_auth_state("minimax-oauth")
         if not state or not state.get("access_token"):
             raise AuthError(
-                "Not logged into MiniMax OAuth. Run `hermes model` and select "
+                "Not logged into MiniMax OAuth. Run `pcbdraft connect` and select "
                 "MiniMax (OAuth).",
                 provider="minimax-oauth",
                 code="not_logged_in",
@@ -9270,7 +9298,7 @@ def resolve_minimax_oauth_runtime_credentials(
     state = get_provider_auth_state("minimax-oauth")
     if not state or not state.get("access_token"):
         raise AuthError(
-            "Not logged into MiniMax OAuth. Run `hermes model` and select "
+            "Not logged into MiniMax OAuth. Run `pcbdraft connect` and select "
             "MiniMax (OAuth).",
             provider="minimax-oauth",
             code="not_logged_in",
@@ -9360,7 +9388,7 @@ def _nous_device_code_login(
     if _is_remote_session():
         open_browser = False
 
-    print(f"Starting Hermes login via {pconfig.name}...")
+    print(f"Starting PCBDraft login via {pconfig.name}...")
     print(f"Portal: {portal_base_url}")
     if insecure:
         print("TLS verification: disabled (--insecure)")
@@ -9466,7 +9494,7 @@ def _nous_device_code_login(
             print(message)
             print(f"  Subscribe here: {portal_url}/billing")
             print()
-            print("After subscribing, run `hermes model` again to finish setup.")
+            print("After subscribing, run `pcbdraft connect` again to finish setup.")
             raise SystemExit(1)
         raise
 
@@ -9759,7 +9787,7 @@ def _login_nous(args, pconfig: ProviderConfig) -> None:
                 _save_auth_store(auth_store)
             print()
             print("No provider change. Nous credentials saved for future use.")
-            print("  Run `hermes model` again to switch to Nous Portal.")
+            print("  Run `pcbdraft connect` again to switch to Nous Portal.")
             return
 
         config_path = _update_config_for_provider(
@@ -9803,9 +9831,9 @@ def logout_command(args) -> None:
             _reset_config_provider()
         print(f"Logged out of {provider_name}.")
         if should_reset_config and os.getenv("OPENROUTER_API_KEY"):
-            print("Hermes will use OpenRouter for inference.")
+            print("PCBDraft will use OpenRouter for inference.")
         elif should_reset_config:
-            print("Run `hermes model` or configure an API key to use Hermes.")
+            print("Run `pcbdraft connect` or configure an API key to use PCBDraft.")
         else:
             print("Model provider configuration was unchanged.")
     else:

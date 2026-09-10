@@ -221,7 +221,7 @@ def _check_disk_usage_warning():
         total_bytes = 0
         import glob
 
-        for path in glob.glob(str(scratch_dir / "hermes-*")):
+        for path in glob.glob(str(scratch_dir / "pcbdraft-*")):
             for f in Path(path).rglob("*"):
                 if f.is_file():
                     try:
@@ -1111,7 +1111,7 @@ NEVER pipe a build/test command through tail/head/cat to shorten output (e.g. `c
 Environment state persists: activate a virtualenv or export variables once per session, not before every command.
 
 Foreground (default): returns INSTANTLY when the command finishes, even with a high timeout — set timeout generously for long builds.
-Background: set background=true (returns a session_id). Pair with notify_on_complete=true for bounded tasks; leave silent only for servers/daemons that never exit. Never use nohup/setsid/trailing '&' — use background=true so Hermes tracks the process. After starting a server, verify readiness with a health check, then act in a separate call; no blind sleep loops. Manage with process(action="poll"/"wait").
+Background: set background=true (returns a session_id). Pair with notify_on_complete=true for bounded tasks; leave silent only for servers/daemons that never exit. Never use nohup/setsid/trailing '&' — use background=true so PCBDraft tracks the process. After starting a server, verify readiness with a health check, then act in a separate call; no blind sleep loops. Manage with process(action="poll"/"wait").
 Working directory: use 'workdir' for per-command cwd. When a command changes the session cwd (cd, pushd), the result includes a "cwd" field — trust it instead of prefixing every command with 'cd'.
 PTY: set pty=true for interactive CLIs (they hang without it). Pipe git output to cat if it might page.
 """
@@ -1513,7 +1513,7 @@ def _parse_env_var(
     except (ValueError, json.JSONDecodeError):
         raise ValueError(
             f"Invalid value for {name}: {raw!r} (expected {type_label}). "
-            f"Check ~/.hermes/.env or environment variables."
+            f"Check PCBDRAFT_RUNTIME_HOME/.env or environment variables."
         )
 
 
@@ -2315,7 +2315,7 @@ def cleanup_all_environments():
     scratch_dir = _get_scratch_dir()
     import glob
 
-    for path in glob.glob(str(scratch_dir / "hermes-*")):
+    for path in glob.glob(str(scratch_dir / "pcbdraft-*")):
         try:
             shutil.rmtree(path, ignore_errors=True)
             logger.info("Removed orphaned: %s", path)
@@ -2660,7 +2660,7 @@ def _foreground_background_guidance(command: str) -> str | None:
         return (
             "Foreground command uses shell-level background wrappers (nohup/disown/setsid). "
             'Re-send WITHOUT the wrapper as terminal(command="<cmd>", background=true, '
-            "notify_on_complete=true) so Hermes tracks the process, then run readiness "
+            "notify_on_complete=true) so PCBDraft tracks the process, then run readiness "
             "checks and tests in separate commands."
         )
 
@@ -3035,7 +3035,7 @@ def terminal_tool(
         # never restart. This mirrors the `hermes gateway restart` guard in
         # hermes_cli/gateway.py and the cron-path guard in hermes_cli/cron.py,
         # but applies unconditionally (force=True cannot help here).
-        if os.environ.get("_HERMES_GATEWAY") == "1":
+        if os.environ.get("_PCBDRAFT_GATEWAY") == "1":
             from cron.lifecycle_guard import (
                 _MAX_REFERENCED_SCRIPT_BYTES,
                 contains_gateway_lifecycle_command_or_referenced_script,
@@ -3050,7 +3050,7 @@ def terminal_tool(
                         "error": (
                             "Blocked: launchctl submit/bootstrap registers a persistent "
                             "KeepAlive job and is unsafe from inside the gateway process. "
-                            "Use Hermes cron for one-shot delayed work, or install an "
+                            "Use configured cron for one-shot delayed work, or install an "
                             "explicit LaunchAgent from a separate shell."
                         ),
                         "status": "error",
@@ -3138,7 +3138,7 @@ def terminal_tool(
                             "Blocked: command or referenced script cannot restart or stop "
                             "the gateway from inside the gateway process. The gateway would "
                             "kill this command before it could complete (SIGTERM propagates "
-                            "to child processes). Run `hermes gateway restart` from a "
+                            "to child processes). Manage the gateway externally from a "
                             "separate shell outside the running gateway."
                         ),
                         "status": "error",
@@ -3398,23 +3398,19 @@ def terminal_tool(
                             "This looks like a homebrewed CI poller built from "
                             "`gh pr view --json statusCheckRollup` and/or "
                             "`gh pr checks | jq`. That shape has burned us "
-                            "repeatedly in hermes-agent dev work (PRs #31329, "
-                            "#31448, #31695, #31709, #31745, #32264, #33131) — "
+                            "in upstream development — "
                             "stdout buffering kills output capture, jq null-key "
                             "edge cases silently exit the loop, conclusion-vs-"
                             "status field confusion exits early with bogus "
                             "all-green verdicts, TTY-only summary banners "
                             "never appear when piped. Use the canonical "
-                            "snippets in the green-ci-policy skill instead: "
+                            "exit-code-driven polling instead: "
                             "the exit-code-driven `gh pr checks $PR >/dev/null` "
                             "(rc 0 = green, 8 = pending, else fail) for "
                             "exit-on-first-fail behavior, or the column-2 "
                             "awk-on-tabs poller "
                             '(`awk -F"\\t" "$2==\\"pending\\""`) for '
-                            "sharded matrices. Load skill_view("
-                            "name='github/hermes-agent-dev', "
-                            "file_path='references/green-ci-policy.md') for "
-                            "the verbatim snippets. If you must roll a custom "
+                            "sharded matrices. If you must roll a custom "
                             "loop with rich structured output, write each tick "
                             "to a known file (`tee -a /tmp/ci.log`) and rely "
                             "on `process(action='log')` to read THAT file — "
@@ -3447,7 +3443,7 @@ def terminal_tool(
                         result_data["notify_unsupported"] = (
                             "notify_on_complete / watch_patterns are not available in "
                             "this session — it cannot receive an async completion after "
-                            "the turn ends (a one-shot runner such as `hermes -z`, a "
+                            "the turn ends (a one-shot runner, a "
                             "cron job, a Kanban worker, or a stateless HTTP endpoint). "
                             "The process is "
                             "running in the background; retrieve its result with "

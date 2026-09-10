@@ -21,7 +21,7 @@ def _ensure_utf8():
     The CLI prints box-drawing characters (┌│├└─) and the ⚕ glyph in the setup
     wizard, doctor, and status banners. Encoding those under a non-UTF-8 codec
     raises an unhandled UnicodeEncodeError that crashes the command before it
-    can even start — e.g. `hermes setup` on a fresh Pi.
+    can even start — e.g. `pcbdraft setup` on a fresh Pi.
 
     This runs at import time so it protects every CLI subcommand, on any
     platform. It re-wraps stdout/stderr as UTF-8 when their encoding is not
@@ -34,7 +34,7 @@ def _ensure_utf8():
     stream change and no environment mutation.
 
     Note: this is intentionally the earliest, platform-agnostic guard.
-    hermes_cli/stdio.py::configure_windows_stdio() runs later from the entry
+    pcbdraft.interfaces.tui/stdio.py::configure_windows_stdio() runs later from the entry
     points and layers on the Windows-only extras (console code-page flip,
     EDITOR default, PATH augmentation); its stream reconfiguration is a
     harmless idempotent no-op once we have already repaired the streams here.

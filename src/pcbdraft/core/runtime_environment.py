@@ -1,4 +1,4 @@
-"""Shared constants for Hermes Agent.
+"""Shared constants and runtime helpers for PCBDraft.
 
 Import-safe module with no dependencies — can be imported from anywhere
 without risk of circular imports.
@@ -38,8 +38,8 @@ def _exception_info_without_values() -> (
 
 _profile_fallback_warned: bool = False
 _UNSET = object()
-_HERMES_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
-    "_HERMES_HOME_OVERRIDE", default=_UNSET
+_PCBDRAFT_HOME_OVERRIDE: ContextVar[str | object] = ContextVar(
+    "_PCBDRAFT_HOME_OVERRIDE", default=_UNSET
 )
 
 # ── TUI busy-indicator styles ─────────────────────────────────────────
@@ -52,23 +52,23 @@ DEFAULT_INDICATOR_STYLE: str = "kaomoji"
 
 
 def set_runtime_home_override(path: str | Path | None) -> Token:
-    """Set a context-local Hermes home override and return its reset token.
+    """Set a context-local PCBDraft home override and return its reset token.
 
     This is for in-process, per-task scoping.  It deliberately does not mutate
     ``os.environ`` because that is shared by every thread in the process.
     """
-    value: str | object = _UNSET if path is None else str(path)
-    return _HERMES_HOME_OVERRIDE.set(value)
+    value: str | object = _UNSET if path is None else str(path).strip()
+    return _PCBDRAFT_HOME_OVERRIDE.set(value)
 
 
 def reset_runtime_home_override(token: Token) -> None:
-    """Restore the previous context-local Hermes home override."""
-    _HERMES_HOME_OVERRIDE.reset(token)
+    """Restore the previous context-local PCBDraft home override."""
+    _PCBDRAFT_HOME_OVERRIDE.reset(token)
 
 
 def get_runtime_home_override() -> str | None:
-    """Return the active context-local Hermes home override, if any."""
-    override = _HERMES_HOME_OVERRIDE.get()
+    """Return the active context-local PCBDraft home override, if any."""
+    override = _PCBDRAFT_HOME_OVERRIDE.get()
     if override is _UNSET or not override:
         return None
     return str(override)
@@ -76,9 +76,9 @@ def get_runtime_home_override() -> str | None:
 
 def _get_platform_default_runtime_home() -> Path:
     """Use PCBDraft-owned state even before the terminal is initialized."""
-    from pcbdraft.core.runtime_paths import runtime_home
+    from pcbdraft.core.runtime_paths import default_runtime_home
 
-    return runtime_home()
+    return default_runtime_home()
 
 
 def _runtime_home_from_env() -> Path:
@@ -92,7 +92,7 @@ def _runtime_home_from_env() -> Path:
     """
     val = os.environ.get("PCBDRAFT_RUNTIME_HOME", "").strip()
     if val:
-        return Path(val)
+        return Path(val).expanduser()
     return _get_platform_default_runtime_home()
 
 
@@ -138,35 +138,26 @@ def _warn_profile_fallback_once() -> None:
 
 
 def get_runtime_home() -> Path:
-    """Return the Hermes home directory (default: platform-native path).
+    """Return the PCBDraft runtime home without reading or migrating state.
 
     Resolution order: context-local override (see
     :func:`set_runtime_home_override`) → ``PCBDRAFT_RUNTIME_HOME`` env var → the
     platform-native default.  This is the single source of truth — all other
     copies should import this.
 
-    When ``PCBDRAFT_RUNTIME_HOME`` is unset but an ``active_profile`` file indicates
-    a non-default profile is active, logs a loud one-shot warning to
-    ``errors.log`` so cross-profile data corruption is diagnosable instead
-    of silent.  Behavior is unchanged otherwise — we still return
-    the platform-native default — because raising here would brick 30+ module-level
-    callers that import this at load time.  Subprocess spawners are
-    expected to propagate ``PCBDRAFT_RUNTIME_HOME`` explicitly (see the systemd
-    template in ``hermes_cli/gateway.py`` and the kanban dispatcher in
-    ``hermes_cli/kanban_db.py``).  See https://github.com/NousResearch/hermes-agent/issues/18594.
+    Subprocess spawners must propagate ``PCBDRAFT_RUNTIME_HOME`` explicitly
+    when launching a profile. Profile discovery is a startup concern.
+    Upstream background: https://github.com/NousResearch/hermes-agent/issues/18594.
     """
     override = get_runtime_home_override()
     if override:
-        return Path(override)
-
-    if not os.environ.get("PCBDRAFT_RUNTIME_HOME", "").strip():
-        _warn_profile_fallback_once()
+        return Path(override).expanduser()
 
     return _runtime_home_from_env()
 
 
 def runtime_home_key(path: str | Path | None = None) -> str:
-    """Return a stable key for a Hermes home/profile directory.
+    """Return a stable key for a PCBDraft home/profile directory.
 
     Runtime registries use this key to isolate plugin-owned entries while
     keeping built-in registrations process-global.  ``strict=False`` preserves
@@ -178,7 +169,7 @@ def runtime_home_key(path: str | Path | None = None) -> str:
 
 
 def get_process_runtime_home() -> Path:
-    """Return the Hermes home for the running process, ignoring task overrides.
+    """Return the PCBDraft home for the running process, ignoring task overrides.
 
     Unlike :func:`get_runtime_home`, this never follows the context-local
     override set by :func:`set_runtime_home_override`.  It resolves only the
@@ -196,61 +187,18 @@ def get_process_runtime_home() -> Path:
     return _runtime_home_from_env()
 
 
-# Process-level memo for get_default_runtime_root(). The function resolves
-# PCBDRAFT_RUNTIME_HOME against the native home on every call (~80us of path
-# resolution), and it is called at 31+ sites — every _load_global_auth_store()
-# (per provider row in the /model picker), kanban, backup, gateway, update.
-# Its result depends only on (PCBDRAFT_RUNTIME_HOME, platform native home), which are
-# compared for free on each call, so the memo is freshness-correct even if a
-# test or plugin mutates PCBDRAFT_RUNTIME_HOME mid-process.
-_default_runtime_root_memo: "tuple[str, str, Path] | None" = None
-
-
 def get_default_runtime_root() -> Path:
-    """Return the root Hermes directory for profile-level operations.
+    """Return the process profile root, ignoring task-local overrides.
 
-    In standard deployments this is the platform-native Hermes home
-    (``~/.hermes`` on POSIX, ``%LOCALAPPDATA%\\hermes`` on native Windows).
-
-    In Docker or custom deployments where ``PCBDRAFT_RUNTIME_HOME`` points outside
-    ``~/.hermes`` (e.g. ``/opt/data``), returns ``PCBDRAFT_RUNTIME_HOME`` directly
-    — that IS the root.
-
-    In profile mode where ``PCBDRAFT_RUNTIME_HOME`` is ``<root>/profiles/<name>``,
-    returns ``<root>`` so that ``profile list`` can see all profiles.
-    Works both for standard (``~/.hermes/profiles/coder``) and Docker
-    (``/opt/data/profiles/coder``) layouts.
-
-    Import-safe — no dependencies beyond stdlib.
+    A process home of ``<root>/profiles/<name>`` yields ``<root>``; other
+    overrides are independent roots. With no override, use the product's
+    platform configuration runtime directory. No state is read or migrated.
     """
-    global _default_runtime_root_memo
-    native_home = _get_platform_default_runtime_home()
-    env_home = os.environ.get("PCBDRAFT_RUNTIME_HOME", "")
-    if _default_runtime_root_memo is not None:
-        memo_native, memo_env, memo_result = _default_runtime_root_memo
-        if memo_native == str(native_home) and memo_env == env_home:
-            return memo_result
-
+    env_home = os.environ.get("PCBDRAFT_RUNTIME_HOME", "").strip()
     if not env_home:
-        result = native_home
-    else:
-        env_path = Path(env_home)
-        try:
-            env_path.resolve().relative_to(native_home.resolve())
-            # PCBDRAFT_RUNTIME_HOME is under ~/.hermes (normal or profile mode)
-            result = native_home
-        except ValueError:
-            # Docker / custom deployment.
-            # Check if this is a profile path: <root>/profiles/<name>
-            # If the immediate parent dir is named "profiles", the root is
-            # the grandparent — this covers Docker profiles correctly.
-            if env_path.parent.name == "profiles":
-                result = env_path.parent.parent
-            else:
-                # Not a profile path — PCBDRAFT_RUNTIME_HOME itself is the root
-                result = env_path
-    _default_runtime_root_memo = (str(native_home), env_home, result)
-    return result
+        return _get_platform_default_runtime_home()
+    env_path = Path(env_home).expanduser()
+    return env_path.parent.parent if env_path.parent.name == "profiles" else env_path
 
 
 def get_optional_skills_dir(default: Path | None = None) -> Path:
@@ -261,9 +209,9 @@ def get_optional_skills_dir(default: Path | None = None) -> Path:
     """
     override = os.getenv("PCBDRAFT_RUNTIME_OPTIONAL_SKILLS", "").strip()
     if override:
-        return Path(override)
+        return Path(override).expanduser()
     if default is not None:
-        return default
+        return default.expanduser()
     return get_runtime_home() / "optional-skills"
 
 
@@ -277,9 +225,9 @@ def get_optional_mcps_dir(default: Path | None = None) -> Path:
     """
     override = os.getenv("PCBDRAFT_RUNTIME_OPTIONAL_MCPS", "").strip()
     if override:
-        return Path(override)
+        return Path(override).expanduser()
     if default is not None:
-        return default
+        return default.expanduser()
     return get_runtime_home() / "optional-mcps"
 
 
@@ -293,19 +241,19 @@ def get_bundled_skills_dir(default: Path | None = None) -> Path:
     """
     override = os.getenv("PCBDRAFT_RUNTIME_BUNDLED_SKILLS", "").strip()
     if override:
-        return Path(override)
+        return Path(override).expanduser()
     if default is not None:
-        return default
+        return default.expanduser()
     return get_runtime_home() / "skills"
 
 
-def get_hermes_dir(
+def get_pcbdraft_dir(
     new_subpath: str,
     old_name: str,
     *,
     home: Path | None = None,
 ) -> Path:
-    """Resolve a Hermes subdirectory with backward compatibility.
+    """Resolve a PCBDraft subdirectory with backward compatibility.
 
     New installs get the consolidated layout (e.g. ``cache/images``).
     Existing installs that already have the old path (e.g. ``image_cache``)
@@ -322,7 +270,7 @@ def get_hermes_dir(
     Args:
         new_subpath: Preferred path relative to PCBDRAFT_RUNTIME_HOME (e.g. ``"cache/images"``).
         old_name: Legacy path relative to PCBDRAFT_RUNTIME_HOME (e.g. ``"image_cache"``).
-        home: Optional explicit Hermes home. Profile-aware callers that manage
+        home: Optional explicit PCBDraft home. Profile-aware callers that manage
             more than one home in the same process use this instead of
             temporarily mutating the process or context-local PCBDRAFT_RUNTIME_HOME.
 
@@ -330,25 +278,25 @@ def get_hermes_dir(
         Absolute ``Path`` — legacy location if it exists with content,
         otherwise the new location.
     """
-    home = home or get_runtime_home()
+    home = home.expanduser() if home is not None else get_runtime_home()
     old_path = home / old_name
     if _legacy_path_has_content(old_path):
         return old_path
     return home / new_subpath
 
 
-def iter_hermes_node_dirs(home: Path | None = None) -> list[Path]:
-    """Return Hermes-managed Node.js directories in preferred lookup order.
+def iter_pcbdraft_node_dirs(home: Path | None = None) -> list[Path]:
+    """Return PCBDraft-managed Node.js directories in preferred lookup order.
 
     Windows installs from ``scripts/install.ps1`` unpack portable Node directly
-    into ``%LOCALAPPDATA%\\hermes\\node``. POSIX installs use
+    into ``$PCBDRAFT_RUNTIME_HOME/node``. POSIX installs use
     ``$PCBDRAFT_RUNTIME_HOME/node/bin``. Include both shapes on every platform so mixed
     or migrated installs still work.
     """
-    root = home or get_runtime_home()
+    root = home.expanduser() if home is not None else get_runtime_home()
     dirs = [root / "node"]
     bin_dir = root / "node" / "bin"
-    # NOTE: keep this ordering in sync with hermesManagedNodePathEntries() in
+    # NOTE: keep this ordering in sync with pcbdraftManagedNodePathEntries() in
     # apps/desktop/electron/backend-env.ts — the Electron main process is Node
     # and cannot import this module, so the platform-ordering rule is mirrored
     # there (once; main.ts imports it rather than keeping its own copy).
@@ -372,7 +320,7 @@ def _candidate_node_command_names(command: str) -> list[str]:
     return [f"{base}.cmd", f"{base}.exe", base]
 
 
-_HERMES_NODE_TARGET_MAJOR = int(
+_PCBDRAFT_NODE_TARGET_MAJOR = int(
     os.environ.get("PCBDRAFT_RUNTIME_NODE_TARGET_MAJOR", "22")
 )
 _managed_node_heal_attempted = False
@@ -384,11 +332,11 @@ _NODE_BOOTSTRAP_SCRIPT = (
 def node_tool_runnable(path: str | None) -> bool:
     """Return True only when *path* is a Node/npm/npx binary that actually runs.
 
-    Hermes-managed Node trees live under ``$PCBDRAFT_RUNTIME_HOME/node`` (or a profile's
+    PCBDraft-managed Node trees live under ``$PCBDRAFT_RUNTIME_HOME/node`` (or a profile's
     ``PCBDRAFT_RUNTIME_HOME``). A partial upgrade or interrupted install can leave
     ``bin/npm`` behind while ``lib/cli.js`` is missing — the wrapper exists but
-    immediately throws ``MODULE_NOT_FOUND``. ``find_hermes_node_executable``
-    used to trust file presence alone, so ``hermes update`` would pick that
+    immediately throws ``MODULE_NOT_FOUND``. ``find_pcbdraft_node_executable``
+    must not trust file presence alone, or runtime repair could pick that
     broken npm and fail the Node refresh / web UI build.
 
     Probe with ``--version`` (same pattern as :func:`agent_browser_runnable`) so
@@ -412,7 +360,7 @@ def node_tool_runnable(path: str | None) -> bool:
             [path, "--version"],
             capture_output=True,
             timeout=10,
-            env=with_hermes_node_path(),
+            env=with_pcbdraft_node_path(),
             creationflags=windows_hide_flags(),
             check=False,
         )
@@ -421,12 +369,12 @@ def node_tool_runnable(path: str | None) -> bool:
     return result.returncode == 0
 
 
-def hermes_managed_node_tree_present(home: Path | None = None) -> bool:
-    """Return True when any Hermes-managed node/npm/npx shim exists on disk."""
+def pcbdraft_managed_node_tree_present(home: Path | None = None) -> bool:
+    """Return True when any PCBDraft-managed node/npm/npx shim exists on disk."""
     names = set()
     for command in ("node", "npm", "npx"):
         names.update(_candidate_node_command_names(command))
-    for directory in iter_hermes_node_dirs(home):
+    for directory in iter_pcbdraft_node_dirs(home):
         for name in names:
             candidate = directory / name
             if candidate.is_file() and (
@@ -480,7 +428,7 @@ def managed_node_tree_in_use(home: Path | None = None) -> bool:
         )
         return False
     dirs: list[str] = []
-    for directory in iter_hermes_node_dirs(home):
+    for directory in iter_pcbdraft_node_dirs(home):
         try:
             dirs.append(str(Path(directory).resolve()))
         except OSError:
@@ -528,8 +476,8 @@ def _print_managed_node_in_use_notice() -> None:
         return
     _managed_node_in_use_notice_printed = True
     print(
-        "→ Hermes-managed Node.js is in use by a running app; deferring its "
-        "upgrade until the app is closed (re-run `hermes update` afterwards).",
+        "→ PCBDraft-managed Node.js is in use by a running app; deferring its "
+        "upgrade until the app is closed (run `pcbdraft doctor` afterwards).",
         flush=True,
     )
 
@@ -548,7 +496,7 @@ def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
     The live tree is never deleted before its replacement is ready, so an
     interrupted heal cannot gut the running installation. Windows allows
     renaming a tree whose executables are running (images are mapped with
-    ``FILE_SHARE_DELETE`` — the same mechanism as the hermes.exe quarantine);
+    ``FILE_SHARE_DELETE`` — the same mechanism as executable quarantine);
     when the OS refuses the rename, that refusal *is* the in-use signal and
     the heal defers instead of forcing the write and crashing with
     ``PermissionError: [WinError 5]`` on ``npm.cmd`` (#80926).
@@ -573,7 +521,7 @@ def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
     else:
         return False
 
-    home = home or get_runtime_home()
+    home = home.expanduser() if home is not None else get_runtime_home()
     target = home / "node"
 
     # Cheap pre-check: skip the download and staging work when the tree is
@@ -602,7 +550,7 @@ def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
         except OSError:
             continue
 
-    index_url = f"https://nodejs.org/dist/latest-v{_HERMES_NODE_TARGET_MAJOR}.x/"
+    index_url = f"https://nodejs.org/dist/latest-v{_PCBDRAFT_NODE_TARGET_MAJOR}.x/"
     try:
         with urllib.request.urlopen(index_url, timeout=60) as response:
             index_html = response.read().decode("utf-8", errors="replace")
@@ -610,7 +558,7 @@ def _heal_managed_node_windows(home: Path | None = None) -> bool | None:
         return False
 
     match = re.search(
-        rf"node-v{_HERMES_NODE_TARGET_MAJOR}\.\d+\.\d+-win-{node_arch}\.zip",
+        rf"node-v{_PCBDRAFT_NODE_TARGET_MAJOR}\.\d+\.\d+-win-{node_arch}\.zip",
         index_html,
     )
     if not match:
@@ -710,7 +658,7 @@ def _bootstrap_managed_node_posix() -> bool:
                 bash,
                 "-c",
                 'source "$1" && _nb_install_bundled_node',
-                "hermes-node-bootstrap",
+                "pcbdraft-node-bootstrap",
                 str(_NODE_BOOTSTRAP_SCRIPT),
             ],
             env={
@@ -730,12 +678,12 @@ def _bootstrap_managed_node_posix() -> bool:
     return result.returncode == 0
 
 
-def bootstrap_hermes_managed_node() -> str | None:
-    """Install a Hermes-managed Node tree and return its npm path.
+def bootstrap_pcbdraft_managed_node() -> str | None:
+    """Install a PCBDraft-managed Node tree and return its npm path.
 
     Used when the only Node/npm on the machine belongs to the user (system,
     nvm, brew, Nix) and cannot satisfy the repo's ``engines`` requirements —
-    Hermes never modifies a toolchain it does not own, so instead it provisions
+    PCBDraft never modifies a toolchain it does not own, so instead it provisions
     its own tree under ``$PCBDRAFT_RUNTIME_HOME/node`` (the same tree a fresh install
     creates) and works with that.
 
@@ -743,7 +691,7 @@ def bootstrap_hermes_managed_node() -> str | None:
     No-ops (returning the existing npm) when a healthy managed tree is already
     present.
     """
-    existing = find_hermes_node_executable("npm")
+    existing = find_pcbdraft_node_executable("npm")
     if existing:
         return existing
 
@@ -754,7 +702,7 @@ def bootstrap_hermes_managed_node() -> str | None:
     if not ok:
         return None
 
-    for directory in iter_hermes_node_dirs():
+    for directory in iter_pcbdraft_node_dirs():
         for name in _candidate_node_command_names("npm"):
             candidate = directory / name
             if candidate.is_file() and (
@@ -766,8 +714,8 @@ def bootstrap_hermes_managed_node() -> str | None:
     return None
 
 
-def heal_hermes_managed_node() -> bool:
-    """Redownload Hermes-managed Node when the tree exists but is broken.
+def heal_pcbdraft_managed_node() -> bool:
+    """Redownload PCBDraft-managed Node when the tree exists but is broken.
 
     Runs at most once per process. POSIX installs shell out to
     ``heal_managed_node`` in ``scripts/lib/node-bootstrap.sh``; Windows
@@ -779,7 +727,7 @@ def heal_hermes_managed_node() -> bool:
     global _managed_node_heal_attempted
     if _managed_node_heal_attempted:
         return False
-    if not hermes_managed_node_tree_present():
+    if not pcbdraft_managed_node_tree_present():
         return False
 
     if sys.platform == "win32":
@@ -807,7 +755,7 @@ def heal_hermes_managed_node() -> bool:
                 bash,
                 "-c",
                 'source "$1" && heal_managed_node',
-                "hermes-node-heal",
+                "pcbdraft-node-heal",
                 str(_NODE_BOOTSTRAP_SCRIPT),
             ],
             env={**os.environ, "PCBDRAFT_RUNTIME_HOME": str(get_runtime_home())},
@@ -824,15 +772,15 @@ def _managed_node_tree_outdated(home: Path | None = None) -> bool:
     """Return True when the managed tree's node runs but is below the target major.
 
     An outdated managed Node (e.g. a 22 tree from an older install) heals the
-    same way a broken one does: :func:`find_hermes_node_executable` triggers
+    same way a broken one does: :func:`find_pcbdraft_node_executable` triggers
     the once-per-process heal, which redownloads
-    ``latest-v{_HERMES_NODE_TARGET_MAJOR}.x`` — so existing users are upgraded
+    ``latest-v{_PCBDRAFT_NODE_TARGET_MAJOR}.x`` — so existing users are upgraded
     on next launch, not just on the next installer re-run. Mirrors
     ``_nb_managed_node_outdated`` in ``scripts/lib/node-bootstrap.sh``.
     """
     import subprocess
 
-    for directory in iter_hermes_node_dirs(home):
+    for directory in iter_pcbdraft_node_dirs(home):
         for name in _candidate_node_command_names("node"):
             candidate = directory / name
             if not candidate.is_file() or (
@@ -854,14 +802,14 @@ def _managed_node_tree_outdated(home: Path | None = None) -> bool:
                 major = int(result.stdout.decode().strip().lstrip("v").split(".")[0])
             except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
                 return False  # broken, not outdated — the runnable probe handles it
-            return major < _HERMES_NODE_TARGET_MAJOR
+            return major < _PCBDRAFT_NODE_TARGET_MAJOR
     return False
 
 
-def find_hermes_node_executable(command: str) -> str | None:
-    """Return a Hermes-managed Node/npm executable path, healing broken trees.
+def find_pcbdraft_node_executable(command: str) -> str | None:
+    """Return a PCBDraft-managed Node/npm executable path, healing broken trees.
 
-    Outdated trees (node major below ``_HERMES_NODE_TARGET_MAJOR``) heal the
+    Outdated trees (node major below ``_PCBDRAFT_NODE_TARGET_MAJOR``) heal the
     same way broken ones do — the once-per-process heal redownloads the target
     major, upgrading existing users on next launch rather than next reinstall.
     When the heal fails (offline, download error), an outdated-but-runnable
@@ -871,7 +819,7 @@ def find_hermes_node_executable(command: str) -> str | None:
 
     def _first_runnable() -> tuple[str | None, bool]:
         broken = False
-        for directory in iter_hermes_node_dirs():
+        for directory in iter_pcbdraft_node_dirs():
             for name in names:
                 candidate = directory / name
                 if candidate.is_file() and (
@@ -887,7 +835,7 @@ def find_hermes_node_executable(command: str) -> str | None:
     needs_heal = broken_present or (
         resolved is not None and _managed_node_tree_outdated()
     )
-    if needs_heal and heal_hermes_managed_node():
+    if needs_heal and heal_pcbdraft_managed_node():
         healed, _ = _first_runnable()
         if healed:
             return healed
@@ -899,7 +847,7 @@ def find_node_executable_on_path(command: str) -> str | None:
 
     ``shutil.which("npm")`` can resolve an extensionless npm shim before the
     ``.cmd`` shim on Windows. Python's CreateProcess cannot execute that shim
-    directly, so prefer the launchable variants explicitly for Hermes-owned
+    directly, so prefer the launchable variants explicitly for PCBDraft-owned
     subprocesses.
     """
     if sys.platform != "win32":
@@ -923,27 +871,27 @@ def find_node_executable_on_path(command: str) -> str | None:
 
 
 def find_node_executable(command: str) -> str | None:
-    """Resolve a Node.js command, preferring healthy Hermes-managed installs.
+    """Resolve a Node.js command, preferring healthy PCBDraft-managed installs.
 
-    This is for Hermes-owned subprocesses that should not be broken by a bad,
+    This is for PCBDraft-owned subprocesses that should not be broken by a bad,
     missing, or elevation-triggering system Node/npm on PATH. When a managed
     tree exists but cannot be healed, returns ``None`` instead of falling back
     to system npm on PATH.
     """
-    managed = find_hermes_node_executable(command)
+    managed = find_pcbdraft_node_executable(command)
     if managed:
         return managed
-    if hermes_managed_node_tree_present():
+    if pcbdraft_managed_node_tree_present():
         return None
     return find_node_executable_on_path(command)
 
 
-def with_hermes_node_path(env: dict[str, str] | None = None) -> dict[str, str]:
-    """Return *env* with Hermes-managed Node directories prepended to PATH."""
+def with_pcbdraft_node_path(env: dict[str, str] | None = None) -> dict[str, str]:
+    """Return *env* with PCBDraft-managed Node directories prepended to PATH."""
     merged = dict(os.environ if env is None else env)
     existing = merged.get("PATH", "")
     parts = [p for p in existing.split(os.pathsep) if p]
-    managed = [str(path) for path in iter_hermes_node_dirs() if path.is_dir()]
+    managed = [str(path) for path in iter_pcbdraft_node_dirs() if path.is_dir()]
     for entry in reversed(managed):
         if entry not in parts:
             parts.insert(0, entry)
@@ -958,7 +906,7 @@ def agent_browser_runnable(path: str | None) -> bool:
     agent-browser's npm ``postinstall`` re-points a *global* install symlink
     (e.g. ``/opt/homebrew/bin/agent-browser``) at our local
     ``node_modules/agent-browser/bin/...`` binary, which then disappears on the
-    next ``hermes update`` — leaving a **dangling symlink** that ``which`` still
+    next runtime replacement — leaving a **dangling symlink** that ``which`` still
     reports but exec fails on with exit 127 (issue #48521). Callers that trust
     such a path silently break every browser tool.
 
@@ -991,7 +939,7 @@ def agent_browser_runnable(path: str | None) -> bool:
             [path, "--version"],
             capture_output=True,
             timeout=10,
-            env=with_hermes_node_path(),
+            env=with_pcbdraft_node_path(),
             creationflags=windows_hide_flags(),
             check=False,
         )
@@ -1054,18 +1002,18 @@ def display_runtime_home() -> str:
 
     Uses ``~/`` shorthand for readability::
 
-        default:  ``~/.hermes``
-        profile:  ``~/.hermes/profiles/coder``
-        custom:   ``/opt/hermes-custom``
+        default:  ``~/.config/pcbdraft/runtime`` (Linux)
+        profile:  ``~/.config/pcbdraft/runtime/profiles/coder``
+        custom:   ``/opt/pcbdraft-custom``
 
     Use this in **user-facing** print/log messages instead of hardcoding
-    ``~/.hermes``.  For code that needs a real ``Path``, use
+    a home-relative path. For code that needs a real ``Path``, use
     :func:`get_runtime_home` instead.
     """
     home = get_runtime_home()
     try:
         return "~/" + str(home.relative_to(Path.home()))
-    except ValueError:
+    except (ValueError, OSError, RuntimeError):
         return str(home)
 
 
@@ -1112,7 +1060,7 @@ def _profile_home_path(env: dict[str, str] | None = None) -> str | None:
     )
     if not runtime_home:
         return None
-    profile_home = os.path.join(runtime_home, "home")
+    profile_home = os.path.join(os.path.expanduser(runtime_home.strip()), "home")
     if os.path.isdir(profile_home):
         return profile_home
     return None
@@ -1169,9 +1117,9 @@ def _iter_real_home_candidates(env: dict[str, str] | None = None) -> list[str]:
 
 
 def get_real_home(env: dict[str, str] | None = None) -> str:
-    """Return the OS user's real home directory, avoiding Hermes profile HOME.
+    """Return the OS user's real home directory, avoiding PCBDraft profile HOME.
 
-    ``PCBDRAFT_RUNTIME_HOME`` scopes Hermes state. ``HOME`` is reserved for the OS/user
+    ``PCBDRAFT_RUNTIME_HOME`` scopes PCBDraft state. ``HOME`` is reserved for the OS/user
     account and the many external CLIs that store credentials under ``~``.
     If a parent process is already running with ``HOME={PCBDRAFT_RUNTIME_HOME}/home``,
     this helper repairs back to the account home when possible.
@@ -1184,7 +1132,7 @@ def get_real_home(env: dict[str, str] | None = None) -> str:
             continue
         seen.add(key)
         if not _is_profile_home(candidate, profile_home):
-            return candidate
+            return os.path.expanduser(candidate)
     return tempfile.gettempdir()
 
 
@@ -1238,7 +1186,7 @@ def get_subprocess_home(env: dict[str, str] | None = None) -> str | None:
 
 
 def apply_subprocess_home_env(env: dict[str, str]) -> None:
-    """Apply Hermes' subprocess HOME contract to *env* in-place."""
+    """Apply PCBDraft's subprocess HOME contract to *env* in-place."""
     real_home = get_real_home(env)
     if real_home:
         env["PCBDRAFT_RUNTIME_REAL_HOME"] = real_home
@@ -1544,7 +1492,7 @@ def wsl_unc_path_to_posix(path: str) -> str | None:
 
 
 def translate_cwd_for_wsl_backend(cwd: str) -> str:
-    """Normalize a cross-boundary cwd when Hermes itself runs inside WSL.
+    """Normalize a cross-boundary cwd when PCBDraft itself runs inside WSL.
 
     A Windows-host UI (native picker / drive path / ``\\\\wsl.localhost\\`` UNC)
     can hand the WSL backend a path it can't ``chdir`` into. Map it to the POSIX
@@ -1626,7 +1574,7 @@ def get_config_path() -> Path:
     """Return the path to ``config.yaml`` under PCBDRAFT_RUNTIME_HOME.
 
     Replaces the ``get_runtime_home() / "config.yaml"`` pattern repeated
-    in 7+ files (skill_utils.py, hermes_logging.py, hermes_time.py, etc.).
+    across runtime utility, logging and clock modules.
     """
     return get_runtime_home() / "config.yaml"
 
@@ -1666,7 +1614,7 @@ def apply_ipv4_preference(force: bool = False) -> None:
     import socket
 
     # Guard against double-patching
-    if getattr(socket.getaddrinfo, "_hermes_ipv4_patched", False):
+    if getattr(socket.getaddrinfo, "_pcbdraft_ipv4_patched", False):
         return
 
     _original_getaddrinfo = socket.getaddrinfo
@@ -1682,7 +1630,7 @@ def apply_ipv4_preference(force: bool = False) -> None:
                 return _original_getaddrinfo(host, port, family, type, proto, flags)
         return _original_getaddrinfo(host, port, family, type, proto, flags)
 
-    _ipv4_getaddrinfo._hermes_ipv4_patched = True  # type: ignore[attr-defined]
+    _ipv4_getaddrinfo._pcbdraft_ipv4_patched = True  # type: ignore[attr-defined]
     socket.getaddrinfo = _ipv4_getaddrinfo  # type: ignore[assignment]
 
 
@@ -1707,17 +1655,17 @@ def venv_bin_dir(venv_dir, *, windows: bool | None = None) -> Path:
     """Directory holding a venv's executables (``Scripts`` / ``bin``).
 
     Canonical helper for venv layout. This was open-coded in seven places
-    across four ``hermes_cli`` modules using three different Windows
+    across terminal modules using three different Windows
     predicates (``platform.system()``, ``is_windows()``, ``_is_windows()``);
     each new call site had to re-derive it, and #76091 shipped an eighth copy
     because the correct behaviour lived 2400 lines away in another function.
-    A few sites outside ``hermes_cli`` (``tools/code_execution_tool.py``,
+    A few sites outside the terminal (``tools/code_execution_tool.py``,
     ``agent/lsp/install.py``, ``agent/lsp/servers.py``) still hand-roll it —
     convert them as they are touched.
 
     *windows* lets a caller pass its own platform verdict. Several callers
     resolve this through predicates the test-suite patches to exercise
-    Windows paths on Linux CI (``hermes_cli.main._is_windows`` and friends);
+    Windows paths on Linux CI (terminal platform helpers and friends);
     reading ``sys.platform`` unconditionally here would silently drop those
     paths out of coverage. Defaults to the host platform.
 
@@ -1740,32 +1688,15 @@ def venv_python_path(venv_dir, *, windows: bool | None = None) -> Path:
 
 # ─── Partial-update diagnostics ──────────────────────────────────────────────
 
-# Top-level packages/modules that ship as part of Hermes itself. An ImportError
+# Top-level packages/modules that ship as part of PCBDraft itself. An ImportError
 # naming one of these means our own tree is inconsistent; anything else is a
 # third-party problem with different remediation. Single source of truth —
-# `hermes_cli.update_cmd`'s post-update probe consumes this same set so the
-# guard that BLOCKS and the hint that EXPLAINS can never disagree.
-FIRST_PARTY_MODULE_ROOTS = frozenset(
-    {
-        "agent",
-        "acp_adapter",
-        "cli",
-        "cron",
-        "gateway",
-        "model_tools",
-        "plugins",
-        "providers",
-        "tools",
-        "toolsets",
-        "run_agent",
-        "tui_gateway",
-        "utils",
-    }
-)
+# Keep partial-install diagnostics scoped to the actual installed package.
+FIRST_PARTY_MODULE_ROOTS = frozenset({"pcbdraft"})
 
 
 def is_first_party_module(name: str | None) -> bool:
-    """True when *name* is a module that ships with Hermes.
+    """True when *name* is a module that ships with PCBDraft.
 
     Matches on the first dotted segment against an exact set — a substring or
     ``startswith`` test would also claim third-party ``agents``, ``agentops``,
@@ -1774,7 +1705,7 @@ def is_first_party_module(name: str | None) -> bool:
     root = str(name).split(".")[0] if name else ""
     if not root:
         return False
-    return root in FIRST_PARTY_MODULE_ROOTS or root.startswith("hermes_")
+    return root in FIRST_PARTY_MODULE_ROOTS
 
 
 def partial_update_hint(exc: BaseException) -> list[str]:
@@ -1787,8 +1718,8 @@ def partial_update_hint(exc: BaseException) -> list[str]:
     ``ImportError: cannot import name 'X' from 'y'`` on every startup.
 
     Users hit this as an opaque crash with no indication that the *install*,
-    rather than their config, is the problem — and `hermes update` is exactly
-    the command they need but are least likely to trust after a failed update.
+    rather than their config, is the problem. Direct them to the public
+    diagnostic command before repairing the installation.
     Return the guidance so callers can print it alongside the raw error.
 
     Returns an empty list for unrelated exceptions, so callers can splat it
@@ -1809,7 +1740,7 @@ def partial_update_hint(exc: BaseException) -> list[str]:
             "This looks like a partially-updated install: one module was refreshed "
             "and a related one was not."
         ),
-        "Re-run the update to bring the whole tree to the same version:",
-        "    hermes update",
-        "If that also fails, reinstall: https://hermes-agent.nousresearch.com",
+        "Inspect the installed runtime before reinstalling PCBDraft:",
+        "    pcbdraft doctor",
+        "See available commands with `pcbdraft --help`.",
     ]

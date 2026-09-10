@@ -1,20 +1,20 @@
-"""`hermes checkpoints` CLI subcommand.
+"""`internal checkpoints` CLI subcommand.
 
 Gives users direct visibility and control over the filesystem checkpoint
-store at ``~/.hermes/checkpoints/``.  Actions:
+store at ``~/.pcbdraft/checkpoints/``.  Actions:
 
-    hermes checkpoints               # same as `status`
-    hermes checkpoints status        # total size, project count, breakdown
-    hermes checkpoints list          # per-project checkpoint counts + workdir
-    hermes checkpoints prune [opts]  # force a sweep (ignores the 24h marker)
-    hermes checkpoints clear [-f]    # nuke the entire base (asks first)
-    hermes checkpoints clear-legacy  # delete just the legacy-* archives
+    internal checkpoints               # same as `status`
+    internal checkpoints status        # total size, project count, breakdown
+    internal checkpoints list          # per-project checkpoint counts + workdir
+    internal checkpoints prune [opts]  # force a sweep (ignores the 24h marker)
+    internal checkpoints clear [-f]    # nuke the entire base (asks first)
+    internal checkpoints clear-legacy  # delete just the legacy-* archives
 
 Examples::
 
-    hermes checkpoints
-    hermes checkpoints prune --retention-days 3 --max-size-mb 200
-    hermes checkpoints clear -f
+    internal checkpoints
+    internal checkpoints prune --retention-days 3 --max-size-mb 200
+    internal checkpoints clear -f
 
 None of these require the agent to be running.  Safe to call any time.
 """
@@ -91,7 +91,7 @@ def cmd_status(args: argparse.Namespace) -> int:
         for arch in sorted(legacy, key=lambda a: a.get("mtime", 0), reverse=True):
             print(f"  {arch['name']:<40}  {_fmt_bytes(arch['size_bytes']):>10}")
         print()
-        print("Clear with: hermes checkpoints clear-legacy")
+        print("Clear with: pcbdraft --help")
     return 0
 
 
@@ -236,8 +236,8 @@ def cmd_clear_legacy(args: argparse.Namespace) -> int:
 
 
 def register_cli(parser: argparse.ArgumentParser) -> None:
-    """Wire subcommands onto the ``hermes checkpoints`` parser."""
-    parser.set_defaults(func=cmd_status)  # bare `hermes checkpoints` → status
+    """Wire subcommands onto the ``internal checkpoints`` parser."""
+    parser.set_defaults(func=cmd_status)  # bare `pcbdraft --help` → status
     subs = parser.add_subparsers(dest="checkpoints_command", metavar="COMMAND")
 
     p_status = subs.add_parser(

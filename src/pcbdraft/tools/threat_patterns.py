@@ -136,7 +136,7 @@ _PATTERNS: list[tuple[str, str, str]] = [
     # Environment-variable unsetting targeting known agent runtimes —
     # this is pure attack behavior (Brainworm sub-session bypass).
     (
-        r"unset\s+\w*(?:CLAUDE|CODEX|HERMES|AGENT|OPENAI|ANTHROPIC)\w*",
+        r"unset\s+\w*(?:CLAUDE|CODEX|PCBDRAFT|HERMES|AGENT|OPENAI|ANTHROPIC)\w*",
         "env_var_unset_agent",
         "context",
     ),
@@ -184,15 +184,15 @@ _PATTERNS: list[tuple[str, str, str]] = [
     # ── Persistence / SSH backdoor (strict scope — memory + skills) ──
     (r"authorized_keys", "ssh_backdoor", "strict"),
     (r"\$HOME/\.ssh|\~/\.ssh", "ssh_access", "strict"),
-    (r"\$HOME/\.hermes/\.env|\~/\.hermes/\.env", "hermes_env", "strict"),
+    (r"(?:\$HOME|\~)/\.(?:pcbdraft/runtime|hermes)/\.env", "pcbdraft_env", "strict"),
     (
         r"(update|modify|edit|write|change|append|add\s+to)\s+[^\n]{0,2048}(?:AGENTS\.md|CLAUDE\.md|\.cursorrules|\.clinerules)",
         "agent_config_mod",
         "strict",
     ),
     (
-        r"(update|modify|edit|write|change|append|add\s+to)\s+[^\n]{0,2048}\.hermes/(config\.yaml|SOUL\.md)",
-        "hermes_config_mod",
+        r"(update|modify|edit|write|change|append|add\s+to)\s+[^\n]{0,2048}\.(?:pcbdraft(?:/runtime)?|hermes)/(config\.yaml|SOUL\.md)",
+        "pcbdraft_config_mod",
         "strict",
     ),
     # ── Hardcoded secrets ────────────────────────────────────────────

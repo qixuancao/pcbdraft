@@ -1,14 +1,14 @@
-"""hermes import-agent — import Claude Code / Codex CLI setups into Hermes.
+"""internal import-agent — import Claude Code / Codex CLI setups into PCBDraft.
 
 Usage:
-    hermes import-agent                       # auto-detect ~/.claude or ~/.codex
-    hermes import-agent claude-code           # import from ~/.claude
-    hermes import-agent codex                 # import from ~/.codex
-    hermes import-agent claude-code --dry-run # preview only, no changes
-    hermes import-agent codex --source /path/to/.codex
+    internal import-agent                       # auto-detect ~/.claude or ~/.codex
+    internal import-agent claude-code           # import from ~/.claude
+    internal import-agent codex                 # import from ~/.codex
+    internal import-agent claude-code --dry-run # preview only, no changes
+    internal import-agent codex --source /path/to/.codex
 
-Follows the OpenClaw migration pattern (``hermes claw migrate`` /
-``optional-skills/migration/openclaw-migration/scripts/openclaw_to_hermes.py``):
+Follows the OpenClaw migration pattern (``internal claw migrate`` /
+``optional-skills/migration/openclaw-migration/scripts/openclaw_to_pcbdraft.py``):
 detect → parse → map → apply, with a mandatory preview phase, per-item
 imported/skipped/conflict/error records, and a ``--dry-run`` that writes
 nothing.  The memory-entry merge and allowlist-merge primitives here are
@@ -33,7 +33,7 @@ codex (~/.codex):
 Secrets are NEVER imported: credential files (.credentials.json, auth.json)
 are ignored, and MCP server env vars with secret-looking names (KEY, TOKEN,
 SECRET, PASSWORD, ...) are stripped and reported so the user can re-add them
-deliberately via ``hermes setup`` or config.yaml.
+deliberately via ``pcbdraft setup`` or config.yaml.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ from pcbdraft.core.runtime_utils import atomic_write_text, atomic_yaml_write
 
 logger = logging.getLogger(__name__)
 
-# Same entry delimiter as the Hermes memory store and the openclaw migration
+# Same entry delimiter as the PCBDraft memory store and the openclaw migration
 # script — memories/MEMORY.md entries are separated by bare "§" lines.
 ENTRY_DELIMITER = "\n§\n"
 
@@ -133,7 +133,7 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
     except yaml.YAMLError as exc:
         raise ConfigReadError(
             f"Refusing to overwrite {path}: the existing file is not valid YAML "
-            f"({exc}). Fix it with `hermes config edit` (or move it aside), then "
+            f"({exc}). Fix it with `pcbdraft --help` (or move it aside), then "
             f"re-run the import."
         ) from exc
     # An empty file parses to None — a legitimate state with nothing to lose.
@@ -143,7 +143,7 @@ def load_yaml_file(path: Path) -> dict[str, Any]:
         raise ConfigReadError(
             f"Refusing to overwrite {path}: expected the existing file to hold a "
             f"YAML mapping but found {type(data).__name__}. Fix it with "
-            f"`hermes config edit` (or move it aside), then re-run the import."
+            f"`pcbdraft --help` (or move it aside), then re-run the import."
         )
     return data
 
@@ -163,7 +163,7 @@ def dump_yaml_file(path: Path, data: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Memory-entry primitives (ported from openclaw_to_hermes.py)
+# Memory-entry primitives (ported from openclaw_to_pcbdraft.py)
 # ---------------------------------------------------------------------------
 
 
@@ -328,14 +328,14 @@ def merge_entries(
 
 
 # ---------------------------------------------------------------------------
-# Claude Code permission rules → Hermes command patterns
+# Claude Code permission rules → PCBDraft command patterns
 # ---------------------------------------------------------------------------
 
 _BASH_RULE_RE = re.compile(r"^Bash\((?P<inner>.*)\)$")
 
 
 def claude_rule_to_command_pattern(rule: str) -> str | None:
-    """Convert a Claude Code ``Bash(...)`` permission rule into a Hermes glob.
+    """Convert a Claude Code ``Bash(...)`` permission rule into a PCBDraft glob.
 
     ``Bash(npm run build)``   → ``npm run build``
     ``Bash(npm run test:*)``  → ``npm run test*``  (Claude ':*' prefix match)
@@ -501,7 +501,7 @@ class AgentImporter:
                 commands_dir,
                 None,
                 "skipped",
-                "Claude slash commands have no direct Hermes equivalent — "
+                "Claude slash commands have no direct PCBDraft equivalent — "
                 "consider converting them into skills",
             )
 
@@ -869,26 +869,26 @@ class AgentImporter:
                     name,
                     f"mcp_servers.{name}",
                     "conflict",
-                    "MCP server already exists in Hermes config",
+                    "MCP server already exists in PCBDraft config",
                 )
                 continue
 
-            hermes_srv: dict[str, Any] = {}
+            pcbdraft_srv: dict[str, Any] = {}
             if srv.get("command"):
-                hermes_srv["command"] = srv["command"]
+                pcbdraft_srv["command"] = srv["command"]
                 if srv.get("args"):
-                    hermes_srv["args"] = srv["args"]
+                    pcbdraft_srv["args"] = srv["args"]
                 env_kept, env_stripped = sanitize_mcp_env(srv.get("env"))
                 if env_kept:
-                    hermes_srv["env"] = env_kept
+                    pcbdraft_srv["env"] = env_kept
                 if env_stripped:
                     self.stripped_secrets.extend(
                         f"mcp_servers.{name}.env.{k}" for k in env_stripped
                     )
                 if srv.get("cwd"):
-                    hermes_srv["cwd"] = srv["cwd"]
+                    pcbdraft_srv["cwd"] = srv["cwd"]
             if srv.get("url"):
-                hermes_srv["url"] = srv["url"]
+                pcbdraft_srv["url"] = srv["url"]
                 headers = srv.get("headers")
                 if isinstance(headers, dict):
                     kept_headers = {
@@ -898,13 +898,13 @@ class AgentImporter:
                         and "authorization" not in str(k).lower()
                     }
                     if kept_headers:
-                        hermes_srv["headers"] = kept_headers
+                        pcbdraft_srv["headers"] = kept_headers
                     for k in headers:
                         if k not in kept_headers:
                             self.stripped_secrets.append(
                                 f"mcp_servers.{name}.headers.{k}"
                             )
-            if not hermes_srv:
+            if not pcbdraft_srv:
                 self.record(
                     kind,
                     name,
@@ -914,7 +914,7 @@ class AgentImporter:
                 )
                 continue
 
-            existing[name] = hermes_srv
+            existing[name] = pcbdraft_srv
             added += 1
             self.record(kind, name, f"config.yaml mcp_servers.{name}", "imported")
 
@@ -978,7 +978,7 @@ class AgentImporter:
 
 
 def import_agent_command(args) -> None:
-    """Handle ``hermes import-agent`` (invoked from hermes_cli.main)."""
+    """Handle ``internal import-agent`` (invoked from pcbdraft.interfaces.tui.main)."""
     from pcbdraft.core.runtime_environment import get_runtime_home
     from pcbdraft.interfaces.tui.setup import (
         Colors,
@@ -1003,16 +1003,12 @@ def import_agent_command(args) -> None:
         if not detected:
             print()
             print_error("No supported agent setup found (~/.claude or ~/.codex).")
-            print_info(
-                "Specify one explicitly: hermes import-agent claude-code --source /path"
-            )
+            print_info("Specify one explicitly: pcbdraft --help")
             return
         if len(detected) > 1 and explicit_source is None:
             print()
             print_info("Multiple agent setups detected: " + ", ".join(detected))
-            print_info(
-                "Pick one: hermes import-agent claude-code   or   hermes import-agent codex"
-            )
+            print_info("Pick one: pcbdraft --help or   pcbdraft --help")
             return
         agent = detected[0]
 
@@ -1027,7 +1023,8 @@ def import_agent_command(args) -> None:
     )
     print(
         color(
-            "│          ⚕ Hermes — Import From Another Agent          │", Colors.MAGENTA
+            "│          ⚕ PCBDraft — Import From Another Agent          │",
+            Colors.MAGENTA,
         )
     )
     print(
@@ -1041,7 +1038,7 @@ def import_agent_command(args) -> None:
         print()
         print_error(f"Agent directory not found: {source_dir}")
         print_info(
-            "Specify a custom path: hermes import-agent "
+            "Specify a custom path: pcbdraft --help"
             f"{agent} --source /path/to/{_AGENT_DEFAULT_DIRS[agent]}"
         )
         return
@@ -1053,7 +1050,7 @@ def import_agent_command(args) -> None:
     print_info(f"Source:      {source_dir}")
     print_info(f"Target:      {runtime_home}")
     print_info(f"Overwrite:   {'yes' if overwrite else 'no (skip conflicts)'}")
-    print_info("Secrets:     never imported — run 'hermes setup' for credentials")
+    print_info("Secrets:     never imported — run 'pcbdraft setup' for credentials")
 
     # Ensure config.yaml exists before the import tries to merge into it
     config_path = get_config_path()
@@ -1097,7 +1094,7 @@ def import_agent_command(args) -> None:
     if not auto_yes:
         if not sys.stdin.isatty():
             print_info("Non-interactive session — preview only.")
-            print_info(f"To execute, re-run with: hermes import-agent {agent} --yes")
+            print_info("To execute, re-run with: pcbdraft --help")
             return
         if not prompt_yes_no("Proceed with import?", default=True):
             print_info("Import cancelled.")
@@ -1121,8 +1118,8 @@ def import_agent_command(args) -> None:
     print()
     print_success("Import complete.")
     print_info(
-        "API keys and credentials were NOT imported — run 'hermes setup' "
-        "to configure providers, or add them to ~/.hermes/.env."
+        "API keys and credentials were NOT imported — run 'pcbdraft setup' "
+        "to configure providers, or add them to ~/.pcbdraft/.env."
     )
 
 
@@ -1168,7 +1165,7 @@ def print_import_report(report: dict[str, Any], dry_run: bool) -> None:
         for name in stripped:
             print(f"      {name}")
         print_info(
-            "Re-add credentials deliberately via 'hermes setup' or ~/.hermes/.env."
+            "Re-add credentials deliberately via 'pcbdraft setup' or ~/.pcbdraft/.env."
         )
         print()
 

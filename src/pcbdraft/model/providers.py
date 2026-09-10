@@ -722,9 +722,9 @@ def resolve_provider(name: str = "auto") -> IntentProvider | None:
     """
 
     normalized = name.strip().casefold()
-    if normalized not in {"auto", "native", "hermes"}:
+    if normalized not in {"auto", "native", "pcbdraft"}:
         raise ValidationError(f"unknown provider: {name}")
     provider = NativeIntentProvider.from_config()
-    if provider is None and normalized in {"native", "hermes"}:
+    if provider is None and normalized in {"native", "pcbdraft"}:
         raise PCBDraftError("model provider is not configured; run `pcbdraft connect`")
     return provider

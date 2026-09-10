@@ -97,11 +97,11 @@ def _find_git_root(start: Path) -> Path | None:
     return None
 
 
-_HERMES_MD_NAMES = (".hermes.md", "HERMES.md")
+_PCBDRAFT_MD_NAMES = (".pcbdraft.md", "PCBDRAFT.md")
 
 
-def _find_hermes_md(cwd: Path) -> Path | None:
-    """Discover the nearest ``.hermes.md`` or ``HERMES.md``.
+def _find_pcbdraft_md(cwd: Path) -> Path | None:
+    """Discover the nearest ``.pcbdraft.md`` or ``PCBDRAFT.md``.
 
     Search order: *cwd* first, then each parent directory up to (and
     including) the git repository root.  Returns the first match, or
@@ -111,11 +111,11 @@ def _find_hermes_md(cwd: Path) -> Path | None:
     current = cwd.resolve()
 
     # When there is no git root, only check cwd itself – walking parents
-    # could pick up a .hermes.md planted in /tmp, /home, etc.
+    # could pick up a .pcbdraft.md planted in /tmp, /home, etc.
     search_dirs = [current, *current.parents] if stop_at else [current]
 
     for directory in search_dirs:
-        for name in _HERMES_MD_NAMES:
+        for name in _PCBDRAFT_MD_NAMES:
             candidate = directory / name
             if candidate.is_file():
                 return candidate
@@ -247,7 +247,7 @@ SKILLS_GUIDANCE = (
 KANBAN_GUIDANCE = (
     "# Kanban task execution protocol\n"
     "You have been assigned ONE task from "
-    "the shared board at `~/.hermes/kanban.db`. Your task id is in "
+    "the shared board at `<PCBDRAFT_RUNTIME_HOME>/kanban.db`. Your task id is in "
     "`$PCBDRAFT_RUNTIME_KANBAN_TASK`; your workspace is `$PCBDRAFT_RUNTIME_KANBAN_WORKSPACE`. "
     "The `kanban_*` tools in your schema are your primary coordination surface — "
     "they write directly to the shared SQLite DB and work regardless of terminal "
@@ -340,12 +340,12 @@ KANBAN_GUIDANCE = (
     "or paste ids; the kernel rejects the completion on any phantom id.\n"
     "- **Orchestrating: discover profiles first.** The dispatcher SILENTLY "
     "drops a card with an unknown assignee (it sits in `ready` forever). Ground "
-    "every assignee in a real profile (`hermes profile list`, or ask the user), "
+    "every assignee in a real profile (ask the user to confirm the profile), "
     "and express dependencies via `parents=[...]` on `kanban_create`, not prose.\n"
     "\n"
     "## Do NOT\n"
     "\n"
-    "- Do not shell out to `hermes kanban <verb>` for board operations. Use "
+    "- Do not shell out for board operations. Use "
     "the `kanban_*` tools — they work across all terminal backends.\n"
     "- Do not complete a task you didn't actually finish. Block it.\n"
     "- Do not call `clarify` to ask questions. You are running headless — "
@@ -671,9 +671,9 @@ def computer_use_guidance(platform_name: str | None = None) -> str:
         "`computer_use.grant_existing_profile: true` (if unset, report the "
         "refusal and name that key — you can never grant it yourself); "
         "bounded mode authorizes via the user's reviewed capability manifest; "
-        "explicit Hermes YOLO uses an unrestricted runtime after the user's "
+        "explicit PCBDraft YOLO uses an unrestricted runtime after the user's "
         "launch/session risk acceptance. Permission mode and grants are fixed "
-        "when Hermes launches that runtime.\n\n"
+        "when PCBDraft launches that runtime.\n\n"
         "## Background mode rules\n"
         "- Do NOT use `raise_window=true` on `focus_app` unless the user "
         "explicitly asked you to bring a window to front. Input routing to "
@@ -704,10 +704,10 @@ def computer_use_guidance(platform_name: str | None = None) -> str:
         "## When something is broken\n"
         "If `computer_use` consistently fails (empty captures, missing "
         "elements, clicks not landing, type going nowhere), ask the user to "
-        "run `hermes computer-use doctor` and share the output. That command "
-        "runs cua-driver's structured health-report — per-platform checks "
-        "for permissions, display server, accessibility tree reachability "
-        "— and the failure message tells you exactly what to fix.\n"
+        "run `pcbdraft doctor` and share the runtime diagnostic output, "
+        "along with the computer_use error. Check the platform's permissions, "
+        "display server, and accessibility setup using the configured "
+        "computer-use backend's own diagnostics.\n"
     )
 
 
@@ -741,7 +741,7 @@ def format_steer_marker(steer_text: str) -> str:
 
 STEER_CHANNEL_NOTE = (
     "## Mid-turn user steering\n"
-    "While you work, the user can send an out-of-band message that Hermes "
+    "While you work, the user can send an out-of-band message that PCBDraft "
     "appends to the end of a tool result, wrapped exactly as:\n"
     f"{STEER_MARKER_OPEN}\n<their message>\n{STEER_MARKER_CLOSE}\n"
     "Text inside that marker is a genuine message from the user delivered "
@@ -796,10 +796,10 @@ def hud_surface_note(valid_tool_names: "set[str] | None" = None) -> str:
         return ""
 
     sentences = [
-        "[Note: this message came from HUD mode — a small floating Hermes "
+        "[Note: this message came from HUD mode — a small floating PCBDraft "
         "window sitting over whatever the user is actually working in, so an "
         'unqualified "this" or "here" usually means the app behind the HUD '
-        "rather than anything inside Hermes. read_window_below identifies "
+        "rather than anything inside PCBDraft. read_window_below identifies "
         "that app.",
         "They move the HUD from app to app mid-conversation, so one you "
         "identified on an earlier turn is still a live target: a reference "
@@ -937,7 +937,7 @@ PLATFORM_HINTS = {
         "default-deliver cron job will message them in this session."
     ),
     "tui": (
-        "You are running in the Hermes terminal UI (TUI). "
+        "You are running in the PCBDraft terminal UI (TUI). "
         "Cron jobs scheduled from this session are LOCAL-ONLY: their output is "
         "saved (viewable via cronjob action='list') but is NOT delivered back "
         "into this TUI session — there is no live-delivery channel here. If the "
@@ -947,7 +947,7 @@ PLATFORM_HINTS = {
         "default-deliver cron job will message them in this session."
     ),
     "desktop": (
-        "You are chatting inside the Hermes desktop app — a graphical chat "
+        "You are chatting inside the PCBDraft desktop app — a graphical chat "
         "surface, not a terminal. Use markdown freely: it renders with full "
         "GitHub flavor (tables, code blocks with syntax highlighting, math "
         "via $...$, task lists, blockquote callouts). "
@@ -967,8 +967,8 @@ PLATFORM_HINTS = {
         "the inherited app font, no body padding or margin, content flush "
         "left and filling the viewport width, no centering wrappers, decorative "
         "backdrops, or page chrome. The frame auto-sizes to the content. "
-        'Widgets can talk back: window.hermes.send("prompt") — or a '
-        'data-hermes-send="prompt" attribute on any clickable element — sends '
+        'Widgets can talk back: window.pcbdraft.send("prompt") — or a '
+        'data-pcbdraft-send="prompt" attribute on any clickable element — sends '
         "that prompt to you as a hidden user turn (no chat bubble), so give "
         "interactive widgets buttons whose clicks mean something and answer "
         "them by updating the widget's file, not with prose. Only "
@@ -1091,7 +1091,7 @@ PLATFORM_HINTS = {
         "in your response text instead of a MEDIA: tag."
     ),
     "webui": (
-        "You are in the Hermes WebUI, a browser-based chat interface. "
+        "You are in the PCBDraft WebUI, a browser-based chat interface. "
         "Full Markdown rendering is supported — headings, bold, italic, code "
         "blocks, tables, math (LaTeX), and Mermaid diagrams all render natively. "
         "To display local or remote media/files inline, include "
@@ -1435,8 +1435,8 @@ def build_environment_hints() -> str:
                 f"Terminal backend: {backend}. Your `terminal`, `read_file`, "
                 f"`write_file`, `patch`, and `search_files` tools all operate "
                 f"inside this {backend} environment — NOT on the machine "
-                f"where Hermes itself is running. The host OS, home, and cwd "
-                f"of the Hermes process are irrelevant; only the following "
+                f"where PCBDraft itself is running. The host OS, home, and cwd "
+                f"of the PCBDraft process are irrelevant; only the following "
                 f"backend state matters:\n{probe}"
             )
         else:
@@ -1446,7 +1446,7 @@ def build_environment_hints() -> str:
             hints.append(
                 f"Terminal backend: {backend}. Your `terminal`, `read_file`, "
                 f"`write_file`, `patch`, and `search_files` tools all operate "
-                f"inside {description} — NOT on the machine where Hermes "
+                f"inside {description} — NOT on the machine where PCBDraft "
                 f"itself runs. The backend probe didn't respond at "
                 f"prompt-build time, so the sandbox's current user, $HOME, "
                 f"and working directory are unknown from here. If you need "
@@ -1832,7 +1832,7 @@ def build_skills_system_prompt(
     Falls back to a full filesystem scan when both layers miss.
 
     External skill directories (``skills.external_dirs`` in config.yaml) are
-    scanned alongside the local ``~/.hermes/skills/`` directory.  External dirs
+    scanned alongside the local runtime ``skills/`` directory. External dirs
     are read-only — they appear in the index but new skills are always created
     in the local dir.  Local skills take precedence when names collide.
 
@@ -1857,7 +1857,7 @@ def build_skills_system_prompt(
         _home_token = None
     try:
         external_dirs = get_all_skills_dirs()[1:]  # skip local (index 0)
-        # Trusted project-local dirs (./.hermes/skills, ./.agents/skills at
+        # Trusted project-local dirs (./.pcbdraft/skills, ./.agents/skills at
         # the git root) — highest-precedence tier, scanned before local.
         # Resolved once here; cwd and trust are stable for the session, so
         # the index (and the system prompt) stays byte-stable.
@@ -2263,7 +2263,7 @@ def build_nous_subscription_prompt(valid_tool_names: "set[str] | None" = None) -
             "When a Nous-managed feature is active, do not ask the user for Firecrawl, FAL, OpenAI TTS, OpenAI Whisper, or Browser-Use API keys.",
             "If the user is not subscribed and asks for a capability that Nous subscription would unlock or simplify, suggest Nous subscription as one option alongside direct setup or local alternatives.",
             "Do not mention subscription unless the user asks about it or it directly solves the current missing capability.",
-            "Useful commands: hermes setup, hermes setup tools, hermes setup terminal, hermes status.",
+            "Useful commands: pcbdraft connect, pcbdraft doctor, pcbdraft --help.",
         ]
     )
     return "\n".join(lines)
@@ -2360,31 +2360,31 @@ def load_soul_md(
         return None
 
 
-def _load_hermes_md(cwd_path: Path, context_length: int | None = None) -> str:
-    """.hermes.md / HERMES.md — walk to git root."""
-    hermes_md_path = _find_hermes_md(cwd_path)
-    if not hermes_md_path:
+def _load_pcbdraft_md(cwd_path: Path, context_length: int | None = None) -> str:
+    """.pcbdraft.md / PCBDRAFT.md — walk to git root."""
+    pcbdraft_md_path = _find_pcbdraft_md(cwd_path)
+    if not pcbdraft_md_path:
         return ""
     try:
-        content = hermes_md_path.read_text(encoding="utf-8").strip()
+        content = pcbdraft_md_path.read_text(encoding="utf-8").strip()
         if not content:
             return ""
         content = _strip_yaml_frontmatter(content)
-        rel = hermes_md_path.name
+        rel = pcbdraft_md_path.name
         try:
-            rel = str(hermes_md_path.relative_to(cwd_path))
+            rel = str(pcbdraft_md_path.relative_to(cwd_path))
         except ValueError:
             pass
         content = _scan_context_content(content, rel)
         result = f"## {rel}\n\n{content}"
         return _truncate_content(
             result,
-            ".hermes.md",
+            ".pcbdraft.md",
             context_length=context_length,
-            read_path=str(hermes_md_path),
+            read_path=str(pcbdraft_md_path),
         )
     except Exception as e:
-        logger.debug("Could not read %s: %s", hermes_md_path, e)
+        logger.debug("Could not read %s: %s", pcbdraft_md_path, e)
         return ""
 
 
@@ -2546,7 +2546,7 @@ def build_context_files_prompt(
     """Discover and load context files for the system prompt.
 
     Priority (first found wins — only ONE project context type is loaded):
-      1. .hermes.md / HERMES.md  (walk to git root)
+      1. .pcbdraft.md / PCBDRAFT.md (walk to git root)
       2. AGENTS.md / agents.md   (merged chain: git root → cwd)
       3. CLAUDE.md / claude.md   (cwd only)
       4. .cursorrules / .cursor/rules/*.mdc  (cwd only)
@@ -2587,7 +2587,7 @@ def build_context_files_prompt(
     ):
         logger.warning(
             "skipping project-context discovery: working-directory resolution "
-            "fell back to the Hermes install tree (%s) — set terminal.cwd to "
+            "fell back to the PCBDraft install tree (%s) — set terminal.cwd to "
             "your project directory",
             cwd_path,
         )
@@ -2595,7 +2595,7 @@ def build_context_files_prompt(
     else:
         # Priority-based project context: first match wins
         project_context = (
-            _load_hermes_md(cwd_path, context_length)
+            _load_pcbdraft_md(cwd_path, context_length)
             or _load_agents_md(cwd_path, context_length)
             or _load_claude_md(cwd_path, context_length)
             or _load_cursorrules(cwd_path, context_length)

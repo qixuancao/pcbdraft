@@ -591,7 +591,7 @@ def _run_agent_tool_execution_middleware(
         with dispatch_lock:
             if state["dispatched"]:
                 raise RuntimeError(
-                    "Hermes tool execution callback invoked more than once"
+                    "PCBDraft tool execution callback invoked more than once"
                 )
             state["dispatched"] = True
             state["blocked"] = False
@@ -714,7 +714,7 @@ def _run_agent_tool_execution_middleware(
             _hb_stop.set()
             _hb_thread.join(timeout=2.0)
 
-    def _hermes_pipeline(relay_args: dict[str, Any]) -> Any:
+    def _pcbdraft_pipeline(relay_args: dict[str, Any]) -> Any:
         request_result = apply_tool_request_middleware(
             function_name,
             relay_args,
@@ -749,7 +749,7 @@ def _run_agent_tool_execution_middleware(
     result, _relay_args = relay_tools.execute(
         function_name,
         function_args,
-        _hermes_pipeline,
+        _pcbdraft_pipeline,
         session_id=str(getattr(agent, "session_id", "") or ""),
         metadata={
             "task_id": effective_task_id or "",

@@ -968,7 +968,7 @@ def _submit_fal_request(model: str, arguments: dict[str, Any]):
                 f"(HTTP {status}). This model may not yet be enabled on "
                 f"the Nous Portal's FAL proxy. Either:\n"
                 f"  • Set FAL_KEY in your environment to use FAL.ai directly, or\n"
-                f"  • Pick a different model via `hermes tools` → Image Generation."
+                f"  • Pick a different model in image_gen configuration; see `pcbdraft --help`."
                 f"{gateway_message}"
             ) from exc
         raise
@@ -1196,10 +1196,8 @@ def _active_terminal_env(task_id: str | None):
 
 def _agent_cache_base_for_env(env: Any) -> str | None:
     if env is not None:
-        # Forward-looking optional override: an environment may expose its own
-        # agent-visible cache root via this callable. No backend defines it yet
-        # — it's an extension hook, not a typo. The getattr/callable guards make
-        # it a safe no-op until a producer exists.
+        # Prefer the backend's explicit mirror contract (e.g. Singularity)
+        # over class-name or remote-home heuristics.
         explicit = getattr(env, "agent_visible_cache_base", None)
         if callable(explicit):
             try:
@@ -1211,7 +1209,7 @@ def _agent_cache_base_for_env(env: Any) -> str | None:
 
         remote_home = getattr(env, "_remote_home", None)
         if remote_home:
-            return f"{str(remote_home).rstrip('/')}/.hermes"
+            return f"{str(remote_home).rstrip('/')}/.pcbdraft/runtime"
 
         env_name = env.__class__.__name__
         if env_name in {
@@ -1219,7 +1217,7 @@ def _agent_cache_base_for_env(env: Any) -> str | None:
             "SingularityEnvironment",
             "ModalEnvironment",
         }:
-            return "/root/.hermes"
+            return "/root/.pcbdraft/runtime"
 
     # If no environment has been created yet, only backends with deterministic
     # Hermes cache roots can be translated without side effects. SSH can still
@@ -1227,9 +1225,9 @@ def _agent_cache_base_for_env(env: Any) -> str | None:
     # the cache file before the first command runs.
     backend = (os.getenv("TERMINAL_ENV") or "local").strip().lower()
     if backend in {"docker", "singularity", "modal"}:
-        return "/root/.hermes"
+        return "/root/.pcbdraft/runtime"
     if backend == "ssh":
-        return "~/.hermes"
+        return "~/.pcbdraft/runtime"
     return None
 
 
@@ -1370,7 +1368,7 @@ def image_generate_tool(
                 f"Model '{meta.get('display', model_id)}' ({model_id}) is not "
                 f"capable of image-to-image / editing. Provide a text-only "
                 f"prompt (omit image_url), or switch to an edit-capable model "
-                f"via `hermes tools` → Image Generation."
+                f"in image_gen configuration; see `pcbdraft --help`."
             )
 
         aspect_lc = (aspect_ratio or DEFAULT_ASPECT_RATIO).lower().strip()
@@ -1556,11 +1554,11 @@ def _build_no_backend_setup_message() -> str:
     if managed_nous_tools_enabled():
         lines.append(
             "  2. Sign in to a Nous account that has the managed FAL "
-            "gateway enabled (`hermes setup`)"
+            "gateway explicitly configured (see `pcbdraft doctor`)"
         )
     lines.append(
-        "  3. Configure a different image_gen provider via `hermes tools` "
-        "→ Image Generation (run `hermes plugins list` to see installed "
+        "  3. Configure a different image_gen provider in the runtime config "
+        "(inspect the runtime plugin configuration for installed "
         "backends)"
     )
     return "\n".join(lines)
@@ -1816,7 +1814,7 @@ def _dispatch_to_plugin_provider(
                 "image": None,
                 "error": (
                     f"image_gen.provider='{configured}' is set but no plugin "
-                    f"registered that name. Run `hermes plugins list` to see "
+                    f"registered that name. Inspect the runtime plugin configuration for "
                     f"available image gen backends."
                 ),
                 "error_type": "provider_not_registered",
@@ -1860,7 +1858,7 @@ def _dispatch_to_plugin_provider(
                         f"support image-to-image / editing (its generate() "
                         f"signature is out of date with the image_generate schema). "
                         f"Omit image_url for text-to-image, or pick a backend that "
-                        f"supports editing via `hermes tools` → Image Generation."
+                        f"supports editing in the image_gen configuration."
                     ),
                     "error_type": "modality_unsupported",
                 }

@@ -19,12 +19,12 @@ from pcbdraft.core.runtime_environment import get_runtime_home
 
 logger = logging.getLogger(__name__)
 
-SESSION_SCOPE = "hermes.session"
-TURN_SCOPE = "hermes.turn"
-LOGICAL_LLM_SCOPE = "hermes.logical_llm_call"
-RUNTIME_SCHEMA_KEY = "hermes.relay.schema_version"
-RUNTIME_SCHEMA_VERSION = "hermes.relay.runtime.v1"
-RUNTIME_INSTANCE_KEY = "hermes.relay.runtime_instance"
+SESSION_SCOPE = "pcbdraft.session"
+TURN_SCOPE = "pcbdraft.turn"
+LOGICAL_LLM_SCOPE = "pcbdraft.logical_llm_call"
+RUNTIME_SCHEMA_KEY = "pcbdraft.relay.schema_version"
+RUNTIME_SCHEMA_VERSION = "pcbdraft.relay.runtime.v1"
+RUNTIME_INSTANCE_KEY = "pcbdraft.relay.runtime_instance"
 _PROFILE_KEY_CACHE: dict[str, str] = {}
 
 # Bound for native scope lifecycle operations (push/pop/flush) that gate
@@ -329,7 +329,7 @@ class RelayRuntime:
                     session,
                     self.relay.scope.pop,
                     old_handle,
-                    output={"hermes.session.segment_reason": reason},
+                    output={"pcbdraft.session.segment_reason": reason},
                     metadata={
                         RUNTIME_SCHEMA_KEY: RUNTIME_SCHEMA_VERSION,
                         RUNTIME_INSTANCE_KEY: self.runtime_id,
@@ -338,7 +338,7 @@ class RelayRuntime:
                 )
             except Exception:
                 logger.warning(
-                    "Hermes Relay segment close failed (session=%s segment=%d); "
+                    "PCBDraft Relay segment close failed (session=%s segment=%d); "
                     "abandoning the old segment span",
                     session.session_id,
                     session.segment - 1,
@@ -347,8 +347,8 @@ class RelayRuntime:
             scope_metadata = {
                 RUNTIME_SCHEMA_KEY: RUNTIME_SCHEMA_VERSION,
                 RUNTIME_INSTANCE_KEY: self.runtime_id,
-                "hermes.session.segment": session.segment,
-                "hermes.session.segment_reason": reason,
+                "pcbdraft.session.segment": session.segment,
+                "pcbdraft.session.segment_reason": reason,
             }
             parent_handle = None
             if session.parent_session_id:
@@ -375,7 +375,7 @@ class RelayRuntime:
                 session.context = context
             except Exception:
                 logger.warning(
-                    "Hermes Relay segment open failed (session=%s segment=%d); "
+                    "PCBDraft Relay segment open failed (session=%s segment=%d); "
                     "keeping the prior scope handle",
                     session.session_id,
                     session.segment,
@@ -466,9 +466,9 @@ class RelayRuntime:
         """
         with session.lock:
             if session.closing and not allow_closing:
-                raise RuntimeError("Hermes Relay session is closing")
+                raise RuntimeError("PCBDraft Relay session is closing")
             if session.context is None or session.handle is None:
-                raise RuntimeError("Hermes Relay session context is unavailable")
+                raise RuntimeError("PCBDraft Relay session context is unavailable")
             relay_context = session.context.copy()
 
         context = contextvars.copy_context()
@@ -512,9 +512,9 @@ class RelayRuntime:
         """Create and await an operation inside the session's saved context."""
         with session.lock:
             if session.closing and not allow_closing:
-                raise RuntimeError("Hermes Relay session is closing")
+                raise RuntimeError("PCBDraft Relay session is closing")
             if session.context is None or session.handle is None:
-                raise RuntimeError("Hermes Relay session context is unavailable")
+                raise RuntimeError("PCBDraft Relay session context is unavailable")
             relay_context = session.context.copy()
 
         context = contextvars.copy_context()
@@ -674,7 +674,7 @@ class RelayRuntime:
                         top,
                         output={
                             "outcome": "cancelled",
-                            "hermes.orphan_drain": True,
+                            "pcbdraft.orphan_drain": True,
                         },
                         metadata=metadata,
                     )
@@ -682,14 +682,14 @@ class RelayRuntime:
                 except Exception as drain_exc:
                     error_holder["drain"] = drain_exc
                     logger.warning(
-                        "Hermes Relay orphaned scope drain failed",
+                        "PCBDraft Relay orphaned scope drain failed",
                         exc_info=True,
                     )
                     break
 
             if drained_holder["count"]:
                 logger.warning(
-                    "Hermes Relay drained %d orphaned scope(s) before closing %s",
+                    "PCBDraft Relay drained %d orphaned scope(s) before closing %s",
                     drained_holder["count"],
                     handle,
                 )
@@ -769,7 +769,7 @@ class RelayRuntime:
             self._subagent_parent_handles.pop(session_id, None)
         if failures:
             logger.warning(
-                "Hermes Relay session %s closed with errors: %s",
+                "PCBDraft Relay session %s closed with errors: %s",
                 session_id,
                 "; ".join(failures),
             )
@@ -792,7 +792,7 @@ class RelayRuntime:
         try:
             return callback(*args, **kwargs)
         except Exception:
-            logger.warning("Hermes Relay runtime operation failed", exc_info=True)
+            logger.warning("PCBDraft Relay runtime operation failed", exc_info=True)
             return None
 
 
@@ -861,7 +861,7 @@ class RelayHostRegistry:
                 host = RelayRuntime(profile_key=key)
             except Exception as exc:
                 logger.warning(
-                    "Hermes Relay runtime initialization failed", exc_info=True
+                    "PCBDraft Relay runtime initialization failed", exc_info=True
                 )
                 host = NoopRelayRuntime(profile_key=key, reason=str(exc))
             self._hosts[key] = host
@@ -921,7 +921,7 @@ class RelayTurnContext:
 
 
 _CURRENT_TURN: contextvars.ContextVar[RelayTurnContext | None] = contextvars.ContextVar(
-    "hermes_relay_turn", default=None
+    "pcbdraft_relay_turn", default=None
 )
 
 # Depth of managed Relay callbacks executing on the current logical call path.
@@ -932,7 +932,7 @@ _CURRENT_TURN: contextvars.ContextVar[RelayTurnContext | None] = contextvars.Con
 # ContextVar so the marker follows contextvars.copy_context() into the worker
 # threads / per-thread loops that tools use for their internal async work.
 _MANAGED_CALLBACK_DEPTH: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "hermes_relay_managed_callback_depth", default=0
+    "pcbdraft_relay_managed_callback_depth", default=0
 )
 
 
@@ -992,7 +992,7 @@ class RelaySessionCoordinator:
                 callback(host, context)
             except Exception:
                 logger.warning(
-                    "Hermes Relay session initializer failed: %s",
+                    "PCBDraft Relay session initializer failed: %s",
                     name,
                     exc_info=True,
                 )
@@ -1020,7 +1020,7 @@ class RelaySessionCoordinator:
                     "model": model,
                 }
                 self._prepare_session(host, session_context)
-                metadata = {"hermes.execution_surface": platform or "unknown"}
+                metadata = {"pcbdraft.execution_surface": platform or "unknown"}
                 if parent_session_id and parent_session_id != session_id:
                     session = host.register_subagent(
                         {
@@ -1036,7 +1036,7 @@ class RelaySessionCoordinator:
                     )
             except Exception:
                 logger.warning(
-                    "Hermes Relay conversation initialization failed",
+                    "PCBDraft Relay conversation initialization failed",
                     exc_info=True,
                 )
         return ConversationLease(
@@ -1056,7 +1056,7 @@ class RelaySessionCoordinator:
         task_id: str,
     ) -> RelayTurnContext:
         if lease.released:
-            raise RuntimeError("Hermes Relay conversation lease is released")
+            raise RuntimeError("PCBDraft Relay conversation lease is released")
         turn = RelayTurnContext(lease=lease, turn_id=turn_id, task_id=task_id)
         key = (lease.profile_key, lease.session_id)
         with self._active_turns_lock:
@@ -1067,7 +1067,7 @@ class RelaySessionCoordinator:
                 # their completion order is not guaranteed to be LIFO.
                 turn.relay_enabled = False
                 logger.warning(
-                    "Skipping Relay instrumentation for concurrent Hermes turn "
+                    "Skipping Relay instrumentation for concurrent PCBDraft turn "
                     "%s in session %s",
                     turn_id,
                     lease.session_id,
@@ -1098,7 +1098,7 @@ class RelaySessionCoordinator:
                     )
                     lease.host.rotate_session_scope(session, reason=reason)
             except Exception:
-                logger.warning("Hermes Relay segment rotation failed", exc_info=True)
+                logger.warning("PCBDraft Relay segment rotation failed", exc_info=True)
             try:
                 turn.handle = lease.host.run_in_session(
                     lease.session,
@@ -1110,12 +1110,14 @@ class RelaySessionCoordinator:
                     metadata={
                         RUNTIME_SCHEMA_KEY: RUNTIME_SCHEMA_VERSION,
                         RUNTIME_INSTANCE_KEY: lease.host.runtime_id,
-                        "hermes.execution_surface": lease.platform or "unknown",
+                        "pcbdraft.execution_surface": lease.platform or "unknown",
                     },
                     timeout=_SCOPE_OP_TIMEOUT,
                 )
             except Exception:
-                logger.warning("Hermes Relay turn initialization failed", exc_info=True)
+                logger.warning(
+                    "PCBDraft Relay turn initialization failed", exc_info=True
+                )
         turn._previous_turn = _CURRENT_TURN.get()
         _CURRENT_TURN.set(turn)
         return turn
@@ -1144,7 +1146,7 @@ class RelaySessionCoordinator:
                         )
                         if failure:
                             logger.warning(
-                                "Hermes Relay turn finalization failed: %s",
+                                "PCBDraft Relay turn finalization failed: %s",
                                 failure,
                             )
             finally:
@@ -1169,7 +1171,7 @@ class RelaySessionCoordinator:
                         )
                 except Exception:
                     logger.warning(
-                        "Hermes Relay child conversation finalization failed",
+                        "PCBDraft Relay child conversation finalization failed",
                         exc_info=True,
                     )
                 finally:
@@ -1202,7 +1204,9 @@ class RelaySessionCoordinator:
                 return
             lease.host.close_session({"session_id": lease.session_id})
         except Exception:  # noqa: BLE001 - telemetry must never block end_turn
-            logger.warning("Hermes Relay deferred session close failed", exc_info=True)
+            logger.warning(
+                "PCBDraft Relay deferred session close failed", exc_info=True
+            )
 
     def notify_session_compacted(
         self,
@@ -1261,7 +1265,9 @@ class RelaySessionCoordinator:
                 if not session.closing:
                     session.rotate_pending = True
         except Exception:  # noqa: BLE001 - telemetry must never block compaction
-            logger.warning("Hermes Relay compaction notification failed", exc_info=True)
+            logger.warning(
+                "PCBDraft Relay compaction notification failed", exc_info=True
+            )
 
     def has_active_turn(self, *, profile_key: str, session_id: str) -> bool:
         """Return whether a turn is still running for one profile/session."""
@@ -1329,7 +1335,9 @@ class RelaySessionCoordinator:
                         pending_request_id,
                         pending_handle,
                     )
-            logger.warning("Hermes Relay logical LLM finalization failed: %s", failure)
+            logger.warning(
+                "PCBDraft Relay logical LLM finalization failed: %s", failure
+            )
             break
 
     @staticmethod
@@ -1461,7 +1469,7 @@ def emit_mark(
             metadata=metadata,
         )
     except Exception:
-        logger.warning("Hermes Relay mark failed: %s", name, exc_info=True)
+        logger.warning("PCBDraft Relay mark failed: %s", name, exc_info=True)
         return False
 
 
@@ -1492,7 +1500,7 @@ def ensure_session(*, session_id: str, **context: Any) -> RelaySession | None:
     try:
         return runtime.ensure_session({"session_id": session_id, **context})
     except Exception:
-        logger.warning("Hermes Relay session initialization failed", exc_info=True)
+        logger.warning("PCBDraft Relay session initialization failed", exc_info=True)
         return None
 
 
@@ -1505,12 +1513,12 @@ def run_in_session(
     """Run a scope, LLM, or tool API against a shared Hermes session."""
     runtime = get_runtime()
     if runtime is None:
-        raise RuntimeError("Hermes Relay runtime is unavailable")
+        raise RuntimeError("PCBDraft Relay runtime is unavailable")
     session = runtime.get_session(session_id)
     if session is None:
         session = runtime.ensure_session({"session_id": session_id})
     if session is None:
-        raise RuntimeError("Hermes Relay session is unavailable")
+        raise RuntimeError("PCBDraft Relay session is unavailable")
     return runtime.run_in_session(session, callback, *args, **kwargs)
 
 
@@ -1523,12 +1531,12 @@ async def run_in_session_async(
     """Await a Relay operation inside a shared Hermes session context."""
     runtime = get_runtime()
     if runtime is None:
-        raise RuntimeError("Hermes Relay runtime is unavailable")
+        raise RuntimeError("PCBDraft Relay runtime is unavailable")
     session = runtime.get_session(session_id)
     if session is None:
         session = runtime.ensure_session({"session_id": session_id})
     if session is None:
-        raise RuntimeError("Hermes Relay session is unavailable")
+        raise RuntimeError("PCBDraft Relay session is unavailable")
     return await runtime.run_in_session_async(session, callback, *args, **kwargs)
 
 

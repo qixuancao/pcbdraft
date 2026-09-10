@@ -1,7 +1,7 @@
 """
-Dump command for hermes CLI.
+Dump command for pcbdraft CLI.
 
-Outputs a compact, plain-text summary of the user's Hermes setup
+Outputs a compact, plain-text summary of the user's PCBDraft setup
 that can be copy-pasted into Discord/GitHub/Telegram for support context.
 No ANSI colors, no checkmarks — just data.
 """
@@ -21,15 +21,15 @@ from pcbdraft.model.configuration import (
     get_runtime_home,
     load_config,
 )
-from pcbdraft.model.env_loader import load_hermes_dotenv
+from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 
 
 def _dotenv_key_names() -> set[str]:
-    """Return the set of env-var names assigned a non-empty value in ~/.hermes/.env.
+    """Return the set of env-var names assigned a non-empty value in ~/.pcbdraft/.env.
 
     The managed backends (launchd / systemd / the desktop-spawned ``serve``
     process) load credentials from this file — NOT from an interactive shell's
-    exports. ``hermes debug share`` runs in a terminal, so ``os.getenv`` reflects
+    exports. ``pcbdraft doctor`` runs in a terminal, so ``os.getenv`` reflects
     the shell's environment, which can include exported keys the managed backend
     never sees. Comparing against this set lets the dump flag that mismatch (the
     exact trap behind #48504-style "no web_search" reports: key exported in the
@@ -62,8 +62,8 @@ def _get_git_commit(project_root: Path) -> str:
     Source installs and dev images resolve this live via ``git rev-parse``.
     The published Docker image excludes ``.git`` from the build context, so
     that lookup always fails — we fall back to the baked-in build SHA written
-    to ``<project_root>/.hermes_build_sha`` by the Dockerfile's
-    ``PCBDRAFT_RUNTIME_GIT_SHA`` build-arg (see ``hermes_cli/build_info.py``).
+    to ``<project_root>/.pcbdraft_build_sha`` by the Dockerfile's
+    ``PCBDRAFT_RUNTIME_GIT_SHA`` build-arg (see ``pcbdraft.interfaces.tui/build_info.py``).
     The output format is identical regardless of source.
     """
     try:
@@ -133,7 +133,7 @@ def _redact(value: str) -> str:
 
     Thin wrapper over :func:`agent.redact.mask_secret`. Returns ``""`` for
     an empty value (matches the historical behavior of this helper —
-    ``hermes dump`` formats empty values as blank, not as ``"(not set)"``).
+    ``internal dump`` formats empty values as blank, not as ``"(not set)"``).
     """
     from pcbdraft.agent.redact import mask_secret
 
@@ -304,7 +304,7 @@ def run_dump(args):
 
     # Load env from .env file so key checks work
     env_path = get_env_path()
-    load_hermes_dotenv(
+    load_pcbdraft_dotenv(
         runtime_home=env_path.parent,
         project_env=get_project_root() / ".env",
     )
@@ -366,7 +366,7 @@ def run_dump(args):
     os_info = f"{platform.system()} {platform.release()} {platform.machine()}"
 
     lines = []
-    lines.append("--- hermes dump ---")
+    lines.append("--- pcbdraft --help")
     # Identify the build by commit + the date that commit was made, resolved
     # live via git.  __release_date__ (the package release date) is
     # intentionally NOT shown here — it reads like a wall-clock timestamp and
@@ -425,7 +425,7 @@ def run_dump(args):
             display = _redact(val)
         else:
             display = "set" if val else "not set"
-        # Set in this (shell) process but absent from ~/.hermes/.env: a managed
+        # Set in this (shell) process but absent from ~/.pcbdraft/.env: a managed
         # backend (launchd/systemd/desktop `serve`) loads .env, not the login
         # shell, so it likely can't see this key — even though the dump reads
         # "set". Flag it so support doesn't chase a phantom "key is configured"
@@ -434,9 +434,9 @@ def run_dump(args):
             display += (
                 " (shell only — not in .env; managed/desktop backend may not see it)"
             )
-        # A credential added via `hermes auth add openrouter` lives in the
+        # A credential added via `internal auth add openrouter` lives in the
         # credential pool, not as an env var — surface it so the dump doesn't
-        # misleadingly read "not set" while `hermes auth list` shows it (#42130).
+        # misleadingly read "not set" while `internal auth list` shows it (#42130).
         if not val and label == "openrouter":
             try:
                 from pcbdraft.model.credential_pool import load_pool as _load_pool
@@ -451,7 +451,7 @@ def run_dump(args):
     lines.append("")
     lines.append("features:")
 
-    toolsets = config.get("toolsets", ["hermes-cli"])
+    toolsets = config.get("toolsets", ["pcbdraft-cli"])
     lines.append(
         f"  toolsets:           {', '.join(toolsets) if toolsets else '(default)'}"
     )

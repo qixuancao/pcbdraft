@@ -28,7 +28,7 @@ _SESSION_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 # resolved browser is EXCLUSIVE to this named session (per-name provider
 # browser, or a named Browser Use cloud browser). Popped before the
 # subprocess launches — never exported to the CLI.
-_PRIVATE_BROWSER_SENTINEL = "_HERMES_BU_PRIVATE_BROWSER"
+_PRIVATE_BROWSER_SENTINEL = "_PCBDRAFT_BU_PRIVATE_BROWSER"
 
 # Preamble prepended to the model's code for named sessions on SHARED
 # browsers (local Chrome / CDP override). The harness daemon attaches to the
@@ -38,8 +38,8 @@ _PRIVATE_BROWSER_SENTINEL = "_HERMES_BU_PRIVATE_BROWSER"
 # once per daemon (marker file keyed by BU_NAME under the harness runtime
 # state), costs one IPC round-trip on later calls.
 _OWN_TAB_PREAMBLE = """\
-# hermes: pin this named session to its own tab (once per daemon process)
-def _hermes_ensure_own_tab():
+# pcbdraft: pin this named session to its own tab (once per daemon process)
+def _pcbdraft_ensure_own_tab():
     import os as _os, tempfile as _tf
     _name = _os.environ.get("BU_NAME", "default")
     try:
@@ -52,7 +52,7 @@ def _hermes_ensure_own_tab():
         _dpid = "0"
     _uid = _os.getuid() if hasattr(_os, "getuid") else 0
     _marker = _os.path.join(
-        _tf.gettempdir(), "hermes-bu-owntab-%s-%s-%s" % (_uid, _name, _dpid)
+        _tf.gettempdir(), "pcbdraft-bu-owntab-%s-%s-%s" % (_uid, _name, _dpid)
     )
     if _os.path.exists(_marker):
         return
@@ -68,8 +68,8 @@ def _hermes_ensure_own_tab():
         open(_marker, "w").close()
     except OSError:
         pass
-_hermes_ensure_own_tab()
-del _hermes_ensure_own_tab
+_pcbdraft_ensure_own_tab()
+del _pcbdraft_ensure_own_tab
 """
 
 _DEFAULT_TIMEOUT_S = 300
@@ -241,7 +241,7 @@ def default_downgrade_notice() -> str | None:
             pass
         return (
             "Browser Use CLI not found — using the built-in browser tools. "
-            "Run `hermes tools` (Browser Automation → Browser Use) to install it, "
+            "Run `pcbdraft doctor` to check browser dependencies, "
             "or `browser.backend: off` in config.yaml to silence this."
         )
     except Exception as e:  # pragma: no cover — a notice must never break startup
@@ -538,7 +538,7 @@ def _resolve_backend_cdp(
         return (
             f"Cloud browser provider {type(provider).__name__} failed to "
             f"provide a session: {e}. Fix the provider configuration or "
-            "switch backends via `hermes tools` → Browser Automation."
+            "check browser configuration with `pcbdraft doctor`."
         )
     cdp = str((session_info or {}).get("cdp_url") or "")
     if not cdp:

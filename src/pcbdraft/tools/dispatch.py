@@ -485,7 +485,7 @@ def _compute_tool_definitions(
             if validate_toolset(toolset_name):
                 from pcbdraft.tools.toolsets import bundle_non_core_tools, get_toolset
 
-                if toolset_name.startswith("hermes-") or (
+                if toolset_name.startswith("pcbdraft-") or (
                     get_toolset(toolset_name) or {}
                 ).get("posture"):
                     # Platform bundles (hermes-*) include _HERMES_CORE_TOOLS, and
@@ -499,7 +499,7 @@ def _compute_tool_definitions(
                     resolved = sorted(to_remove)
                     if (
                         not quiet_mode
-                        and toolset_name.startswith("hermes-")
+                        and toolset_name.startswith("pcbdraft-")
                         and toolset_name not in _WARNED_DISABLED_BUNDLES
                     ):
                         _WARNED_DISABLED_BUNDLES.add(toolset_name)
@@ -1507,7 +1507,7 @@ def handle_function_call(
         # is bound via ContextVar only for ACP sessions, so CLI/gateway paths
         # are unaffected when it is unset.
         try:
-            from acp_adapter.edit_approval import maybe_require_edit_approval
+            from pcbdraft.tools.acp_edit_approval import maybe_require_edit_approval
 
             edit_block_message = maybe_require_edit_approval(
                 function_name, function_args

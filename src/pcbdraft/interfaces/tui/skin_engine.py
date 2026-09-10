@@ -203,7 +203,7 @@ _BUILTIN_SKINS: dict[str, dict[str, Any]] = {
         "name": "default",
         "description": "PCBDraft — gold and kawaii",
         # Dark-authored. Values match the TUI's DARK_THEME so the classic CLI
-        # and the TUI render the same Hermes gold.
+        # and the TUI render the same PCBDraft gold.
         "colors": {
             "banner_border": "#CD7F32",
             "banner_title": "#FFD700",

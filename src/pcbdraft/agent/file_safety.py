@@ -15,7 +15,9 @@ def _runtime_home_path() -> Path:
 
         return get_runtime_home()
     except Exception:
-        return Path(os.path.expanduser("~/.hermes"))
+        from pcbdraft.core.runtime_paths import runtime_home
+
+        return runtime_home()
 
 
 def _runtime_root_path() -> Path:
@@ -27,7 +29,9 @@ def _runtime_root_path() -> Path:
 
         return get_default_runtime_root()
     except Exception:
-        return Path(os.path.expanduser("~/.hermes"))
+        from pcbdraft.core.runtime_paths import runtime_home
+
+        return runtime_home()
 
 
 def build_write_denied_paths(home: str) -> set[str]:
@@ -155,16 +159,16 @@ def _classify_write_denial(path: str) -> str | None:
 
     mcp_tokens_dir_name = "mcp-tokens"
 
-    hermes_dirs = []
+    pcbdraft_dirs = []
     for base in (_runtime_home_path(), _runtime_root_path()):
         try:
             real = os.path.realpath(base)
-            if real not in hermes_dirs:
-                hermes_dirs.append(real)
+            if real not in pcbdraft_dirs:
+                pcbdraft_dirs.append(real)
         except Exception:
             continue
 
-    for base_real in hermes_dirs:
+    for base_real in pcbdraft_dirs:
         # Session transcripts are application-owned state.  Letting the agent's
         # generic file tools rewrite state.db or legacy JSON snapshots can
         # falsify conversation history and invalidate resume/compression state.
@@ -274,7 +278,7 @@ def get_read_block_error(path: str) -> str | None:
 
     **This is NOT a security boundary.** The terminal tool runs as the
     same OS user with shell access; the agent can still ``cat auth.json``
-    or ``cat ~/.hermes/.env`` and exfiltrate the file. The read-deny exists
+    or read the runtime ``.env`` and exfiltrate the file. The read-deny exists
     as defense-in-depth that:
 
       * Returns a clear error to models that respect tool denials, which
@@ -301,17 +305,17 @@ def get_read_block_error(path: str) -> str | None:
     # blocked when running under a profile (PCBDRAFT_RUNTIME_HOME points at
     # <root>/profiles/<name> in profile mode). Same shape as the write
     # deny widening (#15981, #14157).
-    hermes_dirs: list[Path] = []
+    pcbdraft_dirs: list[Path] = []
     for base in (_runtime_home_path(), _runtime_root_path()):
         try:
             real = base.resolve()
-            if real not in hermes_dirs:
-                hermes_dirs.append(real)
+            if real not in pcbdraft_dirs:
+                pcbdraft_dirs.append(real)
         except Exception:
             continue
 
     # Skills .hub: prompt-injection carriers.
-    for hd in hermes_dirs:
+    for hd in pcbdraft_dirs:
         blocked_dirs = [
             hd / "skills" / ".hub" / "index-cache",
             hd / "skills" / ".hub",
@@ -322,7 +326,7 @@ def get_read_block_error(path: str) -> str | None:
             except ValueError:
                 continue
             return (
-                f"Access denied: {path} is an internal Hermes cache file "
+                f"Access denied: {path} is an internal PCBDraft cache file "
                 "and cannot be read directly to prevent prompt injection. "
                 "Use the skills_list or skill_view tools instead."
             )
@@ -341,7 +345,7 @@ def get_read_block_error(path: str) -> str | None:
         # was introduced by #31968 but not added to this guard.
         os.path.join("cache", "bws_cache.json"),
     )
-    for hd in hermes_dirs:
+    for hd in pcbdraft_dirs:
         for name in credential_file_names:
             try:
                 blocked = (hd / name).resolve()
@@ -349,7 +353,7 @@ def get_read_block_error(path: str) -> str | None:
                 continue
             if resolved == blocked:
                 return (
-                    f"Access denied: {path} is a Hermes credential store "
+                    f"Access denied: {path} is a PCBDraft credential store "
                     "and cannot be read directly. Provider tools consume "
                     "these credentials through internal channels. "
                     "(Defense-in-depth — not a security boundary; the "
@@ -358,14 +362,14 @@ def get_read_block_error(path: str) -> str | None:
 
     # mcp-tokens/: directory prefix match — anything inside is OAuth
     # token material.
-    for hd in hermes_dirs:
+    for hd in pcbdraft_dirs:
         try:
             mcp_tokens = (hd / "mcp-tokens").resolve()
         except Exception:
             continue
         if resolved == mcp_tokens:
             return (
-                f"Access denied: {path} is the Hermes MCP token directory "
+                f"Access denied: {path} is the PCBDraft MCP token directory "
                 "and cannot be read directly. (Defense-in-depth — not a "
                 "security boundary; the terminal tool can still bypass.)"
             )
@@ -374,7 +378,7 @@ def get_read_block_error(path: str) -> str | None:
         except ValueError:
             continue
         return (
-            f"Access denied: {path} is a Hermes MCP token file "
+            f"Access denied: {path} is a PCBDraft MCP token file "
             "and cannot be read directly. (Defense-in-depth — not a "
             "security boundary; the terminal tool can still bypass.)"
         )
@@ -436,8 +440,8 @@ def raise_if_read_blocked(path: str) -> None:
 # exists, and explicit user direction is required to cross it.
 #
 # Reference: May 2026 incident where a hermes-security profile session
-# edited skills under both ``~/.hermes/profiles/hermes-security/skills/``
-# AND ``~/.hermes/skills/`` (the default profile's skills) without realizing
+# edited skills under both ``<runtime-root>/profiles/security/skills/``
+# AND ``<runtime-root>/skills/`` (the default profile's skills) without realizing
 # the second path belonged to a different profile.
 # ---------------------------------------------------------------------------
 
@@ -450,8 +454,8 @@ PROFILE_SCOPED_AREAS = ("skills", "plugins", "cron", "memories")
 def _resolve_active_profile_name() -> str:
     """Return the active profile name derived from PCBDRAFT_RUNTIME_HOME.
 
-    ``~/.hermes``              -> ``"default"``
-    ``~/.hermes/profiles/X``  -> ``"X"``
+    ``<runtime-root>``             -> ``"default"``
+    ``<runtime-root>/profiles/X``  -> ``"X"``
 
     Falls back to ``"default"`` on any resolution failure so the guard
     never raises into the tool path.
@@ -551,7 +555,7 @@ def get_cross_profile_warning(path: str) -> str | None:
         return None
     return (
         f"Cross-profile write blocked by soft guard: {info['target_path']} "
-        f"belongs to Hermes profile {info['target_profile']!r}, but the "
+        f"belongs to PCBDraft profile {info['target_profile']!r}, but the "
         f"agent is running under profile {info['active_profile']!r}. "
         f"Editing another profile's {info['area']}/ will affect that "
         f"profile's future sessions, not the one you are currently in. "
@@ -568,7 +572,7 @@ def get_cross_profile_warning(path: str) -> str | None:
 # Non-local terminal backends (Docker, Daytona, etc.) bind a sandbox-local
 # directory to the container's ``$HOME``. The on-disk layout looks like
 #
-#   <PCBDRAFT_RUNTIME_HOME>/profiles/<name>/sandboxes/<backend>/<task>/home/.hermes/...
+#   <PCBDRAFT_RUNTIME_HOME>/profiles/<name>/sandboxes/<backend>/<task>/home/.pcbdraft/...
 #
 # When the agent (running host-side) speculates that authoritative profile
 # state lives at one of those sandbox-mirror paths, the write lands on the
@@ -577,29 +581,29 @@ def get_cross_profile_warning(path: str) -> str | None:
 # disk two divergent copies accumulate. See #32049 for evidence.
 #
 # This guard is path-shape-only: it detects the
-# ``…/sandboxes/<backend>/<task>/home/.hermes/…`` segment and warns
+# ``…/sandboxes/<backend>/<task>/home/.pcbdraft/…`` segment and warns
 # regardless of which Hermes profile is active. It does NOT cover the
 # inner-container case where the bind mount strips the ``sandboxes/`` prefix
-# (the agent's view inside the container is plain ``/root/.hermes/...``);
+# (the agent's view inside the container is plain ``/root/.pcbdraft/...``);
 # that case needs a separate dispatch-layer or host-side ``profile_state``
 # tool.
 # ---------------------------------------------------------------------------
 
 
 def _find_sandbox_mirror_segments(parts: tuple) -> int | None:
-    """Return the index of the inner ``.hermes`` part in a sandbox-mirror path.
+    """Return the index of the inner ``.pcbdraft`` part in a sandbox-mirror path.
 
-    Matches ``…/sandboxes/<backend>/<task>/home/.hermes/…`` and returns the
+    Matches ``…/sandboxes/<backend>/<task>/home/.pcbdraft/…`` and returns the
     index where the inner Hermes-state portion starts. Returns ``None`` for
     paths that do not contain the sandbox-mirror shape.
     """
     for i, part in enumerate(parts):
         if part != "sandboxes":
             continue
-        # Need at least: sandboxes / <backend> / <task> / home / .hermes / <thing>
+        # Need at least: sandboxes / <backend> / <task> / home / .pcbdraft / <thing>
         if i + 5 >= len(parts):
             continue
-        if parts[i + 3] == "home" and parts[i + 4] == ".hermes":
+        if parts[i + 3] == "home" and parts[i + 4] == ".pcbdraft":
             return i + 4
     return None
 
@@ -611,9 +615,9 @@ def classify_sandbox_mirror_target(path: str) -> dict | None:
     Otherwise returns a dict with:
 
       * ``target_path``: the resolved path string
-      * ``mirror_root``: the ``…/sandboxes/<backend>/<task>/home/.hermes``
+      * ``mirror_root``: the ``…/sandboxes/<backend>/<task>/home/.pcbdraft``
         prefix (so callers can show users which sandbox owns the mirror)
-      * ``inner_path``: the portion under the mirror's ``.hermes`` (what the
+      * ``inner_path``: the portion under the mirror's ``.pcbdraft`` (what the
         agent likely meant to address on the host)
 
     Detection is path-shape-only — does not require any Hermes resolver to
@@ -663,7 +667,7 @@ def get_sandbox_mirror_warning(path: str) -> str | None:
         f"Sandbox-mirror write blocked by soft guard: {info['target_path']} "
         f"sits under {info['mirror_root']!r}, which is a per-task mirror "
         f"created by a non-local terminal backend (docker/daytona/etc.). "
-        f"Writes here land on a copy that the host Hermes process never "
+        f"Writes here land on a copy that the host PCBDraft process never "
         f"reads — the authoritative file is likely {info['inner_path']!r} "
         f"under the real PCBDRAFT_RUNTIME_HOME. Use the host-side tool for "
         f"authoritative state (e.g. ``memory`` for memories), or address "
@@ -678,9 +682,9 @@ def get_sandbox_mirror_warning(path: str) -> str | None:
 # Container-context mirror guard (inner-container case — #32049 follow-up)
 #
 # Brian's shape-based detector (#32213) catches paths that still carry the
-# full ``…/sandboxes/<backend>/<task>/home/.hermes/…`` prefix on the host.
+# full ``…/sandboxes/<backend>/<task>/home/.pcbdraft/…`` prefix on the host.
 # But when file tools execute *inside* the container the bind-mount strips
-# that prefix: the agent sees plain ``/root/.hermes/…``.  The root:root
+# that prefix: the agent sees plain ``/root/.pcbdraft/…``. The root:root
 # ownership on the divergent SOUL.md in #32049 confirms this is the primary
 # failure mode.
 #
@@ -740,7 +744,7 @@ def get_container_mirror_warning(
     return (
         f"Sandbox-mirror write blocked by soft guard: {info['target_path']} "
         f"sits under {info['mirror_root']!r}, which is the container's "
-        f"bind-mounted home — a per-task mirror that the host Hermes "
+        f"bind-mounted home — a per-task mirror that the host PCBDraft "
         f"process never reads. The authoritative file is "
         f"{info['inner_path']!r} under the real PCBDRAFT_RUNTIME_HOME. Use the "
         f"host-side tool for authoritative state (e.g. ``memory`` for "

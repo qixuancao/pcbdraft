@@ -8,17 +8,17 @@ Features ASCII art branding, interactive REPL, toolset selection, and rich forma
 Usage:
     python cli.py                          # Start interactive mode with all tools
     python cli.py --toolsets web,terminal  # Start with specific toolsets
-    python cli.py --skills hermes-agent-dev,github-auth
+    python cli.py --skills pcbdraft-dev,github-auth
     python cli.py --list-tools             # List available tools and exit
 """
 
-# IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
-# on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
+# IMPORTANT: pcbdraft_bootstrap must be the very first import — UTF-8 stdio
+# on Windows.  No-op on POSIX.  See pcbdraft_bootstrap.py for full rationale.
 try:
-    import pcbdraft.core.stdio as hermes_bootstrap  # noqa: F401
+    import pcbdraft.core.stdio as pcbdraft_bootstrap  # noqa: F401
 except ModuleNotFoundError:
-    # Graceful fallback when hermes_bootstrap isn't registered in the venv
-    # yet — happens during partial ``hermes update`` where git-reset landed
+    # Graceful fallback when pcbdraft_bootstrap isn't registered in the venv
+    # yet — happens during partial ``internal update`` where git-reset landed
     # new code but ``uv pip install -e .`` didn't finish.  Missing bootstrap
     # means UTF-8 stdio setup is skipped on Windows; POSIX is unaffected.
     pass
@@ -51,13 +51,11 @@ logger = logging.getLogger(__name__)
 # Suppress startup messages for clean CLI experience
 os.environ["PCBDRAFT_RUNTIME_QUIET"] = "1"  # Our own modules
 
+# prompt_toolkit for fixed input area TUI
 from prompt_toolkit import print_formatted_text as _pt_print
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI as _PT_ANSI
-
-# prompt_toolkit for fixed input area TUI
-from prompt_toolkit.history import FileHistory
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import (
     ConditionalContainer,
@@ -83,6 +81,7 @@ from pcbdraft.agent.interrupt_compat import request_hard_interrupt
 from pcbdraft.interfaces.tui.cli_agent_setup_mixin import CLIAgentSetupMixin
 from pcbdraft.interfaces.tui.cli_billing_mixin import CLIBillingMixin
 from pcbdraft.interfaces.tui.cli_commands_mixin import CLICommandsMixin
+from pcbdraft.interfaces.tui.history_migration import NativeFileHistory
 from pcbdraft.model.fallback_config import get_fallback_chain
 
 try:
@@ -157,7 +156,7 @@ def _reverse_alias_for_display(model_name: str) -> str:
     """Return the shortest configured alias for ``model_name``, or ``model_name``.
 
     Looks up both ``model_aliases:`` (dict-based, full DirectAlias entries)
-    and ``model.aliases:`` (string-based, set via ``hermes config set``)
+    and ``model.aliases:`` (string-based, set via ``internal config set``)
     from config.yaml. Multiple aliases pointing at the same model — the
     shortest wins, so ``opus47`` beats ``palantir-claude47``.
     """
@@ -250,7 +249,7 @@ from pcbdraft.interfaces.tui.banner import (
 _COMMAND_SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
-# Load .env from ~/.hermes/.env first, then project root as dev fallback.
+# Load .env from ~/.pcbdraft/.env first, then project root as dev fallback.
 # User-managed env files should override stale shell exports on restart.
 from pcbdraft.core.runtime_environment import display_runtime_home, get_runtime_home
 from pcbdraft.core.runtime_utils import (
@@ -264,11 +263,11 @@ from pcbdraft.interfaces.tui.browser_connect import (
     manual_chrome_debug_command,
     try_launch_chrome_debug,
 )
-from pcbdraft.model.env_loader import load_hermes_dotenv
+from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 
 _runtime_home = get_runtime_home()
 _project_env = Path(__file__).parent / ".env"
-load_hermes_dotenv(runtime_home=_runtime_home, project_env=_project_env)
+load_pcbdraft_dotenv(runtime_home=_runtime_home, project_env=_project_env)
 
 
 _REASONING_TAGS = (
@@ -387,7 +386,7 @@ def _load_prefill_messages(file_path: str) -> list[dict[str, Any]]:
     The file should contain a JSON array of {role, content} dicts, e.g.:
         [{"role": "user", "content": "Hi"}, {"role": "assistant", "content": "Hello!"}]
 
-    Relative paths are resolved from ~/.hermes/.
+    Relative paths are resolved from ~/.pcbdraft/.
     Returns an empty list if the path is empty or the file doesn't exist.
     """
     if not file_path:
@@ -459,14 +458,14 @@ def load_cli_config() -> dict[str, Any]:
     Load CLI configuration from config files.
 
     Config lookup order:
-    1. ~/.hermes/config.yaml (user config - preferred)
+    1. ~/.pcbdraft/config.yaml (user config - preferred)
     2. ./cli-config.yaml (project config - fallback)
 
     Environment variables take precedence over config file values.
     Returns default values if no config file exists.
 
-    If PCBDRAFT_RUNTIME_IGNORE_USER_CONFIG=1 is set (via ``hermes chat --ignore-user-config``),
-    the user config at ``~/.hermes/config.yaml`` is skipped entirely and only the
+    If PCBDRAFT_RUNTIME_IGNORE_USER_CONFIG=1 is set (via ``internal chat --ignore-user-config``),
+    the user config at ``~/.pcbdraft/config.yaml`` is skipped entirely and only the
     built-in defaults plus the project-level ``cli-config.yaml`` (if any) are used.
     Credentials in ``.env`` are still loaded — this flag only suppresses
     behavioral/config settings.
@@ -526,7 +525,7 @@ def load_cli_config() -> dict[str, Any]:
             "prefill_messages_file": "",
             "reasoning_effort": "",
             "service_tier": "",
-            # Built-in personalities live in hermes_cli.personality
+            # Built-in personalities live in pcbdraft.interfaces.tui.personality
             # (BUILTIN_PERSONALITIES) — the single owner. Entries here are
             # user-defined additions/overrides merged on top by name.
             "personalities": {},
@@ -534,14 +533,14 @@ def load_cli_config() -> dict[str, Any]:
         "display": {
             "compact": False,
             "resume_display": "full",
-            # Recap tuning for /resume — see hermes_cli/config.py DEFAULT_CONFIG.
+            # Recap tuning for /resume — see pcbdraft.interfaces.tui/config.py DEFAULT_CONFIG.
             "resume_exchanges": 10,
             "resume_max_user_chars": 300,
             "resume_max_assistant_chars": 200,
             "resume_max_assistant_lines": 3,
             "resume_skip_tool_only": True,
             # Live reasoning display default ON — keep in sync with
-            # hermes_cli/config.py DEFAULT_CONFIG (display.show_reasoning).
+            # pcbdraft.interfaces.tui/config.py DEFAULT_CONFIG (display.show_reasoning).
             "show_reasoning": True,
             "reasoning_full": False,
             "streaming": True,
@@ -669,10 +668,10 @@ def load_cli_config() -> dict[str, Any]:
 
     # Managed scope: overlay administrator-pinned values LAST so they win over
     # the user's config here too. cli.py builds its config independently of
-    # hermes_cli.config._load_config_impl (which has its own managed merge), so
+    # pcbdraft.interfaces.tui.config._load_config_impl (which has its own managed merge), so
     # without this the entire interactive CLI/TUI surface — skin, display prefs,
     # etc. read from CLI_CONFIG — would silently ignore managed scope while
-    # `hermes config`/`doctor`/guards (which use load_config) honor it. The
+    # `internal config`/`doctor`/guards (which use load_config) honor it. The
     # shared helper mirrors _load_config_impl (env-only expansion, root-model
     # normalization, leaf-merge) and is fail-open.
     from pcbdraft.interfaces.tui import managed_scope
@@ -682,7 +681,7 @@ def load_cli_config() -> dict[str, Any]:
     # Apply terminal config to environment variables (so terminal_tool picks them up)
     terminal_config = defaults.get("terminal", {})
 
-    # Normalize config key: the new config system (hermes_cli/config.py) and all
+    # Normalize config key: the new config system (pcbdraft.interfaces.tui/config.py) and all
     # documentation use "backend", the legacy cli-config.yaml uses "env_type".
     # Accept both, with "backend" taking precedence (it's the documented key).
     if "backend" in terminal_config:
@@ -690,7 +689,7 @@ def load_cli_config() -> dict[str, Any]:
 
     # CWD resolution for CLI/TUI. The gateway has its own config bridge in
     # gateway/run.py but may lazily import cli.py (triggering this code).
-    # Local backend: always os.getcwd(). Use `cd /dir && hermes` to control it.
+    # Local backend: always os.getcwd(). Use `cd /dir && pcbdraft` to control it.
     # Non-local with placeholder: pop so terminal_tool uses its per-backend default.
     # Non-local with explicit path: keep as-is.
     _CWD_PLACEHOLDERS = (".", "auto", "cwd")
@@ -742,9 +741,9 @@ def load_cli_config() -> dict[str, Any]:
     }
 
     # Bridge config → env vars for terminal_tool. TERMINAL_CWD is force-exported
-    # UNLESS we're inside a gateway process (detected by _HERMES_GATEWAY marker)
+    # UNLESS we're inside a gateway process (detected by _PCBDRAFT_GATEWAY marker)
     # where it was already set correctly by gateway/run.py's config bridge.
-    _is_gateway = os.environ.get("_HERMES_GATEWAY") == "1"
+    _is_gateway = os.environ.get("_PCBDRAFT_GATEWAY") == "1"
     for config_key, env_var in env_mappings.items():
         if config_key in terminal_config:
             if env_var == "TERMINAL_CWD":
@@ -823,7 +822,7 @@ def load_cli_config() -> dict[str, Any]:
         if redact is not None:
             os.environ["PCBDRAFT_RUNTIME_REDACT_SECRETS"] = str(redact).lower()
 
-    # Session-search index knobs (hermes_state reads the env carriers).
+    # Session-search index knobs (pcbdraft_state reads the env carriers).
     sessions_config = defaults.get("sessions", {})
     if isinstance(sessions_config, dict):
         if "cjk_fts" in sessions_config:
@@ -840,7 +839,7 @@ def load_cli_config() -> dict[str, Any]:
 CLI_CONFIG = load_cli_config()
 
 
-# Initialize centralized logging early — agent.log + errors.log in ~/.hermes/logs/.
+# Initialize centralized logging early — agent.log + errors.log in ~/.pcbdraft/logs/.
 # This ensures CLI sessions produce a log trail even before AIAgent is instantiated.
 try:
     from pcbdraft.core.runtime_logging import setup_logging
@@ -905,7 +904,7 @@ try:
         """Defer ``AsyncHttpxClientWrapper.__del__`` neutering until import.
 
         Saves ~166ms on cold CLI start where openai is never used (e.g.
-        ``hermes --help`` paths inside the chat command flow).  See
+        ``pcbdraft --help`` paths inside the chat command flow).  See
         ``agent.auxiliary_client.neuter_async_httpx_del`` for full rationale
         on why ``__del__`` must be a no-op.
         """
@@ -1223,7 +1222,7 @@ def _arm_exit_watchdog_on_shutdown_signal() -> None:
     parked in a syscall that never observes the unwind, a prompt_toolkit
     teardown that never returns, or an agent worker blocking the ``finally``.
     When that happens the process has NO backstop and a "dead" CLI lingers
-    (observed: ``hermes --tui`` alive ~47 min at 4% CPU after terminal close —
+    (observed: ``internal --tui`` alive ~47 min at 4% CPU after terminal close —
     the #65998 class).
 
     Arming at signal time closes that window. The leash is 2× the normal
@@ -1711,7 +1710,7 @@ def _maintain_pack_health(repo_root: str) -> None:
     threshold is 50 *and* it counts only non-kept packs). Past a few dozen
     packs every object lookup scans every pack index, and worktree creation
     can blow its 30s timeout under concurrent load (Aug 2026 incident: 39
-    packs, 638MB → ``hermes -w`` timing out; a full repack halved the store
+    packs, 638MB → ``internal -w`` timing out; a full repack halved the store
     and restored 0.5s creates). Threshold 15 keeps lookups fast without
     repacking on every startup; ``nice`` + background thread keeps it off
     the startup path. Fail-soft everywhere.
@@ -1759,7 +1758,7 @@ def _resolve_worktree_base(
     """Resolve the freshest base ref to branch a new worktree from.
 
     The standalone clone's ``HEAD`` can lag the remote by hundreds of commits
-    (the ``~/.hermes/hermes-agent`` clone is updated only by ``hermes update``,
+    (the ``~/.pcbdraft/pcbdraft`` clone is updated only by ``internal update``,
     not on every session). Branching a worktree from that stale ``HEAD`` roots
     every new branch on an old base — so the PR diff GitHub computes against
     current ``main`` balloons with unrelated changes, and the agent has to
@@ -1776,7 +1775,7 @@ def _resolve_worktree_base(
          old behavior, never worse than before.
 
     "Refresh" is deliberately cheap on the startup path (the fetch here used
-    to stall ``hermes -w`` launches for 30-60s on flaky smart-HTTP
+    to stall ``internal -w`` launches for 30-60s on flaky smart-HTTP
     connections):
 
     - The fetch is SKIPPED entirely when the repo's ``FETCH_HEAD`` is younger
@@ -1913,8 +1912,8 @@ def _setup_worktree(
     branch from local ``HEAD`` (the pre-#10760-followup behavior).
 
     When *name* is given (``/worktree new <name>``), the worktree directory
-    and branch use the sanitized name instead of a random ``hermes-<id>``.
-    Named trees intentionally skip the ``hermes-`` prefix so the startup
+    and branch use the sanitized name instead of a random ``pcbdraft-<id>``.
+    Named trees intentionally skip the ``pcbdraft-`` prefix so the startup
     pruner ages them on its slower named-tree schedule.
     """
     import subprocess
@@ -1922,7 +1921,7 @@ def _setup_worktree(
     repo_root = repo_root or _git_repo_root()
     if not repo_root:
         print("\033[31m✗ --worktree requires being inside a git repository.\033[0m")
-        print("  cd into your project repo first, then run hermes -w")
+        print("  cd into your project repo first, then run pcbdraft --help")
         return None
 
     if name:
@@ -1930,10 +1929,10 @@ def _setup_worktree(
         if safe:
             wt_name = safe
         else:
-            wt_name = f"hermes-{uuid.uuid4().hex[:8]}"
+            wt_name = f"pcbdraft-{uuid.uuid4().hex[:8]}"
     else:
-        wt_name = f"hermes-{uuid.uuid4().hex[:8]}"
-    branch_name = f"hermes/{wt_name}"
+        wt_name = f"pcbdraft-{uuid.uuid4().hex[:8]}"
+    branch_name = f"pcbdraft/{wt_name}"
 
     worktrees_dir = Path(repo_root) / ".worktrees"
     worktrees_dir.mkdir(parents=True, exist_ok=True)
@@ -2144,7 +2143,7 @@ def _setup_worktree(
                 "worktree",
                 "lock",
                 "--reason",
-                f"hermes pid={os.getpid()}",
+                f"pcbdraft pid={os.getpid()}",
                 str(wt_path),
             ],
             check=False,
@@ -2526,8 +2525,8 @@ def _worktree_commits_all_merged_upstream(
 def _worktree_lock_is_live(repo_root: str, worktree_path: str, timeout: int = 10):
     """Classify a worktree's git lock as live, dead, or absent.
 
-    ``hermes -w`` locks each worktree with reason ``hermes pid=<pid>`` so a
-    concurrent hermes process' startup prune leaves an in-use worktree alone.
+    ``internal -w`` locks each worktree with reason ``pcbdraft pid=<pid>`` so a
+    concurrent pcbdraft process' startup prune leaves an in-use worktree alone.
     But a *crashed* session leaves the lock behind forever, and
     ``git worktree remove --force`` (single ``-f``) refuses to remove a locked
     worktree — so dead-locked worktrees accumulate indefinitely. This lets the
@@ -2535,7 +2534,7 @@ def _worktree_lock_is_live(repo_root: str, worktree_path: str, timeout: int = 10
 
     - ``"live"``  — locked and the owning pid is still running (skip it).
     - ``"dead"``  — locked but the owning pid is gone, or the reason isn't a
-                    parseable hermes lock (safe to unlock + reap).
+                    parseable pcbdraft lock (safe to unlock + reap).
     - ``None``    — not locked at all.
 
     Fails SAFE toward ``"live"``: if git can't be queried at all we cannot
@@ -2572,11 +2571,11 @@ def _worktree_lock_is_live(repo_root: str, worktree_path: str, timeout: int = 10
             if current != target:
                 continue
             reason = line[len("locked") :].strip()
-            m = re.search(r"hermes pid=(\d+)", reason)
+            m = re.search(r"(?:pcbdraft|hermes) pid=(\d+)", reason)
             if not m:
-                # Locked by something we don't recognize as a hermes session
+                # Locked by something we don't recognize as a internal session
                 # (or lock reason unavailable). Treat as dead — a foreign lock
-                # on a hermes -w worktree is almost certainly a leftover, and
+                # on a internal -w worktree is almost certainly a leftover, and
                 # the age/dirty/unpushed gates already ran before we got here.
                 return "dead"
             pid = int(m.group(1))
@@ -2627,7 +2626,7 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
                 f"\n\033[33m⚠ Shallow clone — cannot verify push state, keeping: {wt_path}\033[0m"
             )
             print(
-                "  The next `hermes -w` session deepens the clone and prunes merged worktrees automatically."
+                "  The next `pcbdraft --help` session deepens the clone and prunes merged worktrees automatically."
             )
         else:
             print(
@@ -2692,7 +2691,7 @@ def _run_state_db_auto_maintenance(session_db) -> None:
     """Call ``SessionDB.maybe_auto_prune_and_vacuum`` using current config.
 
     Reads the ``sessions:`` section from config.yaml via
-    :func:`hermes_cli.config.load_config` (the authoritative loader that
+    :func:`pcbdraft.interfaces.tui.config.load_config` (the authoritative loader that
     deep-merges DEFAULT_CONFIG, so unmigrated configs still get default
     values). Honours ``auto_prune`` / ``retention_days`` /
     ``vacuum_after_prune`` / ``min_vacuum_interval_days`` /
@@ -2759,7 +2758,7 @@ def _run_checkpoint_auto_maintenance() -> None:
     """Call ``checkpoint_manager.maybe_auto_prune_checkpoints`` using current config.
 
     Reads the ``checkpoints:`` section from config.yaml via
-    :func:`hermes_cli.config.load_config`. Honours ``auto_prune`` /
+    :func:`pcbdraft.interfaces.tui.config.load_config`. Honours ``auto_prune`` /
     ``retention_days`` / ``delete_orphans`` / ``min_interval_hours``.
     Never raises — maintenance must never block interactive startup.
     """
@@ -2775,7 +2774,7 @@ def _run_checkpoint_auto_maintenance() -> None:
         # workdir at startup is ambiguous (deleted project vs. an unmounted
         # external volume / network share / VPN not yet up) and this sweep
         # runs unattended. Orphan cleanup is only ever done via the explicit
-        # `hermes checkpoints prune` command, which the user has to invoke.
+        # `internal checkpoints prune` command, which the user has to invoke.
         maybe_auto_prune_checkpoints(
             retention_days=int(cfg.get("retention_days", 7)),
             min_interval_hours=int(cfg.get("min_interval_hours", 24)),
@@ -2791,10 +2790,10 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
 
     Covers EVERY directory under ``.worktrees/`` except kanban task trees
     (``t_<hex>`` — owned by the kanban dispatcher's own gc). Scratch trees
-    created by ``hermes -w`` (``hermes-*``) age out fast; named trees created
+    created by ``internal -w`` (``pcbdraft-*``) age out fast; named trees created
     manually for salvage/review lanes age out on a slower schedule:
 
-    - ``hermes-*``: skip under 24h; reap 24h+ when clean and merged/pushed;
+    - ``pcbdraft-*``: skip under 24h; reap 24h+ when clean and merged/pushed;
       72h+ is the aggressive tier (still never deletes real work).
     - named trees: same logic at 3x the timeline (72h soft / 9d hard).
 
@@ -2805,8 +2804,8 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
       squash-merged-PR case, which is the dominant ``.worktrees/`` leak since
       those commits stay unreachable from ``refs/remotes/*`` forever.
 
-    Lock handling (orthogonal to age): ``hermes -w`` locks each worktree with
-    reason ``hermes pid=<pid>`` so a concurrent hermes process leaves an in-use
+    Lock handling (orthogonal to age): ``internal -w`` locks each worktree with
+    reason ``pcbdraft pid=<pid>`` so a concurrent pcbdraft process leaves an in-use
     worktree alone. A *live*-locked worktree is skipped at any age; a
     *dead*-locked one (owning pid gone — a crashed session) is unlocked first
     so ``git worktree remove --force`` can actually reap it, otherwise those
@@ -2820,10 +2819,10 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
     are older than 7 days are listed in a single WARNING so real in-flight
     work can't rot silently.
 
-    Also prunes orphaned ``hermes/*`` and ``pr-*`` local branches that
+    Also prunes orphaned ``pcbdraft/*`` and ``pr-*`` local branches that
     have no corresponding worktree.
 
-    Performance: this runs on the startup path of every ``hermes -w`` session,
+    Performance: this runs on the startup path of every ``internal -w`` session,
     and each candidate tree costs several git subprocesses (the ``git cherry``
     patch-equivalence probe dominates at ~0.2-1.0s on a large repo). With
     dozens of accumulated worktrees the serial version added ~11-18s of latency
@@ -2860,7 +2859,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
     stale_work_cutoff = now - (7 * 24 * 3600)
     preserved_stale: list = []
     # Kanban task worktrees (<repo>/.worktrees/t_<hex>) have their own
-    # dispatcher-driven lifecycle (hermes kanban gc) — never touch them here.
+    # dispatcher-driven lifecycle (internal kanban gc) — never touch them here.
     kanban_re = re.compile(r"^t_[0-9a-f]+$")
 
     # ── Phase 1: age filter (no subprocesses) ───────────────────────────────
@@ -2871,9 +2870,9 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
         if not entry.is_dir() or kanban_re.match(entry.name):
             continue
 
-        # Scratch trees (hermes-*) age out on the default schedule; named
+        # Scratch trees (pcbdraft-*) age out on the default schedule; named
         # trees (salvage/review lanes someone created deliberately) get 3x.
-        scratch = entry.name.startswith("hermes-")
+        scratch = entry.name.startswith("pcbdraft-")
         tier_hours = max_age_hours if scratch else max_age_hours * 3
         soft_cutoff = now - (tier_hours * 3600)
         hard_cutoff = now - (tier_hours * 3 * 3600)
@@ -2923,7 +2922,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
                 return (entry, mtime, force, "unpushed", None)
 
         # Respect git-native session locks. A lock owned by a still-running
-        # hermes process means the worktree is actively in use — never touch
+        # pcbdraft process means the worktree is actively in use — never touch
         # it. A lock whose owning pid is gone is a crashed session's leftover:
         # unlock it so `git worktree remove --force` (single -f) can reap it,
         # otherwise dead-locked worktrees pile up indefinitely.
@@ -2938,7 +2937,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
     try:
         if workers > 1:
             with concurrent.futures.ThreadPoolExecutor(
-                max_workers=workers, thread_name_prefix="hermes-wt-prune"
+                max_workers=workers, thread_name_prefix="pcbdraft-wt-prune"
             ) as pool:
                 verdicts = list(pool.map(_classify, candidates))
         else:
@@ -3040,9 +3039,9 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
 
 
 def _prune_orphaned_branches(repo_root: str) -> None:
-    """Delete local ``hermes/hermes-*`` and ``pr-*`` branches with no worktree.
+    """Delete local ``pcbdraft/pcbdraft-*`` and ``pr-*`` branches with no worktree.
 
-    These are auto-generated by ``hermes -w`` sessions and PR review
+    These are auto-generated by ``internal -w`` sessions and PR review
     workflows respectively.  Once their worktree is gone they serve no
     purpose and just accumulate.
     """
@@ -3109,7 +3108,7 @@ def _prune_orphaned_branches(repo_root: str) -> None:
         b
         for b in all_branches
         if b not in active_branches
-        and (b.startswith("hermes/hermes-") or b.startswith("pr-"))
+        and (b.startswith("pcbdraft/pcbdraft-") or b.startswith("pr-"))
     ]
 
     if not orphaned:
@@ -3189,7 +3188,7 @@ def _hex_to_ansi(hex_color: str, *, bold: bool = False) -> str:
 #   3. PCBDRAFT_RUNTIME_TUI_BACKGROUND=#RRGGBB — explicit bg hint
 #   4. COLORFGBG env (set by xterm/Konsole/urxvt) — bg slot 7/15 = light
 #   5. OSC 11 query (\x1b]11;?\x1b\\) — ask the terminal directly
-#   6. Default: assume dark (matches the legacy Hermes assumption)
+#   6. Default: assume dark (matches the legacy PCBDraft assumption)
 #
 # Cached after first call so we don't query the terminal repeatedly.
 _LIGHT_MODE_CACHE: bool | None = None
@@ -3345,7 +3344,7 @@ def _heal_cooked_mode_drift(fd: int) -> bool:
     prompt_toolkit's ``run_in_terminal`` / ``in_terminal`` wraps every
     "print above the prompt" in a ``cooked_mode()`` context: it flips the
     tty back to cooked (ICANON/ECHO/ISIG), runs the function, then restores
-    raw mode.  Hermes schedules those windows cross-thread constantly — the
+    raw mode.  PCBDraft schedules those windows cross-thread constantly — the
     background self-review's ``💾`` summary, background process notification
     drains, curses pickers — and if a restore is ever lost (coroutine
     cancelled mid-window, racing chains, an external writer touching the
@@ -3508,7 +3507,7 @@ def _install_skin_light_mode_hook() -> None:
         )
     except Exception:
         return
-    if getattr(SkinConfig, "_hermes_light_mode_hook_installed", False):
+    if getattr(SkinConfig, "_pcbdraft_light_mode_hook_installed", False):
         return
     _orig_get_color = SkinConfig.get_color
 
@@ -3520,7 +3519,7 @@ def _install_skin_light_mode_hook() -> None:
             return value
 
     SkinConfig.get_color = _wrapped_get_color  # type: ignore[method-assign]
-    SkinConfig._hermes_light_mode_hook_installed = True  # type: ignore[attr-defined]
+    SkinConfig._pcbdraft_light_mode_hook_installed = True  # type: ignore[attr-defined]
 
 
 _install_skin_light_mode_hook()
@@ -3628,7 +3627,7 @@ def _strip_markdown_syntax(text: str) -> str:
     plain = _rich_text_from_ansi(text or "").plain
     # Avoid stripping cron-style expressions like "* * * * *" as if they were
     # Markdown horizontal rules. CommonMark treats three or more "*" as an HR,
-    # but in Hermes output it's common to display cron schedules verbatim.
+    # but in PCBDraft output it's common to display cron schedules verbatim.
     #
     # Keep the behavior for "-" / "_" HR markers, and only strip "*" HR lines
     # when there are exactly 3 asterisks (with optional whitespace).
@@ -4324,7 +4323,7 @@ def _strip_leaked_bracketed_paste_wrappers(text: str) -> str:
     return strip_leaked_bracketed_paste_wrappers(text)
 
 
-def _hermes_call_output_screen_diff(
+def _pcbdraft_call_output_screen_diff(
     orig_osd,
     app,
     output,
@@ -4340,11 +4339,11 @@ def _hermes_call_output_screen_diff(
     size,
     previous_width,
 ):
-    """Call prompt_toolkit ``_output_screen_diff`` with Hermes resize guards.
+    """Call prompt_toolkit ``_output_screen_diff`` with PCBDraft resize guards.
 
     1. Inflate ``previous_screen.height`` when the new screen is taller so pt
        skips the reserve-vertical-space cursor move that stamps chrome into
-       scrollback (pt #29 / Hermes #26137).
+       scrollback (pt #29 / PCBDraft #26137).
     2. On AttributeError/TypeError from a corrupt previous paint buffer
        (classic after tmux attach with same width), retry once with
        ``previous_screen=None`` so pt first-paints cleanly instead of crashing
@@ -4406,14 +4405,14 @@ def _apply_bracketed_paste_timeout_patch() -> None:
     parsing.  See upstream issue #16263.
 
     The patch is idempotent — repeated calls are no-ops via the
-    ``_hermes_bp_timeout_patched`` sentinel on the module.
+    ``_pcbdraft_bp_timeout_patched`` sentinel on the module.
     """
     try:
         import prompt_toolkit.input.vt100_parser as _vt100_mod
         from prompt_toolkit.key_binding.key_processor import KeyPress as _PtKeyPress
         from prompt_toolkit.keys import Keys as _PtKeys
 
-        if getattr(_vt100_mod, "_hermes_bp_timeout_patched", False):
+        if getattr(_vt100_mod, "_pcbdraft_bp_timeout_patched", False):
             return
 
         _BP_TIMEOUT_S = 2.0  # max time to wait for ESC[201~ before flushing
@@ -4432,19 +4431,19 @@ def _apply_bracketed_paste_timeout_patch() -> None:
                     self_parser._in_bracketed_paste = False
                     remaining = self_parser._paste_buffer[end_index + len(end_mark) :]
                     self_parser._paste_buffer = ""
-                    self_parser._hermes_bp_start = None
+                    self_parser._pcbdraft_bp_start = None
                     if remaining:
                         _patched_vt100_feed(self_parser, remaining)
                 else:
-                    bp_start = getattr(self_parser, "_hermes_bp_start", None)
+                    bp_start = getattr(self_parser, "_pcbdraft_bp_start", None)
                     now = time.monotonic()
                     if bp_start is None:
-                        self_parser._hermes_bp_start = now
+                        self_parser._pcbdraft_bp_start = now
                     elif now - bp_start > _BP_TIMEOUT_S:
                         paste_content = self_parser._paste_buffer
                         self_parser._in_bracketed_paste = False
                         self_parser._paste_buffer = ""
-                        self_parser._hermes_bp_start = None
+                        self_parser._pcbdraft_bp_start = None
                         if paste_content:
                             self_parser.feed_key_callback(
                                 _PtKeyPress(_PtKeys.BracketedPaste, paste_content)
@@ -4467,7 +4466,7 @@ def _apply_bracketed_paste_timeout_patch() -> None:
                     self_parser._input_parser.send(c)
 
         _vt100_mod.Vt100Parser.feed = _patched_vt100_feed
-        _vt100_mod._hermes_bp_timeout_patched = True
+        _vt100_mod._pcbdraft_bp_timeout_patched = True
         logger.debug("Applied Vt100Parser bracketed-paste timeout patch (#16263)")
     except Exception as exc:  # noqa: BLE001 — defensive: never break startup
         logger.debug("Bracketed-paste timeout patch skipped: %s", exc)
@@ -4553,7 +4552,7 @@ def _enable_extended_enter_keys(
     none of these, which is why the CSI >1u push was temporarily removed in
     #87074 (Ctrl+C arrived as ``ESC[99;5u`` and died, #56684).
     ``install_modify_other_keys_aliases()`` (called at CLI startup from
-    ``hermes_cli.pt_input_extras``) now populates ``ANSI_SEQUENCES`` with the
+    ``pcbdraft.interfaces.tui.pt_input_extras``) now populates ``ANSI_SEQUENCES`` with the
     full Ctrl/Alt/Shift/multi-modifier and functional-key tables under BOTH
     formats, so every existing key binding continues to fire — including
     Ctrl+C, which is handled by prompt_toolkit's ``c-c`` binding (raw mode
@@ -5142,7 +5141,7 @@ def save_config_value(key_path: str, value: any) -> bool:
     Save a value to the active config file at the specified key path.
 
     Respects the same lookup order as load_cli_config():
-    1. ~/.hermes/config.yaml (user config - preferred, used if it exists)
+    1. ~/.pcbdraft/config.yaml (user config - preferred, used if it exists)
     2. ./cli-config.yaml (project config - fallback)
 
     Args:
@@ -5168,7 +5167,7 @@ def save_config_value(key_path: str, value: any) -> bool:
     config_path = get_runtime_home() / "config.yaml"
 
     try:
-        # Ensure parent directory exists (for ~/.hermes/config.yaml on first use)
+        # Ensure parent directory exists (for ~/.pcbdraft/config.yaml on first use)
         config_path.parent.mkdir(parents=True, exist_ok=True)
 
         # Save back atomically while preserving comments, ordering, quotes, and
@@ -5184,7 +5183,7 @@ def save_config_value(key_path: str, value: any) -> bool:
             pass
 
         # Model/provider changes made through /model and the TUI use this
-        # persistence path rather than ``hermes config set``. Surface the same
+        # persistence path rather than ``internal config set``. Surface the same
         # fail-closed cron drift warning for every operator-facing model switch.
         from pcbdraft.model.configuration import (
             warn_unpinned_cron_jobs_after_model_config_change,
@@ -5208,7 +5207,7 @@ def _normalize_moa_model(model: str | None) -> tuple[str | None, str | None]:
 
     Returns ``("moa", "<preset>")`` when *model* selects the MoA virtual
     provider, otherwise ``(None, model)`` unchanged. This gives non-interactive
-    ``hermes chat -Q -m moa:<preset>`` the same routing the interactive
+    ``internal chat -Q -m moa:<preset>`` the same routing the interactive
     ``/moa`` command and the model picker already use: ``resolve_runtime_provider``
     handles ``requested_provider == "moa"`` and ``agent_init`` builds the
     MoAClient off ``provider == "moa"``. Without this the raw ``moa:<preset>``
@@ -5274,7 +5273,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         ignore_rules: bool = False,
     ):
         """
-        Initialize the Hermes CLI.
+        Initialize the PCBDraft CLI.
 
         Args:
             model: Model to use (default: from env or claude-sonnet)
@@ -5305,7 +5304,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         # tool-progress mode is snapped to "off" so the EXISTING suppression
         # path hides per-tool lines, and the pre-focus mode is stashed so
         # /focus off restores it. Purely cosmetic — never changes what is sent
-        # to the model. See hermes_cli/focus_view.py.
+        # to the model. See pcbdraft.interfaces.tui/focus_view.py.
         self._focus_view_enabled = bool(CLI_CONFIG["display"].get("focus_view", False))
         self._focus_saved_tool_progress = None
         self._focus_hidden_lines = 0
@@ -5597,7 +5596,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         self.checkpoint_max_file_size_mb = cp_cfg.get("max_file_size_mb", 10)
         self.pass_session_id = pass_session_id
         # --ignore-rules: honor either the constructor flag or the env var set
-        # by `hermes chat --ignore-rules` in hermes_cli/main.py. When true we
+        # by `internal chat --ignore-rules` in pcbdraft.interfaces.tui/main.py. When true we
         # pass skip_context_files=True and skip_memory=True to AIAgent so
         # AGENTS.md/SOUL.md/.cursorrules and persistent memory are not loaded.
         self.ignore_rules = (
@@ -5606,7 +5605,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # Ephemeral system prompt: env var takes precedence, then
         # display.personality / agent.system_prompt from config.
-        # hermes_cli.personality is the single owner of overlay resolution.
+        # pcbdraft.interfaces.tui.personality is the single owner of overlay resolution.
         from pcbdraft.interfaces.tui.personality import (
             available_personalities,
             resolve_ephemeral_system_prompt,
@@ -5624,7 +5623,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # Reasoning config (OpenRouter reasoning effort level)
         # Per-model override > global reasoning_effort — resolved through the
-        # shared chokepoint in hermes_constants (Closes #21256).
+        # shared chokepoint in pcbdraft_constants (Closes #21256).
         from pcbdraft.core.runtime_environment import resolve_reasoning_config
 
         self.reasoning_config = resolve_reasoning_config(CLI_CONFIG, self.model)
@@ -5735,12 +5734,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # Opportunistic state.db maintenance — runs at most once per
         # min_interval_hours, tracked via state_meta in state.db itself so
-        # it's shared across all Hermes processes for this PCBDRAFT_RUNTIME_HOME.
+        # it's shared across all PCBDraft processes for this PCBDRAFT_RUNTIME_HOME.
         # Never blocks startup on failure.
         _run_state_db_auto_maintenance(self._session_db)
 
         # Opportunistic shadow-repo cleanup — deletes orphan/stale
-        # checkpoint repos under ~/.hermes/checkpoints/.  Opt-in via
+        # checkpoint repos under ~/.pcbdraft/checkpoints/.  Opt-in via
         # checkpoints.auto_prune, idempotent via .last_prune marker.
         _run_checkpoint_auto_maintenance()
 
@@ -5758,7 +5757,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         getattr(self, "_write_terminal_breadcrumb", lambda: None)()
 
         # History file for persistent input recall across sessions
-        self._history_file = _runtime_home / ".hermes_history"
+        self._history_file = _runtime_home / ".pcbdraft_history"
+        from pcbdraft.interfaces.tui.history_migration import migrate_history_file
+
+        migrate_history_file(self._history_file)
         self._last_invalidate: float = 0.0  # throttle UI repaints
         self._app = None
 
@@ -6075,7 +6077,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         Terminals with focus tracking active (Ghostty, iTerm2, xterm builds,
         multiplexers that toggle DECSET 1004 upstream) emit ``\\x1b[I`` when
-        the Hermes tab/window becomes visible again. Emulators can coalesce
+        the PCBDraft tab/window becomes visible again. Emulators can coalesce
         or drop hidden-tab output and repaint the surface while we're
         invisible, so on regain prompt_toolkit's incremental diff stacks on
         stale content — a second copy of the composer/prompt chrome next to
@@ -6250,7 +6252,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         # untouched — no clear, no replay — because a 2J without replay erases
         # the visible transcript and a replay against preserved scrollback
         # duplicates it (#65293). The stale-previous_screen crash tmux attach
-        # used to trigger is handled by _hermes_call_output_screen_diff's
+        # used to trigger is handled by _pcbdraft_call_output_screen_diff's
         # retry-with-first-paint instead (#83874).
         try:
             new_width = self._get_tui_terminal_width()
@@ -7088,7 +7090,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
     def _pet_resolve_config(self) -> None:
         """(Re)resolve the active pet from config — picks up live enable/disable/
 
-        switch made via ``/pet`` or ``hermes pets`` without a restart, mirroring
+        switch made via ``/pet`` or ``internal pets`` without a restart, mirroring
         the TUI's steady poll. Cheap and fail-open: any problem disables the pet.
         """
         try:
@@ -8781,9 +8783,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         """Show a startup banner if any unacked security advisories match.
 
         Renders a single bold-red box on stderr (so piped stdout remains
-        clean) listing the worst hit and pointing at ``hermes doctor``.
+        clean) listing the worst hit and pointing at ``pcbdraft doctor``.
         Banner-cache rate-limits this to once per 24h per advisory; full
-        remediation lives behind ``hermes doctor`` so the banner stays
+        remediation lives behind ``pcbdraft doctor`` so the banner stays
         small.
         """
         try:
@@ -8857,7 +8859,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 logger.warning(
                     "Unknown skill(s) requested, skipping: %s. "
                     "Continuing with: %s. "
-                    "List available skills with `hermes skills list`.",
+                    "List available skills with `pcbdraft --help`.",
                     missing_display,
                     ", ".join(loaded_skills),
                 )
@@ -9047,10 +9049,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 )
 
         # Warn if the configured model is a Nous Hermes LLM (not agentic)
-        from pcbdraft.model.model_switch import is_nous_hermes_non_agentic
+        from pcbdraft.model.model_switch import is_nous_pcbdraft_non_agentic
 
         model_name = getattr(self, "model", "") or ""
-        if is_nous_hermes_non_agentic(model_name):
+        if is_nous_pcbdraft_non_agentic(model_name):
             self._console_print()
             self._console_print(
                 "[bold yellow]⚠  Nous Research Hermes 3 & 4 models are NOT agentic and are not "
@@ -9394,7 +9396,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
     def _try_attach_clipboard_image(self) -> bool:
         """Check clipboard for an image and attach it if found.
 
-        Saves the image to ~/.hermes/images/ and appends the path to
+        Saves the image to ~/.pcbdraft/images/ and appends the path to
         ``_attached_images``.  Returns True if an image was attached.
         """
         from pcbdraft.interfaces.tui.clipboard import save_clipboard_image
@@ -10071,7 +10073,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 )
                 continue
 
-            _cli_visible_print(f"\n  [Hermes #{visible_index}]{_ts_suffix(msg)}")
+            _cli_visible_print(f"\n  [PCBDraft #{visible_index}]{_ts_suffix(msg)}")
             tool_calls = msg.get("tool_calls") or []
             if content_text:
                 preview = content_text[:preview_limit]
@@ -10119,7 +10121,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         Starting the CLI and immediately quitting (or rotating with /new,
         /clear) used to leave an empty untitled row behind that clutters
-        ``/resume`` and ``hermes sessions list``. Delegates the
+        ``/resume`` and ``internal sessions list``. Delegates the
         check-and-delete to ``SessionDB.delete_session_if_empty``, which
         only removes rows with no messages, no title, and no child
         sessions. Ported from google-gemini/gemini-cli#27770.
@@ -10224,7 +10226,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             except Exception:
                 pass
             # Don't let immediately-rotated empty sessions pile up in
-            # /resume and `hermes sessions list` (gemini-cli#27770 port).
+            # /resume and `internal sessions list` (gemini-cli#27770 port).
             self._discard_session_if_empty(old_session_id)
 
         self.session_start = datetime.now()
@@ -10451,7 +10453,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         The snapshot is a convenience export for sharing or off-line
         inspection; every message is already persisted incrementally to the
         SQLite session DB, so the live session remains resumable via
-        ``hermes --resume <id>`` regardless of whether the user ever runs
+        ``internal --resume <id>`` regardless of whether the user ever runs
         ``/save``. ``redact`` runs the export through the force-mode secret
         redaction pass before writing.
         """
@@ -10521,7 +10523,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             if not path.is_absolute():
                 path = Path.cwd() / path
         else:
-            path = saved_dir / f"hermes_conversation_{timestamp}.{fmt}"
+            path = saved_dir / f"pcbdraft_conversation_{timestamp}.{fmt}"
 
         try:
             content = render_session_for_save(session_data, fmt)
@@ -10530,9 +10532,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             label = {"json": "JSON", "md": "Markdown", "html": "HTML"}[fmt]
             print(f"(^_^)v Conversation saved to: {path} ({label})")
             if self.session_id:
-                print(
-                    f"       Resume the live session with: hermes --resume {self.session_id}"
-                )
+                print("       Resume the live session with: pcbdraft --help")
         except Exception as e:
             print(f"(x_x) Failed to save: {e}")
 
@@ -11488,7 +11488,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 return
             provider_data = providers[selected]
             # Use the curated model list from list_authenticated_providers()
-            # (same lists as `hermes model` and gateway pickers).
+            # (same lists as `internal model` and gateway pickers).
             # Only fall back to the live provider catalog when the curated
             # list is empty (e.g. user-defined endpoints with no curated list).
             model_list = provider_data.get("models", [])
@@ -11586,7 +11586,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         raw_args = parts[1].strip() if len(parts) > 1 else ""
 
         # Parse --provider, --global, --session, --once, and --refresh flags
-        # via the shared single-owner parser (hermes_cli.model_switch).
+        # via the shared single-owner parser (pcbdraft.interfaces.tui.model_switch).
         request = parse_model_switch_args(raw_args)
         if request.is_once or request.is_session:
             _cprint(
@@ -11912,7 +11912,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         Usage:
             /codex-runtime                       — show current state
-            /codex-runtime auto                  — Hermes default (chat_completions)
+            /codex-runtime auto                  — PCBDraft default (chat_completions)
             /codex-runtime codex_app_server      — hand turns to codex subprocess
             /codex-runtime on / off              — synonyms for the above
         """
@@ -12253,7 +12253,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
     def _resolve_personality_prompt(value) -> str:
         """Accept string or dict personality value; return system prompt string.
 
-        Delegates to hermes_cli.personality (single owner of rendering).
+        Delegates to pcbdraft.interfaces.tui.personality (single owner of rendering).
         """
         from pcbdraft.interfaces.tui.personality import render_personality_prompt
 
@@ -12398,7 +12398,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         cmd_original = command.strip()
 
         # Resolve aliases via central registry so adding an alias is a one-line
-        # change in hermes_cli/commands.py instead of touching every dispatch site.
+        # change in pcbdraft.interfaces.tui/commands.py instead of touching every dispatch site.
         from pcbdraft.interfaces.tui.commands import resolve_command as _resolve_cmd
 
         _base_word = cmd_lower.split()[0].lstrip("/")
@@ -12804,7 +12804,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             self._handle_browser_command(cmd_original)
         elif canonical == "plugins":
             try:
-                # Discover from disk (bundled + user), matching `hermes plugins
+                # Discover from disk (bundled + user), matching `internal plugins
                 # list` — so installed-but-not-enabled plugins are visible here
                 # too. The plugin manager only knows about *loaded* plugins, so
                 # using it alone made freshly-installed, not-yet-enabled plugins
@@ -12823,19 +12823,19 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 # `/plugins` is a quick glance — default to user-installed
                 # plugins (what the user actually added). Bundled provider/
                 # platform plugins are summarized on one line; the full
-                # catalog lives behind `hermes plugins list`.
+                # catalog lives behind `internal plugins list`.
                 user_entries = [e for e in entries if e[3] != "bundled"]
                 bundled_count = len(entries) - len(user_entries)
 
                 if not user_entries:
                     print("No user plugins installed.")
-                    print("  Install one: hermes plugins install owner/repo")
+                    print("  Install one: pcbdraft --help")
                     print(
                         f"  Or drop a plugin directory into {display_runtime_home()}/plugins/"
                     )
                     if bundled_count:
                         print(
-                            f"  ({bundled_count} bundled plugins available — see: hermes plugins list)"
+                            f"  ({bundled_count} bundled plugins available — see: pcbdraft --help)"
                         )
                 else:
                     # Loaded-plugin details (tools/hooks/commands counts, errors)
@@ -12867,10 +12867,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         error = f" — {info['error']}" if info.get("error") else ""
                         print(f"  {glyph} {name}{ver}{label}{detail}{error}")
                     if bundled_count:
-                        print(
-                            f"  (+{bundled_count} bundled — see: hermes plugins list)"
-                        )
-                    print("  Enable/disable: hermes plugins enable/disable <name>")
+                        print(f"  (+{bundled_count} bundled — see: pcbdraft --help)")
+                    print("  Enable/disable: pcbdraft --help")
             except Exception as e:
                 print(f"Plugin system error: {e}")
         elif canonical == "rollback":
@@ -13495,7 +13493,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         """Queue background notifications owned by this visible CLI session.
 
         ``process_registry`` restores durable delegation completions into every
-        process using the same Hermes profile.  Always pass this CLI's stable
+        process using the same PCBDraft profile.  Always pass this CLI's stable
         session identity when draining so another window cannot claim and mark
         delivered a completion that belongs to this one.
         """
@@ -13726,7 +13724,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         _cprint(labels.get(self.tool_progress_mode, ""))
 
     def _write_terminal_breadcrumb(self) -> None:
-        """Record this terminal's live session for bare ``hermes -c``.
+        """Record this terminal's live session for bare ``internal -c``.
 
         Called at session start and whenever ``self.session_id`` is
         reassigned mid-run (/new, /branch, auto-compression rotation) so a
@@ -13769,7 +13767,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             enable_session_yolo(new_session_id)
             disable_session_yolo(old_session_id)
             # Carry the persisted flag onto the continuation row so a later
-            # `hermes --resume <new_id>` restores the bypass too. getattr
+            # `internal --resume <new_id>` restores the bypass too. getattr
             # guard: tests call this unbound against a minimal stand-in.
             _persist = getattr(self, "_persist_session_yolo", None)
             if _persist:
@@ -13850,7 +13848,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         """Persist the YOLO flag to the session row so --resume restores it.
 
         Best-effort: the in-memory toggle is authoritative for this process;
-        persistence only affects a future ``hermes --resume``. Skipped when the
+        persistence only affects a future ``internal --resume``. Skipped when the
         session store is unavailable or the row doesn't exist yet (the row is
         created lazily on the first turn — ``_toggle_yolo`` before any chat
         writes nothing, and the launch-time ``--yolo`` flag is carried into the
@@ -14355,7 +14353,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # above the file handler level filters records before they
             # reach handlers, so agent.log / errors.log lose visibility
             # into stream-retry events, credential rotations, etc.
-            # Console quietness is enforced by hermes_logging not
+            # Console quietness is enforced by pcbdraft_logging not
             # installing a console StreamHandler in non-verbose mode.
 
     def _show_insights(self, command: str = "/insights"):
@@ -14414,7 +14412,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
           re-sends the full input prefix, expensive on long-context /
           high-reasoning models).  This stops silent cache-breaking reloads
           when config.yaml is rewritten frequently by external tooling or
-          other Hermes instances.
+          other PCBDraft instances.
         """
 
         import yaml as _yaml
@@ -14836,7 +14834,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             print(f"  ❌ MCP reload failed: {e}")
 
     def _reload_skills(self) -> None:
-        """Reload skills: rescan ~/.hermes/skills/ and queue a note for the
+        """Reload skills: rescan ~/.pcbdraft/skills/ and queue a note for the
         next user turn.
 
         Skills don't need to live in the system prompt for the model to use
@@ -15567,11 +15565,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # Use MP3 output for CLI playback (afplay doesn't handle OGG well).
             # The TTS tool may auto-convert MP3->OGG, but the original MP3 remains.
             os.makedirs(
-                os.path.join(tempfile.gettempdir(), "hermes_voice"), exist_ok=True
+                os.path.join(tempfile.gettempdir(), "pcbdraft_voice"), exist_ok=True
             )
             mp3_path = os.path.join(
                 tempfile.gettempdir(),
-                "hermes_voice",
+                "pcbdraft_voice",
                 f"tts_{time.strftime('%Y%m%d_%H%M%S')}.mp3",
             )
 
@@ -15753,7 +15751,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 # Fail-closed echo guard (#75780): a playback-phase capture
                 # has no acoustic echo cancellation, so speaker bleed alone
                 # can trip the barge trigger. If the transcript is a close
-                # match for what Hermes just spoke, treat it as self-capture
+                # match for what PCBDraft just spoke, treat it as self-capture
                 # instead of queuing it as a user turn.
                 if getattr(self, "_voice_barge_phase", None) == "playback":
                     from pcbdraft.tools.voice_mode import is_tts_echo
@@ -15955,7 +15953,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         _cprint(f"\n{_DIM}Voice mode disabled.{_RST}")
 
-    # ── Wake word ("Hey Hermes") ─────────────────────────────────────────
+    # ── Wake word ("Hey PCBDraft") ─────────────────────────────────────────
     #
     # An always-on hotword listener (tools/wake_word.py) that, on detecting
     # the wake phrase, starts a fresh session and captures one utterance via
@@ -16094,7 +16092,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             if _match[1] != _active_profile_name():
                 _cprint(
                     f"\n{_DIM}Wake phrase for profile '{_match[1]}' — "
-                    f"run: hermes -p {_match[1]}{_RST}"
+                    f"run: pcbdraft --help"
                 )
                 self._wake_suspended = True  # watchdog resumes the listener
                 return
@@ -16198,7 +16196,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             )
             _cprint(
                 f"  {_DIM}On macOS: System Settings > Privacy & Security > Microphone — allow your"
-                f" terminal/Hermes, then /wake off + /wake on.{_RST}"
+                f" terminal/PCBDraft, then /wake off + /wake on.{_RST}"
             )
         if not reqs["available"] and reqs.get("hint"):
             _cprint(f"  {_DIM}{reqs['hint']}{_RST}")
@@ -18231,6 +18229,38 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         ]
 
     def run(self):
+        """Run the terminal and make one bounded final history-flush attempt."""
+        try:
+            self._run_interactive()
+        finally:
+            # History.load() is cached: EOF or a deferred provider handoff may
+            # follow a failed final append without another history read/store.
+            # Flush the exact backend attached to the input buffer, never a
+            # new instance (which would not contain the pending FIFO).
+            history = getattr(self, "_input_history", None)
+            if isinstance(history, NativeFileHistory):
+                try:
+                    worker = threading.Thread(
+                        target=history.flush_pending,
+                        name="terminal-history-close",
+                        daemon=True,
+                    )
+                    worker.start()
+                    # Bound the whole attempt, including the instance lock and
+                    # filesystem I/O, rather than just ResourceLock acquisition.
+                    worker.join(timeout=1.25)
+                except RuntimeError:
+                    logger.warning(
+                        "Unable to start final terminal history flush", exc_info=True
+                    )
+
+        # A process replacement must happen after the shared finally too.
+        if getattr(self, "_pending_relaunch", None):
+            from pcbdraft.interfaces.tui.relaunch import relaunch
+
+            relaunch(self._pending_relaunch, preserve_inherited=False)
+
+    def _run_interactive(self):
         """Run the interactive CLI loop with persistent input at bottom."""
         if not self._claim_active_session("cli"):
             return
@@ -18263,7 +18293,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # First-run: a completely unconfigured install must route into
         # provider onboarding, not a chat that cannot work. Previously a
-        # keyless `hermes` accepted a message, spun for ~30s, then failed
+        # keyless `pcbdraft` accepted a message, spun for ~30s, then failed
         # with a provider-specific error the user never chose. Only fires
         # on a real TTY; quiet/single-query paths keep their own handling.
         try:
@@ -18473,7 +18503,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         def handle_ignored_terminal_sequence(event):
             """Consume parser-level ignored terminal sequences before self-insert.
 
-            install_ignored_terminal_sequences() in hermes_cli.pt_input_extras
+            install_ignored_terminal_sequences() in pcbdraft.interfaces.tui.pt_input_extras
             registers focus reports (CSI I / CSI O) as Keys.Ignore at the
             VT100 parser level. Without this no-op binding the default
             self-insert path would still fire and the bytes would land in
@@ -19822,7 +19852,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 # No image found — show a hint
                 pass  # silent when no image (avoid noise on accidental press)
 
-        # Dynamic prompt: shows Hermes symbol when agent is working,
+        # Dynamic prompt: shows PCBDraft symbol when agent is working,
         # or answer prompt when clarify freetext mode is active.
         cli_ref = self
 
@@ -19841,6 +19871,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             command_filter=cli_ref._command_available,
             skill_bundles_provider=lambda: get_skill_bundles(),
         )
+        self._input_history = NativeFileHistory(str(self._history_file))
         input_area = TextArea(
             height=Dimension(min=1, max=8, preferred=1),
             prompt=get_prompt,
@@ -19848,7 +19879,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             multiline=True,
             wrap_lines=True,
             read_only=Condition(lambda: bool(cli_ref._command_blocks_input)),
-            history=FileHistory(str(self._history_file)),
+            history=self._input_history,
             # complete_while_typing fires the completer on every keystroke. The
             # completer does blocking work — fuzzy @-file indexing shells out to
             # rg/fd (up to a 2s timeout) and path completion hits os.listdir/stat
@@ -20982,7 +21013,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             import prompt_toolkit.renderer as _pt_renderer
             from prompt_toolkit.renderer import _output_screen_diff as _orig_osd
 
-            if not getattr(_pt_renderer, "_hermes_osd_patched", False):
+            if not getattr(_pt_renderer, "_pcbdraft_osd_patched", False):
 
                 def _patched_output_screen_diff(
                     app,
@@ -21021,7 +21052,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     with previous_screen=None so pt takes the first-paint
                     erase path instead of wedging the event loop.
                     """
-                    return _hermes_call_output_screen_diff(
+                    return _pcbdraft_call_output_screen_diff(
                         _orig_osd,
                         app,
                         output,
@@ -21039,7 +21070,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     )
 
                 _pt_renderer._output_screen_diff = _patched_output_screen_diff
-                _pt_renderer._hermes_osd_patched = True
+                _pt_renderer._pcbdraft_osd_patched = True
         except Exception:
             pass
 
@@ -21372,7 +21403,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         process_thread = threading.Thread(target=process_loop, daemon=True)
         process_thread.start()
 
-        # Wake word ("Hey Hermes") — start the always-on hotword listener if
+        # Wake word ("Hey PCBDraft") — start the always-on hotword listener if
         # enabled. Off-thread so a first-run engine install never blocks the
         # prompt; best-effort, so deps/mic/key gaps are surfaced, never fatal.
         def _wake_startup():
@@ -21478,7 +21509,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # Windows: install a SIGINT handler that absorbs the signal
             # instead of letting Python's default handler raise
             # KeyboardInterrupt in MainThread. Windows Terminal / Win32
-            # delivers spurious CTRL_C_EVENT to the hermes process when
+            # delivers spurious CTRL_C_EVENT to the pcbdraft process when
             # child processes are spawned from background threads (agent
             # subprocess Popen path). The default Python SIGINT handler
             # would then unwind prompt_toolkit's app.run(), trigger
@@ -21672,7 +21703,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 except (Exception, KeyboardInterrupt) as e:
                     logger.debug("Could not close session in DB: %s", e)
                 # Started-and-immediately-quit sessions never gained content;
-                # drop the empty row so /resume and `hermes sessions list`
+                # drop the empty row so /resume and `internal sessions list`
                 # stay clean (gemini-cli#27770 port). No-op for resumed or
                 # titled sessions and anything with messages or children.
                 if not getattr(self, "_delete_session_on_exit", False):
@@ -21724,16 +21755,6 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _run_cleanup()
             self._print_exit_summary()
             self._release_active_session()
-
-        # Deferred relaunch: /update sets _pending_relaunch so the exec
-        # happens here — after prompt_toolkit has exited and fully restored
-        # terminal modes — rather than from the background process_loop
-        # thread (which would skip terminal cleanup on POSIX and only exit
-        # the worker thread on Windows).
-        if getattr(self, "_pending_relaunch", None):
-            from pcbdraft.interfaces.tui.relaunch import relaunch
-
-            relaunch(self._pending_relaunch, preserve_inherited=False)
 
 
 # ============================================================================
@@ -21899,7 +21920,7 @@ def main(
     Examples:
         python cli.py                            # Start interactive mode
         python cli.py --toolsets web,terminal    # Use specific toolsets
-        python cli.py --skills hermes-agent-dev,github-auth
+        python cli.py --skills pcbdraft-dev,github-auth
         python cli.py -q "What is Python?"       # Single query mode
         python cli.py -q "Describe this" --image ~/storage/shared/Pictures/cat.png
         python cli.py --list-tools               # List tools and exit
@@ -21929,7 +21950,7 @@ def main(
 
         from pcbdraft.services.messaging.run import start_gateway
 
-        print("Starting Hermes Gateway (messaging platforms)...")
+        print("Starting PCBDraft Gateway (messaging platforms)...")
         asyncio.run(start_gateway())
         return
 
@@ -21945,7 +21966,7 @@ def main(
             # worktree setup (base fetch + parallel `git worktree add`
             # release the GIL for most of their wall time). show_banner()
             # then hits the warm cache instead of paying ~0.4s serially.
-            # Only done on the -w path: on plain `hermes` there is no I/O
+            # Only done on the -w path: on plain `pcbdraft` there is no I/O
             # wait to hide and the extra thread just contends for CPU.
             def _prewarm_tools() -> None:
                 try:
@@ -22019,7 +22040,7 @@ def main(
     query = query or q
 
     # Parse toolsets - handle both string and tuple/list inputs
-    # Default to hermes-cli toolset which includes cronjob management tools
+    # Default to pcbdraft-cli toolset which includes cronjob management tools
     toolsets_list = None
     if toolsets:
         if isinstance(toolsets, str):
@@ -22033,7 +22054,7 @@ def main(
                 else:
                     toolsets_list.append(str(t))
     else:
-        # Coding posture (base Hermes): with no explicit --toolsets, collapse
+        # Coding posture (base PCBDraft): with no explicit --toolsets, collapse
         # to the coding toolset (+ enabled MCP servers) when sitting in a code
         # workspace. See agent/coding_context.py.
         _coding = None
@@ -22234,7 +22255,7 @@ def main(
             sys.exit(1)
         try:
             query, single_query_images = _collect_query_images(query, image)
-            # Kanban workers spawn with ``hermes chat -q "work kanban task <id>"``;
+            # Kanban workers spawn with ``internal chat -q "work kanban task <id>"``;
             # the actual task description lives in the task body. Mirror the
             # gateway/CLI behaviour for inbound images by scanning the body for
             # local image paths and http(s) image URLs and attaching them to the
@@ -22357,7 +22378,7 @@ def main(
                         cli.agent.quiet_mode = True
                         cli.agent.suppress_status_output = True
                         # Suppress streaming display callbacks so stdout stays
-                        # machine-readable (no styled "Hermes" box, no tool-gen
+                        # machine-readable (no styled "PCBDraft" box, no tool-gen
                         # status lines).  The response is printed once below.
                         cli.agent.stream_delta_callback = None
                         cli.agent.tool_gen_callback = None
@@ -22450,7 +22471,7 @@ def main(
                 # Exit with error code if credentials or agent init fails
                 sys.exit(1)
             else:
-                # Single-query mode (`hermes chat -q "…"`): skip the welcome
+                # Single-query mode (`internal chat -q "…"`): skip the welcome
                 # banner. Building the banner takes ~420 ms on cold start —
                 # ~200 ms of that is the version-update check, the rest is
                 # toolset / skill enumeration and Rich panel rendering. None

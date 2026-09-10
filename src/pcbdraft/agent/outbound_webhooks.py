@@ -29,7 +29,7 @@ Design notes
 * Registration is idempotent — safe to invoke from both the CLI entry
   point and the gateway entry point.
 
-Config schema (``~/.hermes/config.yaml``)::
+Config schema (``<PCBDRAFT_RUNTIME_HOME>/config.yaml``)::
 
     hooks:
       outbound:
@@ -433,7 +433,7 @@ def _serialize_payload(
     """Render the POST body.  Same top-level shape as shell hooks' stdin
     (documented in :mod:`agent.shell_hooks`), plus delivery metadata.
 
-    ``delivery_id`` is shared with the ``X-Hermes-Delivery`` header so
+    ``delivery_id`` is shared with the ``X-PCBDraft-Delivery`` header so
     receivers can dedupe on either — and since it (plus ``timestamp``)
     lives inside the HMAC-signed body, it doubles as replay protection.
     """
@@ -465,15 +465,15 @@ def _build_delivery(
 ) -> dict[str, Any]:
     headers = {
         "Content-Type": "application/json",
-        "User-Agent": "Hermes-Agent-Outbound-Webhook",
-        "X-Hermes-Event": event,
-        "X-Hermes-Delivery": delivery_id,
+        "User-Agent": "PCBDraft-Outbound-Webhook",
+        "X-PCBDraft-Event": event,
+        "X-PCBDraft-Delivery": delivery_id,
     }
     if target.secret:
         digest = hmac.new(
             target.secret.encode("utf-8"), body, hashlib.sha256
         ).hexdigest()
-        headers["X-Hermes-Signature-256"] = f"sha256={digest}"
+        headers["X-PCBDraft-Signature-256"] = f"sha256={digest}"
     return {
         "url": target.url,
         "label": target.label,

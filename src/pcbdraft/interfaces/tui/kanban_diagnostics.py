@@ -13,7 +13,7 @@ stuck blocked for too long, etc. Each one carries:
 Rules run over (task, recent events, recent runs, optional graph context) and
 emit diagnostics. They are stateless and read-only — no DB writes. Callers compute
 diagnostics on demand (on ``/board`` load, ``/tasks/:id`` fetch, or
-``hermes kanban diagnostics``).
+``internal kanban diagnostics``).
 
 Design goals:
 
@@ -61,7 +61,7 @@ class DiagnosticAction:
     * ``unblock`` — PATCH status back to ``ready`` (for stuck-blocked
       diagnostics).
     * ``cli_hint`` — print/copy a shell command (e.g.
-      ``hermes -p <profile> auth``). No HTTP side effect.
+      ``internal -p <profile> auth``). No HTTP side effect.
     * ``open_docs`` — deep-link to the docs URL named in ``payload.url``.
     * ``comment`` — nudge the operator to add a comment (for
       stuck-blocked tasks that need human input).
@@ -382,7 +382,7 @@ def _rule_triage_aux_unavailable(task, events, runs, now, cfg) -> list[Diagnosti
     With the auto-decompose dispatcher (kanban.auto_decompose, default True),
     triage tasks fan out via ``auxiliary.kanban_decomposer`` and fall back to
     ``auxiliary.triage_specifier`` when the decomposer returns ``fanout=false``.
-    With auto-decompose off, the user must run ``hermes kanban specify``,
+    With auto-decompose off, the user must run ``internal kanban specify``,
     which only needs ``auxiliary.triage_specifier``.
 
     The default slot is ``provider: auto`` → auto-falls back to the main model,
@@ -425,7 +425,7 @@ def _rule_triage_aux_unavailable(task, events, runs, now, cfg) -> list[Diagnosti
         primary_desc = "specifier"
         detail_path = (
             "Auto-decompose is off, so triage tasks need "
-            "`hermes kanban specify`, which uses auxiliary.triage_specifier."
+            "`pcbdraft --help`, which uses auxiliary.triage_specifier."
         )
 
     # The primary slot is usable when either: it was explicitly configured by
@@ -439,7 +439,7 @@ def _rule_triage_aux_unavailable(task, events, runs, now, cfg) -> list[Diagnosti
         DiagnosticAction(
             kind="cli_hint",
             label=f"Configure {primary_slot}",
-            payload={"command": (f"hermes config set {primary_slot}.provider auto")},
+            payload={"command": "pcbdraft connect"},
             suggested=True,
         ),
     ]
@@ -448,17 +448,15 @@ def _rule_triage_aux_unavailable(task, events, runs, now, cfg) -> list[Diagnosti
             DiagnosticAction(
                 kind="cli_hint",
                 label=f"Or configure fallback {fallback_slot}",
-                payload={
-                    "command": (f"hermes config set {fallback_slot}.provider auto")
-                },
+                payload={"command": "pcbdraft connect"},
             )
         )
     if not auto_decompose:
         actions.append(
             DiagnosticAction(
                 kind="cli_hint",
-                label=f"Specify manually: hermes kanban specify {task_id}",
-                payload={"command": f"hermes kanban specify {task_id}"},
+                label="Specify manually: pcbdraft --help",
+                payload={"command": "pcbdraft --help"},
             )
         )
 
@@ -595,16 +593,16 @@ def _rule_repeated_failures(task, events, runs, now, cfg) -> list[Diagnostic]:
         actions.append(
             DiagnosticAction(
                 kind="cli_hint",
-                label=f"Verify profile: hermes -p {assignee} doctor",
-                payload={"command": f"hermes -p {assignee} doctor"},
+                label="Verify profile: pcbdraft --help",
+                payload={"command": "pcbdraft --help"},
                 suggested=True,
             )
         )
         actions.append(
             DiagnosticAction(
                 kind="cli_hint",
-                label=f"Fix profile auth: hermes -p {assignee} auth",
-                payload={"command": f"hermes -p {assignee} auth"},
+                label="Fix profile auth: pcbdraft --help",
+                payload={"command": "pcbdraft --help"},
             )
         )
     elif most_recent_outcome in {"timed_out", "crashed"}:
@@ -615,8 +613,8 @@ def _rule_repeated_failures(task, events, runs, now, cfg) -> list[Diagnostic]:
             actions.append(
                 DiagnosticAction(
                     kind="cli_hint",
-                    label=f"Check logs: hermes kanban log {task_id}",
-                    payload={"command": f"hermes kanban log {task_id}"},
+                    label="Check logs: pcbdraft --help",
+                    payload={"command": "pcbdraft --help"},
                     suggested=True,
                 )
             )
@@ -741,8 +739,8 @@ def _rule_repeated_crashes(task, events, runs, now, cfg) -> list[Diagnostic]:
         actions.append(
             DiagnosticAction(
                 kind="cli_hint",
-                label=f"Check logs: hermes kanban log {task_id}",
-                payload={"command": f"hermes kanban log {task_id}"},
+                label="Check logs: pcbdraft --help",
+                payload={"command": "pcbdraft --help"},
                 suggested=True,
             )
         )
@@ -824,7 +822,7 @@ def _rule_review_dependency_deadlock(task, events, runs, now, cfg) -> list[Diagn
             DiagnosticAction(
                 kind="cli_hint",
                 label="Complete the finished implementation phase",
-                payload={"command": f"hermes kanban complete {task_id}"},
+                payload={"command": "pcbdraft --help"},
                 suggested=True,
             )
         )
@@ -833,7 +831,7 @@ def _rule_review_dependency_deadlock(task, events, runs, now, cfg) -> list[Diagn
             DiagnosticAction(
                 kind="cli_hint",
                 label="Or unlink the incorrectly gated reviewer",
-                payload={"command": f"hermes kanban unlink {task_id} {child_ids[0]}"},
+                payload={"command": "pcbdraft --help"},
             )
         )
 
@@ -970,8 +968,8 @@ def _rule_block_unblock_cycling(task, events, runs, now, cfg) -> list[Diagnostic
         actions.append(
             DiagnosticAction(
                 kind="cli_hint",
-                label=f"Check block reasons: hermes kanban events {task_id}",
-                payload={"command": f"hermes kanban events {task_id}"},
+                label="Check block reasons: pcbdraft --help",
+                payload={"command": "pcbdraft --help"},
                 suggested=True,
             )
         )
@@ -1025,7 +1023,7 @@ def _rule_stranded_in_ready(task, events, runs, now, cfg) -> list[Diagnostic]:
     on the dispatcher and a different operator response).
 
     The signal is age-based on purpose: it's identity-agnostic, so it
-    works for Hermes profiles, registered lanes, external workers, and
+    works for PCBDraft profiles, registered lanes, external workers, and
     typos uniformly. No registry to curate, no per-board allowlist.
     """
     threshold_seconds = float(cfg.get("stranded_threshold_seconds", 30 * 60))
@@ -1097,7 +1095,7 @@ def _rule_stranded_in_ready(task, events, runs, now, cfg) -> list[Diagnostic]:
         DiagnosticAction(
             kind="cli_hint",
             label="Check dispatcher status",
-            payload={"command": "hermes kanban diagnostics"},
+            payload={"command": "pcbdraft --help"},
         ),
     ]
 
@@ -1195,7 +1193,7 @@ def config_from_kanban_config(kanban_cfg: dict | None) -> dict:
 
 
 def config_from_runtime_config(raw_config: dict | None) -> dict:
-    """Build diagnostics config from the full Hermes runtime config.
+    """Build diagnostics config from the full PCBDraft runtime config.
 
     Carries through ``kanban``, ``auxiliary``, and ``model`` keys so triage-
     aware rules can inspect the active aux-helper and main-model state.

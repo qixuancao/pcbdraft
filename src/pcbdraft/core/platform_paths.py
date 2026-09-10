@@ -16,14 +16,19 @@ def user_config_home(
 ) -> Path:
     environment = os.environ if environment is None else environment
     current = (system or platform.system()).casefold()
-    user_home = home or Path.home()
     if current == "windows":
         value = environment.get("APPDATA", "").strip()
-        return Path(value) if value else user_home / "AppData" / "Roaming"
+        if value:
+            return Path(value).expanduser()
+        return (home or Path.home()).expanduser() / "AppData" / "Roaming"
     if current == "darwin":
-        return user_home / "Library" / "Application Support"
+        return (home or Path.home()).expanduser() / "Library" / "Application Support"
     value = environment.get("XDG_CONFIG_HOME", "").strip()
-    return Path(value).expanduser() if value else user_home / ".config"
+    return (
+        Path(value).expanduser()
+        if value
+        else (home or Path.home()).expanduser() / ".config"
+    )
 
 
 def pcbdraft_config_dir() -> Path:
@@ -31,7 +36,7 @@ def pcbdraft_config_dir() -> Path:
 
     Honors the ``PCBDRAFT_CONFIG`` env override (its parent directory is the
     config dir) so tests and advanced users can relocate every derived file
-    — model config, Hermes home, and the debug trace — together.
+    — model config, PCBDraft runtime state, and the debug trace — together.
     """
 
     explicit = os.environ.get("PCBDRAFT_CONFIG", "").strip()
@@ -48,11 +53,35 @@ def user_data_home(
 ) -> Path:
     environment = os.environ if environment is None else environment
     current = (system or platform.system()).casefold()
-    user_home = home or Path.home()
     if current == "windows":
         value = environment.get("LOCALAPPDATA", "").strip()
-        return Path(value) if value else user_home / "AppData" / "Local"
+        if value:
+            return Path(value).expanduser()
+        return (home or Path.home()).expanduser() / "AppData" / "Local"
     if current == "darwin":
-        return user_home / "Library" / "Application Support"
+        return (home or Path.home()).expanduser() / "Library" / "Application Support"
     value = environment.get("XDG_DATA_HOME", "").strip()
-    return Path(value).expanduser() if value else user_home / ".local" / "share"
+    return (
+        Path(value).expanduser()
+        if value
+        else (home or Path.home()).expanduser() / ".local" / "share"
+    )
+
+
+def production_runtime_roots() -> tuple[Path, ...]:
+    """Return credential/DB guard roots without opening any state files.
+
+    Include the native platform default and any relocated product config root.
+    Ignore runtime/profile overrides (tests deliberately sandbox those). Avoid
+    ``Path.home`` so a test patch of that callable cannot disarm the guard.
+    Callers may add their captured pre-sandbox runtime root separately.
+    """
+    expanded = os.path.expanduser("~")
+    if expanded == "~":
+        raise RuntimeError("cannot determine the PCBDraft production home")
+    native = user_config_home(home=Path(expanded)) / "pcbdraft" / "runtime"
+    roots = [native.resolve()]
+    explicit = os.environ.get("PCBDRAFT_CONFIG", "").strip()
+    if explicit:
+        roots.append((Path(explicit).expanduser().parent / "runtime").resolve())
+    return tuple(dict.fromkeys(roots))

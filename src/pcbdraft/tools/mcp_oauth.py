@@ -11,7 +11,7 @@ which handles discovery, dynamic client registration, PKCE, token exchange,
 refresh, and step-up authorization automatically.
 
 This module provides the glue:
-    - ``HermesTokenStorage``: persists tokens/client-info to disk so they
+    - ``PCBDraftTokenStorage``: persists tokens/client-info to disk so they
       survive across process restarts.
     - Callback server: ephemeral localhost HTTP server to capture the OAuth
       redirect with the authorization code.
@@ -173,7 +173,7 @@ _SKIP_TOKENS = frozenset({"skip", "cancel", "s", "n", "no", "q", "quit"})
 # _wait_for_callback maps this to OAuthNonInteractiveError ("user_skipped")
 # so the MCP setup path treats it as a non-fatal "continue without this
 # server" rather than a hard failure.
-_USER_SKIPPED_SENTINEL = "__hermes_user_skipped__"
+_USER_SKIPPED_SENTINEL = "__pcbdraft_user_skipped__"
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +242,7 @@ def _reserve_callback_port() -> int:
     return port
 
 
-def _cached_redirect_port(storage: "HermesTokenStorage | None") -> int | None:
+def _cached_redirect_port(storage: "PCBDraftTokenStorage | None") -> int | None:
     """Return the loopback callback port from cached client registration.
 
     OAuth providers bind a dynamically-registered ``client_id`` to the exact
@@ -277,7 +277,7 @@ def _cached_redirect_port(storage: "HermesTokenStorage | None") -> int | None:
     return None
 
 
-def _cached_redirect_uri(storage: "HermesTokenStorage | None") -> str | None:
+def _cached_redirect_uri(storage: "PCBDraftTokenStorage | None") -> str | None:
     """Return a cached non-loopback redirect URI, if one was registered."""
     if storage is None:
         return None
@@ -317,7 +317,7 @@ def _raise_if_non_interactive(lead: str) -> None:
     if not _is_interactive():
         raise OAuthNonInteractiveError(
             f"{lead} "
-            "Run `hermes mcp login <server>` interactively to (re)authorize, "
+            "Run `pcbdraft doctor` and (re)authorize through the configured MCP integration, "
             "then restart or reload the gateway."
         )
 
@@ -422,11 +422,11 @@ def _write_json(path: Path, data: dict) -> None:
 
 
 # ---------------------------------------------------------------------------
-# HermesTokenStorage -- persistent token/client-info on disk
+# PCBDraftTokenStorage -- persistent token/client-info on disk
 # ---------------------------------------------------------------------------
 
 
-class HermesTokenStorage:
+class PCBDraftTokenStorage:
     """Persist OAuth tokens and client registration to JSON files.
 
     File layout::
@@ -749,7 +749,7 @@ def _make_callback_handler() -> tuple[type, dict]:
             body = (
                 (
                     "<html><body><h2>Authorization Successful</h2>"
-                    "<p>You can close this tab and return to Hermes.</p></body></html>"
+                    "<p>You can close this tab and return to PCBDraft.</p></body></html>"
                 )
                 if code
                 else (
@@ -852,7 +852,7 @@ def _make_redirect_handler(port: int, redirect_uri: str | None = None):
                 f"         ssh -N -L {port}:127.0.0.1:{port} <user>@<this-host>\n"
                 f"       then open the URL above and let it redirect normally.\n"
                 f"\n"
-                f"  See: https://hermes-agent.nousresearch.com/docs/guides/oauth-over-ssh\n",
+                f"  Run `pcbdraft doctor` for local configuration diagnostics.\n",
                 file=sys.stderr,
             )
 
@@ -1076,7 +1076,7 @@ def _paste_callback_reader(result: dict) -> None:
             return
         result["error"] = _USER_SKIPPED_SENTINEL
         print(
-            "  OAuth skipped. Run `hermes mcp login <server>` later to "
+            "  OAuth skipped. Use the configured MCP integration later to "
             "authenticate, or set ``enabled: false`` on that server in "
             "config.yaml to disable persistently.",
             file=sys.stderr,
@@ -1129,17 +1129,17 @@ def _paste_callback_reader(result: dict) -> None:
 # ---------------------------------------------------------------------------
 
 
-HermesOAuthClientProvider: Any = None
+PCBDraftOAuthClientProvider: Any = None
 
 
-def _get_hermes_oauth_provider_class() -> type | None:
-    global HermesOAuthClientProvider
-    if HermesOAuthClientProvider is not None:
-        return HermesOAuthClientProvider
+def _get_pcbdraft_oauth_provider_class() -> type | None:
+    global PCBDraftOAuthClientProvider
+    if PCBDraftOAuthClientProvider is not None:
+        return PCBDraftOAuthClientProvider
     if not _ensure_sdk_loaded():
         return None
 
-    class _HermesOAuthClientProvider(OAuthClientProvider):
+    class _PCBDraftOAuthClientProvider(OAuthClientProvider):
         """OAuth provider with pragmatic fixes for real-world MCP providers.
 
         Supabase MCP dynamic registration returns ``client_secret`` but omits
@@ -1211,10 +1211,10 @@ def _get_hermes_oauth_provider_class() -> type | None:
                 self.context.clear_tokens()
                 return False
 
-    _HermesOAuthClientProvider.__name__ = "HermesOAuthClientProvider"
-    _HermesOAuthClientProvider.__qualname__ = "HermesOAuthClientProvider"
-    HermesOAuthClientProvider = _HermesOAuthClientProvider
-    return HermesOAuthClientProvider
+    _PCBDraftOAuthClientProvider.__name__ = "PCBDraftOAuthClientProvider"
+    _PCBDraftOAuthClientProvider.__qualname__ = "PCBDraftOAuthClientProvider"
+    PCBDraftOAuthClientProvider = _PCBDraftOAuthClientProvider
+    return PCBDraftOAuthClientProvider
 
 
 # ---------------------------------------------------------------------------
@@ -1228,7 +1228,7 @@ def remove_oauth_tokens(
     runtime_home: str | Path | None = None,
 ) -> None:
     """Delete stored OAuth tokens and client info for a server."""
-    storage = HermesTokenStorage(server_name, runtime_home=runtime_home)
+    storage = PCBDraftTokenStorage(server_name, runtime_home=runtime_home)
     storage.remove()
     logger.info("OAuth tokens removed for '%s'", server_name)
 
@@ -1244,7 +1244,7 @@ def remove_oauth_tokens(
 
 def _configure_callback_port(
     cfg: dict,
-    storage: "HermesTokenStorage | None" = None,
+    storage: "PCBDraftTokenStorage | None" = None,
 ) -> int:
     """Pick or validate the OAuth callback port.
 
@@ -1394,7 +1394,7 @@ def _build_client_metadata(cfg: dict) -> "OAuthClientMetadata":
         )
     if OAuthClientMetadata is None:
         _ensure_sdk_loaded()
-    client_name = cfg.get("client_name", "Hermes Agent")
+    client_name = cfg.get("client_name", "PCBDraft")
     scope = cfg.get("scope")
     redirect_uri = _resolve_redirect_uri(cfg, port)
 
@@ -1431,7 +1431,7 @@ def _build_client_metadata(cfg: dict) -> "OAuthClientMetadata":
 
 
 def _invalidate_tokens_on_client_change(
-    storage: "HermesTokenStorage",
+    storage: "PCBDraftTokenStorage",
     new_client_id: str,
     new_client_secret: str | None,
 ) -> None:
@@ -1481,7 +1481,7 @@ def _invalidate_tokens_on_client_change(
         logger.warning(
             "MCP OAuth '%s': configured OAuth client changed (client_id %r "
             "-> %r); discarded tokens minted under the previous client. "
-            "Re-authorize with: hermes mcp login %s",
+            "Re-authorize MCP server %s through its configured integration; diagnostics: pcbdraft doctor",
             storage._server_name,
             old_client_id,
             new_client_id,
@@ -1490,7 +1490,7 @@ def _invalidate_tokens_on_client_change(
 
 
 def _maybe_preregister_client(
-    storage: "HermesTokenStorage",
+    storage: "PCBDraftTokenStorage",
     cfg: dict,
     client_metadata: "OAuthClientMetadata",
 ) -> None:
@@ -1562,11 +1562,11 @@ def humanize_oauth_registration_error(
         return (
             f"'{server_name}' is Figma's remote MCP — DCR is allowlisted by "
             f'exact client_name ("{_FIGMA_DCR_CLIENT_NAME}" and "Codex" '
-            "work; most other names 403). Hermes defaults to "
+            "work; most other names 403). PCBDraft defaults to "
             f"client_name: {_FIGMA_DCR_CLIENT_NAME!r} automatically. If you "
             "set oauth.client_name yourself, change it to one of those, or "
             "clear it and re-run:\n"
-            f"  hermes mcp login {server_name}"
+            f"  Check `pcbdraft doctor`, then authorize MCP server {server_name}."
         )
 
     return (
@@ -1610,14 +1610,14 @@ def build_oauth_auth(
 
     cfg = dict(oauth_config or {})  # copy — we mutate _resolved_port
     apply_oauth_provider_defaults(cfg, server_name=server_name, server_url=server_url)
-    storage = HermesTokenStorage(server_name)
+    storage = PCBDraftTokenStorage(server_name)
 
     if not _is_interactive() and not storage.has_cached_tokens():
         raise OAuthNonInteractiveError(
             "MCP OAuth for "
             f"'{server_name}': non-interactive environment and no cached tokens "
             "found. The OAuth flow requires browser authorization. Run "
-            f"`hermes mcp login {server_name}` interactively first to complete "
+            f"the configured MCP authorization flow for {server_name} first to complete "
             "initial authorization, then cached tokens will be reused."
         )
 
@@ -1634,7 +1634,7 @@ def build_oauth_auth(
         resolved_port, timeout=float(cfg.get("timeout", 300))
     )
 
-    provider_class = _get_hermes_oauth_provider_class()
+    provider_class = _get_pcbdraft_oauth_provider_class()
     if provider_class is None:
         logger.warning(
             "MCP OAuth requested for '%s' but the provider class is unavailable",

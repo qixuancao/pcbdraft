@@ -44,7 +44,7 @@ _DEFAULT_BASE_URL = "https://api.retaindb.com"
 _ASYNC_SHUTDOWN = object()
 
 
-def _load_retaindb_config() -> dict[str, Any]:
+def _load_retaindb_config(runtime_home: str | None = None) -> dict[str, Any]:
     """Return the ``memory.retaindb`` block from config.yaml (empty on any error).
 
     Non-secret fields (``base_url``, ``project``) are persisted here by the
@@ -60,7 +60,18 @@ def _load_retaindb_config() -> dict[str, Any]:
         provider_config = (
             memory_config.get("retaindb", {}) if isinstance(memory_config, dict) else {}
         )
-        return dict(provider_config) if isinstance(provider_config, dict) else {}
+        from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+        from pcbdraft.core.runtime_environment import get_runtime_home
+
+        return effective_memory_namespaces(
+            "retaindb",
+            provider_config if isinstance(provider_config, dict) else {},
+            existing=(isinstance(memory_config, dict) and "retaindb" in memory_config)
+            or bool(get_secret("RETAINDB_API_KEY", "")),
+            runtime_home=runtime_home
+            if runtime_home is not None
+            else get_runtime_home(),
+        )
     except Exception:
         return {}
 
@@ -248,7 +259,7 @@ class _Client:
         h = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "x-sdk-runtime": "hermes-plugin",
+            "x-sdk-runtime": "pcbdraft-plugin",
         }
         if path.startswith(("/v1/memory", "/v1/context")):
             h["X-API-Key"] = token
@@ -448,7 +459,10 @@ class _Client:
 
         url = f"{self.base_url}/v1/files"
         token = self.api_key.replace("Bearer ", "").strip()
-        headers = {"Authorization": f"Bearer {token}", "x-sdk-runtime": "hermes-plugin"}
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "x-sdk-runtime": "pcbdraft-plugin",
+        }
         fields = {"path": remote_path, "scope": scope.upper()}
         if project_id:
             fields["project_id"] = project_id
@@ -480,7 +494,7 @@ class _Client:
             url,
             headers={
                 "Authorization": f"Bearer {token}",
-                "x-sdk-runtime": "hermes-plugin",
+                "x-sdk-runtime": "pcbdraft-plugin",
             },
             timeout=30,
             allow_redirects=True,
@@ -705,7 +719,7 @@ class RetainDBMemoryProvider(MemoryProvider):
         self._queue: _WriteQueue | None = None
         self._user_id = "default"
         self._session_id = ""
-        self._agent_id = "hermes"
+        self._agent_id = "pcbdraft"
         self._lock = threading.Lock()
 
         # Prefetch caches
@@ -749,10 +763,43 @@ class RetainDBMemoryProvider(MemoryProvider):
 
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
+    def save_config(self, values, runtime_home):
+        """Persist effective project/agent IDs before changing provider settings."""
+        from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+        from pcbdraft.model.configuration import read_user_config_raw
+        from pcbdraft.core.runtime_utils import atomic_yaml_write
+
+        path = Path(runtime_home) / "config.yaml"
+        config = read_user_config_raw(path) if path.exists() else {}
+        memory = config.setdefault("memory", {})
+        existing = memory.get("retaindb") or {}
+        effective = effective_memory_namespaces(
+            "retaindb",
+            existing,
+            existing="retaindb" in memory,
+            runtime_home=runtime_home,
+        )
+        effective.update(values)
+        memory["retaindb"] = effective
+        atomic_yaml_write(path, config)
+
     def initialize(self, session_id: str, **kwargs) -> None:
         # Non-secret fields fall back to config.yaml (written by the Dashboard)
         # when the env var is unset: env -> config.yaml -> default.
-        provider_config = _load_retaindb_config()
+        from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+        from pcbdraft.core.runtime_environment import get_runtime_home
+
+        runtime_home_path = Path(kwargs.get("runtime_home") or get_runtime_home())
+        # Before migration, an omitted runtime_home argument selected the
+        # default project, even if the ambient runtime was a named profile.
+        project_home = str(kwargs.get("runtime_home") or "")
+        provider_config = _load_retaindb_config(project_home)
+        provider_config = effective_memory_namespaces(
+            "retaindb",
+            provider_config,
+            existing=bool(provider_config),
+            runtime_home=project_home,
+        )
         api_key = get_secret("RETAINDB_API_KEY", "") or ""
         base_url_raw = (
             os.environ.get("RETAINDB_BASE_URL")
@@ -772,19 +819,20 @@ class RetainDBMemoryProvider(MemoryProvider):
             runtime_home = str(kwargs.get("runtime_home", ""))
             profile_name = os.path.basename(runtime_home) if runtime_home else ""
             project = (
-                f"hermes-{profile_name}"
-                if (profile_name and profile_name not in {"", ".hermes"})
+                f"pcbdraft-{profile_name}"
+                if (profile_name and profile_name not in {"", "runtime", ".pcbdraft"})
                 else "default"
             )
 
         self._client = _Client(api_key, base_url, project)
         self._session_id = session_id
         self._user_id = kwargs.get("user_id", "default") or "default"
-        self._agent_id = kwargs.get("agent_id", "hermes") or "hermes"
+        self._agent_id = (
+            kwargs.get("agent_id")
+            or _config_str(provider_config.get("agent_id"))
+            or "pcbdraft"
+        )
 
-        from pcbdraft.core.runtime_environment import get_runtime_home
-
-        runtime_home_path = get_runtime_home()
         db_path = runtime_home_path / "retaindb_queue.db"
         self._queue = _WriteQueue(self._client, db_path)
 

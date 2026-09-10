@@ -54,7 +54,10 @@ from typing import Any
 import requests
 
 from pcbdraft.tools.registry import registry, tool_error
-from pcbdraft.tools.xai_http import hermes_xai_user_agent, resolve_xai_http_credentials
+from pcbdraft.tools.xai_http import (
+    pcbdraft_xai_user_agent,
+    resolve_xai_http_credentials,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +148,7 @@ def _resolve_xai_bearer() -> tuple[str, str, str]:
     api_key = str(creds.get("api_key") or "").strip()
     if not api_key:
         raise RuntimeError(
-            "No xAI credentials available. Run `hermes auth add xai-oauth` "
+            "No xAI credentials available. Run `pcbdraft connect` "
             "to sign in with your SuperGrok subscription, or set XAI_API_KEY."
         )
     base_url = str(creds.get("base_url") or DEFAULT_XAI_BASE_URL).strip().rstrip("/")
@@ -373,7 +376,7 @@ def x_search_tool(
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
-                        "User-Agent": hermes_xai_user_agent(),
+                        "User-Agent": pcbdraft_xai_user_agent(),
                     },
                     json=payload,
                     timeout=timeout_seconds,

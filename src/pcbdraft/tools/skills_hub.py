@@ -34,6 +34,7 @@ import yaml
 from pcbdraft.agent.skill_utils import is_excluded_skill_path
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags
+from pcbdraft.tools.legacy_metadata import read_pcbdraft_metadata
 from pcbdraft.tools.skills_guard import TRUSTED_REPOS, ScanResult, content_hash
 from pcbdraft.tools.url_safety import is_safe_url
 from pcbdraft.tools.website_policy import check_website_access
@@ -380,7 +381,10 @@ class GitHubAuth:
     def get_headers(self) -> dict[str, str]:
         """Return authorization headers for GitHub API requests."""
         token = self._resolve_token()
-        headers = {"Accept": "application/vnd.github.v3+json"}
+        headers = {
+            "Accept": "application/vnd.github.v3+json",
+            "User-Agent": "PCBDraft/skills-hub",
+        }
         if token:
             headers["Authorization"] = f"token {token}"
         return headers
@@ -586,25 +590,7 @@ def _filter_results_by_provider(
 class GitHubSource(SkillSource):
     """Fetch skills from GitHub repos via the Contents API."""
 
-    DEFAULT_TAPS = [
-        # NOTE: openai/skills moved its content into skills/.curated/ (and
-        # skills/.system/ for system-level skills). _list_skills_in_repo
-        # skips directories starting with "." or "_", so we point both
-        # entries at the inner paths directly.
-        {"repo": "openai/skills", "path": "skills/.curated/"},
-        {"repo": "openai/skills", "path": "skills/.system/"},
-        {"repo": "anthropics/skills", "path": "skills/"},
-        {"repo": "huggingface/skills", "path": "skills/"},
-        # NVIDIA/skills: NVIDIA-verified skills for CUDA-X, AIQ, cuOpt,
-        # cuPyNumeric, DeepStream, NeMo, NemoClaw, etc. Each skill ships
-        # alongside a signed `skill.oms.sig`, an OMS-signed `skill-card.md`
-        # (governance card), and an `evals/` directory — synced daily from
-        # the NVIDIA product repos. Treated as `trusted` (see
-        # `tools/skills_guard.py::TRUSTED_REPOS`). Sample layout:
-        # https://github.com/NVIDIA/skills/tree/main/skills
-        {"repo": "NVIDIA/skills", "path": "skills/"},
-        {"repo": "garrytan/gstack", "path": ""},
-    ]
+    DEFAULT_TAPS: list[dict] = []  # Third-party taps require explicit configuration.
 
     def __init__(self, auth: GitHubAuth, extra_taps: list[dict] | None = None):
         self.auth = auth
@@ -764,9 +750,9 @@ class GitHubSource(SkillSource):
         tags = []
         metadata = fm.get("metadata", {})
         if isinstance(metadata, dict):
-            hermes_meta = metadata.get("hermes", {})
-            if isinstance(hermes_meta, dict):
-                tags = hermes_meta.get("tags", [])
+            pcbdraft_meta = read_pcbdraft_metadata(metadata)
+            if isinstance(pcbdraft_meta, dict):
+                tags = pcbdraft_meta.get("tags", [])
         if not tags:
             raw_tags = fm.get("tags", [])
             tags = raw_tags if isinstance(raw_tags, list) else []
@@ -1561,9 +1547,9 @@ class UrlSource(SkillSource):
         tags: list[str] = []
         metadata = fm.get("metadata", {})
         if isinstance(metadata, dict):
-            hermes_meta = metadata.get("hermes", {})
-            if isinstance(hermes_meta, dict):
-                raw_tags = hermes_meta.get("tags", [])
+            pcbdraft_meta = read_pcbdraft_metadata(metadata)
+            if isinstance(pcbdraft_meta, dict):
+                raw_tags = pcbdraft_meta.get("tags", [])
                 if isinstance(raw_tags, list):
                     tags = [str(t) for t in raw_tags]
         return SkillMeta(
@@ -3269,7 +3255,7 @@ class LobeHubSource(SkillSource):
             f"name: {identifier}",
             f"description: {description[:500]}",
             "metadata:",
-            "  hermes:",
+            "  pcbdraft:",
             f"    tags: [{', '.join(str(t) for t in tag_list)}]",
             "  lobehub:",
             "    source: lobehub",
@@ -3479,13 +3465,12 @@ class OptionalSkillSource(SkillSource):
     """
     Fetch skills from the optional-skills/ directory shipped with the repo.
 
-    These skills are official (maintained by Nous Research) but not activated
-    by default — they don't appear in the system prompt and aren't copied to
-    ~/.hermes/skills/ during setup.  They are discoverable via the Skills Hub
-    (search / install / inspect) and labelled "official" with "builtin" trust.
+    Only locally packaged resources are builtin. No online repository is
+    assumed to publish native PCBDraft content. Third-party repositories must
+    be configured separately through GitHub taps.
     """
 
-    OFFICIAL_REPO = "NousResearch/hermes-agent"
+    OFFICIAL_REPO = ""
     OPTIONAL_SKILLS_PREFIX = "optional-skills"
 
     def __init__(self, auth: GitHubAuth | None = None):
@@ -3660,6 +3645,8 @@ class OptionalSkillSource(SkillSource):
         the repo tree).
         """
         rel = rel.strip("/")
+        if not self.OFFICIAL_REPO:
+            return None
         if not rel:
             return None
         # Reject traversal before it ever becomes a GitHub path.
@@ -3735,6 +3722,8 @@ class OptionalSkillSource(SkillSource):
         GitHubSource, plus the shared on-disk index cache). Returns {} when
         the network/API is unavailable — callers degrade to local-only.
         """
+        if not self.OFFICIAL_REPO:
+            return {}
         if self._remote_dirs is not None:
             return self._remote_dirs
 
@@ -3805,9 +3794,9 @@ class OptionalSkillSource(SkillSource):
             tags = []
             meta_block = fm.get("metadata", {})
             if isinstance(meta_block, dict):
-                hermes_meta = meta_block.get("hermes", {})
-                if isinstance(hermes_meta, dict):
-                    tags = hermes_meta.get("tags", [])
+                pcbdraft_meta = read_pcbdraft_metadata(meta_block)
+                if isinstance(pcbdraft_meta, dict):
+                    tags = pcbdraft_meta.get("tags", [])
 
             rel_path = parent.relative_to(self._optional_dir).as_posix()
 
@@ -4430,17 +4419,23 @@ def check_for_skill_updates(
 # Hermes centralized index source
 # ---------------------------------------------------------------------------
 
-PCBDRAFT_RUNTIME_INDEX_URL = (
-    "https://hermes-agent.nousresearch.com/docs/api/skills-index.json"
-)
+# No default online content source. An operator may explicitly configure one.
+PCBDRAFT_RUNTIME_INDEX_URL = ""
 PCBDRAFT_RUNTIME_INDEX_TTL = 6 * 3600  # 6 hours
 
 
-def _hermes_index_cache_file() -> Path:
-    return _index_cache_dir() / "hermes-index.json"
+def _pcbdraft_index_url() -> str:
+    return os.environ.get(
+        "PCBDRAFT_RUNTIME_INDEX_URL", PCBDRAFT_RUNTIME_INDEX_URL
+    ).strip()
 
 
-def _load_hermes_index() -> dict | None:
+def _pcbdraft_index_cache_file() -> Path:
+    source_key = hashlib.sha256(_pcbdraft_index_url().encode()).hexdigest()[:16]
+    return _index_cache_dir() / f"configured-index-{source_key}.json"
+
+
+def _load_pcbdraft_index() -> dict | None:
     """Fetch the centralized skills index, with local cache.
 
     The index is a JSON file hosted on the docs site, rebuilt daily by CI.
@@ -4448,12 +4443,14 @@ def _load_hermes_index() -> dict | None:
     downloads within a session.
     """
     # Check local cache
-    hermes_index_cache_file = _hermes_index_cache_file()
-    if hermes_index_cache_file.exists():
+    if not _pcbdraft_index_url():
+        return None
+    pcbdraft_index_cache_file = _pcbdraft_index_cache_file()
+    if pcbdraft_index_cache_file.exists():
         try:
-            age = time.time() - hermes_index_cache_file.stat().st_mtime
+            age = time.time() - pcbdraft_index_cache_file.stat().st_mtime
             if age < PCBDRAFT_RUNTIME_INDEX_TTL:
-                return json.loads(hermes_index_cache_file.read_text(encoding="utf-8"))
+                return json.loads(pcbdraft_index_cache_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             pass
 
@@ -4474,13 +4471,16 @@ def _load_hermes_index() -> dict | None:
     for accept_encoding in ("gzip, deflate", "identity"):
         try:
             resp = httpx.get(
-                PCBDRAFT_RUNTIME_INDEX_URL,
+                _pcbdraft_index_url(),
                 timeout=15,
                 follow_redirects=True,
-                headers={"Accept-Encoding": accept_encoding},
+                headers={
+                    "Accept-Encoding": accept_encoding,
+                    "User-Agent": "PCBDraft/skills-index",
+                },
             )
             if resp.status_code != 200:
-                logger.debug("Hermes index fetch returned %d", resp.status_code)
+                logger.debug("Configured index fetch returned %d", resp.status_code)
                 return _load_stale_index_cache()
             data = resp.json()
             break
@@ -4488,13 +4488,13 @@ def _load_hermes_index() -> dict | None:
             # Content-Encoding decode failed — retry once uncompressed before
             # giving up on the network path entirely.
             logger.debug(
-                "Hermes index decode failed (Accept-Encoding=%s): %s",
+                "Configured index decode failed (Accept-Encoding=%s): %s",
                 accept_encoding,
                 e,
             )
             continue
         except (httpx.HTTPError, json.JSONDecodeError) as e:
-            logger.debug("Hermes index fetch failed: %s", e)
+            logger.debug("Configured index fetch failed: %s", e)
             return _load_stale_index_cache()
 
     if data is None:
@@ -4506,8 +4506,8 @@ def _load_hermes_index() -> dict | None:
 
     # Cache locally
     try:
-        hermes_index_cache_file.parent.mkdir(parents=True, exist_ok=True)
-        hermes_index_cache_file.write_text(json.dumps(data), encoding="utf-8")
+        pcbdraft_index_cache_file.parent.mkdir(parents=True, exist_ok=True)
+        pcbdraft_index_cache_file.write_text(json.dumps(data), encoding="utf-8")
     except OSError:
         pass
 
@@ -4516,17 +4516,17 @@ def _load_hermes_index() -> dict | None:
 
 def _load_stale_index_cache() -> dict | None:
     """Fall back to stale cache when the network fetch fails."""
-    hermes_index_cache_file = _hermes_index_cache_file()
-    if hermes_index_cache_file.exists():
+    pcbdraft_index_cache_file = _pcbdraft_index_cache_file()
+    if pcbdraft_index_cache_file.exists():
         try:
-            return json.loads(hermes_index_cache_file.read_text(encoding="utf-8"))
+            return json.loads(pcbdraft_index_cache_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             pass
     return None
 
 
-class HermesIndexSource(SkillSource):
-    """Skill source backed by the centralized Hermes Skills Index.
+class PCBDraftIndexSource(SkillSource):
+    """Adapter for an explicitly configured third-party skills index.
 
     The index is a JSON catalog published to the docs site and rebuilt
     daily by CI.  It contains metadata + resolved GitHub paths for every
@@ -4547,7 +4547,7 @@ class HermesIndexSource(SkillSource):
 
     def _ensure_loaded(self) -> dict:
         if not self._loaded:
-            self._index = _load_hermes_index()
+            self._index = _load_pcbdraft_index()
             self._loaded = True
         return self._index or {}
 
@@ -4557,7 +4557,7 @@ class HermesIndexSource(SkillSource):
         return self._github
 
     def source_id(self) -> str:
-        return "hermes-index"
+        return "configured-index"
 
     @property
     def is_available(self) -> bool:
@@ -4566,10 +4566,7 @@ class HermesIndexSource(SkillSource):
         return bool(index.get("skills"))
 
     def trust_level_for(self, identifier: str) -> str:
-        index = self._ensure_loaded()
-        for skill in index.get("skills", []):
-            if skill.get("identifier") == identifier:
-                return skill.get("trust_level", "community")
+        # A remote index cannot promote itself to native/builtin trust.
         return "community"
 
     def search(self, query: str, limit: int = 10) -> list[SkillMeta]:
@@ -4646,7 +4643,8 @@ class HermesIndexSource(SkillSource):
         if resolved:
             bundle = self._get_github().fetch(resolved)
             if bundle:
-                bundle.source = entry.get("source", "hermes-index")
+                bundle.source = "configured-index"
+                bundle.trust_level = "community"
                 bundle.identifier = identifier
                 return bundle
 
@@ -4657,7 +4655,8 @@ class HermesIndexSource(SkillSource):
             github_id = f"{repo}/{path}"
             bundle = self._get_github().fetch(github_id)
             if bundle:
-                bundle.source = entry.get("source", "hermes-index")
+                bundle.source = "configured-index"
+                bundle.trust_level = "community"
                 bundle.identifier = identifier
                 return bundle
 
@@ -4712,9 +4711,9 @@ class HermesIndexSource(SkillSource):
         return SkillMeta(
             name=entry.get("name", ""),
             description=entry.get("description", ""),
-            source=entry.get("source", "hermes-index"),
+            source="configured-index",
             identifier=entry.get("identifier", ""),
-            trust_level=entry.get("trust_level", "community"),
+            trust_level="community",
             repo=entry.get("repo"),
             path=entry.get("path"),
             tags=entry.get("tags", []),
@@ -4733,19 +4732,28 @@ def create_source_router(auth: GitHubAuth | None = None) -> list[SkillSource]:
     taps_mgr = TapsManager()
     extra_taps = taps_mgr.list_taps()
 
-    sources: list[SkillSource] = [
-        OptionalSkillSource(auth=auth),  # Official optional skills (highest priority)
-        HermesIndexSource(
-            auth=auth
-        ),  # Centralized index (search + resolved install paths)
-        SkillsShSource(auth=auth),
-        WellKnownSkillSource(),
-        UrlSource(),  # Direct HTTP(S) URL to a SKILL.md file
-        GitHubSource(auth=auth, extra_taps=extra_taps),
-        ClawHubSource(),
-        LobeHubSource(),
-        BrowseShSource(),  # browse.sh: 169+ site-specific browser automation skills
-    ]
+    sources: list[SkillSource] = [OptionalSkillSource(auth=auth)]
+    if _pcbdraft_index_url():
+        sources.append(PCBDraftIndexSource(auth=auth))
+    if extra_taps:
+        github = GitHubSource(auth=auth, extra_taps=extra_taps)
+        github.taps = list(extra_taps)
+        sources.append(github)
+    # Third-party catalogs require a named, explicit opt-in. No default taps
+    # or network fallback is inferred from a missing local resource.
+    configured = os.environ.get("PCBDRAFT_RUNTIME_SKILL_SOURCES", "").split(",")
+    factories = {
+        "skills-sh": lambda: SkillsShSource(auth=auth),
+        "well-known": WellKnownSkillSource,
+        "url": UrlSource,
+        "clawhub": ClawHubSource,
+        "lobehub": LobeHubSource,
+        "browse-sh": BrowseShSource,
+    }
+    for source in configured:
+        factory = factories.get(source.strip())
+        if factory:
+            sources.append(factory())
 
     return sources
 
@@ -4800,7 +4808,7 @@ def parallel_search_sources(
     )
     if _effective_filter == "all":
         for src in sources:
-            if src.source_id() == "hermes-index" and getattr(
+            if src.source_id() == "configured-index" and getattr(
                 src, "is_available", False
             ):
                 _index_available = True

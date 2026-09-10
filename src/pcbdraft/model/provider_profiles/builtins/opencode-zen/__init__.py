@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pcbdraft.interfaces.tui import __version__ as _HERMES_VERSION
+from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_VERSION
 from pcbdraft.model.provider_profiles import register_provider
 from pcbdraft.model.provider_profiles.base import ProviderProfile
 
@@ -21,9 +21,9 @@ from pcbdraft.model.provider_profiles.base import ProviderProfile
 # rotation. Without them OpenCode only sees the OpenAI SDK's generic
 # "OpenAI/Python x.y.z" User-Agent and can't tell the traffic is Hermes Agent.
 _ATTRIBUTION_HEADERS = {
-    "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-    "X-Title": "Hermes Agent",
-    "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+    "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+    "X-Title": "PCBDraft",
+    "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
 }
 
 

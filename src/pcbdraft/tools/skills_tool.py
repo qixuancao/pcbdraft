@@ -922,7 +922,7 @@ def _serve_plugin_skill(
                 "success": False,
                 "error": (
                     f"Plugin '{namespace}' is disabled. "
-                    f"Re-enable with: hermes plugins enable {namespace}"
+                    f"Re-enable {namespace} in the runtime plugin configuration; see `pcbdraft --help`."
                 ),
             },
             ensure_ascii=False,
@@ -1458,7 +1458,7 @@ def skill_view(
                         ),
                         "hint": (
                             "Inspect the skill in the repo checkout, or untrust "
-                            "the repo with `hermes skills untrust`."
+                            "the repo in the runtime skills trust configuration."
                         ),
                     },
                     ensure_ascii=False,
@@ -1514,7 +1514,7 @@ def skill_view(
             _warnings = []
             if _outside_skills_dir:
                 _warnings.append(
-                    f"skill file is outside the trusted skills directory (~/.hermes/skills/): {skill_md}"
+                    f"skill file is outside the trusted runtime skills directory: {skill_md}"
                 )
             if _injection_detected:
                 _warnings.append(
@@ -1548,7 +1548,7 @@ def skill_view(
                     "success": False,
                     "error": (
                         f"Skill '{resolved_name}' is disabled. "
-                        "Enable it with `hermes skills` or inspect the files directly on disk."
+                        "Enable it in the skills configuration or inspect the files directly on disk."
                     ),
                 },
                 ensure_ascii=False,
@@ -1724,14 +1724,16 @@ def skill_view(
 
         # Read tags/related_skills with backward compat:
         # Check metadata.hermes.* first (agentskills.io convention), fall back to top-level
-        hermes_meta = {}
+        from pcbdraft.tools.legacy_metadata import read_pcbdraft_metadata
+
+        pcbdraft_meta = {}
         metadata = frontmatter.get("metadata")
         if isinstance(metadata, dict):
-            hermes_meta = metadata.get("hermes", {}) or {}
+            pcbdraft_meta = read_pcbdraft_metadata(metadata)
 
-        tags = _parse_tags(hermes_meta.get("tags") or frontmatter.get("tags", ""))
+        tags = _parse_tags(pcbdraft_meta.get("tags") or frontmatter.get("tags", ""))
         related_skills = _parse_tags(
-            hermes_meta.get("related_skills") or frontmatter.get("related_skills", "")
+            pcbdraft_meta.get("related_skills") or frontmatter.get("related_skills", "")
         )
 
         # Build linked files structure for clear discovery
@@ -1896,7 +1898,7 @@ def skill_view(
                         "Your edits are kept locally\n"
                         "> and are never overwritten by org updates; share "
                         "them back with\n"
-                        "> `hermes sync propose` (or automatically, if your "
+                        "> your configured sync integration (or automatically, if your "
                         "org enables it).\n\n"
                     )
                     rendered_content = header + rendered_content

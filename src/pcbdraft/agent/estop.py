@@ -16,7 +16,7 @@ the very next check.
 
 The sentinel body is optional JSON ``{"reason": ..., "engaged_at": ...}``.
 A corrupt or empty file still counts as engaged (fail safe): the pause must
-hold even if the file was created by ``touch ~/.hermes/ESTOP``.
+hold even if the file was created manually under the resolved runtime home.
 
 Ported from: gastownhall/gastown estop.go (MIT). Related prior art:
 #26778 (/panic — kill/exit semantics; deliberately different, ours is
@@ -48,7 +48,9 @@ def _runtime_home() -> Path:
 
         return get_runtime_home()
     except Exception:
-        return Path(os.path.expanduser("~/.hermes"))
+        from pcbdraft.core.runtime_paths import runtime_home
+
+        return runtime_home()
 
 
 def sentinel_path() -> Path:
@@ -130,12 +132,12 @@ def paused_reply() -> str | None:
     reason = state.get("reason")
     if reason:
         return (
-            f"⏸️ Hermes is paused ({reason}). New work is on hold; "
-            "run `hermes resume` to pick things back up."
+            f"⏸️ PCBDraft is paused ({reason}). New work is on hold; "
+            "clear the runtime ESTOP sentinel to pick things back up (pcbdraft doctor)."
         )
     return (
-        "⏸️ Hermes is paused. New work is on hold; "
-        "run `hermes resume` to pick things back up."
+        "⏸️ PCBDraft is paused. New work is on hold; "
+        "clear the runtime ESTOP sentinel to pick things back up (pcbdraft doctor)."
     )
 
 
@@ -159,8 +161,8 @@ def check_paused(component: str, logger: logging.Logger) -> bool:
         reason = state.get("reason")
         suffix = f" (reason: {reason})" if reason else ""
         logger.info(
-            "%s dispatch paused by global emergency stop%s — remove with "
-            "`hermes resume` (%s)",
+            "%s dispatch paused by global emergency stop%s — resume by "
+            "clearing the runtime ESTOP sentinel (%s)",
             component,
             suffix,
             sentinel_path(),

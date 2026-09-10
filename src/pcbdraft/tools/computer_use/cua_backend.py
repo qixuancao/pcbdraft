@@ -372,7 +372,7 @@ def _standard_runtime_launch_args(
     if platform != "darwin":
         return result, None
     private_socket = socket_path or os.path.join(
-        tempfile.gettempdir(), f"hermes-cua-standard-{uuid.uuid4().hex[:12]}.sock"
+        tempfile.gettempdir(), f"pcbdraft-cua-standard-{uuid.uuid4().hex[:12]}.sock"
     )
     result.extend(["--socket", private_socket])
     return result, private_socket
@@ -465,10 +465,10 @@ def _empty_discovery_reason() -> str:
             "window discovery returned no windows; on macOS this usually "
             "means no shareable display (headless Mac or panel asleep) — "
             "wake the display or attach a monitor/HDMI dummy, then run "
-            "`hermes computer-use doctor`"
+            "`pcbdraft doctor`"
         )
     return (
-        "window discovery returned no windows; run `hermes computer-use "
+        "window discovery returned no windows; run `pcbdraft "
         "doctor` (display reachability, AX capability)"
     )
 
@@ -658,7 +658,7 @@ class _EmbeddedCuaDaemon:
         self._stderr_thread: threading.Thread | None = None
         token = uuid.uuid4().hex[:12]
         if sys.platform == "win32":
-            self.socket_path = rf"\\.\pipe\hermes-cua-{token}"
+            self.socket_path = rf"\\.\pipe\pcbdraft-cua-{token}"
         else:
             self.socket_path = os.path.join(tempfile.gettempdir(), f"hc-{token}.sock")
 
@@ -730,7 +730,7 @@ class _EmbeddedCuaDaemon:
         self._stderr_thread = threading.Thread(
             target=self._drain_stderr,
             args=(self._process,),
-            name="hermes-cua-daemon-stderr",
+            name="pcbdraft-cua-daemon-stderr",
             daemon=True,
         )
         self._stderr_thread.start()
@@ -1150,7 +1150,7 @@ def cua_driver_runtime_contract_status(binary: str | None = None) -> dict[str, A
             "ready": False,
             "binary": resolved,
             "version": raw_version,
-            "reason": "Hermes computer use requires cua-driver 0.20.0 or newer",
+            "reason": "PCBDraft computer use requires cua-driver 0.20.0 or newer",
         }
 
     invocation = manifest.get("mcp_invocation")
@@ -1266,7 +1266,7 @@ def cua_driver_update_nudge() -> str | None:
     current = state.get("current_version") or "?"
     return (
         f"cua-driver {latest} is available (you have {current}); "
-        f"update with `hermes computer-use install --upgrade`."
+        f"check dependencies with `pcbdraft doctor`."
     )
 
 
@@ -1352,10 +1352,10 @@ def cua_driver_install_hint() -> str:
         )
     return (
         "cua-driver is not installed. Install with one of:\n"
-        "  hermes computer-use install\n"
+        "  pcbdraft doctor (dependency diagnostics)\n"
         "Or run the upstream installer directly:\n"
         f"{installer}\n"
-        "Or run `hermes tools` and enable the Computer Use toolset to install it automatically."
+        "See `pcbdraft --help` for supported configuration commands."
     )
 
 
@@ -1850,7 +1850,7 @@ class _CuaDriverSession:
             raise RuntimeError(
                 "cua-driver session never reached ready (timeout 30s; "
                 f"stuck in phase: {phase}). "
-                "Run `hermes computer-use doctor` and check "
+                "Run `pcbdraft doctor` and check "
                 f"{display_runtime_home()}/logs/agent.log for the phase timings."
             )
         # If setup failed, the lifecycle coroutine set _setup_error
@@ -2332,7 +2332,7 @@ class _CuaDriverSession:
     def _unknown_transport_outcome(name: str, exc: Exception) -> dict[str, Any]:
         message = (
             f"cua-driver transport failed during {name}; the action outcome is "
-            "unknown, so Hermes did not replay it. Take fresh state before "
+            "unknown, so PCBDraft did not replay it. Take fresh state before "
             "deciding whether to act again."
         )
         return {
@@ -2703,7 +2703,7 @@ class CuaDriverBackend(ComputerUseBackend):
         # `session` on every cua-driver tool call. Labels are an
         # part of the required Cua Driver 0.20 runtime contract checked at
         # backend startup.
-        self._session_id: str = f"hermes-{uuid.uuid4().hex[:12]}"
+        self._session_id: str = f"pcbdraft-{uuid.uuid4().hex[:12]}"
         self._typed_browser = CuaTypedBrowserRoute(
             session_id=self._session_id,
             call_tool=self._session.call_tool,
@@ -2746,7 +2746,7 @@ class CuaDriverBackend(ComputerUseBackend):
                     "remove that override."
                 )
             else:
-                repair = "Run `hermes computer-use install` to repair it."
+                repair = "Run `pcbdraft doctor` for dependency diagnostics."
             raise RuntimeError(f"cua-driver is not ready: {reason}. {repair}")
         _maybe_nudge_update()
         # The MCP client SDK (`mcp`) is an optional dependency (the

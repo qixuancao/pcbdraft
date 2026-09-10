@@ -193,7 +193,7 @@ def _local_runtime_hint(reason: str | None) -> str:
     ):
         return (
             f" Install the embedded runtime with: uv pip install --python "
-            f"{sys.executable} hindsight-all — or run 'hermes memory setup'. "
+            f"{sys.executable} hindsight-all — see 'pcbdraft --help' for configuration. "
             "(local_embedded needs the 'hindsight-all' package, which provides the "
             "top-level 'hindsight' module; 'hindsight-client' alone only covers "
             "cloud / local_external.)"
@@ -433,10 +433,16 @@ def _load_config() -> dict:
     from pathlib import Path
 
     # Profile-scoped path (preferred)
+    from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+
     profile_path = get_runtime_home() / "hindsight" / "config.json"
     if profile_path.exists():
         try:
-            return json.loads(profile_path.read_text(encoding="utf-8"))
+            return effective_memory_namespaces(
+                "hindsight",
+                json.loads(profile_path.read_text(encoding="utf-8")),
+                existing=True,
+            )
         except Exception:
             pass
 
@@ -444,11 +450,15 @@ def _load_config() -> dict:
     legacy_path = Path.home() / ".hindsight" / "config.json"
     if legacy_path.exists():
         try:
-            return json.loads(legacy_path.read_text(encoding="utf-8"))
+            return effective_memory_namespaces(
+                "hindsight",
+                json.loads(legacy_path.read_text(encoding="utf-8")),
+                existing=True,
+            )
         except Exception:
             pass
 
-    return {
+    config = {
         "mode": os.environ.get("HINDSIGHT_MODE", "cloud"),
         "apiKey": get_secret("HINDSIGHT_API_KEY", ""),
         "timeout": _parse_int_setting(
@@ -467,13 +477,16 @@ def _load_config() -> dict:
             "HINDSIGHT_RETAIN_ASSISTANT_PREFIX", "Assistant"
         ),
         "banks": {
-            "hermes": {
-                "bankId": os.environ.get("HINDSIGHT_BANK_ID", "hermes"),
+            "pcbdraft": {
+                "bankId": os.environ.get("HINDSIGHT_BANK_ID", ""),
                 "budget": os.environ.get("HINDSIGHT_BUDGET", "mid"),
                 "enabled": True,
             }
         },
     }
+    return effective_memory_namespaces(
+        "hindsight", config, existing=bool(config["apiKey"])
+    )
 
 
 def _normalize_retain_tags(value: Any) -> list[str]:
@@ -570,8 +583,13 @@ def _utc_timestamp() -> str:
 
 def _embedded_profile_name(config: dict[str, Any]) -> str:
     """Return the Hindsight embedded profile name for this Hermes config."""
-    profile = config.get("profile", "hermes")
-    return str(profile or "hermes")
+    from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+
+    return str(
+        effective_memory_namespaces("hindsight", config, existing=bool(config))[
+            "profile"
+        ]
+    )
 
 
 def _load_simple_env(path) -> dict[str, str]:
@@ -789,7 +807,7 @@ class HindsightMemoryProvider(MemoryProvider):
         self._config = None
         self._api_key = None
         self._api_url = _DEFAULT_API_URL
-        self._bank_id = "hermes"
+        self._bank_id = "pcbdraft"
         self._budget = "mid"
         self._mode = "cloud"
         self._llm_base_url = ""
@@ -880,7 +898,7 @@ class HindsightMemoryProvider(MemoryProvider):
         # path.
         self._prefetch_waits_for_retain = True
         self._prefetch_retain_drain_timeout = 10.0
-        self._retain_context = "conversation between Hermes Agent and the User"
+        self._retain_context = "conversation between PCBDraft and the User"
         self._turn_counter = 0
         self._session_turns: list[str] = []  # accumulates ALL turns for the session
         # How many turns the last append-mode retain already shipped. Used to
@@ -962,12 +980,20 @@ class HindsightMemoryProvider(MemoryProvider):
         config_dir = Path(runtime_home) / "hindsight"
         config_dir.mkdir(parents=True, exist_ok=True)
         config_path = config_dir / "config.json"
+        source_path = config_path
+        if not source_path.exists():
+            source_path = Path.home() / ".hindsight" / "config.json"
         existing = {}
-        if config_path.exists():
+        if source_path.exists():
             try:
-                existing = json.loads(config_path.read_text(encoding="utf-8"))
+                existing = json.loads(source_path.read_text(encoding="utf-8"))
             except Exception:
                 pass
+        from pcbdraft.agent.legacy_compat import effective_memory_namespaces
+
+        existing = effective_memory_namespaces(
+            "hindsight", existing, existing=source_path.exists()
+        )
         existing.update(values)
         from pcbdraft.core.runtime_utils import atomic_json_write
 
@@ -990,9 +1016,7 @@ class HindsightMemoryProvider(MemoryProvider):
 
         print("\n  Configuring Hindsight memory:\n")
 
-        existing_config = (
-            self._config if isinstance(self._config, dict) else _load_config()
-        )
+        existing_config = self._config or _load_config()
         if not isinstance(existing_config, dict):
             existing_config = {}
 
@@ -1159,7 +1183,7 @@ class HindsightMemoryProvider(MemoryProvider):
                 env_writes["HINDSIGHT_LLM_API_KEY"] = existing_llm_key
 
         # Step 4: Save everything
-        provider_config.setdefault("bank_id", "hermes")
+        provider_config.setdefault("bank_id", "pcbdraft")
         provider_config.setdefault("recall_budget", "mid")
         # Read existing timeout from config if present, otherwise use default.
         # Preserve explicit 0 values instead of treating them as blank.
@@ -1261,7 +1285,7 @@ class HindsightMemoryProvider(MemoryProvider):
             _DEFAULT_LOCAL_URL if mode == "local_external" else _DEFAULT_API_URL
         )
         api_url = provider_config.get("api_url") or default_url
-        bank_id = provider_config.get("bank_id", "hermes")
+        bank_id = provider_config.get("bank_id", "pcbdraft")
         api_key = (
             env_writes.get("HINDSIGHT_API_KEY")
             or os.environ.get("HINDSIGHT_API_KEY", "")
@@ -1356,11 +1380,11 @@ class HindsightMemoryProvider(MemoryProvider):
             {
                 "key": "bank_id",
                 "description": "Memory bank name (static fallback when bank_id_template is unset)",
-                "default": "hermes",
+                "default": "pcbdraft",
             },
             {
                 "key": "bank_id_template",
-                "description": "Optional template to derive bank_id dynamically. Placeholders: {profile}, {workspace}, {platform}, {user}, {session}. Example: hermes-{profile}",
+                "description": "Optional template to derive bank_id dynamically. Placeholders: {profile}, {workspace}, {platform}, {user}, {session}. Example: pcbdraft-{profile}",
                 "default": "",
             },
             {
@@ -1478,7 +1502,7 @@ class HindsightMemoryProvider(MemoryProvider):
             {
                 "key": "retain_context",
                 "description": "Context label for retained memories",
-                "default": "conversation between Hermes Agent and the User",
+                "default": "conversation between PCBDraft and the User",
             },
             {
                 "key": "recall_max_tokens",
@@ -1539,11 +1563,11 @@ class HindsightMemoryProvider(MemoryProvider):
                     llm_provider = "openai"
                 logger.debug(
                     "Creating HindsightEmbedded client (profile=%s, provider=%s)",
-                    self._config.get("profile", "hermes"),
+                    self._config.get("profile", "pcbdraft"),
                     llm_provider,
                 )
                 kwargs = dict(
-                    profile=self._config.get("profile", "hermes"),
+                    profile=self._config.get("profile", "pcbdraft"),
                     llm_provider=llm_provider,
                     llm_api_key=self._config.get("llmApiKey")
                     or self._config.get("llm_api_key")
@@ -2001,8 +2025,10 @@ class HindsightMemoryProvider(MemoryProvider):
         )
         self._llm_base_url = self._config.get("llm_base_url", "")
 
-        banks = cfg_get(self._config, "banks", "hermes", default={})
-        static_bank_id = self._config.get("bank_id") or banks.get("bankId", "hermes")
+        from pcbdraft.agent.legacy_compat import read_memory_bank
+
+        banks = read_memory_bank(self._config)
+        static_bank_id = self._config.get("bank_id") or banks.get("bankId", "pcbdraft")
         self._bank_id_template = self._config.get("bank_id_template", "") or ""
         self._bank_id = _resolve_bank_id_template(
             self._bank_id_template,
@@ -2073,7 +2099,7 @@ class HindsightMemoryProvider(MemoryProvider):
             1, int(self._config.get("retain_every_n_turns", 1))
         )
         self._retain_context = self._config.get(
-            "retain_context", "conversation between Hermes Agent and the User"
+            "retain_context", "conversation between PCBDraft and the User"
         )
 
         # Recall controls
@@ -2168,8 +2194,8 @@ class HindsightMemoryProvider(MemoryProvider):
                 msg = (
                     "Hindsight local_embedded mode cannot run as root "
                     "(PostgreSQL initdb refuses root). Skipping the embedded "
-                    "memory daemon. Run Hermes as a non-root user, or switch "
-                    "to cloud / local_external mode via 'hermes memory setup'."
+                    "memory daemon. Run PCBDraft as a non-root user, or switch "
+                    "to cloud / local_external mode in the memory configuration."
                 )
                 logger.warning(msg)
                 # Surface to the terminal too — a daemon that never starts
@@ -2200,7 +2226,7 @@ class HindsightMemoryProvider(MemoryProvider):
                     )
 
                     client = self._get_client()
-                    profile = self._config.get("profile", "hermes")
+                    profile = self._config.get("profile", "pcbdraft")
 
                     # Update the profile .env to match our current config so
                     # the daemon always starts with the right settings.

@@ -89,7 +89,7 @@ class FakePCBService:
         return view
 
 
-class HermesToolRegistrationTests(unittest.TestCase):
+class PCBDraftToolRegistrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         _set_service(None)
         set_current_project_id(None)

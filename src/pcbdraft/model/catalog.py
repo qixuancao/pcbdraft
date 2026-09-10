@@ -25,14 +25,15 @@ if TYPE_CHECKING:
     from typing import TypeGuard
 
 from pcbdraft.core.runtime_utils import base_url_host_matches
-from pcbdraft.interfaces.tui import __version__ as _HERMES_VERSION
+from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_VERSION
 from pcbdraft.interfaces.tui.urllib_security import open_credentialed_url
+from pcbdraft.model.protocol_identity import DEEPINFRA_CATALOG_QUERY
 
 logger = logging.getLogger(__name__)
 
 # Identify ourselves so endpoints fronted by Cloudflare's Browser Integrity
 # Check (error 1010) don't reject the default ``Python-urllib/*`` signature.
-_HERMES_USER_AGENT = f"hermes-cli/{_HERMES_VERSION}"
+_PCBDRAFT_USER_AGENT = f"pcbdraft/{_PCBDRAFT_VERSION}"
 
 COPILOT_BASE_URL = "https://api.githubcopilot.com"
 COPILOT_MODELS_URL = f"{COPILOT_BASE_URL}/models"
@@ -2315,7 +2316,7 @@ def fetch_models_with_pricing(
     url = cache_key + "/v1/models"
     headers: dict[str, str] = {
         "Accept": "application/json",
-        "User-Agent": _HERMES_USER_AGENT,
+        "User-Agent": _PCBDRAFT_USER_AGENT,
     }
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -2582,7 +2583,7 @@ def _fetch_novita_pricing(
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Accept": "application/json",
-        "User-Agent": _HERMES_USER_AGENT,
+        "User-Agent": _PCBDRAFT_USER_AGENT,
     }
 
     try:
@@ -3995,7 +3996,7 @@ def copilot_default_headers(*, is_agent_turn: bool = True) -> dict[str, str]:
     except ImportError:
         return {
             "Editor-Version": COPILOT_EDITOR_VERSION,
-            "User-Agent": "HermesAgent/1.0",
+            "User-Agent": _PCBDRAFT_USER_AGENT,
             "Openai-Intent": "conversation-edits",
             "x-initiator": "agent" if is_agent_turn else "user",
         }
@@ -4175,7 +4176,7 @@ def _lmstudio_server_root(base_url: str | None) -> str | None:
 
 def _lmstudio_request_headers(api_key: str | None = None) -> dict:
     """Build HTTP headers for LM Studio native API requests."""
-    headers = {"User-Agent": _HERMES_USER_AGENT}
+    headers = {"User-Agent": _PCBDRAFT_USER_AGENT}
     token = str(api_key or "").strip()
     if token:
         headers["Authorization"] = f"Bearer {token}"
@@ -4935,12 +4936,12 @@ def probe_api_models(
         candidates.append((alternate_base, True))
 
     tried: list[str] = []
-    headers: dict[str, str] = {"User-Agent": _HERMES_USER_AGENT}
+    headers: dict[str, str] = {"User-Agent": _PCBDRAFT_USER_AGENT}
     if (
         urllib.parse.urlparse(normalized).hostname
         == "generativelanguage.googleapis.com"
     ):
-        headers["X-Goog-Api-Client"] = f"hermes-agent/{_HERMES_VERSION}"
+        headers["X-Goog-Api-Client"] = f"pcbdraft/{_PCBDRAFT_VERSION}"
     if api_key and api_mode == "anthropic_messages":
         headers["x-api-key"] = api_key
         headers["anthropic-version"] = "2023-06-01"
@@ -5015,7 +5016,7 @@ _DEEPINFRA_SURFACE_TAGS: frozenset[str] = frozenset(
 )
 
 _DEEPINFRA_DEFAULT_BASE_URL = "https://api.deepinfra.com/v1/openai"
-_DEEPINFRA_MODELS_QUERY = "filter=true&sort_by=hermes"
+_DEEPINFRA_MODELS_QUERY = DEEPINFRA_CATALOG_QUERY
 
 # Module-level cache for the full tagged catalog response, keyed by base URL.
 # Each value is the parsed ``data`` list. Surface-specific filters read from
@@ -5062,7 +5063,7 @@ def _fetch_deepinfra_catalog(
         ):
             return None
 
-    headers: dict[str, str] = {"User-Agent": _HERMES_USER_AGENT}
+    headers: dict[str, str] = {"User-Agent": _PCBDRAFT_USER_AGENT}
     api_key = os.getenv("DEEPINFRA_API_KEY", "").strip()
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
@@ -5235,7 +5236,7 @@ def _fetch_ai_gateway_models(timeout: float = 5.0) -> list[str] | None:
     url = base_url.rstrip("/") + "/models"
     headers: dict[str, str] = {
         "Authorization": f"Bearer {api_key}",
-        "User-Agent": _HERMES_USER_AGENT,
+        "User-Agent": _PCBDRAFT_USER_AGENT,
     }
     req = urllib.request.Request(url, headers=headers)
     try:
@@ -5613,7 +5614,7 @@ def validate_requested_model(
                 "accepted": False,
                 "persist": False,
                 "recognized": False,
-                "message": f"MoA preset `{requested}` was not found. Run `hermes moa list`.",
+                "message": f"MoA preset `{requested}` was not found. Check presets in config.yaml; see `pcbdraft --help`.",
             }
         except Exception as exc:
             return {
@@ -5733,7 +5734,7 @@ def validate_requested_model(
 
         message = (
             f"Note: could not reach this custom endpoint's model listing at `{probe.get('probed_url')}`. "
-            f"Hermes will still save `{requested}`, but the endpoint should expose `/models` for verification."
+            f"PCBDraft will still save `{requested}`, but the endpoint should expose `/models` for verification."
         )
         if api_mode == "anthropic_messages":
             message += (
@@ -5877,7 +5878,7 @@ def validate_requested_model(
                 "message": (
                     f"Note: `{requested}` was not found in the MiniMax catalog."
                     f"{suggestion_text}"
-                    "\n  MiniMax does not expose a /models endpoint, so Hermes cannot verify the model name."
+                    "\n  MiniMax does not expose a /models endpoint, so PCBDraft cannot verify the model name."
                     "\n  The model may still work if it exists on the server."
                 ),
             }

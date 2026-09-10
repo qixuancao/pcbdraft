@@ -410,10 +410,10 @@ def _try_lazy_install_stt() -> bool:
     except Exception as exc:
         logger.warning(
             "Lazy install of faster-whisper failed: %s. "
-            "This is often a permission issue: the Hermes process user cannot "
+            "This is often a permission issue: the PCBDraft process user cannot "
             "write to the virtual environment. Try running manually as the "
             "venv owner: `stat -c '%%u' '$(dirname $(dirname $(which python3)))'` "
-            "then `su - <owner> -c 'VIRTUAL_ENV=/opt/hermes/.venv "
+            "then `su - <owner> -c 'VIRTUAL_ENV=/opt/pcbdraft/.venv "
             "uv pip install faster-whisper==1.2.1'`",
             exc,
         )
@@ -665,7 +665,7 @@ def _render_command_stt_template(
 
     def replace_match(match: "re.Match[str]") -> str:
         name = match.group("double") or match.group("single")
-        token = f"__HERMES_STT_PLACEHOLDER_{len(replacements)}__"
+        token = f"__PCBDRAFT_STT_PLACEHOLDER_{len(replacements)}__"
         replacements.append(
             (
                 token,
@@ -780,9 +780,9 @@ def _run_command_stt(
     propagating delegated-child lineage markers when applicable.
     """
     from pcbdraft.agent.delegation_context import delegated_child_subprocess_env
-    from pcbdraft.tools.environments.local import hermes_subprocess_env
+    from pcbdraft.tools.environments.local import pcbdraft_subprocess_env
 
-    scrubbed = hermes_subprocess_env(inherit_credentials=False)
+    scrubbed = pcbdraft_subprocess_env(inherit_credentials=False)
     for key in env_passthrough or []:
         value = os.environ.get(key)
         if value is not None:
@@ -995,7 +995,7 @@ def _transcribe_command_stt(
 
     try:
         with tempfile.TemporaryDirectory(
-            prefix=f"hermes-cmd-stt-{provider_name}-"
+            prefix=f"pcbdraft-cmd-stt-{provider_name}-"
         ) as tmpdir:
             output_path = Path(tmpdir) / f"transcript.{output_format}"
             placeholders = {
@@ -1222,7 +1222,7 @@ def _unregistered_stt_provider_error(provider: str) -> dict[str, Any]:
         "error_type": "provider_not_registered",
         "error": (
             f"stt.provider='{key}' is set but no built-in, command, or plugin "
-            "provider registered that name. Run `hermes plugins list` to see "
+            "provider registered that name. Inspect the runtime plugin configuration for "
             "installed STT plugins, or configure a command provider under "
             f"`stt.providers.{key}.command`."
         ),
@@ -1640,7 +1640,7 @@ def _prepare_audio_for_transcription(
                 },
             )
 
-    temp_dir = tempfile.mkdtemp(prefix="hermes-silk-")
+    temp_dir = tempfile.mkdtemp(prefix="pcbdraft-silk-")
     converted_path = os.path.join(temp_dir, f"{audio_path.stem}.wav")
     try:
         import pilk
@@ -1816,7 +1816,7 @@ def _start_idle_unload_watcher(timeout_seconds: int) -> None:
 
         _idle_unload_stop.clear()
         _idle_unload_thread = threading.Thread(
-            target=_watch, name="hermes-stt-idle-unload", daemon=True
+            target=_watch, name="pcbdraft-stt-idle-unload", daemon=True
         )
         _idle_unload_thread.start()
 
@@ -2230,7 +2230,7 @@ def _transcribe_local_command(
     normalized_model = _normalize_local_command_model(model_name)
 
     try:
-        with tempfile.TemporaryDirectory(prefix="hermes-local-stt-") as output_dir:
+        with tempfile.TemporaryDirectory(prefix="pcbdraft-local-stt-") as output_dir:
             prepared_input, prep_error = _prepare_local_audio(file_path, output_dir)
             if prep_error:
                 return {"success": False, "transcript": "", "error": prep_error}
@@ -2244,9 +2244,9 @@ def _transcribe_local_command(
             # Scrub Hermes secrets from the child env (sibling path to #56332 /
             # _run_command_stt — this local-whisper path previously inherited
             # the full process environment).
-            from pcbdraft.tools.environments.local import hermes_subprocess_env
+            from pcbdraft.tools.environments.local import pcbdraft_subprocess_env
 
-            child_env = hermes_subprocess_env(inherit_credentials=False)
+            child_env = pcbdraft_subprocess_env(inherit_credentials=False)
             subprocess.run(
                 shlex.split(command),
                 check=True,
@@ -2492,7 +2492,7 @@ def _transcribe_openai(
                 return client.audio.transcriptions.create(**create_kwargs)
 
         try:
-            with tempfile.TemporaryDirectory(prefix="hermes-stt-") as work_dir:
+            with tempfile.TemporaryDirectory(prefix="pcbdraft-stt-") as work_dir:
                 try:
                     transcription = _create_transcription(file_path)
                 except BadRequestError as exc:
@@ -2682,7 +2682,7 @@ def _transcribe_xai(
         return {
             "success": False,
             "transcript": "",
-            "error": "No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY",
+            "error": "No xAI credentials found. Run `pcbdraft connect` or set XAI_API_KEY",
         }
 
     stt_config = _load_stt_config()
@@ -2719,7 +2719,7 @@ def _transcribe_xai(
     try:
         import requests
 
-        from pcbdraft.tools.xai_http import hermes_xai_user_agent
+        from pcbdraft.tools.xai_http import pcbdraft_xai_user_agent
 
         data: dict[str, str] = {}
         if language:
@@ -2735,7 +2735,7 @@ def _transcribe_xai(
                     f"{endpoint_base_url}/stt",
                     headers={
                         "Authorization": f"Bearer {bearer}",
-                        "User-Agent": hermes_xai_user_agent(),
+                        "User-Agent": pcbdraft_xai_user_agent(),
                     },
                     files={
                         "file": (Path(file_path).name, audio_file),
@@ -3154,7 +3154,7 @@ def _trim_silence_for_cloud_stt(
         f"start_periods=1:start_threshold={threshold_db}dB:start_silence={keep_seconds}:"
         f"stop_periods=-1:stop_threshold={threshold_db}dB:stop_silence={keep_seconds}"
     )
-    work_dir = tempfile.mkdtemp(prefix="hermes-stt-trim-")
+    work_dir = tempfile.mkdtemp(prefix="pcbdraft-stt-trim-")
     trimmed_path = os.path.join(
         work_dir, f"{Path(file_path).stem or 'audio'}-trimmed.m4a"
     )

@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 
 _POOL_PROVIDER = "xai-oauth"
 
-# xAI's public API is OpenAI-compatible for the endpoints Hermes commonly
-# uses. The Responses endpoint is included because Hermes' native xAI runtime
+# xAI's public API is OpenAI-compatible for the endpoints PCBDraft commonly
+# uses. The Responses endpoint is included because PCBDraft' native xAI runtime
 # uses codex_responses mode.
 _ALLOWED_PATHS: frozenset[str] = frozenset(
     {
@@ -31,9 +31,9 @@ _ALLOWED_PATHS: frozenset[str] = frozenset(
 
 
 class XAIGrokAdapter(UpstreamAdapter):
-    """Proxy upstream for xAI Grok via Hermes-managed OAuth credentials."""
+    """Proxy upstream for xAI Grok via PCBDraft-managed OAuth credentials."""
 
-    auth_hint = "hermes auth add xai-oauth --type oauth"
+    auth_hint = "pcbdraft connect"
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
@@ -60,16 +60,15 @@ class XAIGrokAdapter(UpstreamAdapter):
             pool = self._load_pool()
             if pool is None or not pool.has_credentials():
                 raise RuntimeError(
-                    "No xAI OAuth credentials found. Run "
-                    "`hermes auth add xai-oauth --type oauth` first."
+                    "No xAI OAuth credentials found. Run `pcbdraft connect` first."
                 )
 
             entry = pool.select()
             if entry is None:
                 raise RuntimeError(
                     "No available xAI OAuth credentials found. Run "
-                    "`hermes auth reset xai-oauth` or re-authenticate with "
-                    "`hermes auth add xai-oauth --type oauth`."
+                    "`pcbdraft connect` or re-authenticate with "
+                    "`pcbdraft connect`."
                 )
 
             self._pool = pool
@@ -127,7 +126,7 @@ class XAIGrokAdapter(UpstreamAdapter):
         if not bearer:
             raise RuntimeError(
                 "xAI OAuth credential pool entry did not contain an access token. "
-                "Re-authenticate with `hermes auth add xai-oauth --type oauth`."
+                "Re-authenticate with `pcbdraft connect`."
             )
 
         base_url = (

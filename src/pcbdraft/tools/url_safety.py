@@ -768,7 +768,7 @@ def ssrf_safe_async_http_transport(**kwargs: Any) -> Any:
 
     import httpx
 
-    schemes_by_origin_var = contextvars.ContextVar("hermes_ssrf_async_origin_schemes")
+    schemes_by_origin_var = contextvars.ContextVar("pcbdraft_ssrf_async_origin_schemes")
 
     class _Transport(httpx.AsyncHTTPTransport):
         def __init__(self, **transport_kwargs: Any):
@@ -793,7 +793,7 @@ def ssrf_safe_http_transport(**kwargs: Any) -> Any:
 
     import httpx
 
-    schemes_by_origin_var = contextvars.ContextVar("hermes_ssrf_origin_schemes")
+    schemes_by_origin_var = contextvars.ContextVar("pcbdraft_ssrf_origin_schemes")
 
     class _Transport(httpx.HTTPTransport):
         def __init__(self, **transport_kwargs: Any):
@@ -816,7 +816,7 @@ def _install_ssrf_guard_on_async_transport(
     transport: Any, schemes_by_origin_var: Any
 ) -> None:
     state = getattr(transport, "__dict__", {}) if transport is not None else {}
-    if transport is None or state.get("_hermes_ssrf_guarded", False):
+    if transport is None or state.get("_pcbdraft_ssrf_guarded", False):
         return
 
     pool = state.get("_pool")
@@ -840,14 +840,14 @@ def _install_ssrf_guard_on_async_transport(
             schemes_by_origin_var.reset(token)
 
     transport.handle_async_request = guarded_handle_async_request
-    transport._hermes_ssrf_guarded = True
+    transport._pcbdraft_ssrf_guarded = True
 
 
 def _install_ssrf_guard_on_transport(
     transport: Any, schemes_by_origin_var: Any
 ) -> None:
     state = getattr(transport, "__dict__", {}) if transport is not None else {}
-    if transport is None or state.get("_hermes_ssrf_guarded", False):
+    if transport is None or state.get("_pcbdraft_ssrf_guarded", False):
         return
 
     pool = state.get("_pool")
@@ -871,13 +871,13 @@ def _install_ssrf_guard_on_transport(
             schemes_by_origin_var.reset(token)
 
     transport.handle_request = guarded_handle_request
-    transport._hermes_ssrf_guarded = True
+    transport._pcbdraft_ssrf_guarded = True
 
 
 def _install_ssrf_guard_on_async_client(client: Any) -> None:
     import contextvars
 
-    schemes_by_origin_var = contextvars.ContextVar("hermes_ssrf_async_origin_schemes")
+    schemes_by_origin_var = contextvars.ContextVar("pcbdraft_ssrf_async_origin_schemes")
     state = getattr(client, "__dict__", {})
     _install_ssrf_guard_on_async_transport(
         state.get("_transport"), schemes_by_origin_var
@@ -887,7 +887,7 @@ def _install_ssrf_guard_on_async_client(client: Any) -> None:
 def _install_ssrf_guard_on_client(client: Any) -> None:
     import contextvars
 
-    schemes_by_origin_var = contextvars.ContextVar("hermes_ssrf_origin_schemes")
+    schemes_by_origin_var = contextvars.ContextVar("pcbdraft_ssrf_origin_schemes")
     state = getattr(client, "__dict__", {})
     _install_ssrf_guard_on_transport(state.get("_transport"), schemes_by_origin_var)
 

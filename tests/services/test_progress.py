@@ -238,13 +238,13 @@ class ProductTerminalTests(unittest.TestCase):
 
             receipt = service.record_product_session_terminal(
                 project_id,
-                session_id="hermes-session",
+                session_id="pcbdraft-session",
                 turn_id="turn-1",
                 process_status=ProcessStatus.EXITED,
             )
             repeated = service.record_product_session_terminal(
                 project_id,
-                session_id="hermes-session",
+                session_id="pcbdraft-session",
                 turn_id="turn-1",
                 process_status=ProcessStatus.EXITED,
             )
@@ -276,14 +276,14 @@ class ProductTerminalTests(unittest.TestCase):
             with self.assertRaisesRegex(ValidationError, "facts conflict"):
                 service.record_product_session_terminal(
                     project_id,
-                    session_id="hermes-session",
+                    session_id="pcbdraft-session",
                     turn_id="turn-1",
                     process_status=ProcessStatus.CANCELLED,
                 )
             with self.assertRaisesRegex(ValidationError, "receipt id"):
                 service.record_product_session_terminal(
                     project_id,
-                    session_id="hermes-session",
+                    session_id="pcbdraft-session",
                     turn_id="turn-2",
                     process_status=ProcessStatus.EXITED,
                     receipt_id="../../outside",

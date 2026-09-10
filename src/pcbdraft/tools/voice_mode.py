@@ -313,7 +313,7 @@ def detect_audio_environment() -> dict:
             warnings.append(
                 "Running over SSH -- no audio devices available.\n"
                 "  If a sound server (PulseAudio/PipeWire) is running on this host,\n"
-                "  point Hermes at it, e.g.:\n"
+                "  point PCBDraft at it, e.g.:\n"
                 "    export XDG_RUNTIME_DIR=/run/user/$(id -u)\n"
                 "    # or: export PULSE_SERVER=unix:$XDG_RUNTIME_DIR/pulse/native"
             )
@@ -463,7 +463,7 @@ SILENCE_RMS_THRESHOLD = 200  # RMS below this = silence (int16 range 0-32767)
 SILENCE_DURATION_SECONDS = 3.0  # Seconds of continuous silence before auto-stop
 
 # Temp directory for voice recordings
-_TEMP_DIR = os.path.join(tempfile.gettempdir(), "hermes_voice")
+_TEMP_DIR = os.path.join(tempfile.gettempdir(), "pcbdraft_voice")
 
 
 # ============================================================================
@@ -1847,7 +1847,7 @@ def _play_audio_file_impl(file_path: str) -> bool:
                 if _win_tmp_wsl:
                     # Unique suffix prevents concurrent TTS playback collision.
                     _unique = uuid.uuid4().hex[:8]
-                    _wsl_wav = os.path.join(_win_tmp_wsl, f"hermes-tts-{_unique}.wav")
+                    _wsl_wav = os.path.join(_win_tmp_wsl, f"pcbdraft-tts-{_unique}.wav")
                     _win_wav = (
                         subprocess.check_output(
                             ["wslpath", "-w", _wsl_wav],
@@ -1907,14 +1907,14 @@ def _play_audio_file_impl(file_path: str) -> bool:
             try:
                 # Sibling of TTS/STT credential scrub (#70342 / #56332): system
                 # audio players must not inherit gateway tokens / API keys.
-                from pcbdraft.tools.environments.local import hermes_subprocess_env
+                from pcbdraft.tools.environments.local import pcbdraft_subprocess_env
 
                 proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     stdin=subprocess.DEVNULL,
-                    env=hermes_subprocess_env(inherit_credentials=False),
+                    env=pcbdraft_subprocess_env(inherit_credentials=False),
                 )
                 with _playback_lock:
                     _active_playback = proc

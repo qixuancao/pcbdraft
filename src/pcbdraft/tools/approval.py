@@ -71,25 +71,25 @@ _approval_session_id: contextvars.ContextVar[str] = contextvars.ContextVar(
 # thread/task-local, so each executor worker (or asyncio task) sees only its
 # own value. None = unset → fall back to the env var for legacy
 # single-threaded CLI callers that still export PCBDRAFT_RUNTIME_INTERACTIVE.
-_hermes_interactive_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
-    "hermes_interactive",
+_pcbdraft_interactive_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "pcbdraft_interactive",
     default=None,
 )
 
 
-def set_hermes_interactive_context(interactive: bool) -> contextvars.Token:
+def set_pcbdraft_interactive_context(interactive: bool) -> contextvars.Token:
     """Bind interactive mode for the current context (thread or asyncio task).
 
     Use this instead of mutating ``os.environ["PCBDRAFT_RUNTIME_INTERACTIVE"]`` from
     concurrent executor threads. When unset (default), interactive detection
     falls back to the ``PCBDRAFT_RUNTIME_INTERACTIVE`` env var for legacy callers.
     """
-    return _hermes_interactive_ctx.set("1" if interactive else "")
+    return _pcbdraft_interactive_ctx.set("1" if interactive else "")
 
 
-def reset_hermes_interactive_context(token: contextvars.Token) -> None:
-    """Restore the prior value from :func:`set_hermes_interactive_context`."""
-    _hermes_interactive_ctx.reset(token)
+def reset_pcbdraft_interactive_context(token: contextvars.Token) -> None:
+    """Restore the prior value from :func:`set_pcbdraft_interactive_context`."""
+    _pcbdraft_interactive_ctx.reset(token)
 
 
 def _is_interactive_cli() -> bool:
@@ -98,7 +98,7 @@ def _is_interactive_cli() -> bool:
     Prefers the context-local flag (set by concurrent ACP sessions) and falls
     back to the ``PCBDRAFT_RUNTIME_INTERACTIVE`` env var for single-threaded callers.
     """
-    ctx_val = _hermes_interactive_ctx.get()
+    ctx_val = _pcbdraft_interactive_ctx.get()
     if ctx_val is not None:
         return is_truthy_value(ctx_val)
     return env_var_enabled("PCBDRAFT_RUNTIME_INTERACTIVE")
@@ -352,10 +352,10 @@ def _should_fall_through_to_cli_approval(
 # go stale when PCBDRAFT_RUNTIME_HOME is set after this module is imported, e.g. under the
 # hermetic test conftest or any deferred-profile-resolution path).
 _SSH_SENSITIVE_PATH = r"(?:~|\$home|\$\{home\})/\.ssh(?:/|$)"
-_HERMES_ENV_PATH = (
-    r"(?:~\/\.hermes/|"
-    r"(?:\$home|\$\{home\})/\.hermes/|"
-    r"(?:\$runtime_home|\$\{runtime_home\})/)"
+_PCBDRAFT_ENV_PATH = (
+    r"(?:~\/\.(?:pcbdraft/runtime|hermes)/|"
+    r"(?:\$home|\$\{home\})/\.(?:pcbdraft/runtime|hermes)/|"
+    r"(?:\$(?:pcbdraft_runtime_home|runtime_home)|\$\{(?:pcbdraft_runtime_home|runtime_home)\})/)"
     r"\.env\b"
 )
 # ~/.hermes/config.yaml IS the security policy: approvals.mode, yolo, and the
@@ -366,10 +366,10 @@ _HERMES_ENV_PATH = (
 # `cp`, etc. targeting it are gated too — otherwise the deny is unpaired
 # theater. Mirrors _HERMES_ENV_PATH; matches the PCBDRAFT_RUNTIME_HOME override form as
 # well as ~/.hermes/.
-_HERMES_CONFIG_PATH = (
-    r"(?:~\/\.hermes/|"
-    r"(?:\$home|\$\{home\})/\.hermes/|"
-    r"(?:\$runtime_home|\$\{runtime_home\})/)"
+_PCBDRAFT_CONFIG_PATH = (
+    r"(?:~\/\.(?:pcbdraft/runtime|hermes)/|"
+    r"(?:\$home|\$\{home\})/\.(?:pcbdraft/runtime|hermes)/|"
+    r"(?:\$(?:pcbdraft_runtime_home|runtime_home)|\$\{(?:pcbdraft_runtime_home|runtime_home)\})/)"
     r"config\.yaml\b"
 )
 _PROJECT_ENV_PATH = r'(?:(?:/|\.{1,2}/)?(?:[^\s/"\'`]+/)*\.env(?:\.[^/\s"\'`]+)*)'
@@ -394,8 +394,8 @@ _SYSTEM_CONFIG_PATH = rf"(?:/etc/|{_MACOS_PRIVATE_SYSTEM_PATH})"
 _SENSITIVE_WRITE_TARGET = (
     rf"(?:{_SYSTEM_CONFIG_PATH}|/dev/sd|"
     rf"{_SSH_SENSITIVE_PATH}|"
-    rf"{_HERMES_ENV_PATH}|"
-    rf"{_HERMES_CONFIG_PATH}|"
+    rf"{_PCBDRAFT_ENV_PATH}|"
+    rf"{_PCBDRAFT_CONFIG_PATH}|"
     rf"{_SHELL_RC_FILES}|"
     rf"{_CREDENTIAL_FILES})"
 )
@@ -713,7 +713,7 @@ def _save_blocked_payload(command: str) -> str | None:
         path = script_dir / f"blocked-{int(_time.time())}-{_uuid.uuid4().hex[:8]}.sh"
         path.write_text(
             "#!/bin/bash\n"
-            "# Auto-saved by Hermes: this command exceeded the inline command\n"
+            "# Auto-saved by PCBDraft: this command exceeded the inline command\n"
             "# parser limit and was blocked from direct execution. Review it,\n"
             "# then run it via: bash "
             + str(path)
@@ -902,8 +902,8 @@ DANGEROUS_PATTERNS = [
     # match drive-letter or backslash spellings. Match both separators.
     (r"\busers[\\/][^\\/\s]+[\\/]\.ssh\b", "access to SSH keys (Windows path)"),
     (
-        r"\bappdata[\\/](?:local|roaming)[\\/]hermes[^\n]*\.env\b",
-        "access to Hermes secrets (Windows path)",
+        r"\bappdata[\\/](?:local|roaming)[\\/](?:pcbdraft|hermes)[^\n]*\.env\b",
+        "access to application secrets (Windows path)",
     ),
     # ─────────────────────────────────────────────────────────────────────
     (
@@ -1012,10 +1012,13 @@ DANGEROUS_PATTERNS = [
     # `hermes` and `gateway` (e.g. `hermes -p ade gateway restart`) so a
     # profile flag can't slip the agent past the guard.
     (
-        r"\bhermes\s+(?:-{1,2}\S+(?:\s+\S+)?\s+)*gateway\s+(stop|restart)\b",
-        "stop/restart hermes gateway (kills running agents)",
+        r"\b(?:pcbdraft|hermes)\s+(?:-{1,2}\S+(?:\s+\S+)?\s+)*gateway\s+(stop|restart)\b",
+        "stop/restart agent gateway (kills running agents)",
     ),
-    (r"\bhermes\s+update\b", "hermes update (restarts gateway, kills running agents)"),
+    (
+        r"\b(?:pcbdraft|hermes)\s+update\b",
+        "agent update (restarts gateway, kills running agents)",
+    ),
     # Docker container lifecycle — any user with docker.sock mounted (a common
     # Docker Compose pattern) gives the agent the ability to restart/stop/kill
     # containers without approval.  These are agent-initiated lifecycle operations
@@ -1074,16 +1077,16 @@ DANGEROUS_PATTERNS = [
     # Gateway protection: never start gateway outside systemd management
     (
         r"gateway\s+run\b.*(&\s*$|&\s*;|\bdisown\b|\bsetsid\b)",
-        "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')",
+        "start gateway outside service management (check with 'pcbdraft doctor')",
     ),
     (
         r"\bnohup\b.*gateway\s+run\b",
-        "start gateway outside systemd (use 'systemctl --user restart hermes-gateway')",
+        "start gateway outside service management (check with 'pcbdraft doctor')",
     ),
     # Self-termination protection: prevent agent from killing its own process
     (
-        r"\b(pkill|killall)\b.*\b(hermes|gateway|cli\.py)\b",
-        "kill hermes/gateway process (self-termination)",
+        r"\b(pkill|killall)\b.*\b(pcbdraft|hermes|gateway|cli\.py)\b",
+        "kill agent/gateway process (self-termination)",
     ),
     # Self-termination via kill + command substitution (pgrep/pidof).
     # The name-based pattern above catches `pkill hermes` but not
@@ -1104,8 +1107,8 @@ DANGEROUS_PATTERNS = [
     # directly against the service label (commonly `ai.hermes.gateway`).
     # Catch the operations that stop, restart, or unload it.
     (
-        r"\blaunchctl\s+(stop|kickstart|bootout|unload|kill|disable|remove)\b.*\b(hermes|ai\.hermes)\b",
-        "stop/restart hermes launchd service (kills running agents)",
+        r"\blaunchctl\s+(stop|kickstart|bootout|unload|kill|disable|remove)\b.*\b(pcbdraft|hermes|ai\.hermes)\b",
+        "stop/restart agent launchd service (kills running agents)",
     ),
     # File copy/move/edit into sensitive system paths (/etc/ and macOS
     # /private/etc/ mirror).
@@ -1160,12 +1163,12 @@ DANGEROUS_PATTERNS = [
     # mutates the file directly. Pairs the file_tools write_file/patch deny so
     # the terminal side is not an open door. See #14639.
     (
-        rf"\bsed\s+-[^\s]*i.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})",
-        "in-place edit of Hermes config/env",
+        rf"\bsed\s+-[^\s]*i.*(?:{_PCBDRAFT_CONFIG_PATH}|{_PCBDRAFT_ENV_PATH})",
+        "in-place edit of application config/env",
     ),
     (
-        rf"\bsed\s+--in-place\b.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})",
-        "in-place edit of Hermes config/env (long flag)",
+        rf"\bsed\s+--in-place\b.*(?:{_PCBDRAFT_CONFIG_PATH}|{_PCBDRAFT_ENV_PATH})",
+        "in-place edit of application config/env (long flag)",
     ),
     # perl -i and ruby -i perform the same in-place mutation as sed -i but are
     # not caught by the -e/-c script-execution pattern above (which targets code
@@ -1176,8 +1179,8 @@ DANGEROUS_PATTERNS = [
     # anywhere in the args, not just the first token — `perl -e '...'` (code
     # eval, no -i) does not trip because it has no `-...i` flag token.
     (
-        rf"\b(?:perl|ruby)\b.*(?:^|\s)-[^\s]*i\b.*(?:{_HERMES_CONFIG_PATH}|{_HERMES_ENV_PATH})",
-        "in-place edit of Hermes config/env (perl/ruby)",
+        rf"\b(?:perl|ruby)\b.*(?:^|\s)-[^\s]*i\b.*(?:{_PCBDRAFT_CONFIG_PATH}|{_PCBDRAFT_ENV_PATH})",
+        "in-place edit of application config/env (perl/ruby)",
     ),
     # Interpreter heredocs are handled by _execution_flag_findings() alongside
     # inline-exec flags; keep only shell heredocs regex-based here.
@@ -1475,7 +1478,7 @@ def _rewrite_resolved_runtime_home(command: str) -> str:
         ]
     except Exception:
         return command
-    return _fold_home_prefixes(command, candidates, "~/.hermes")
+    return _fold_home_prefixes(command, candidates, "~/.pcbdraft/runtime")
 
 
 _PARAM_REPLACEMENT_RE = re.compile(r"\$\{[^}/\s]+/[^}/]*/(?P<replacement>[^}]*)\}")
@@ -2584,7 +2587,8 @@ def _is_verification_artifact_cleanup(command: str) -> bool:
     if os.path.dirname(target) != temp_dir:
         return False
     return (
-        re.fullmatch(r"hermes-(?:verify|ad-hoc)-[A-Za-z0-9_.-]+", basename) is not None
+        re.fullmatch(r"pcbdraft-(?:verify|ad-hoc)-[A-Za-z0-9_.-]+", basename)
+        is not None
     )
 
 

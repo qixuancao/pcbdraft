@@ -1,8 +1,8 @@
-"""Per-terminal session breadcrumbs for ``hermes -c`` / ``--continue``.
+"""Per-terminal session breadcrumbs for ``internal -c`` / ``--continue``.
 
 Each CLI session writes a tiny breadcrumb file
 ``$PCBDRAFT_RUNTIME_HOME/terminal-sessions/<terminal-id>`` containing
-``{"session_id": ..., "cwd": ..., "ts": ...}``.  A bare ``hermes -c`` then
+``{"session_id": ..., "cwd": ..., "ts": ...}``.  A bare ``internal -c`` then
 resumes the session that belongs to THIS terminal (tty / tmux pane / kitty
 window / wezterm pane / ...) instead of the globally most-recent session —
 so two terminals side by side each continue their own conversation.

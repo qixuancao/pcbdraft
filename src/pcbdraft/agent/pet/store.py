@@ -371,7 +371,7 @@ def thumbnail_png(
                 source_url,
                 timeout=timeout,
                 follow_redirects=True,
-                headers={"User-Agent": "hermes-agent-petdex"},
+                headers={"User-Agent": "PCBDraft-Petdex"},
             )
             resp.raise_for_status()
             sheet_bytes = resp.content
@@ -487,7 +487,7 @@ def _download(url: str, dest: Path, *, timeout: float) -> None:
             url,
             timeout=timeout,
             follow_redirects=True,
-            headers={"User-Agent": "hermes-agent-petdex"},
+            headers={"User-Agent": "PCBDraft-Petdex"},
         ) as resp:
             resp.raise_for_status()
             tmp = dest.with_suffix(dest.suffix + ".part")
@@ -506,7 +506,7 @@ def _download_json(url: str, *, timeout: float) -> dict:
         url,
         timeout=timeout,
         follow_redirects=True,
-        headers={"User-Agent": "hermes-agent-petdex"},
+        headers={"User-Agent": "PCBDraft-Petdex"},
     )
     resp.raise_for_status()
     data = resp.json()

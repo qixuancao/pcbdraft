@@ -1,8 +1,8 @@
 """Curator snapshot + rollback.
 
-A pre-run snapshot of ``~/.hermes/skills/`` (excluding ``.curator_backups/``
+A pre-run snapshot of ``<PCBDRAFT_RUNTIME_HOME>/skills/`` (excluding ``.curator_backups/``
 itself) is taken before any mutating curator pass. Snapshots are tar.gz
-files under ``~/.hermes/skills/.curator_backups/<utc-iso>/`` with a
+files under ``<PCBDRAFT_RUNTIME_HOME>/skills/.curator_backups/<utc-iso>/`` with a
 companion ``manifest.json`` describing the snapshot (reason, time, size,
 counted skill files). Rollback picks a snapshot, moves the current
 ``skills/`` tree aside into another snapshot so even the rollback itself
@@ -25,7 +25,7 @@ It DOES include:
     the re-seeder must leave archived)
 
 Alongside the skills tarball, each snapshot also captures a copy of
-``~/.hermes/cron/jobs.json`` as ``cron-jobs.json`` when it exists. Cron
+``<PCBDRAFT_RUNTIME_HOME>/cron/jobs.json`` as ``cron-jobs.json`` when it exists. Cron
 jobs reference skills by name in their ``skills``/``skill`` fields; the
 curator's consolidation pass rewrites those in place via
 ``cron.jobs.rewrite_skill_refs()``. Without capturing the pre-run state,
@@ -77,7 +77,7 @@ def _skills_dir() -> Path:
 
 
 def _cron_jobs_file() -> Path:
-    """Source path for the live cron jobs store (``~/.hermes/cron/jobs.json``)."""
+    """Source path for the live runtime cron jobs store (``cron/jobs.json``)."""
     return get_runtime_home() / "cron" / "jobs.json"
 
 
@@ -221,7 +221,7 @@ def _write_manifest(
 def snapshot_skills(
     reason: str = "manual", *, protect_ids: set[str] | None = None
 ) -> Path | None:
-    """Create a tar.gz snapshot of ``~/.hermes/skills/`` and prune old ones.
+    """Create a tar.gz snapshot of the runtime ``skills/`` and prune old ones.
 
     Returns the snapshot directory path, or ``None`` if the snapshot was
     skipped (backup disabled, skills dir missing, or an IO error occurred —
@@ -238,7 +238,7 @@ def snapshot_skills(
 
     skills = _skills_dir()
     if not skills.exists():
-        logger.debug("No ~/.hermes/skills/ directory — nothing to back up")
+        logger.debug("No runtime skills/ directory — nothing to back up")
         return None
 
     backups = _backups_dir()
@@ -581,7 +581,7 @@ def _unstage(moved: list[tuple[Path, Path]]) -> list[str]:
 
 
 def rollback(backup_id: str | None = None) -> tuple[bool, str, Path | None]:
-    """Restore ``~/.hermes/skills/`` from a snapshot.
+    """Restore the runtime ``skills/`` from a snapshot.
 
     Strategy:
       1. Resolve the target snapshot (explicit id or newest regular).
@@ -590,7 +590,7 @@ def rollback(backup_id: str | None = None) -> tuple[bool, str, Path | None]:
          undoable.
       3. Move all current top-level entries (except ``.curator_backups``
          and ``.hub``) into a tempdir.
-      4. Extract the chosen snapshot into ``~/.hermes/skills/``.
+      4. Extract the chosen snapshot into ``<PCBDRAFT_RUNTIME_HOME>/skills/``.
       5. On failure during 4, move the tempdir contents back (best-effort)
          and return failure.
 
@@ -602,7 +602,7 @@ def rollback(backup_id: str | None = None) -> tuple[bool, str, Path | None]:
             False,
             "no matching backup found"
             + (f" for id '{backup_id}'" if backup_id else "")
-            + " (use `hermes curator rollback --list` to see available snapshots)",
+            + " (inspect the curator backup directory for available snapshots)",
             None,
         )
     archive = target / "skills.tar.gz"

@@ -16,7 +16,7 @@ Enable/disable and location:
   on.
 * ``PCBDRAFT_DEBUG_TRACE_PATH`` — explicit trace file path.  Defaults to
   ``<pcbdraft config dir>/debug/agent-trace.jsonl`` outside the private
-  Hermes credential home.
+  standalone agent credential home.
 """
 
 from __future__ import annotations

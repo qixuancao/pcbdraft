@@ -138,7 +138,11 @@ def _load_plugin_config() -> dict:
         from pcbdraft.model.configuration import load_config_readonly
 
         all_config = load_config_readonly()
-        return cfg_get(all_config, "plugins", "hermes-memory-store", default={}) or {}
+        from pcbdraft.agent.legacy_compat import read_memory_store_config
+
+        return read_memory_store_config(
+            cfg_get(all_config, "plugins", default={}) or {}
+        )
     except Exception:
         return {}
 
@@ -165,7 +169,7 @@ class HolographicMemoryProvider(MemoryProvider):
         return True  # SQLite is always available, numpy is optional
 
     def save_config(self, values, runtime_home):
-        """Write config to config.yaml under plugins.hermes-memory-store."""
+        """Write config to config.yaml under plugins.pcbdraft-memory-store."""
         from pathlib import Path
 
         config_path = Path(runtime_home) / "config.yaml"
@@ -178,7 +182,11 @@ class HolographicMemoryProvider(MemoryProvider):
 
             existing = read_user_config_raw(config_path)
             existing.setdefault("plugins", {})
-            existing["plugins"]["hermes-memory-store"] = values
+            from pcbdraft.agent.legacy_compat import read_memory_store_config
+
+            provider_config = dict(read_memory_store_config(existing["plugins"]))
+            provider_config.update(values)
+            existing["plugins"]["pcbdraft-memory-store"] = provider_config
             with open(config_path, "w", encoding="utf-8") as f:
                 yaml.dump(existing, f, default_flow_style=False)
         except Exception:
@@ -219,7 +227,7 @@ class HolographicMemoryProvider(MemoryProvider):
         _default_db = _runtime_home + "/memory_store.db"
         db_path = self._config.get("db_path", _default_db)
         # Expand $PCBDRAFT_RUNTIME_HOME in user-supplied paths so config values like
-        # "$PCBDRAFT_RUNTIME_HOME/memory_store.db" or "~/.hermes/memory_store.db" both
+        # "$PCBDRAFT_RUNTIME_HOME/memory_store.db" or an explicit user path both
         # resolve to the active profile's directory.
         if isinstance(db_path, str):
             db_path = db_path.replace("$PCBDRAFT_RUNTIME_HOME", _runtime_home)

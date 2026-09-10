@@ -263,7 +263,7 @@ def _openai_http_client_kwargs(
             logger.warning(
                 "agent.process_bootstrap.build_keepalive_http_client is "
                 "unavailable — mixed/stale install detected (#64333). Falling "
-                "back to the SDK default HTTP client. Run `hermes update` (or "
+                "back to the SDK default HTTP client. Run `pcbdraft doctor` (or "
                 "reinstall the Desktop app) to resync the runtime."
             )
         client = None
@@ -522,7 +522,7 @@ def _run_protected_sync_provider_call(
     threading.Thread(
         target=provider_context.run,
         args=(_provider_worker,),
-        name="hermes-protected-aux-provider",
+        name="pcbdraft-protected-aux-provider",
         daemon=True,
     ).start()
 
@@ -1056,8 +1056,8 @@ _PROVIDERS_WITHOUT_VISION: frozenset = frozenset(
 # `X-Title` is the canonical attribution header OpenRouter's dashboard
 # reads; the previous `X-OpenRouter-Title` label was not recognized there.
 _OR_HEADERS_BASE = {
-    "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-    "X-Title": "Hermes Agent",
+    "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+    "X-Title": "PCBDraft",
     "X-OpenRouter-Categories": "productivity,cli-agent",
 }
 
@@ -1163,7 +1163,7 @@ def build_or_headers(or_config: dict | None = None) -> dict:
 # NVIDIA NIM cloud billing attribution.  Keep this host-gated because the
 # nvidia provider also supports local/on-prem NIM endpoints via NVIDIA_BASE_URL.
 _NVIDIA_NIM_CLOUD_HEADERS = {
-    "X-BILLING-INVOKE-ORIGIN": "HermesAgent",
+    "X-BILLING-INVOKE-ORIGIN": "PCBDraft",
 }
 
 
@@ -1176,12 +1176,12 @@ def build_nvidia_nim_headers(base_url: str | None) -> dict:
 
 # Vercel AI Gateway app attribution headers. HTTP-Referer maps to
 # referrerUrl and X-Title maps to appName in the gateway's analytics.
-from pcbdraft.interfaces.tui import __version__ as _HERMES_VERSION
+from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_VERSION
 
 _AI_GATEWAY_HEADERS = {
-    "HTTP-Referer": "https://hermes-agent.nousresearch.com",
-    "X-Title": "Hermes Agent",
-    "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+    "HTTP-Referer": "https://github.com/qixuancao/pcbdraft",
+    "X-Title": "PCBDraft",
+    "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
 }
 
 # Nous Portal extra_body for product attribution.
@@ -1250,7 +1250,7 @@ def _codex_cloudflare_headers(access_token: str) -> dict[str, str]:
     crash at client construction.
     """
     headers = {
-        "User-Agent": "codex_cli_rs/0.0.0 (Hermes Agent)",
+        "User-Agent": "codex_cli_rs/0.0.0 (PCBDraft)",
         "originator": "codex_cli_rs",
     }
     if not isinstance(access_token, str) or not access_token.strip():
@@ -3039,7 +3039,7 @@ def _try_nous(vision: bool = False) -> tuple[OpenAI | None, str | None]:
     if runtime is None and not nous:
         logger.warning(
             "Auxiliary Nous client unavailable: no Nous authentication found "
-            "(run: hermes auth)."
+            "(run: pcbdraft connect)."
         )
         _mark_provider_unhealthy("nous", ttl=60)
         return None, None
@@ -3096,7 +3096,7 @@ def _try_nous(vision: bool = False) -> tuple[OpenAI | None, str | None]:
         if not api_key:
             logger.warning(
                 "Auxiliary Nous client unavailable: no usable inference JWT found "
-                "(run: hermes auth add nous)."
+                "(run: pcbdraft connect)."
             )
             _mark_provider_unhealthy("nous", ttl=60)
             return None, None
@@ -3782,7 +3782,7 @@ def _validate_base_url(base_url: str) -> None:
     except ValueError as exc:
         raise RuntimeError(
             f"Malformed custom endpoint URL: {candidate!r}. "
-            "Run `hermes setup` or `hermes model` and enter a valid http(s) base URL."
+            "Run `pcbdraft connect` and enter a valid http(s) base URL."
         ) from exc
 
 
@@ -3876,12 +3876,12 @@ def _build_xai_oauth_aux_client(model: str) -> tuple[Any | None, str | None]:
         return None, None
     api_key, base_url = resolved
     logger.debug("Auxiliary client: xAI OAuth (%s via Responses API)", model)
-    from pcbdraft.tools.xai_http import hermes_xai_default_headers
+    from pcbdraft.tools.xai_http import pcbdraft_xai_default_headers
 
     real_client = _create_openai_client(
         api_key=api_key,
         base_url=base_url,
-        default_headers=hermes_xai_default_headers(),
+        default_headers=pcbdraft_xai_default_headers(),
     )
     return CodexAuxiliaryClient(real_client, model), model
 
@@ -5321,7 +5321,7 @@ def _fallback_destination(
     fb_label: str,
 ) -> _FallbackDestination:
     """Return the resolved route identity used by a fallback request."""
-    attached = getattr(fb_client, "_hermes_fallback_destination", None)
+    attached = getattr(fb_client, "_pcbdraft_fallback_destination", None)
     if isinstance(attached, _FallbackDestination):
         return attached
 
@@ -6049,7 +6049,7 @@ def _resolve_fallback_entry(entry: dict[str, Any]) -> tuple[Any | None, str | No
     )
     if client is not None:
         try:
-            client._hermes_fallback_destination = _fallback_destination_from_entry(
+            client._pcbdraft_fallback_destination = _fallback_destination_from_entry(
                 entry, client, resolved_model
             )
         except Exception:
@@ -6216,8 +6216,8 @@ def _resolve_auto_route(
             logger.warning(
                 "OPENAI_BASE_URL is set (%s) but model.provider is '%s'. "
                 "Auxiliary clients may route to the wrong endpoint. "
-                "Run: hermes model to reconfigure, or remove "
-                "OPENAI_BASE_URL from ~/.hermes/.env",
+                "Run: pcbdraft connect to reconfigure, or remove "
+                "OPENAI_BASE_URL from $PCBDRAFT_RUNTIME_HOME/.env",
                 _env_base,
                 _cfg_provider,
             )
@@ -6406,7 +6406,7 @@ def _tag_effective_provider(client: Any, provider: str) -> None:
     if client is None or not provider:
         return
     try:
-        client._hermes_aux_effective_provider = provider
+        client._pcbdraft_aux_effective_provider = provider
     except (AttributeError, TypeError):
         logger.debug(
             "Auxiliary client %s cannot retain effective provider %s",
@@ -6417,7 +6417,7 @@ def _tag_effective_provider(client: Any, provider: str) -> None:
 
 def _effective_provider_for_client(client: Any, fallback: str) -> str:
     """Return the concrete provider selected for an auto-routed client."""
-    effective_provider = getattr(client, "_hermes_aux_effective_provider", "")
+    effective_provider = getattr(client, "_pcbdraft_aux_effective_provider", "")
     if isinstance(effective_provider, str) and effective_provider:
         return effective_provider
     return str(fallback or "")
@@ -6488,9 +6488,9 @@ def _to_async_client(sync_client, model: str, is_vision: bool = False):
     elif base_url_host_matches(sync_base_url, "integrate.api.nvidia.com"):
         async_kwargs["default_headers"] = build_nvidia_nim_headers(sync_base_url)
     elif base_url_host_matches(sync_base_url, "x.ai"):
-        from pcbdraft.tools.xai_http import hermes_xai_default_headers
+        from pcbdraft.tools.xai_http import pcbdraft_xai_default_headers
 
-        async_kwargs["default_headers"] = hermes_xai_default_headers()
+        async_kwargs["default_headers"] = pcbdraft_xai_default_headers()
     else:
         # Fall back to profile.default_headers for providers that declare
         # client-level headers on their ProviderProfile (e.g. attribution
@@ -6777,7 +6777,7 @@ def resolve_provider_client(
         if client is None:
             logger.warning(
                 "resolve_provider_client: nous requested "
-                "but Nous Portal not configured (run: hermes auth)"
+                "but Nous Portal not configured (run: pcbdraft connect)"
             )
             return None, None
         final_model = _normalize_resolved_model(model or default, provider)
@@ -6818,7 +6818,7 @@ def resolve_provider_client(
             if not codex_token:
                 logger.warning(
                     "resolve_provider_client: openai-codex requested "
-                    "but no Codex OAuth token found (run: hermes model)"
+                    "but no Codex OAuth token found (run: pcbdraft connect)"
                 )
                 return None, None
             final_model = _normalize_resolved_model(model, provider)
@@ -6833,7 +6833,7 @@ def resolve_provider_client(
         if client is None:
             logger.warning(
                 "resolve_provider_client: openai-codex requested "
-                "but no Codex OAuth token found (run: hermes model)"
+                "but no Codex OAuth token found (run: pcbdraft connect)"
             )
             return None, None
         final_model = _normalize_resolved_model(model or default, provider)
@@ -6856,7 +6856,7 @@ def resolve_provider_client(
         if client is None:
             logger.warning(
                 "resolve_provider_client: xai-oauth requested but no xAI "
-                "OAuth token found (run: hermes model -> xAI Grok OAuth — SuperGrok / Premium+)"
+                "OAuth token found (run: pcbdraft connect -> xAI Grok OAuth — SuperGrok / Premium+)"
             )
             return None, None
         final_model = _normalize_resolved_model(model or default, provider)
@@ -7165,7 +7165,7 @@ def resolve_provider_client(
         if client is None:
             logger.warning(
                 "resolve_provider_client: azure-foundry requested but "
-                "runtime resolution failed (run: hermes doctor for "
+                "runtime resolution failed (run: pcbdraft doctor for "
                 "diagnostics)"
             )
             return None, None
@@ -7184,7 +7184,7 @@ def resolve_provider_client(
             resolve_external_process_provider_credentials,
         )
     except ImportError:
-        logger.debug("hermes_cli.auth not available for provider %s", provider)
+        logger.debug("pcbdraft.model.auth not available for provider %s", provider)
         return None, None
 
     pconfig = PROVIDER_REGISTRY.get(provider)
@@ -7288,9 +7288,9 @@ def resolve_provider_client(
         elif base_url_host_matches(base_url, "integrate.api.nvidia.com"):
             headers.update(build_nvidia_nim_headers(base_url))
         elif base_url_host_matches(base_url, "x.ai"):
-            from pcbdraft.tools.xai_http import hermes_xai_default_headers
+            from pcbdraft.tools.xai_http import pcbdraft_xai_default_headers
 
-            headers.update(hermes_xai_default_headers())
+            headers.update(pcbdraft_xai_default_headers())
         else:
             # Fall back to profile.default_headers for providers that declare
             # client-level attribution headers on their profile (e.g. GMI
@@ -10008,7 +10008,7 @@ def _call_llm_impl(
         if client is None:
             raise RuntimeError(
                 f"No LLM provider configured for task={task} provider={resolved_provider}. "
-                f"Run: hermes setup"
+                f"Run: pcbdraft connect"
             )
         resolved_provider = effective_provider or resolved_provider
     else:
@@ -10047,7 +10047,7 @@ def _call_llm_impl(
                     raise RuntimeError(
                         f"Provider '{_explicit}' is set in config.yaml but no API key "
                         f"was found. Set the {_explicit.upper()}_API_KEY environment "
-                        f"variable, or switch to a different provider with `hermes model`."
+                        f"variable, or switch to a different provider with `pcbdraft connect`."
                     )
             # For auto/custom with no credentials, try the full auto chain
             # rather than hardcoding OpenRouter (which may be depleted).
@@ -10072,7 +10072,7 @@ def _call_llm_impl(
         if client is None:
             raise RuntimeError(
                 f"No LLM provider configured for task={task} provider={resolved_provider}. "
-                f"Run: hermes setup"
+                f"Run: pcbdraft connect"
             )
 
     effective_timeout = _effective_aux_timeout(task, timeout)
@@ -10913,7 +10913,7 @@ async def _async_call_llm_impl(
         if client is None:
             raise RuntimeError(
                 f"No LLM provider configured for task={task} provider={resolved_provider}. "
-                f"Run: hermes setup"
+                f"Run: pcbdraft connect"
             )
         resolved_provider = effective_provider or resolved_provider
     else:
@@ -10950,7 +10950,7 @@ async def _async_call_llm_impl(
                     raise RuntimeError(
                         f"Provider '{_explicit}' is set in config.yaml but no API key "
                         f"was found. Set the {_explicit.upper()}_API_KEY environment "
-                        f"variable, or switch to a different provider with `hermes model`."
+                        f"variable, or switch to a different provider with `pcbdraft connect`."
                     )
             if client is None and not resolved_base_url:
                 logger.info(
@@ -10971,7 +10971,7 @@ async def _async_call_llm_impl(
         if client is None:
             raise RuntimeError(
                 f"No LLM provider configured for task={task} provider={resolved_provider}. "
-                f"Run: hermes setup"
+                f"Run: pcbdraft connect"
             )
 
     effective_timeout = _effective_aux_timeout(task, timeout)

@@ -1,11 +1,11 @@
 """Full-text / trigram / CJK message search and FTS maintenance for SessionDB.
 
 Mixin contract: this is a plain mixin class consumed by
-``hermes_state.SessionDB``. It defines no ``__init__`` and no state of its
+``pcbdraft.services.session_db.SessionDB``. It defines no ``__init__`` and no state of its
 own; methods access the host's attributes (``self._conn``, ``self.db_path``,
 ``self._execute_write`` and other SessionDB methods) established by
-``SessionDB.__init__``. It must never import hermes_state (cycle) — shared
-module-level constants live in hermes_state_common.
+``SessionDB.__init__``. It must never import session_db (cycle) — shared
+module-level constants live in session_db_common.
 """
 
 import json
@@ -30,9 +30,9 @@ from pcbdraft.services.session_db_common import (
 )
 from pcbdraft.services.session_db_common import escape_like as _escape_like
 
-# Moved methods logged under the "hermes_state" logger before the split;
+# All mixins use the product SessionDB logger;
 # keep that logger identity so log filtering/capture behavior is unchanged.
-logger = logging.getLogger("hermes_state")
+logger = logging.getLogger("pcbdraft.services.session_db")
 
 # Characters FTS5's query grammar rejects outside a quoted phrase. Anything
 # missing from this set reaches MATCH raw and raises, which the execute site
@@ -2332,7 +2332,7 @@ class SessionSearchMixin:
         """Search surfaced sessions by exact/prefix/substring session id.
 
         Desktop search uses this alongside FTS message search so users can paste
-        a session id from logs, CLI output, or another Hermes surface and jump
+        a session id from logs, CLI output, or another PCBDraft surface and jump
         straight to that conversation.  Matching also checks ``_lineage_root_id``
         for projected compression-chain tips, so an old root id still resolves to
         the live continuation row.

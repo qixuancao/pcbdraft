@@ -1,4 +1,4 @@
-"""Durable aggregation and local export for Hermes shared metrics."""
+"""Durable aggregation and local export for PCBDraft shared metrics."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sqlite3
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,8 +23,8 @@ from pcbdraft.interfaces.tui.observability.shared_metrics_contract import (
 )
 from pcbdraft.interfaces.tui.sqlite_util import write_txn
 
-_PACKAGE_SCHEMA_VERSION = "hermes.shared_metrics.v2"
-_STORE_SCHEMA_VERSION = "2"
+_PACKAGE_SCHEMA_VERSION = "pcbdraft.shared_metrics.v2"
+_STORE_SCHEMA_VERSION = "3"
 _BUSY_TIMEOUT_MS = 250
 _SCHEMA_BUSY_TIMEOUT_MS = 5_000
 _LOCAL_HISTORY_RETENTION_DAYS = 30
@@ -164,7 +164,7 @@ class SharedMetricsStore:
             INSERT INTO counter_aggregates(
                 period_start,
                 metric_name,
-                hermes_version,
+                pcbdraft_version,
                 os_family,
                 architecture,
                 install_method,
@@ -175,7 +175,7 @@ class SharedMetricsStore:
             ON CONFLICT(
                 period_start,
                 metric_name,
-                hermes_version,
+                pcbdraft_version,
                 os_family,
                 architecture,
                 install_method,
@@ -186,7 +186,7 @@ class SharedMetricsStore:
             (
                 period_start,
                 metric_name,
-                resource["hermes_version"],
+                resource["pcbdraft_version"],
                 resource["os_family"],
                 resource["architecture"],
                 resource["install_method"],
@@ -226,7 +226,7 @@ class SharedMetricsStore:
                 SELECT
                     period_start,
                     metric_name,
-                    hermes_version,
+                    pcbdraft_version,
                     os_family,
                     architecture,
                     install_method,
@@ -236,7 +236,7 @@ class SharedMetricsStore:
                 FROM counter_aggregates
                 ORDER BY
                     period_start,
-                    hermes_version,
+                    pcbdraft_version,
                     os_family,
                     architecture,
                     install_method,
@@ -249,7 +249,7 @@ class SharedMetricsStore:
                 "period_start": row["period_start"],
                 "metric_name": row["metric_name"],
                 "resource": {
-                    "hermes_version": row["hermes_version"],
+                    "pcbdraft_version": row["pcbdraft_version"],
                     "os_family": row["os_family"],
                     "architecture": row["architecture"],
                     "install_method": row["install_method"],
@@ -297,7 +297,7 @@ class SharedMetricsStore:
 
     def _ensure_schema(self) -> None:
         with self._connection(busy_timeout_ms=_SCHEMA_BUSY_TIMEOUT_MS) as connection:
-            # Serialize first-run creation and upgrades across Hermes processes.
+            # Serialize first-run creation and upgrades across PCBDraft processes.
             with write_txn(connection):
                 self._ensure_schema_in_transaction(connection)
 
@@ -315,8 +315,20 @@ class SharedMetricsStore:
             "SELECT value FROM telemetry_state WHERE key = 'schema_version'"
         ).fetchone()
         schema_version = str(schema_row["value"]) if schema_row is not None else None
+        if schema_version in {None, "1", "2"}:
+            columns = {
+                row["name"]
+                for row in connection.execute("PRAGMA table_info(counter_aggregates)")
+            }
+            if "hermes_version" in columns:
+                connection.execute(
+                    "ALTER TABLE counter_aggregates RENAME COLUMN hermes_version TO pcbdraft_version"
+                )
         if schema_version == "1":
             SharedMetricsStore._migrate_v1_counter_aggregates(connection)
+            schema_version = "2"
+        if schema_version == "2":
+            SharedMetricsStore._migrate_v2_identity(connection)
             schema_version = _STORE_SCHEMA_VERSION
         if schema_version is not None and schema_version != _STORE_SCHEMA_VERSION:
             raise RuntimeError(
@@ -345,13 +357,39 @@ class SharedMetricsStore:
         )
 
     @staticmethod
+    def _migrate_v2_identity(connection: sqlite3.Connection) -> None:
+        """Move pending/cumulative counters to native names in the schema txn.
+
+        Keep install identity, active-install timestamp, counts, packaged deltas,
+        and immutable outbox payloads. Already packaged v1/v2 exports retain
+        their original schema; the accompanying legacy JSON schemas describe
+        them. Only future packages use the native schema and resource key.
+        """
+        connection.execute(
+            """
+            INSERT INTO counter_aggregates
+            SELECT period_start, 'pcbdraft.' || substr(metric_name, 8),
+                   pcbdraft_version, os_family, architecture, install_method,
+                   dimensions_json, value, packaged_value
+            FROM counter_aggregates WHERE metric_name LIKE 'hermes.%'
+            ON CONFLICT(period_start, metric_name, pcbdraft_version, os_family,
+                        architecture, install_method, dimensions_json)
+            DO UPDATE SET value = counter_aggregates.value + excluded.value,
+                          packaged_value = counter_aggregates.packaged_value + excluded.packaged_value
+            """
+        )
+        connection.execute(
+            "DELETE FROM counter_aggregates WHERE metric_name LIKE 'hermes.%'"
+        )
+
+    @staticmethod
     def _create_counter_aggregates_table(connection: sqlite3.Connection) -> None:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS counter_aggregates (
                 period_start TEXT NOT NULL,
                 metric_name TEXT NOT NULL,
-                hermes_version TEXT NOT NULL,
+                pcbdraft_version TEXT NOT NULL,
                 os_family TEXT NOT NULL,
                 architecture TEXT NOT NULL,
                 install_method TEXT NOT NULL,
@@ -361,7 +399,7 @@ class SharedMetricsStore:
                 PRIMARY KEY (
                     period_start,
                     metric_name,
-                    hermes_version,
+                    pcbdraft_version,
                     os_family,
                     architecture,
                     install_method,
@@ -382,7 +420,7 @@ class SharedMetricsStore:
             INSERT INTO counter_aggregates(
                 period_start,
                 metric_name,
-                hermes_version,
+                pcbdraft_version,
                 os_family,
                 architecture,
                 install_method,
@@ -393,7 +431,7 @@ class SharedMetricsStore:
             SELECT
                 period_start,
                 metric_name,
-                hermes_version,
+                pcbdraft_version,
                 'unknown',
                 'unknown',
                 'unknown',
@@ -441,7 +479,7 @@ class SharedMetricsStore:
                 FROM (
                     SELECT
                         period_start,
-                        hermes_version,
+                        pcbdraft_version,
                         os_family,
                         architecture,
                         install_method
@@ -449,7 +487,7 @@ class SharedMetricsStore:
                     WHERE value > packaged_value
                     GROUP BY
                         period_start,
-                        hermes_version,
+                        pcbdraft_version,
                         os_family,
                         architecture,
                         install_method
@@ -493,7 +531,7 @@ class SharedMetricsStore:
             """
                 SELECT
                     period_start,
-                    hermes_version,
+                    pcbdraft_version,
                     os_family,
                     architecture,
                     install_method
@@ -501,7 +539,7 @@ class SharedMetricsStore:
                 WHERE value > packaged_value
                 ORDER BY
                     period_start,
-                    hermes_version,
+                    pcbdraft_version,
                     os_family,
                     architecture,
                     install_method
@@ -517,7 +555,7 @@ class SharedMetricsStore:
                 SELECT metric_name, dimensions_json, value, packaged_value
                 FROM counter_aggregates
                 WHERE period_start = ?
-                  AND hermes_version = ?
+                  AND pcbdraft_version = ?
                   AND os_family = ?
                   AND architecture = ?
                   AND install_method = ?
@@ -526,7 +564,7 @@ class SharedMetricsStore:
                 """,
             (
                 period_value,
-                period_row["hermes_version"],
+                period_row["pcbdraft_version"],
                 period_row["os_family"],
                 period_row["architecture"],
                 period_row["install_method"],
@@ -536,7 +574,7 @@ class SharedMetricsStore:
         period_end = period_start + timedelta(days=1)
         package_id = str(uuid.uuid4())
         resource = {
-            "hermes_version": period_row["hermes_version"],
+            "pcbdraft_version": period_row["pcbdraft_version"],
             "os_family": period_row["os_family"],
             "architecture": period_row["architecture"],
             "install_method": period_row["install_method"],
@@ -583,7 +621,7 @@ class SharedMetricsStore:
                     SET packaged_value = value
                     WHERE period_start = ?
                       AND metric_name = ?
-                      AND hermes_version = ?
+                      AND pcbdraft_version = ?
                       AND os_family = ?
                       AND architecture = ?
                       AND install_method = ?
@@ -592,7 +630,7 @@ class SharedMetricsStore:
                 (
                     period_value,
                     row["metric_name"],
-                    period_row["hermes_version"],
+                    period_row["pcbdraft_version"],
                     period_row["os_family"],
                     period_row["architecture"],
                     period_row["install_method"],

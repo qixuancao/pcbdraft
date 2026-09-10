@@ -48,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 _GIT_TIMEOUT = 30
 _WORKTREES_DIRNAME = ".worktrees"
-_BRANCH_NAMESPACE = "hermes-subagent"
+_BRANCH_NAMESPACE = "pcbdraft-subagent"
 
 
 def _run_git(args, cwd: str, timeout: int = _GIT_TIMEOUT):

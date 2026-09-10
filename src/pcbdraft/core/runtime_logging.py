@@ -1,8 +1,8 @@
-"""Centralized logging setup for Hermes Agent.
+"""Centralized logging setup for PCBDraft.
 
 Provides a single ``setup_logging()`` entry point that both the CLI and
 gateway call early in their startup path.  All log files live under
-``~/.hermes/logs/`` (profile-aware via ``get_runtime_home()``).
+``<runtime_home>/logs/`` (profile-aware via ``get_runtime_home()``).
 
 Log files produced:
     agent.log   — INFO+, all agent/tool/session activity (the main log)
@@ -15,10 +15,9 @@ All files use ``RotatingFileHandler`` with ``RedactingFormatter`` so
 secrets are never written to disk.
 
 Component separation:
-    gateway.log only receives records from ``gateway.*`` loggers —
+    gateway.log only receives records from product gateway loggers —
     platform adapters, session management, slash commands, delivery.
-    gui.log receives dashboard-side records from ``hermes_cli.web_server``,
-    ``hermes_cli.pty_bridge``, ``tui_gateway.*``, and ``uvicorn.*``.
+    gui.log receives product GUI/web records and ``uvicorn.*``.
     agent.log remains the catch-all (everything goes there).
 
 Session context:
@@ -42,7 +41,7 @@ from pathlib import Path
 # On Windows, stdlib ``RotatingFileHandler`` calls ``os.rename()`` in
 # ``doRollover()`` and fails with ``PermissionError [WinError 32]`` whenever
 # another process holds an append-mode handle on ``agent.log`` — which is
-# essentially always in Hermes (TUI, gateway, ``hy_memory`` server, MCP
+# common in PCBDraft (TUI, gateway, memory server, MCP
 # servers, and on-demand CLI commands all log from separate processes),
 # pinning ``agent.log`` at the 5 MiB threshold and spamming stderr with
 # a traceback on every emit. ``concurrent-log-handler`` wraps the rename in a
@@ -204,7 +203,7 @@ def _install_session_record_factory() -> None:
     the module is reloaded.
     """
     current_factory = logging.getLogRecordFactory()
-    if getattr(current_factory, "_hermes_session_injector", False):
+    if getattr(current_factory, "_pcbdraft_session_injector", False):
         return  # already installed
 
     def _session_record_factory(*args, **kwargs):
@@ -213,7 +212,7 @@ def _install_session_record_factory() -> None:
         record.session_tag = f" [{sid}]" if sid else ""  # type: ignore[attr-defined]
         return record
 
-    _session_record_factory._hermes_session_injector = True  # type: ignore[attr-defined]
+    _session_record_factory._pcbdraft_session_injector = True  # type: ignore[attr-defined]
     logging.setLogRecordFactory(_session_record_factory)
 
 
@@ -243,21 +242,21 @@ class _ComponentFilter(logging.Filter):
 
 
 # Logger name prefixes that belong to each component.
-# Used by _ComponentFilter and exposed for ``hermes logs --component``.
+# Used by _ComponentFilter to route product component logs.
 COMPONENT_PREFIXES = {
     # ``plugins.platforms`` covers messaging-platform adapters that migrated
     # out of ``gateway/platforms/`` into bundled plugins (#41112) — they are
     # still gateway components and their logs belong in gateway.log / match
-    # ``hermes logs --component gateway``.
-    "gateway": ("gateway", "hermes_plugins", "plugins.platforms"),
-    "agent": ("agent", "run_agent", "model_tools", "batch_runner"),
-    "tools": ("tools",),
-    "cli": ("hermes_cli", "cli"),
-    "cron": ("cron",),
+    # gateway component filtering.
+    "gateway": ("pcbdraft.services.gateway", "pcbdraft.agent.extensions"),
+    "agent": ("pcbdraft.agent", "pcbdraft.model"),
+    "tools": ("pcbdraft.tools",),
+    "cli": ("pcbdraft.interfaces.cli", "pcbdraft.interfaces.tui"),
+    "cron": ("pcbdraft.services.cron",),
     "gui": (
-        "hermes_cli.web_server",
-        "hermes_cli.pty_bridge",
-        "tui_gateway",
+        "pcbdraft.services.gui",
+        "pcbdraft.interfaces.web",
+        "pcbdraft.interfaces.tui_gateway",
         "uvicorn",
     ),
 }
@@ -277,7 +276,7 @@ def setup_logging(
     mode: str | None = None,
     force: bool = False,
 ) -> Path:
-    """Configure the Hermes logging subsystem.
+    """Configure the PCBDraft logging subsystem.
 
     Safe to call multiple times — the second call is a no-op unless
     *force* is ``True``.
@@ -285,7 +284,7 @@ def setup_logging(
     Parameters
     ----------
     runtime_home
-        Override for the Hermes home directory.  Falls back to
+        Override for the PCBDraft home directory. Falls back to
         ``get_runtime_home()`` (profile-aware).
     log_level
         Minimum level for the ``agent.log`` file handler.  Accepts any
@@ -312,7 +311,7 @@ def setup_logging(
         The ``logs/`` directory where files are written.
     """
     global _logging_initialized
-    home = runtime_home or get_runtime_home()
+    home = runtime_home.expanduser() if runtime_home is not None else get_runtime_home()
     log_dir = home / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
 
@@ -402,14 +401,14 @@ def setup_verbose_logging() -> None:
         if (
             isinstance(h, logging.StreamHandler)
             and not isinstance(h, RotatingFileHandler)
-            and getattr(h, "_hermes_verbose", False)
+            and getattr(h, "_pcbdraft_verbose", False)
         ):
             return
 
     handler = logging.StreamHandler(_safe_stderr())
     handler.setLevel(logging.DEBUG)
     handler.setFormatter(RedactingFormatter(_LOG_FORMAT_VERBOSE, datefmt="%H:%M:%S"))
-    handler._hermes_verbose = True  # type: ignore[attr-defined]
+    handler._pcbdraft_verbose = True  # type: ignore[attr-defined]
     root.addHandler(handler)
 
     # Lower root logger level so DEBUG records reach all handlers.
@@ -435,7 +434,7 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
     Two responsibilities:
 
     1.  In managed mode (NixOS), the stateDir uses setgid (2770) so new files
-        inherit the hermes group. However, both ``_open()`` (initial creation)
+        inherit the pcbdraft group. However, both ``_open()`` (initial creation)
         and ``doRollover()`` create files via ``open()``, which uses the
         process umask — typically 0022, producing 0644. This subclass applies
         ``chmod 0660`` after both operations so the gateway and interactive
@@ -568,7 +567,7 @@ class _ManagedRotatingFileHandler(RotatingFileHandler):
 # Asynchronous file logging — keep the cross-process rotation lock off the loop
 #
 # The rotating file handlers serialize rollover with a cross-process lock (see
-# the module header): when several Hermes processes log to the same file, an
+# the module header): when several PCBDraft processes log to the same file, an
 # ``emit`` can block while another process holds that lock.  When the emitting
 # thread is an asyncio event loop, that block stalls the loop and drops
 # WebSocket clients.  To keep file I/O off the hot path, every file handler is
@@ -639,7 +638,7 @@ def _register_queued_handler(handler: logging.Handler) -> None:
         if _log_queue is None:
             _log_queue = queue.SimpleQueue()
             qh = _NonFormattingQueueHandler(_log_queue)
-            qh._hermes_queue = True  # type: ignore[attr-defined]
+            qh._pcbdraft_queue = True  # type: ignore[attr-defined]
             # Always funnel through the root logger so records from any logger
             # (production passes root here; callers may pass a child) reach the
             # queue via propagation.
@@ -703,7 +702,7 @@ def drain_log_queue(timeout: float = 1.0) -> None:
         except Exception:
             pass
 
-    t = threading.Thread(target=_drain, name="hermes-log-drain", daemon=True)
+    t = threading.Thread(target=_drain, name="pcbdraft-log-drain", daemon=True)
     t.start()
     t.join(timeout)
 
@@ -724,7 +723,7 @@ def _reset_queued_handlers() -> None:
         _stop_queue_listener_locked()
         root = logging.getLogger()
         for h in list(root.handlers):
-            if getattr(h, "_hermes_queue", False):
+            if getattr(h, "_pcbdraft_queue", False):
                 root.removeHandler(h)
         for h in list(_queued_file_handlers):
             try:
@@ -785,10 +784,10 @@ def _read_logging_config():
     """
     try:
         # Prefer the shared (mtime, size)-keyed raw-config cache so this read
-        # reuses the parse hermes_cli.main's early bridge already did (one
+        # reuses the parse the terminal's early bridge already did (one
         # config.yaml parse per process instead of 3-4). Fall back to a
-        # direct parse when hermes_cli.config isn't importable (bare
-        # hermes_logging consumers).
+        # direct parse when model.configuration isn't importable (bare
+        # runtime_logging consumers).
         try:
             from pcbdraft.model.configuration import read_raw_config as _rrc
 

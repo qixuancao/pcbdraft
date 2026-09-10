@@ -1,4 +1,4 @@
-"""``hermes sessions`` command — extracted from ``hermes_cli/main.py``.
+"""``internal sessions`` command — extracted from ``pcbdraft.interfaces.tui/main.py``.
 
 Mechanical move (main.py decomposition): ``cmd_sessions`` was a ``def`` nested
 inside ``main()``'s body; its dispatch on ``args.sessions_action`` is lifted
@@ -11,10 +11,10 @@ byte-identical. A symtable/AST closure check found exactly two free variables:
   threaded as a keyword parameter via ``functools.partial`` at the
   ``set_defaults(func=...)`` wiring site in ``main()``.
 
-Helpers that stay in ``hermes_cli.main`` (``get_runtime_home``,
+Helpers that stay in ``pcbdraft.interfaces.tui.main`` (``get_runtime_home``,
 ``_relative_time``, ``_session_browse_picker``, ``_size_delta_label``) are
 delegated through call-time wrappers below so existing test monkeypatches on
-``hermes_cli.main.<name>`` keep reaching this code path, and so imports stay
+``pcbdraft.interfaces.tui.main.<name>`` keep reaching this code path, and so imports stay
 one-way (main.py imports this module; the reverse happens only lazily at call
 time — no import cycle).
 """
@@ -25,7 +25,7 @@ from pathlib import Path
 
 
 def _m():
-    """Lazy ``hermes_cli.main`` reference (call-time, keeps patches working)."""
+    """Lazy ``pcbdraft.interfaces.tui.main`` reference (call-time, keeps patches working)."""
     from pcbdraft.interfaces.tui import main
 
     return main
@@ -55,14 +55,14 @@ def _confirm_prompt(prompt: str) -> bool:
         return False
 
 
-#: Default age floor for `hermes sessions prune --never-active`.  Deliberately
+#: Default age floor for `internal sessions prune --never-active`.  Deliberately
 #: generous: the rows are worthless but harmless, and a young never-active row
 #: may simply be a chat that nobody has replied to yet.
 _NEVER_ACTIVE_DEFAULT_DAYS = 30.0
 
 
 def _prune_never_active_keyed(db, args):
-    """`hermes sessions prune --never-active` — drop leaked/dead keyed rows.
+    """`internal sessions prune --never-active` — drop leaked/dead keyed rows.
 
     Targets keyed gateway rows that were opened and never used at all.  The
     population is dominated by escaped test fixtures (#82770), which the
@@ -182,14 +182,13 @@ def cmd_sessions(args, sessions_parser=None):
             # offline recovery path exists. Lead with --inspect-only so
             # they confirm the data is readable before writing anything.
             print("")
-            print("  Next step — offline recovery (never modifies the source):")
+            print("  Keep this source for offline recovery:")
             source_hint = report.get("backup_path") or db_path
-            print(f"    hermes sessions recover --source {source_hint} \\")
-            print("        --inspect-only")
-            print("  If that reports the data is recoverable, rebuild it into")
-            print("  a NEW database (the active one is left untouched):")
-            print(f"    hermes sessions recover --source {source_hint} \\")
-            print("        --output recovered-state.db")
+            print(f"    {source_hint}")
+            print(
+                "  Session recovery is an internal adapter, not a public CLI command."
+            )
+            print("  Public commands: pcbdraft --help")
         return
 
     if action == "recover":
@@ -482,7 +481,7 @@ def cmd_sessions(args, sessions_parser=None):
 
         # Prompt-only export (--only user-prompts): one prompt record per
         # line (jsonl) or headed sections (md). Delegates rendering to
-        # hermes_cli.session_export.
+        # pcbdraft.interfaces.tui.session_export.
         if getattr(args, "only", None):
             if args.format not in ("jsonl", "md"):
                 print("--only user-prompts supports --format jsonl or md.")
@@ -905,7 +904,7 @@ def cmd_sessions(args, sessions_parser=None):
         )
 
         # Preserve the historical default ONLY for a truly bare
-        # `hermes sessions prune`: no time window and no filters at all
+        # `internal sessions prune`: no time window and no filters at all
         # means "older than 90 days". ANY filter — including --source —
         # suppresses the implicit cutoff, so `prune --source cron`
         # matches ALL cron sessions regardless of age. The preview +
@@ -979,7 +978,7 @@ def cmd_sessions(args, sessions_parser=None):
             print(
                 f"Note: {skipped_open} open session{suffix} also match these "
                 "filters but will be skipped because prune only deletes ended "
-                "sessions. Use `hermes sessions delete <id>` "
+                "sessions. Use `pcbdraft --help` "
                 "to remove one explicitly."
             )
         verb = "Delete" if action == "prune" else "Archive"
@@ -1101,7 +1100,7 @@ def cmd_sessions(args, sessions_parser=None):
             print(_json.dumps(payload, indent=2))
             return
         if not pinned_rows:
-            print("No pinned sessions. Pin one with: hermes sessions pin <session_id>")
+            print("No pinned sessions. Pin one with: pcbdraft --help")
             return
         print(f"{'Title':<32} {'Last Active':<13} {'Src':<9} {'ID'}")
         print("─" * 100)
@@ -1194,7 +1193,7 @@ def cmd_sessions(args, sessions_parser=None):
             print("Cancelled.")
             return
 
-        # Launch hermes --resume <id> by replacing the current process
+        # Launch internal --resume <id> by replacing the current process
         print(f"Resuming session: {selected_id}")
         from pcbdraft.interfaces.tui.relaunch import relaunch
 
@@ -1348,7 +1347,7 @@ def cmd_sessions(args, sessions_parser=None):
         if logical_after is not None:
             after_mb = logical_after / (1024 * 1024)
         saved = before_mb - after_mb
-        print(f"\n✓ Search index optimized.")
+        print("\n✓ Search index optimized.")
         print(
             f"  Database size: {before_mb:.1f} MB -> {after_mb:.1f} MB "
             f"({_size_delta_label(saved)})"
@@ -1356,7 +1355,7 @@ def cmd_sessions(args, sessions_parser=None):
         if result.get("vacuumed") is False:
             print(
                 "  (VACUUM was skipped or failed — run "
-                "`hermes sessions optimize` later to reclaim freed space.)"
+                "`pcbdraft --help` later to reclaim freed space.)"
             )
 
     elif action == "repair-routing":

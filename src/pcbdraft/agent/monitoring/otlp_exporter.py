@@ -78,7 +78,7 @@ def _require_sdk(*, auto_install: bool = True, prompt: bool = True):
     except Exception as e:  # ImportError or partial install
         raise OTLPUnavailable(
             "OTLP export requires the optional dependency. Install with:\n"
-            "    pip install 'hermes-agent[otlp]'\n"
+            "    pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http\n"
             f"(import error: {e})"
         )
 
@@ -143,7 +143,7 @@ def _make_provider(config: dict[str, Any]):
 def _span_attrs(ev: dict[str, Any]) -> dict[str, Any]:
     """Span attributes for a monitoring event (content-free by construction)."""
     kind = ev.get("event")
-    attrs: dict[str, Any] = {"hermes.event": kind or "unknown"}
+    attrs: dict[str, Any] = {"pcbdraft.event": kind or "unknown"}
     keep_by_kind = {
         "gateway_health": (
             "name",
@@ -191,17 +191,17 @@ def _span_attrs(ev: dict[str, Any]) -> dict[str, Any]:
                     v = (redact_for_export(v) or "[redacted]")[:500]
                 except Exception:
                     v = "[redaction-unavailable]"
-            attrs[f"hermes.{col}"] = v
+            attrs[f"pcbdraft.{col}"] = v
     return attrs
 
 
 def export_batch(provider, batch: list[dict[str, Any]]) -> int:
     """Map a batch of events to OTel spans. Returns spans created."""
-    tracer = provider.get_tracer("hermes.monitoring")
+    tracer = provider.get_tracer("pcbdraft.monitoring")
     n = 0
     for ev in batch:
         try:
-            name = f"hermes.{ev.get('event', 'event')}"
+            name = f"pcbdraft.{ev.get('event', 'event')}"
             span = tracer.start_span(name, attributes=_span_attrs(ev))
             span.end()
             n += 1
@@ -285,7 +285,7 @@ def start_streaming(
     except OTLPUnavailable:
         logger.warning(
             "monitoring.export.otlp.enabled but the OTel SDK could not "
-            "be installed/imported; install 'hermes-agent[otlp]'"
+            "be installed/imported; install opentelemetry-sdk and opentelemetry-exporter-otlp-proto-http"
         )
         return None
     from pcbdraft.agent.monitoring.emitter import get_emitter

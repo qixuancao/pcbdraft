@@ -128,7 +128,7 @@ def register_source(
     if getattr(source, "api_version", None) != SECRET_SOURCE_API_VERSION:
         logger.warning(
             "Ignoring secret source '%s': built against secret-source API v%s, "
-            "this Hermes speaks v%s",
+            "this PCBDraft speaks v%s",
             name,
             getattr(source, "api_version", "?"),
             SECRET_SOURCE_API_VERSION,
@@ -393,8 +393,8 @@ def _ordered_enabled_sources(
 def _active_profile_name(home_path: Path | None) -> str:
     """Best-effort active profile name for profile-scoped secret aliases.
 
-    A named profile's PCBDRAFT_RUNTIME_HOME is ``~/.hermes/profiles/<name>``; the
-    default profile (``~/.hermes``) returns "".
+    A named profile's PCBDRAFT_RUNTIME_HOME is ``<runtime-root>/profiles/<name>``; the
+    default profile (``<runtime-root>``) returns "".
     """
     if home_path is not None:
         resolved = Path(home_path)

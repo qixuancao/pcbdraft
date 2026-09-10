@@ -1,6 +1,6 @@
-"""``hermes slack`` subcommand parser.
+"""``internal slack`` subcommand parser.
 
-Extracted verbatim from ``hermes_cli/main.py:main()`` (god-file Phase 2).
+Extracted verbatim from ``pcbdraft.interfaces.tui/main.py:main()`` (god-file Phase 2).
 Handler injected to avoid importing ``main``.
 """
 
@@ -17,7 +17,7 @@ def build_slack_parser(subparsers, *, cmd_slack: Callable) -> None:
     slack_parser = subparsers.add_parser(
         "slack",
         help="Slack integration helpers (manifest generation, etc.)",
-        description="Slack integration helpers for Hermes.",
+        description="Slack integration helpers for PCBDraft.",
     )
     slack_sub = slack_parser.add_subparsers(dest="slack_command")
     slack_manifest = slack_sub.add_parser(
@@ -44,7 +44,7 @@ def build_slack_parser(subparsers, *, cmd_slack: Callable) -> None:
     slack_manifest.add_argument(
         "--name",
         default=None,
-        help='Bot display name (default: "Hermes")',
+        help='Bot display name (default: "PCBDraft")',
     )
     slack_manifest.add_argument(
         "--description",

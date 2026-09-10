@@ -1,7 +1,7 @@
-"""Default configuration data for Hermes Agent.
+"""Default configuration data for PCBDraft.
 
 Pure-data leaf module: DEFAULT_CONFIG and OPTIONAL_ENV_VARS, extracted
-verbatim from hermes_cli/config.py. Must not import from hermes_cli.config.
+from the configuration module. Must not import from pcbdraft.model.configuration.
 """
 
 DEFAULT_CONFIG = {
@@ -9,8 +9,8 @@ DEFAULT_CONFIG = {
     "providers": {},
     "fallback_providers": [],
     "credential_pool_strategies": {},
-    "toolsets": ["hermes-cli"],
-    # SQLite journal mode used by every Hermes database opener. WAL is the
+    "toolsets": ["pcbdraft"],
+    # SQLite journal mode used by every PCBDraft database opener. WAL is the
     # normal default; set DELETE for weak-fsync/shared filesystems where WAL is
     # not crash-safe (for example macOS virtiofs, NFS, or SMB).
     "database": {
@@ -20,7 +20,7 @@ DEFAULT_CONFIG = {
         "wal_autocheckpoint": None,
         "journal_size_limit": None,
     },
-    # Soft file-descriptor limit for long-running Hermes server processes.
+    # Soft file-descriptor limit for long-running PCBDraft processes.
     # Clamped to the OS hard limit; 0/false/null disables the adjustment.
     "runtime": {
         "nofile_soft_limit": 4096,
@@ -34,7 +34,7 @@ DEFAULT_CONFIG = {
     # pressure. Reopening one re-resumes it from disk. 0/null disables.
     "max_live_sessions": 16,
     "session": {
-        # Per-terminal `hermes -c`: each CLI session drops a breadcrumb file
+        # Per-terminal resume: each CLI session drops a breadcrumb file
         # under $PCBDRAFT_RUNTIME_HOME/terminal-sessions/<terminal-id>, and a bare
         # -c/--continue resumes THIS terminal's session (tmux pane, kitty
         # window, wezterm pane, plain tty, ...) instead of the globally
@@ -102,7 +102,7 @@ DEFAULT_CONFIG = {
         # so the requesting turn is not amputated by restart_drain_timeout.
         # 0 = legacy behaviour (enter stop()/drain immediately). Default
         # 30 min is a safety valve for wedged agents, not a target latency —
-        # an interactive `hermes gateway restart` must never block for hours
+        # an interactive lifecycle request must never block for hours
         # on a turn that wedged (#79133). Long unattended turns can raise
         # this in config.yaml.
         "restart_after_turn_timeout": 1800,
@@ -118,7 +118,7 @@ DEFAULT_CONFIG = {
         # provider timeouts, 5xx, etc.) before the agent surfaces the
         # failure.  The OpenAI SDK already does its own low-level retries
         # (max_retries=2 default) for transient network errors; this is
-        # the Hermes-level retry loop that wraps the whole call.  Lower
+        # the PCBDraft-level retry loop that wraps the whole call. Lower
         # this to 1 if you use fallback providers and want fast failover
         # on flaky primaries; raise it if you prefer to tolerate longer
         # provider hiccups on a single provider.
@@ -183,14 +183,14 @@ DEFAULT_CONFIG = {
         # profile is managed by the desktop's Bot Mode).
         "bot_mode_protocol": True,
         # Embedder-supplied environment description appended to the system
-        # prompt's environment-hints block. Lets a host that wraps Hermes
+        # prompt's environment-hints block. Lets a host that wraps PCBDraft
         # (sandbox runner, managed platform) explain the runtime environment
         # — proxy, credential handling, mount layout — without editing the
         # identity slot (SOUL.md). Empty by default. The PCBDRAFT_RUNTIME_ENVIRONMENT_HINT
         # env var overrides this (build-time/container mechanism).
         "environment_hint": "",
         # Coding posture — on interactive coding surfaces (CLI, TUI, desktop
-        # app, ACP) in a code workspace, Hermes adds a coding operating brief
+        # app, ACP) in a code workspace, PCBDraft adds a coding operating brief
         # + a live git/workspace snapshot to the system prompt. See
         # agent/coding_context.py.
         #   "auto" (default) — prompt-only posture when the surface is
@@ -270,7 +270,7 @@ DEFAULT_CONFIG = {
         # Long-lived reconnect-loop escalation (seconds). A platform that has
         # been continuously failing/reconnecting for this long gets
         # needs_attention flagged in gateway runtime status (visible in
-        # `hermes status` / fleet monitoring). Retries never stop — this is a
+        # internal status / fleet monitoring). Retries never stop — this is a
         # signal, not a circuit breaker. 0 = disable.
         "reconnect_attention_after": 7200,
         # Freshness window for the gateway auto-continue note (seconds).
@@ -371,13 +371,13 @@ DEFAULT_CONFIG = {
         # (bash doesn't source bashrc in non-interactive login mode) or
         # zsh-specific files like ``~/.zshrc`` / ``~/.zprofile``.
         # Paths support ``~`` / ``${VAR}``. Missing files are silently
-        # skipped. When empty, Hermes auto-sources ``~/.profile``,
+        # skipped. When empty, PCBDraft auto-sources ``~/.profile``,
         # ``~/.bash_profile``, and ``~/.bashrc`` (in that order) if the
         # snapshot shell is bash (this is the ``auto_source_bashrc``
         # behaviour — disable with that key if you want strict login-only
         # semantics).
         "shell_init_files": [],
-        # When true (default), Hermes sources the user's shell rc files
+        # When true (default), PCBDraft sources the user's shell rc files
         # (``~/.profile``, ``~/.bash_profile``, ``~/.bashrc``) in the
         # login shell used to build the environment snapshot. This
         # captures PATH additions, shell functions, and aliases — which a
@@ -394,7 +394,7 @@ DEFAULT_CONFIG = {
         "docker_forward_env": [],
         # Explicit environment variables to set inside Docker containers.
         # Unlike docker_forward_env (which reads values from the host process),
-        # docker_env lets you specify exact key-value pairs — useful when Hermes
+        # docker_env lets you specify exact key-value pairs — useful when PCBDraft
         # runs as a systemd service without access to the user's shell environment.
         # Example: {"SSH_AUTH_SOCK": "/run/user/1000/ssh-agent.sock"}
         "docker_env": {},
@@ -413,7 +413,7 @@ DEFAULT_CONFIG = {
         # Each entry is "host_path:container_path" (standard Docker -v syntax).
         # Example:
         # ["/home/user/projects:/workspace/projects",
-        #  "/home/user/.hermes/cache/documents:/output"]
+        #  "/path/to/runtime/cache/documents:/output"]
         # For gateway MEDIA delivery, write inside Docker to /output/... and emit
         # the host-visible path in MEDIA:, not the container path.
         "docker_volumes": [],
@@ -435,7 +435,7 @@ DEFAULT_CONFIG = {
         # are owned by your host user instead of root, which avoids needing
         # `sudo chown` after container runs. Default off to preserve behavior
         # for images whose entrypoints expect to start as root (e.g. the
-        # bundled Hermes image, which drops to the `hermes` user via
+        # optional container image, which drops to its application user via
         # s6-setuidgid inside each supervised service).
         # When on, SETUID/SETGID caps are omitted from the container since
         # no privilege drop is needed.
@@ -487,12 +487,12 @@ DEFAULT_CONFIG = {
         "dialog_policy": "must_respond",  # must_respond | auto_dismiss | auto_accept
         "dialog_timeout_s": 300,  # Safety auto-dismiss after N seconds under must_respond
         "camofox": {
-            # When true, Hermes sends a stable profile-scoped userId to Camofox
+            # When true, PCBDraft sends a stable profile-scoped userId to Camofox
             # so the server maps it to a persistent Firefox profile automatically.
             # When false (default), each session gets a random userId (ephemeral).
             "managed_persistence": False,
             # Optional externally managed Camofox identity. Useful when another
-            # app owns the visible browser and Hermes should operate in it.
+            # app owns the visible browser and PCBDraft should operate in it.
             "user_id": "",
             "session_key": "",
             # Rehydrate tab_id from Camofox before creating a new tab.
@@ -513,14 +513,14 @@ DEFAULT_CONFIG = {
     #   - enabled: True -> False   (opt-in; most users never use /rollback)
     #   - max_snapshots: 50 -> 20  (now actually enforced via ref rewrite)
     #   - auto_prune:   False -> True (orphans/stale pruned automatically)
-    # Opt in via ``hermes chat --checkpoints`` or set enabled=True here.
+    # Internal checkpoint configuration; set enabled=True here to opt in.
     "checkpoints": {
         "enabled": False,
         # Max checkpoints to keep per working directory.  Pre-v2 this only
         # limited the `/rollback` listing; v2 actually rewrites the ref and
         # garbage-collects older commits.
         "max_snapshots": 20,
-        # Hard ceiling on total ``~/.hermes/checkpoints/`` size (MB).  When
+        # Hard ceiling on total runtime checkpoints/ size (MB). When
         # exceeded, the oldest checkpoint per project is dropped in a
         # round-robin pass until total size falls under the cap.
         # 0 disables the size cap.
@@ -529,7 +529,7 @@ DEFAULT_CONFIG = {
         # Prevents accidental snapshotting of datasets, model weights, and
         # other large generated assets.  0 disables the filter.
         "max_file_size_mb": 10,
-        # Auto-maintenance: hermes sweeps the checkpoint base at startup
+        # Auto-maintenance: PCBDraft sweeps the checkpoint base at startup
         # (at most once per ``min_interval_hours``) and:
         #   * deletes project entries whose last_touch is older than
         #     ``retention_days``
@@ -543,14 +543,14 @@ DEFAULT_CONFIG = {
         # external volume / network share / VPN is simply not mounted yet —
         # and this sweep runs unattended, so it must never guess. Orphan
         # cleanup is only available via the explicit
-        # ``hermes checkpoints prune`` command (add ``--keep-orphans`` to
+        # internal checkpoint pruning operation (retain orphans to
         # skip it), where a human is looking at the output.
         "auto_prune": True,
         "retention_days": 7,
         "min_interval_hours": 24,
     },
     # Hard cap (chars) for a single automatic context file such as SOUL.md,
-    # AGENTS.md, CLAUDE.md, .hermes.md, or .cursorrules before Hermes applies
+    # AGENTS.md, CLAUDE.md, .pcbdraft.md, or .cursorrules before PCBDraft applies
     # head/tail truncation. ``null`` (the default) lets the cap scale with the
     # model's context window (floor 20K, ceiling 500K) so large-context models
     # rarely truncate a project doc. Set a positive integer to pin a fixed cap
@@ -574,7 +574,7 @@ DEFAULT_CONFIG = {
     # (see agent/turn_context.py), so correctness never depends on it.  Keep it
     # small so a slow/dead server adds little to first-response latency.
     "mcp_discovery_timeout": 1.5,
-    # Single-query (``hermes -q/-z "..."``) variant of mcp_discovery_timeout.
+    # Internal single-query variant of mcp_discovery_timeout.
     # In one-shot mode there is only ONE turn, so the between-turns late-binding
     # refresh never runs: a server that misses the small interactive bound is
     # invisible to the LLM for the whole session.  This larger bound gives slow
@@ -597,7 +597,7 @@ DEFAULT_CONFIG = {
         "auto_reload_on_config_change": True,
     },
     # Tool-output truncation thresholds. When terminal output or a
-    # single read_file page exceeds these limits, Hermes truncates the
+    # single read_file page exceeds these limits, PCBDraft truncates the
     # payload sent to the model (keeping head + tail for terminal,
     # enforcing pagination for read_file). Tuning these trades context
     # footprint against how much raw output the model can see in one
@@ -800,22 +800,22 @@ DEFAULT_CONFIG = {
         # user-facing notice in CLI/gateway output.
         "codex_app_server_auto": "native",  # Codex app-server (codex CLI runtime) thread
         # compaction mode. The codex agent owns the real
-        # thread context, so Hermes' summarizer cannot
+        # thread context, so PCBDraft's summarizer cannot
         # shrink it (#36801). native = codex decides when
-        # to compact its own thread (default); hermes =
-        # Hermes' compression threshold triggers
+        # to compact its own thread (default); pcbdraft =
+        # PCBDraft's compression threshold triggers
         # thread/compact/start; off = never auto-trigger
         # (codex may still compact natively).
         "codex_responses_native": False,  # Opt in to OpenAI's server-side compaction
         # on the Responses API. Engages ONLY for
         # gpt-5.6-family models on api.openai.com or
         # the ChatGPT Codex backend; every other
-        # route/model is unaffected. Hermes' local
+        # route/model is unaffected. PCBDraft's local
         # compression stays armed as the fallback.
         "codex_responses_compact_threshold": 200000,  # Server-side compaction trigger
         # (input tokens). Clamped below the local
         # compression threshold at request time so
-        # the server compacts before Hermes does.
+        # the server compacts before PCBDraft does.
         "in_place": True,  # When True, compaction rewrites the message
         # list and rebuilds the system prompt WITHOUT
         # rotating the session id — the conversation
@@ -1050,7 +1050,7 @@ DEFAULT_CONFIG = {
         },
         # Triage specifier — flesh out a rough one-liner in the Kanban
         # Triage column into a concrete spec, then promote it to ``todo``.
-        # Invoked by ``hermes kanban specify`` (single id or --all). Set a
+        # Internal kanban specification helper. Set a
         # cheap, capable model here (gemini-flash works well); the main
         # model is overkill for short spec expansion.
         "triage_specifier": {
@@ -1064,7 +1064,7 @@ DEFAULT_CONFIG = {
         },
         # Kanban decomposer — decomposes a triage task into a graph of
         # child tasks routed to specialist profiles by description.
-        # Invoked by ``hermes kanban decompose`` and the kanban
+        # Invoked by internal kanban decomposition and the kanban
         # auto-decompose dispatcher tick. Returns a JSON task graph;
         # uses more tokens than the specifier so allow more headroom.
         "kanban_decomposer": {
@@ -1078,7 +1078,7 @@ DEFAULT_CONFIG = {
         },
         # Profile describer — auto-generates a 1-2 sentence description
         # of what a profile is good at. Invoked by
-        # ``hermes profile describe <name> --auto`` and the dashboard's
+        # internal automatic profile description and the dashboard's
         # auto-generate button. Short, cheap call.
         "profile_describer": {
             "provider": "auto",
@@ -1104,7 +1104,7 @@ DEFAULT_CONFIG = {
         # Curator — skill-usage review fork. Timeout is generous because the
         # review pass can take several minutes on reasoning models (umbrella
         # building over hundreds of candidate skills). "auto" = use main chat
-        # model; override via `hermes model` → auxiliary → Curator to route
+        # model; override via `pcbdraft connect` → auxiliary → Curator to route
         # to a cheaper aux model (e.g. openrouter google/gemini-3-flash-preview).
         "curator": {
             "provider": "auto",
@@ -1204,18 +1204,18 @@ DEFAULT_CONFIG = {
         # Set false to restore the legacy c-j submit fallback on unusual POSIX
         # PTYs whose plain Enter arrives as LF instead of CR.
         "cli_multiline_shortcuts": True,
-        # Which interface bare `hermes` (and `hermes chat`) launches by default:
+        # Internal interface preference (the public CLI owns terminal startup):
         #   "cli" — the classic prompt_toolkit REPL (default, preserves prior behavior)
         #   "tui" — the modern Ink TUI (same as passing `--tui`)
         # Explicit flags always win over this setting: `--cli` forces the classic
         # REPL and `--tui` (or PCBDRAFT_RUNTIME_TUI=1) forces the TUI regardless of config.
         "interface": "cli",
-        # When true, `hermes --tui` auto-resumes the most recent human-
+        # When true, the internal TUI auto-resumes the most recent human-
         # facing session on launch instead of forging a fresh one.
-        # Mirrors `hermes -c` muscle memory.  Default off so existing
+        # Internal resume preference. Default off so existing
         # users aren't surprised.  PCBDRAFT_RUNTIME_TUI_RESUME=<id> always wins.
         "tui_auto_resume_recent": False,
-        # When true (default), `hermes --tui` drops a one-time hint
+        # When true (default), the internal TUI drops a one-time hint
         # ("subagents working · /agents to watch live") the first time a turn
         # starts delegating, nudging the user toward the live spawn-tree
         # dashboard. Set false to suppress the hint.
@@ -1294,7 +1294,7 @@ DEFAULT_CONFIG = {
         # path), reports a per-turn hidden-line count with a recovery hint, and
         # pins a "focus" segment in the status bar. focus_saved_tool_progress
         # holds the mode /focus off restores. Never affects what is sent to the
-        # model — see hermes_cli/focus_view.py.
+        # model — see pcbdraft.interfaces.tui.focus_view.
         "focus_view": False,
         "focus_saved_tool_progress": "all",
         "skin": "default",
@@ -1399,7 +1399,7 @@ DEFAULT_CONFIG = {
         },
         # Gateway runtime-metadata footer appended to the FINAL message of a turn
         # (disabled by default to keep replies minimal). When enabled, renders
-        # e.g. `model · 68% · ~/projects/hermes`. Per-platform overrides go under
+        # e.g. `model · 68% · ~/projects/pcb`. Per-platform overrides go under
         # display.platforms.<platform>.runtime_footer.
         "runtime_footer": {
             "enabled": False,
@@ -1408,7 +1408,7 @@ DEFAULT_CONFIG = {
         "copy_shortcut": "auto",  # "auto" (platform default) | "ctrl_c" | "ctrl_shift_c" | "disabled"
         # Petdex animated mascot (https://github.com/crafter-station/petdex).
         # A purely cosmetic sprite that reacts to agent activity across the
-        # CLI, TUI, and desktop app. Manage with `hermes pets`. Disabled until
+        # CLI, TUI, and desktop app. Internal pet configuration. Disabled until
         # a pet is installed + selected (no effect on prompt caching — this is
         # a display concern only).
         "pet": {
@@ -1518,7 +1518,7 @@ DEFAULT_CONFIG = {
         },
         # Public URL override (env: ``PCBDRAFT_RUNTIME_DASHBOARD_PUBLIC_URL``).
         # When set, this is the complete authority — scheme + host +
-        # optional path prefix (e.g. ``https://example.com/hermes``) —
+        # optional path prefix (e.g. ``https://example.com/pcbdraft``) —
         # the OAuth ``redirect_uri`` is built from. Set this for deploys
         # behind reverse proxies that don't reliably forward
         # ``X-Forwarded-Host`` / ``X-Forwarded-Proto`` / ``X-Forwarded-Prefix``
@@ -1576,7 +1576,7 @@ DEFAULT_CONFIG = {
             # Optional local Markdown/text file with Gemini TTS performance
             # direction. It may include AUDIO PROFILE, SCENE, DIRECTOR'S NOTES,
             # SAMPLE CONTEXT, and either a `{transcript}` placeholder or no
-            # transcript section; Hermes appends the live transcript when absent.
+            # transcript section; PCBDraft appends the live transcript when absent.
             "persona_prompt_file": "",
         },
         "xai": {
@@ -1611,7 +1611,7 @@ DEFAULT_CONFIG = {
             # use, OR an absolute path to a pre-downloaded .onnx file.
             # Full voice list: https://github.com/OHF-Voice/piper1-gpl/blob/main/docs/VOICES.md
             "voice": "en_US-lessac-medium",
-            # "voices_dir": "",        # Override voice cache dir; default = ~/.hermes/cache/piper-voices/
+            # "voices_dir": "",        # Override voice cache dir; default = runtime/cache/piper-voices/
             # "use_cuda": False,       # Requires onnxruntime-gpu
             # "length_scale": 1.0,     # 2.0 = twice as slow
             # "noise_scale": 0.667,
@@ -1702,7 +1702,7 @@ DEFAULT_CONFIG = {
         # surrounding punctuation ignored. Set [] to disable.
         "stop_phrases": ["stop"],
     },
-    # "Hey Hermes" hands-free wake word. Always-on, on-device hotword
+    # Optional hands-free wake word. Always-on, on-device hotword
     # detection that starts a fresh voice session — the "Hey Siri" pattern.
     # Off by default; toggle with /wake or `wake_word.enabled: true`.
     "wake_word": {
@@ -1710,18 +1710,15 @@ DEFAULT_CONFIG = {
         "surface": "auto",  # eligible surface: "auto" (first claimant) | "cli" | "tui" | "gui"
         "input_device": None,  # PortAudio input device index/name; null uses the process default
         "capture": "auto",  # auto | local | client — where PCM is captured (client = desktop streams mic via wake.feed)
-        "provider": "openwakeword",  # "openwakeword" (free, local) | "sherpa" (free, ANY phrase, no training) | "porcupine" (premium; needs PORCUPINE_ACCESS_KEY)
-        "phrase": "hey hermes",  # for "sherpa" this IS the detected phrase (any text works); for other engines it's a cosmetic label — detection is keyed by the model/keyword below
+        "provider": "sherpa",  # phrase-capable engine; remains disabled by default
+        "phrase": "hey pcbdraft",
         "sensitivity": 0.6,  # 0.0-1.0 detection threshold, consistent across engines (higher = stricter, fewer false triggers)
         "confirmation_frames": 3,  # openWakeWord only: consecutive over-threshold frames required to fire (higher = fewer false triggers on ambient speech, slightly more latency; 1 = old single-frame behavior)
         "start_new_session": True,  # start a fresh session on wake vs. continue the current one
         "profile_routing": True,  # sherpa only: also listen for every wake-enabled profile's phrase and route the wake to the matching profile
         "openwakeword": {
-            # "hey_hermes" (the bundled, works-out-of-the-box default) OR a
-            # built-in openWakeWord name ("hey_jarvis", "alexa", "hey_mycroft",
-            # ...) OR a path to a custom .onnx/.tflite model for another phrase.
-            # See the wake-word docs for the custom-model training guide.
-            "model": "hey_hermes",
+            # An explicitly provisioned model is required for this optional engine.
+            "model": "",
             # "" (auto — tflite on macOS ARM64, onnx elsewhere) | "onnx" | "tflite".
             # openWakeWord's onnx backend scores near-zero on macOS ARM64
             # (dscripka/openWakeWord#336), so auto avoids a listener that arms
@@ -1749,7 +1746,7 @@ DEFAULT_CONFIG = {
     # "compressor" = built-in lossy summarization (default).
     # Set to a plugin name to activate an alternative engine (e.g. "lcm"
     # for Lossless Context Management).  The engine must be installed as
-    # a plugin in plugins/context_engine/<name>/ or ~/.hermes/plugins/.
+    # a plugin in plugins/context_engine/<name>/ or the runtime plugins/ directory.
     "context": {
         "engine": "compressor",
         # Return freed glibc allocator pages after long-running agent/TUI
@@ -1816,7 +1813,7 @@ DEFAULT_CONFIG = {
         # the parent's context window and trigger a compression/429 death
         # spiral. delegate_task sizes each summary against the parent's
         # remaining context headroom (split across the batch); when it must
-        # trim, the full text is spilled to ~/.hermes/cache/delegation/
+        # trim, the full text is spilled to runtime/cache/delegation/
         # (mounted into remote backends) and the in-context summary becomes a
         # head+tail window plus a footer with the exact read_file offset to
         # page the omitted middle — the same convention web_extract uses for
@@ -1860,13 +1857,13 @@ DEFAULT_CONFIG = {
     # Goals — persistent cross-turn goals (Ralph-style loop).
     # After every turn, a lightweight judge call asks the auxiliary model
     # whether the active /goal is satisfied by the assistant's last
-    # response. If not, Hermes feeds a continuation prompt back into the
+    # response. If not, PCBDraft feeds a continuation prompt back into the
     # same session and keeps working until the goal is done, the turn
     # budget is exhausted, or the user pauses/clears it. Judge failures
     # fail OPEN (continue) so a flaky judge never wedges progress — the
     # turn budget is the real backstop.
     "goals": {
-        # Max continuation turns before Hermes auto-pauses the goal and
+        # Max continuation turns before PCBDraft auto-pauses the goal and
         # asks the user to /goal resume. Protects against judge false
         # negatives (goal actually done but judge says continue) and
         # unbounded model spend on fuzzy / unachievable goals.
@@ -1929,18 +1926,18 @@ DEFAULT_CONFIG = {
     },
     # Skills — external skill directories for sharing skills across tools/agents.
     # Each path is expanded (~, ${VAR}) and resolved.  Read-only — skill creation
-    # always goes to ~/.hermes/skills/.
+    # always goes to the runtime skills/ directory.
     "skills": {
         "external_dirs": [],  # e.g. ["~/.agents/skills", "/shared/team-skills"]
         # Project-local skill discovery: when a session starts inside a git
-        # checkout, ``<root>/.hermes/skills/`` and ``<root>/.agents/skills/``
+        # checkout, ``<root>/.pcbdraft/skills/`` and ``<root>/.agents/skills/``
         # are sourced as the highest-precedence skill tier — but ONLY when the
         # project root is listed in trusted_project_dirs below. Trust a repo
-        # with ``hermes skills trust`` (run from inside it). Set to false to
+        # through internal skill trust configuration. Set to false to
         # disable discovery entirely (no scan, no untrusted-skills notice).
         "project_discovery": True,
         # Absolute paths of project roots whose repo-local skills may load.
-        # Managed by ``hermes skills trust`` / ``hermes skills untrust``.
+        # Managed through the internal skill trust configuration.
         "trusted_project_dirs": [],
         # Substitute ${PCBDRAFT_RUNTIME_SKILL_DIR} and ${PCBDRAFT_RUNTIME_SESSION_ID} in SKILL.md
         # content with the absolute skill directory and the active session id
@@ -1968,7 +1965,7 @@ DEFAULT_CONFIG = {
         # scanned regardless of this setting.
         "guard_agent_created": False,
         # Advisory NVIDIA SkillEvaluator Tier 1 scan on hub installs
-        # (`hermes skills install`). Runs ALONGSIDE the built-in skills
+        # (internal skill installation). Runs ALONGSIDE the built-in skills
         # guard (which stays the enforcement layer) and only when the
         # optional `skillevaluator` binary is on PATH:
         #   uv tool install --python 3.13 \
@@ -1993,10 +1990,10 @@ DEFAULT_CONFIG = {
         "write_approval": False,
         # Per-mutation audit ledger (tracker #79686 P3). Every skill mutation
         # — curator, agent, or user — appends one JSONL entry to
-        # ~/.hermes/skills/.curator_ledger.jsonl with before/after file
+        # runtime/skills/.curator_ledger.jsonl with before/after file
         # hashes; file contents are stored content-addressed (deduped) under
-        # ~/.hermes/.curator_backups/blobs/. Enables `hermes curator ledger`
-        # and single-mutation `hermes curator rollback <entry-id>`.
+        # runtime/.curator_backups/blobs/. Enables internal curator ledger
+        # and single-mutation rollback operations.
         # Telemetry, never a gate: ledger failures cannot block a mutation.
         "ledger": True,
     },
@@ -2009,7 +2006,7 @@ DEFAULT_CONFIG = {
     # and patch drift. Runs inactivity-triggered from session start — no
     # cron daemon.
     #
-    # See `hermes curator status` for the last run summary.
+    # Internal curator status holds the last run summary.
     "curator": {
         "enabled": True,
         # How long to wait between curator runs (hours).  Default: 7 days.
@@ -2026,12 +2023,12 @@ DEFAULT_CONFIG = {
         # (mark stale / archive long-unused skills) and skips the forked
         # aux-model review entirely — no umbrella-building, no aux-model cost.
         # Set to true to opt back into merging overlapping skills into
-        # class-level umbrellas. `hermes curator run --consolidate` overrides
+        # class-level umbrellas. Internal consolidation requests override
         # this for a single invocation.
         "consolidate": False,
         # Also prune (archive) bundled built-in skills after the inactivity
         # period, not just agent-created ones. ON by default. Built-ins are
-        # normally restored on every `hermes update`, so pruning them only
+        # normally restored on bundled-skill synchronization, so pruning them only
         # sticks because a suppression list tells the re-seeder to leave them
         # archived. Hub-installed skills are NEVER pruned here — they have an
         # external upstream owner. Built-ins accrue usage telemetry and their
@@ -2041,21 +2038,21 @@ DEFAULT_CONFIG = {
         # to keep all bundled built-ins permanently.
         "prune_builtins": True,
         # TTL purge of skills/.archive/. 0 (default) = never purge — archived
-        # skills are kept forever. When > 0, `hermes curator purge` deletes
+        # skills are kept forever. When > 0, internal curator purging deletes
         # archived skills older than this many days (explicit command only,
         # never automatic; every purge is recorded in the audit ledger).
         "archive_ttl_days": 0,
         # Pre-run backup: before every real curator pass (dry-run is
-        # skipped), snapshot ~/.hermes/skills/ into
-        # ~/.hermes/skills/.curator_backups/<utc-iso>/skills.tar.gz so the
-        # user can roll back with `hermes curator rollback`.
+        # skipped), snapshot runtime/skills/ into
+        # runtime/skills/.curator_backups/<utc-iso>/skills.tar.gz so the
+        # internal curator can roll back.
         "backup": {
             "enabled": True,
             "keep": 5,  # retain last N regular snapshots
         },
     },
     # Honcho AI-native memory -- reads ~/.honcho/config.json as single source of truth.
-    # This section is only needed for hermes-specific overrides; everything else
+    # This section is only needed for PCBDraft-specific overrides; everything else
     # (apiKey, workspace, peerName, sessions, enabled) comes from the global config.
     "honcho": {},
     # IANA timezone (e.g. "Asia/Kolkata", "America/New_York").
@@ -2167,7 +2164,7 @@ DEFAULT_CONFIG = {
     # WhatsApp platform settings (gateway mode)
     "whatsapp": {
         # Reply prefix prepended to every outgoing WhatsApp message.
-        # Default (None) uses the built-in "⚕ *Hermes Agent*" header.
+        # Default (None) uses the built-in product header.
         # Set to "" (empty string) to disable the header entirely.
         # Supports \n for newlines, e.g. "🤖 *My Bot*\n──────\n"
     },
@@ -2271,7 +2268,7 @@ DEFAULT_CONFIG = {
     # User-defined quick commands that bypass the agent loop (type: exec only)
     "quick_commands": {},
     # Per-platform system-prompt hint overrides. Lets an admin append to or
-    # replace Hermes' built-in platform hint for a single messaging platform
+    # replace the internal platform hint for a single messaging platform
     # (WhatsApp, Slack, Telegram, ...) without affecting other platforms.
     # Useful for enterprise/managed profiles that ship platform-aware skills.
     # Each key is a platform name; the value is either:
@@ -2290,7 +2287,7 @@ DEFAULT_CONFIG = {
     # subagent_stop, etc.).  Each entry maps an event name to a list of
     # {matcher, command, timeout} dicts.  First registration of a new
     # command prompts the user for consent; subsequent runs reuse the
-    # stored approval from ~/.hermes/shell-hooks-allowlist.json.
+    # stored approval from runtime/shell-hooks-allowlist.json.
     # See `website/docs/user-guide/features/hooks.md` for schema + examples.
     "hooks": {},
     # Auto-accept shell-hook registrations without a TTY prompt.  Also
@@ -2321,7 +2318,7 @@ DEFAULT_CONFIG = {
             "transport_fallback": "deny",
         },
         # Writes to agent-instruction files (AGENTS.md/CLAUDE.md/SOUL.md/
-        # .cursorrules, project-local .hermes config) always require human
+        # .cursorrules, project-local .pcbdraft config) always require human
         # approval — even under auto-approve/yolo. Extra patterns are
         # fnmatch globs matched against the basename (e.g. "*.mdc").
         "protected_instruction_files": True,
@@ -2338,11 +2335,11 @@ DEFAULT_CONFIG = {
         # Acknowledged supply-chain security advisories. Each entry is the
         # ID of an advisory the user has read and acted on (uninstalled the
         # compromised package, rotated credentials). Acked advisories no
-        # longer trigger the startup banner. Add via `hermes doctor --ack
+        # longer trigger the startup banner. Historical acknowledgment of
         # <id>`; remove by editing the list directly. See
-        # ``hermes_cli/security_advisories.py`` for the catalog.
+        # pcbdraft.interfaces.tui.security_advisories for the catalog.
         "acked_advisories": [],
-        # Allow Hermes to lazy-install opt-in backend packages from PyPI
+        # Allow PCBDraft to lazy-install opt-in backend packages from PyPI
         # the first time the user enables a backend that needs them
         # (e.g. installing ``elevenlabs`` when the user picks ElevenLabs as
         # their TTS provider). Set to false to require explicit
@@ -2464,7 +2461,7 @@ DEFAULT_CONFIG = {
     # Kanban multi-agent coordination — controls the dispatcher loop that
     # spawns workers for ready tasks. The dispatcher ticks every N seconds
     # (default 60), reclaims stale claims, promotes dependency-satisfied
-    # todos to ready, and fires `hermes -p <assignee> chat -q ...` for
+    # todos to ready, and submits an internal worker request for
     # each claimable ready task. One dispatcher per profile is sufficient;
     # running more than one on the same kanban.db will race for claims.
     "kanban": {
@@ -2500,7 +2497,7 @@ DEFAULT_CONFIG = {
         "worker_log_backup_count": 1,
         # Profile assigned to the root/orchestration task after Triage
         # decomposition. When unset, falls back to the default profile (the
-        # one `hermes` launches with no -p flag). This does not control the
+        # default runtime profile). This does not control the
         # decomposer prompt, model, or skills; configure that LLM path under
         # auxiliary.kanban_decomposer.
         "orchestrator_profile": "",
@@ -2532,7 +2529,7 @@ DEFAULT_CONFIG = {
         "max_in_progress_per_profile": None,
         # When true, the kanban dispatcher auto-runs the decomposer on
         # tasks that land in Triage (every dispatcher tick). When false,
-        # decomposition is manual via `hermes kanban decompose <id>` or
+        # decomposition is manual via internal kanban operations or
         # the dashboard's Decompose button.
         "auto_decompose": True,
         # Max triage tasks to decompose per dispatcher tick. Prevents a
@@ -2567,7 +2564,7 @@ DEFAULT_CONFIG = {
         #     with the active virtualenv/conda env's python, so project deps
         #     (pandas, torch, project packages) and relative paths resolve.
         #   strict            — scripts run in an isolated temp directory with
-        #     hermes-agent's own python (sys.executable). Maximum isolation
+        #     PCBDraft's own Python (sys.executable). Maximum isolation
         #     and reproducibility; project deps and relative paths won't work.
         # Env scrubbing (strips *_API_KEY, *_TOKEN, *_SECRET, ...) and the
         # tool whitelist apply identically in both modes.
@@ -2580,7 +2577,7 @@ DEFAULT_CONFIG = {
     # in the model-facing tools array with three bridge tools —
     # tool_search / tool_describe / tool_call — and surfaced on demand.
     #
-    # Core Hermes tools (terminal, read_file, write_file, patch,
+    # Internal agent tools (terminal, read_file, write_file, patch,
     # search_files, todo, memory, browser_*, etc.) are NEVER deferred.
     # See tools/tool_search.py for full design notes and the
     # openclaw-tool-search-report PDF in this PR for the rationale.
@@ -2622,23 +2619,20 @@ DEFAULT_CONFIG = {
             "listing_max_tokens": 4000,
         },
     },
-    # Logging — controls file logging to ~/.hermes/logs/.
+    # Logging — controls file logging to the runtime logs/ directory.
     # agent.log captures INFO+ (all agent activity); errors.log captures WARNING+.
     "logging": {
         "level": "INFO",  # Minimum level for agent.log: DEBUG, INFO, WARNING
         "max_size_mb": 5,  # Max size per log file before rotation
         "backup_count": 3,  # Number of rotated backup files to keep
     },
-    # Remotely-hosted model catalog manifest.  When enabled, the CLI fetches
-    # curated model lists for OpenRouter and Nous Portal from this URL,
-    # falling back to the in-repo snapshot on network failure.  Lets us
-    # update model picker lists without shipping a hermes-agent release.
-    # The default URL is served by the docs site GitHub Pages deploy.
+    # Remote curation is opt-in. No upstream application catalog is contacted
+    # by default; provider discovery and the bundled catalog remain available.
     "model_catalog": {
-        "enabled": True,
-        "url": "https://hermes-agent.nousresearch.com/docs/api/model-catalog.json",
+        "enabled": False,
+        "url": "",
         # Disk cache TTL in hours.  Beyond this, the CLI refetches on the
-        # next /model or `hermes model` invocation; network failures
+        # next model connection invocation; network failures
         # silently fall back to the stale cache.
         "ttl_hours": 1,
         # Optional per-provider override URLs for third parties that want
@@ -2674,7 +2668,7 @@ DEFAULT_CONFIG = {
     # doesn't know yet is the supported self-unblock path (#84482,
     # #8731).
     #
-    # Provider keys accept the Hermes provider id (as used elsewhere in
+    # Provider keys accept the PCBDraft provider id (as used elsewhere in
     # this file) or the models.dev provider id; model ids match
     # case-insensitively.
     #
@@ -2732,7 +2726,7 @@ DEFAULT_CONFIG = {
             "export_interval_seconds": 60,
             "logs_export_interval_seconds": 5,
             "resource_attributes": {
-                "service.name": "hermes-gateway",
+                "service.name": "pcbdraft",
                 "deployment.environment.name": "production",
             },
         },
@@ -2781,7 +2775,7 @@ DEFAULT_CONFIG = {
         # its routing index. The primary copy lives in state.db (the
         # gateway_routing table). Default True for backward compatibility with
         # external tooling and downgrade safety; set to false to stop
-        # producing ~/.hermes/sessions/sessions.json entirely.
+        # producing runtime/sessions/sessions.json entirely.
         "write_sessions_json": True,
         # Scale-to-zero idle detection (Phase 0). The gateway watches for idle
         # and, when an instance is opted in via the NAS "Labs" toggle (carried as
@@ -2799,7 +2793,7 @@ DEFAULT_CONFIG = {
         # (launchd KeepAlive / systemd Restart=), it auto-resumes the
         # restart-interrupted session on the next boot. If the resumed turn
         # keeps triggering another kill (e.g. the agent runs a raw
-        # `launchctl kickstart ai.hermes.gateway` that defenses 1-2 don't
+        # a supervisor restart that defenses 1-2 don't
         # cover), the result is a tight SIGTERM-respawn loop. This breaker
         # chains restart-interrupted boots together and, once `max_restarts`
         # of them chain up, SKIPS auto-resume for that boot — the gateway
@@ -2814,7 +2808,7 @@ DEFAULT_CONFIG = {
         # the breaker never tripped — e.g. the ~150s wedged-event-loop cycle in
         # #81642 (stall -> ~90s liveness-watchdog hard-exit -> respawn ->
         # auto-resume replays the same session), which also makes
-        # `hermes update` hang because it can never drain the gateway.
+        # an installation operation hang because it can never drain the worker.
         "restart_loop_guard": {
             "max_restarts": 3,
             "window_seconds": 60,
@@ -2853,13 +2847,13 @@ DEFAULT_CONFIG = {
         "max_inbound_media_bytes": 134217728,
         # When false (default), any file path the agent emits is delivered
         # as a native attachment as long as it isn't under the credential /
-        # system-path denylist (/etc, /proc, ~/.ssh, ~/.aws, ~/.hermes/.env,
+        # system-path denylist (/etc, /proc, ~/.ssh, ~/.aws, runtime/.env,
         # auth.json, etc.). This matches the symmetry of inbound delivery
         # — we accept any document type the user uploads, and the agent
         # can hand back any file that isn't a credential.
         #
         # When true, fall back to the older allowlist+recency-window
-        # behavior: files must live under the Hermes cache, under
+        # behavior: files must live under the PCBDraft cache, under
         # ``media_delivery_allow_dirs``, or be freshly produced inside the
         # ``trust_recent_files_seconds`` window. Recommended for
         # public-facing gateways where prompt injection from one user
@@ -2867,8 +2861,8 @@ DEFAULT_CONFIG = {
         # user. Bridged to PCBDRAFT_RUNTIME_MEDIA_DELIVERY_STRICT.
         "strict": False,
         # Extra directories from which model-emitted bare file paths may be
-        # uploaded as native gateway attachments. Files inside the Hermes
-        # cache (~/.hermes/cache/{documents,images,audio,video,screenshots})
+        # uploaded as native gateway attachments. Files inside the PCBDraft
+        # cache (runtime/cache/{documents,images,audio,video,screenshots})
         # are always trusted; this list adds operator-controlled roots
         # (project dirs, scratch dirs, mounted shares). Accepts a list of
         # absolute paths or a single os.pathsep-separated string. Bridged
@@ -2938,7 +2932,7 @@ DEFAULT_CONFIG = {
         # completion time. Telegram only; other platforms ignore it.
         "fresh_final_after_seconds": 0.0,
     },
-    # Session storage — controls automatic cleanup of ~/.hermes/state.db.
+    # Session storage — controls automatic cleanup of runtime/state.db.
     # state.db accumulates every session, message, tool call, and FTS5 index
     # entry forever.  Without auto-pruning, a heavy user (gateway + cron)
     # reports 384MB+ databases with 68K+ messages, which slows down FTS5
@@ -2952,7 +2946,7 @@ DEFAULT_CONFIG = {
         # silently deleting it could surprise users.  Opt in explicitly.
         "auto_prune": False,
         # How many inactive days of ended-session history to keep. Matches
-        # the default of ``hermes sessions prune``.
+        # the default of internal session pruning.
         "retention_days": 90,
         # When true, auto-archive (soft-hide, never delete) sessions that
         # haven't been touched in ``auto_archive_days`` days, once per
@@ -2978,7 +2972,7 @@ DEFAULT_CONFIG = {
         # state.db itself, so it's shared across all processes.
         "min_interval_hours": 24,
         # Legacy per-session JSON snapshot writer.  When true, the agent
-        # rewrites ``~/.hermes/sessions/session_{sid}.json`` on every turn
+        # rewrites ``runtime/sessions/session_{sid}.json`` on every turn
         # boundary with the full message list.  state.db is canonical and
         # has every field the snapshot stored (plus per-message timestamps
         # and token counts), so this is off by default — the snapshots had
@@ -2990,10 +2984,10 @@ DEFAULT_CONFIG = {
         # that drops duplicate content copies and stops trigram-indexing tool
         # output (typically reclaims ~60%+ of state.db on heavy users). It is
         # OPT-IN: existing databases keep their working legacy index until the
-        # user runs `hermes sessions optimize-storage`, because the rebuild is
+        # user requests internal storage optimization, because the rebuild is
         # disk-heavy and long on large DBs (see that command's disk preflight).
         #
-        #   "advise" (default): `hermes update` prints a one-line notice with
+        #   "advise" (default): internal storage diagnostics print a notice with
         #     the reclaimable size and the command, when a legacy index is
         #     detected. Nothing is changed automatically.
         #   "require": the notice is shown as a REQUIRED upgrade (firmer copy),
@@ -3005,7 +2999,7 @@ DEFAULT_CONFIG = {
         "fts_optimize_notice": "advise",
         # CJK-bigram search index (messages_fts_cjk, cjk_unicode61 loadable
         # tokenizer). When the extension is built (native/fts5_cjk/build.sh →
-        # ~/.hermes/lib/libfts5_cjk.so), 1-2 char CJK terms (일본, 项目, ...)
+        # runtime/lib/libfts5_cjk.so), 1-2 char CJK terms (일본, 项目, ...)
         # get index-speed exact matching instead of LIKE full-table scans.
         # True (default): use the index when the extension is present; the
         # setting is inert when it isn't. False: never load the extension or
@@ -3025,7 +3019,7 @@ DEFAULT_CONFIG = {
         # may hold and still be resumed interactively (CLI/TUI/desktop).
         "max_resume_messages": 20000,
         # Max active messages a single session may hold for an in-memory
-        # (non-streaming) export such as `hermes sessions export`. Checked
+        # (non-streaming) internal session export. Checked
         # per session, so full-DB backups of many small sessions still work.
         "max_export_messages": 20000,
     },
@@ -3048,13 +3042,13 @@ DEFAULT_CONFIG = {
             "enabled": False,
         },
     },
-    # ``hermes doctor`` behaviour.
+    # Internal runtime diagnostic behaviour.
     "doctor": {
-        # Per-probe timeout (seconds) for the opt-in `hermes doctor --live`
+        # Per-probe timeout (seconds) for opt-in live diagnostics
         # real-call backend probes (Firecrawl/FAL/browser/MCP/TTS/STT).
         "live_probe_timeout": 10,
     },
-    # ``hermes update`` behaviour.
+    # Retained legacy updater configuration; no product updater executes it.
     "updates": {
         # Pre-update safety backup — ONE consolidated mechanism, three modes:
         #
@@ -3065,9 +3059,9 @@ DEFAULT_CONFIG = {
         #     warning so the snapshot stays fast. Restore via ``/snapshot``.
         #     This is the #15733 (lost pairing data) / #34600 (emptied cron
         #     jobs) safety net.
-        #   full — the quick snapshot PLUS a full ``hermes backup``-style zip
+        #   full — the quick snapshot PLUS a full backup-style zip
         #     of PCBDRAFT_RUNTIME_HOME into <PCBDRAFT_RUNTIME_HOME>/backups/, restorable with
-        #     ``hermes import``. Can add minutes on large homes. This is the
+        #     backup import. Can add minutes on large homes. This is the
         #     #48200 (wrong-path wipe) safety net. ``--backup`` forces this
         #     for a single run.
         #   off — no pre-update backup of any kind. ``--no-backup`` forces
@@ -3080,7 +3074,7 @@ DEFAULT_CONFIG = {
         # Values below 1 are floored to 1 — the backup just created is
         # always preserved. The quick snapshot always keeps exactly 1.
         "backup_keep": 5,
-        # What `hermes update` does with uncommitted local changes to the
+        # Historical updater policy for uncommitted local changes to the
         # source tree when it runs NON-interactively — i.e. triggered from
         # the desktop/chat app or the gateway, where there's no TTY to answer
         # a restore prompt. Interactive (terminal) updates are unaffected:
@@ -3096,7 +3090,7 @@ DEFAULT_CONFIG = {
         #               ignored paths — node_modules, venv, build outputs —
         #               are never touched.
         "non_interactive_local_changes": "stash",
-        # When `hermes update` finds the source checkout parked on a feature
+        # When the historical updater finds the source checkout on a feature
         # branch (left behind by tooling or a manual checkout), switch back
         # to the update target automatically — but only when the branch is
         # clean and every commit on it is already merged into the target.
@@ -3105,7 +3099,7 @@ DEFAULT_CONFIG = {
         # "✓ Code updated!" printed while the checkout stayed days behind
         # main on a stale branch). Set false to never auto-switch.
         "auto_switch_parked_branch": True,
-        # Refresh an already-installed cua-driver during `hermes update`.
+        # Historical updater preference for an already-installed cua-driver.
         # The refresh is best-effort and macOS-only. Turn this off if the
         # upstream installer is not appropriate for the machine, for example
         # on non-admin accounts where `/Applications` is not writable.
@@ -3164,7 +3158,7 @@ DEFAULT_CONFIG = {
     # X (Twitter) Search via xAI's built-in x_search Responses tool.
     # The tool registers when xAI credentials are available (SuperGrok
     # OAuth or XAI_API_KEY) AND the x_search toolset is enabled in
-    # `hermes tools`. These settings tune the backing Responses API call.
+    # internal tool configuration. These settings tune the backing Responses API call.
     "x_search": {
         # xAI model used for the Responses call. grok-4.5 is the
         # recommended default; any Grok model with x_search tool
@@ -3184,7 +3178,7 @@ DEFAULT_CONFIG = {
     # External secret sources
     # =========================================================================
     # Pull credentials from external secret managers at process startup
-    # rather than storing them in ~/.hermes/.env.
+    # rather than storing them in the runtime .env file.
     "secrets": {
         # Optional explicit ordering of enabled secret sources.  When
         # omitted, sources run in registration order (bundled first,
@@ -3202,7 +3196,7 @@ DEFAULT_CONFIG = {
             "enabled": False,
             # Name of the env var that holds the Bitwarden machine-account
             # access token.  This is the one bootstrap secret; it lives
-            # in ~/.hermes/.env (or your shell) and never in config.yaml.
+            # in the runtime .env file (or your shell) and never in config.yaml.
             "access_token_env": "BWS_ACCESS_TOKEN",
             # UUID of the BSM project to sync from.
             "project_id": "",
@@ -3211,8 +3205,8 @@ DEFAULT_CONFIG = {
             "cache_ttl_seconds": 300,
             # Optional encrypted last-good fallback for network/timeout outages.
             # When enabled, successful BWS fetches write AES-GCM encrypted cache
-            # material under ~/.hermes/cache/. If a later startup cannot reach
-            # Bitwarden due to NETWORK/TIMEOUT, Hermes may use this encrypted
+            # material under runtime/cache/. If a later startup cannot reach
+            # Bitwarden due to NETWORK/TIMEOUT, PCBDraft may use this encrypted
             # cache for up to max_stale_seconds. Auth failures do not fall back.
             "encrypted_cache": {
                 "enabled": False,
@@ -3224,7 +3218,7 @@ DEFAULT_CONFIG = {
             # take effect until you also cleared the matching .env line.
             "override_existing": True,
             # When True, the bws binary is auto-downloaded into
-            # ~/.hermes/bin/ on first use.  When False you must install
+            # runtime/bin/ on first use. When False you must install
             # bws yourself and have it on PATH.
             "auto_install": True,
             # Bitwarden region / self-hosted endpoint.  Empty string
@@ -3233,7 +3227,7 @@ DEFAULT_CONFIG = {
             # https://vault.bitwarden.eu for EU Cloud, or your own URL
             # for self-hosted Bitwarden.  Plumbed into the bws subprocess
             # as BWS_SERVER_URL.  Prompted for during
-            # `hermes secrets bitwarden setup`.
+            # internal Bitwarden configuration.
             "server_url": "",
         },
         "onepassword": {
@@ -3248,7 +3242,7 @@ DEFAULT_CONFIG = {
             # `op read --account <account>`.  Empty = op's default account.
             "account": "",
             # Name of the env var holding a 1Password service-account token
-            # for headless auth.  Sourced from ~/.hermes/.env (or the shell)
+            # for headless auth. Sourced from the runtime .env (or the shell)
             # and exported to the op child as OP_SERVICE_ACCOUNT_TOKEN.
             # Leave the var unset to use an interactive/desktop op session.
             "service_account_token_env": "OP_SERVICE_ACCOUNT_TOKEN",
@@ -3288,8 +3282,8 @@ DEFAULT_CONFIG = {
     # Computer Use (cua-driver) toolset settings.
     "computer_use": {
         # cua-driver ships with anonymous usage telemetry (PostHog) ENABLED
-        # by default upstream. Hermes disables it for our users unless they
-        # explicitly opt in here. When false (default), Hermes sets
+        # by default upstream. PCBDraft disables it for our users unless they
+        # explicitly opt in here. When false (default), PCBDraft sets
         # CUA_DRIVER_RS_TELEMETRY_ENABLED=0 in the cua-driver child env for
         # every invocation (MCP backend, status, doctor, install). Set true
         # to let cua-driver use its own default (telemetry on).
@@ -3303,13 +3297,13 @@ DEFAULT_CONFIG = {
         # Disable the cursor overlay rendered by cua-driver. The overlay
         # shows where agent actions land but can peg a core when idle
         # (macOS vImage redraw loop #47032; Linux/WSL2 idle spin #28152).
-        # cua-driver ≥ 0.6.x supports --no-overlay; Hermes also calls
+        # cua-driver ≥ 0.6.x supports --no-overlay; PCBDraft also calls
         # set_agent_cursor_enabled(false) after start_session when this is on.
         #   None  = auto-detect (off on macOS + headless/WSL2 Linux; on elsewhere)
         #   True  = always disable the overlay
         #   False = always enable the overlay
         "no_overlay": None,
-        # cua-driver permission mode for each Hermes computer-use runtime.
+        # cua-driver permission mode for each PCBDraft computer-use runtime.
         #   standard (default) — cua-driver's own approval boundary. Protected
         #     operations (e.g. attaching to an existing signed-in browser
         #     profile) fail closed unless grant_existing_profile is enabled
@@ -3323,7 +3317,7 @@ DEFAULT_CONFIG = {
         # silently bypass approvals.
         "permission_mode": "standard",
         # Absolute or ~ path to the reviewed cua-driver capability
-        # manifest used when permission_mode is "bounded". Hermes passes the
+        # manifest used when permission_mode is "bounded". PCBDraft passes the
         # canonical --capability-manifest and --approve-capability-manifest
         # flags when it launches the runtime. See
         # https://cua.ai/docs/reference/cua-driver/permission-modes
@@ -3347,8 +3341,8 @@ DEFAULT_CONFIG = {
     # leaks tokens that only work behind the configured trusted proxy boundary
     # (CA private key + proxy endpoint integrity are part of that boundary).
     #
-    # Configure with `hermes egress setup`.  Disabled by default — the rest of
-    # Hermes works exactly as before with `enabled: false`.
+    # Internal egress configuration. Disabled by default — the rest of
+    # PCBDraft works exactly as before with `enabled: false`.
     "proxy": {
         # Master switch.  When false, iron-proxy is never started, no docker
         # mounts are added, no binaries are auto-installed — feature is a
@@ -3357,7 +3351,7 @@ DEFAULT_CONFIG = {
         # Tunnel listener port.  Sandboxes get `HTTPS_PROXY=http://<host>:<port>`.
         # 9090 is the default; collide-aware setup wizard can reassign.
         "tunnel_port": 9090,
-        # Auto-download the pinned iron-proxy binary into ~/.hermes/bin/ on
+        # Auto-download the pinned iron-proxy binary into runtime/bin/ on
         # first use.  When false, you must place `iron-proxy` on PATH yourself.
         "auto_install": True,
         # Where iron-proxy looks up the real upstream secrets at egress time.
@@ -3396,8 +3390,8 @@ DEFAULT_CONFIG = {
         # Together, DeepSeek, Nous).  Wildcards (`*.foo.com`) are supported.
         "extra_allowed_hosts": [],
     },
-    # Hermes Desktop (Electron app) launch options. These only affect
-    # `hermes desktop`; they do not touch the CLI/gateway.
+    # Retained Electron launch data. Packaged desktop lifecycle is unsupported;
+    # the public local GUI does not consume this section.
     "desktop": {
         # Git repository discovery for the Desktop Projects sidebar. Empty
         # roots preserve the historical bounded scan of the user's home.
@@ -3517,7 +3511,7 @@ OPTIONAL_ENV_VARS = {
     "VERTEX_CREDENTIALS_PATH": {
         "description": "Path to a Google Cloud service account JSON for Vertex AI (Gemini). "
         "Vertex uses OAuth2, not a static API key — this points at the "
-        "credentials Hermes mints short-lived tokens from. Falls back to "
+        "credentials PCBDraft mints short-lived tokens from. Falls back to "
         "GOOGLE_APPLICATION_CREDENTIALS, then to ADC (gcloud auth "
         "application-default login). Set project/region under vertex: in config.yaml.",
         "prompt": "Vertex service account JSON path (leave empty to use ADC / GOOGLE_APPLICATION_CREDENTIALS)",
@@ -3896,7 +3890,7 @@ OPTIONAL_ENV_VARS = {
         "category": "provider",
     },
     "AZURE_FOUNDRY_BASE_URL": {
-        "description": "Azure Foundry base URL (set via 'hermes model' for endpoint-specific config)",
+        "description": "Azure Foundry base URL (set via 'pcbdraft connect' for endpoint-specific config)",
         "prompt": "Azure Foundry base URL",
         "url": None,
         "password": False,
@@ -3961,7 +3955,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "TOOL_GATEWAY_USER_TOKEN": {
-        "description": "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the Hermes auth store)",
+        "description": "Explicit Nous Subscriber access token for tool-gateway requests (optional; otherwise read from the PCBDraft auth store)",
         "prompt": "Tool-gateway user token",
         "url": None,
         "password": True,
@@ -4094,7 +4088,7 @@ OPTIONAL_ENV_VARS = {
         "category": "tool",
     },
     "PORCUPINE_ACCESS_KEY": {
-        "description": "Picovoice access key for the Porcupine 'Hey Hermes' wake word engine (optional; openWakeWord is the free default)",
+        "description": "Picovoice access key for the optional Porcupine wake word engine",
         "prompt": "Picovoice access key",
         "url": "https://console.picovoice.ai/",
         "password": True,
@@ -4315,7 +4309,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "SLACK_ALLOWED_USERS": {
-        "description": "Comma-separated Slack member IDs allowed to use Hermes, e.g. U01ABC2DEF3. Without this, Slack may connect but deny messages by default.",
+        "description": "Legacy Slack member IDs; messaging integration is unsupported in PCBDraft.",
         "prompt": "Allowed Slack member IDs",
         "help": "In Slack, open your profile, choose More or the three-dot menu, then Copy member ID. Add multiple IDs comma-separated.",
         "url": "https://api.slack.com/apps",
@@ -4372,7 +4366,7 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "MATRIX_USER_ID": {
-        "description": "Matrix user ID (e.g. @hermes:example.org)",
+        "description": "Legacy Matrix user ID; messaging integration is unsupported in PCBDraft.",
         "prompt": "Matrix user ID (@user:server)",
         "url": None,
         "password": False,
@@ -4509,14 +4503,14 @@ OPTIONAL_ENV_VARS = {
         "category": "messaging",
     },
     "IRC_CHANNEL": {
-        "description": "IRC channel to join (e.g. #hermes)",
+        "description": "Legacy IRC channel; messaging integration is unsupported in PCBDraft.",
         "prompt": "IRC channel",
         "url": None,
         "password": False,
         "category": "messaging",
     },
     "IRC_NICKNAME": {
-        "description": "Bot nickname on IRC (default: hermes-bot)",
+        "description": "Legacy IRC nickname; messaging integration is unsupported in PCBDraft.",
         "prompt": "IRC nickname",
         "url": None,
         "password": False,
@@ -4579,7 +4573,7 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "API_SERVER_MODEL_NAME": {
-        "description": "Model name advertised on /v1/models. Defaults to the profile name (or 'hermes-agent' for the default profile). Useful for multi-user setups with OpenWebUI.",
+        "description": "Legacy API server model name; the inherited API server is unsupported in PCBDraft.",
         "prompt": "API server model name",
         "url": None,
         "password": False,
@@ -4587,15 +4581,15 @@ OPTIONAL_ENV_VARS = {
         "advanced": True,
     },
     "GATEWAY_PROXY_URL": {
-        "description": "URL of a remote Hermes API server to forward messages to (proxy mode). When set, the gateway handles platform I/O only — all agent work is delegated to the remote server. Use for Docker E2EE containers that relay to a host agent. Also configurable via gateway.proxy_url in config.yaml.",
-        "prompt": "Remote Hermes API server URL (e.g. http://192.168.1.100:8642)",
+        "description": "Legacy remote API proxy URL; proxy mode is unsupported in PCBDraft.",
+        "prompt": "Legacy remote API server URL",
         "url": None,
         "password": False,
         "category": "messaging",
         "advanced": True,
     },
     "GATEWAY_PROXY_KEY": {
-        "description": "Bearer token for authenticating with the remote Hermes API server (proxy mode). Must match the API_SERVER_KEY on the remote host.",
+        "description": "Legacy remote API proxy token; proxy mode is unsupported in PCBDraft.",
         "prompt": "Remote API server auth key",
         "url": None,
         "password": True,

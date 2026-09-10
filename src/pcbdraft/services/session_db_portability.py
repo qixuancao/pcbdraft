@@ -1,11 +1,11 @@
 """Session listing/rich rows, export, and import (portability) for SessionDB.
 
 Mixin contract: this is a plain mixin class consumed by
-``hermes_state.SessionDB``. It defines no ``__init__`` and no state of its
+``pcbdraft.services.session_db.SessionDB``. It defines no ``__init__`` and no state of its
 own; methods access the host's attributes (``self._conn``, ``self.db_path``,
 ``self._execute_write`` and other SessionDB methods) established by
-``SessionDB.__init__``. It must never import hermes_state (cycle) — shared
-module-level constants live in hermes_state_common.
+``SessionDB.__init__``. It must never import session_db (cycle) — shared
+module-level constants live in session_db_common.
 """
 
 import json
@@ -21,9 +21,9 @@ from pcbdraft.services.session_db_common import (
     _sql_session_last_active,
 )
 
-# Moved methods logged under the "hermes_state" logger before the split;
+# All mixins use the product SessionDB logger;
 # keep that logger identity so log filtering/capture behavior is unchanged.
-logger = logging.getLogger("hermes_state")
+logger = logging.getLogger("pcbdraft.services.session_db")
 
 
 class SessionPortabilityMixin:

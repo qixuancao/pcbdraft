@@ -58,7 +58,7 @@ WRITE_DENIED_PREFIXES = build_write_denied_prefixes(_HOME)
 
 
 _OSC_SEQUENCE_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
-_FENCE_MARKER_RE = re.compile(r"'?\x07?__HERMES_FENCE_[A-Za-z0-9]+__\x07?'?")
+_FENCE_MARKER_RE = re.compile(r"'?\x07?__PCBDRAFT_FENCE_[A-Za-z0-9]+__\x07?'?")
 
 
 def _strip_terminal_fence_leaks(text: str) -> str:
@@ -68,7 +68,7 @@ def _strip_terminal_fence_leaks(text: str) -> str:
 
     cleaned_lines: list[str] = []
     for line in text.splitlines(keepends=True):
-        had_terminal_wrapper = "__HERMES_FENCE_" in line or "\x1b]" in line
+        had_terminal_wrapper = "__PCBDRAFT_FENCE_" in line or "\x1b]" in line
         cleaned = _OSC_SEQUENCE_RE.sub("", line)
         cleaned = _FENCE_MARKER_RE.sub("", cleaned)
         cleaned = cleaned.replace("\x07", "")
@@ -820,7 +820,7 @@ DEFAULT_SEARCH_LIMIT = 50
 
 # Echoed by the size probe when the path exists but is not a regular file.
 # `wc -c` prints only digits, so this can never collide with a real size.
-NOT_REGULAR_SENTINEL = "__hermes_not_regular__"
+NOT_REGULAR_SENTINEL = "__pcbdraft_not_regular__"
 
 
 def _coerce_int(value: Any, default: int) -> int:
@@ -1231,7 +1231,7 @@ class ShellFileOperations(FileOperations):
         # template basename: hidden so it doesn't show up in casual `ls`,
         # carries a marker so an orphaned temp (only possible on a hard
         # crash *between* cat and mv) is identifiable.
-        tmpl = self._escape_shell_arg(".hermes-tmp.XXXXXX")
+        tmpl = self._escape_shell_arg(".pcbdraft-tmp.XXXXXX")
 
         # One shell script, fully quoted. Notes:
         #  - `mkdir -p "$d"` is folded in here so the parent directory is
@@ -1276,8 +1276,8 @@ class ShellFileOperations(FileOperations):
             # the one created/confirmed.
             'mkdir -p "$d"; '
             'tmp="$(mktemp -p "$d" ' + tmpl + " 2>/dev/null "
-            '|| mktemp "$d/.hermes-tmp.$$.XXXXXX" 2>/dev/null '
-            '|| { tmp="$d/.hermes-tmp.$$"; : > "$tmp" && echo "$tmp"; })"; '
+            '|| mktemp "$d/.pcbdraft-tmp.$$.XXXXXX" 2>/dev/null '
+            '|| { tmp="$d/.pcbdraft-tmp.$$"; : > "$tmp" && echo "$tmp"; })"; '
             '[ -n "$tmp" ] || { echo "atomic write: could not create temp file" >&2; exit 1; }; '
             "trap 'rm -f \\\"$tmp\\\"' EXIT; "
             # preserve mode of an existing target (best-effort, never fatal)

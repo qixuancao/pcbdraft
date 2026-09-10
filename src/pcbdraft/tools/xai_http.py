@@ -85,31 +85,33 @@ def get_env_value(name: str, default=None):
     xAI credential resolver.
     """
     try:
-        from pcbdraft.model.configuration import get_env_value as _hermes_get_env_value
+        from pcbdraft.model.configuration import (
+            get_env_value as _pcbdraft_get_env_value,
+        )
     except ImportError:
         return os.environ.get(name, default)
 
-    value = _hermes_get_env_value(name)
+    value = _pcbdraft_get_env_value(name)
     return value if value is not None else default
 
 
-def hermes_xai_user_agent() -> str:
+def pcbdraft_xai_user_agent() -> str:
     """Return a stable Hermes-specific User-Agent for xAI HTTP calls."""
     try:
-        from pcbdraft.interfaces.tui import __version__
+        from pcbdraft import __version__
     except Exception:
         __version__ = "unknown"
-    return f"Hermes-Agent/{__version__}"
+    return f"PCBDraft/{__version__}"
 
 
-def hermes_xai_default_headers() -> dict[str, str]:
+def pcbdraft_xai_default_headers() -> dict[str, str]:
     """Default headers for OpenAI-SDK and raw HTTP clients talking to xAI.
 
     Replaces the OpenAI Python SDK's identifying ``User-Agent: OpenAI/Python …``
     so chat/completions and Responses traffic is attributed as Hermes Agent,
     matching the direct HTTP integrations (search, TTS, STT, image, video).
     """
-    return {"User-Agent": hermes_xai_user_agent()}
+    return {"User-Agent": pcbdraft_xai_user_agent()}
 
 
 def _load_config_section(section_name: str) -> dict[str, Any]:

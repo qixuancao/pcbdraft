@@ -23,7 +23,7 @@ from pcbdraft.tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CONTAINER_TAG = "hermes"
+_DEFAULT_CONTAINER_TAG = "pcbdraft"
 _DEFAULT_MAX_RECALL_RESULTS = 10
 _DEFAULT_PROFILE_FREQUENCY = 50
 _DEFAULT_CAPTURE_MODE = "all"
@@ -33,7 +33,8 @@ _DEFAULT_API_TIMEOUT = 5.0
 _MIN_CAPTURE_LENGTH = 10
 _MAX_ENTITY_CONTEXT_LENGTH = 1500
 _DEFAULT_BASE_URL = "https://api.supermemory.ai"
-_API_KEY_URL = "http://app.supermemory.ai/integrations?connect=hermes"
+# External integration registration; PCBDraft does not invent a new connect ID.
+_API_KEY_URL = "https://app.supermemory.ai/integrations?connect=hermes"
 _TRIVIAL_RE = re.compile(
     r"^(ok|okay|thanks|thank you|got it|sure|yes|no|yep|nope|k|ty|thx|np)\.?$",
     re.IGNORECASE,
@@ -111,15 +112,34 @@ def _as_bool(value: Any, default: bool) -> bool:
 
 
 def _load_supermemory_config(runtime_home: str) -> dict:
+    from pcbdraft.agent.legacy_compat import (
+        effective_memory_namespaces,
+        memory_profile_environment,
+    )
+
+    environment = memory_profile_environment(runtime_home)
     config = _default_config()
     config_path = Path(runtime_home) / "supermemory.json"
+    raw = {}
     if config_path.exists():
         try:
             raw = json.loads(config_path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
-                config.update({k: v for k, v in raw.items() if v is not None})
+                raw = {k: v for k, v in raw.items() if v is not None}
         except Exception:
             logger.debug("Failed to parse %s", config_path, exc_info=True)
+
+    config.update(
+        effective_memory_namespaces(
+            "supermemory",
+            raw if isinstance(raw, dict) else {},
+            existing=config_path.exists()
+            or bool(environment.get("SUPERMEMORY_API_KEY")),
+            environ=environment,
+        )
+    )
+    if environment.get("SUPERMEMORY_CONTAINER_TAG", "").strip():
+        config["container_tag"] = environment["SUPERMEMORY_CONTAINER_TAG"].strip()
 
     # Keep raw container_tag — template variables like {identity} are resolved
     # in initialize(), and _sanitize_tag runs AFTER resolution.
@@ -191,6 +211,11 @@ def _save_supermemory_config(values: dict, runtime_home: str) -> None:
                 existing = raw
         except Exception:
             existing = {}
+    from pcbdraft.agent.legacy_compat import saved_memory_namespaces
+
+    existing.update(
+        saved_memory_namespaces("supermemory", _load_supermemory_config(runtime_home))
+    )
     existing.update(values)
     from pcbdraft.core.runtime_utils import atomic_json_write
 
@@ -349,14 +374,14 @@ class _SupermemoryClient:
             base_url=self._base_url,
             timeout=timeout,
             max_retries=0,
-            default_headers={"x-sm-source": "hermes"},
+            default_headers={"x-sm-source": "pcbdraft"},
         )
 
     def _merge_metadata(self, metadata: dict | None) -> dict:
         # sm_source routes Hermes writes into the "Hermes" Space in the Supermemory
         # app so the user can filter / bulk-manage them per source agent. This is a
         # functional routing key for the user, not vendor telemetry.
-        merged = {"sm_source": "hermes", **(metadata or {})}
+        merged = {"sm_source": "pcbdraft", **(metadata or {})}
         legacy_source = merged.pop("source", None)
         if legacy_source and "type" not in merged:
             merged["type"] = str(legacy_source)
@@ -479,7 +504,7 @@ class _SupermemoryClient:
             headers={
                 "Authorization": f"Bearer {self._api_key}",
                 "Content-Type": "application/json",
-                "x-sm-source": "hermes",
+                "x-sm-source": "pcbdraft",
             },
             method="POST",
         )
@@ -706,6 +731,10 @@ class SupermemoryMemoryProvider(MemoryProvider):
         from pcbdraft.interfaces.tui.memory_setup import _prompt, _write_env_vars
         from pcbdraft.model.configuration import save_config
 
+        # Capture provenance before the wizard makes a newly entered key
+        # visible. Otherwise a brand-new env-only setup looks like a legacy
+        # deployment to its first connection probe.
+        namespace_config = _load_supermemory_config(runtime_home)
         print("\n  Configuring supermemory:\n")
         print(f"  Get your API key at {_API_KEY_URL}\n")
 
@@ -725,6 +754,7 @@ class SupermemoryMemoryProvider(MemoryProvider):
             config["memory"] = {}
         config["memory"]["provider"] = self.name
         save_config(config)
+        _save_supermemory_config(namespace_config, runtime_home)
 
         if env_writes:
             _write_env_vars(Path(runtime_home) / ".env", env_writes)

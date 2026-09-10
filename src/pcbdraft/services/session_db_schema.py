@@ -1,11 +1,11 @@
 """Schema creation, column reconciliation, and FTS DDL management for SessionDB.
 
 Mixin contract: this is a plain mixin class consumed by
-``hermes_state.SessionDB``. It defines no ``__init__`` and no state of its
+``pcbdraft.services.session_db.SessionDB``. It defines no ``__init__`` and no state of its
 own; methods access the host's attributes (``self._conn``, ``self.db_path``,
 ``self._execute_write`` and other SessionDB methods) established by
-``SessionDB.__init__``. It must never import hermes_state (cycle) — shared
-module-level constants live in hermes_state_common.
+``SessionDB.__init__``. It must never import session_db (cycle) — shared
+module-level constants live in session_db_common.
 """
 
 import json
@@ -29,9 +29,9 @@ from pcbdraft.services.session_db_common import (
     _ephemeral_child_sql,
 )
 
-# Moved methods logged under the "hermes_state" logger before the split;
+# All mixins use the product SessionDB logger;
 # keep that logger identity so log filtering/capture behavior is unchanged.
-logger = logging.getLogger("hermes_state")
+logger = logging.getLogger("pcbdraft.services.session_db")
 
 # Cache for schema_read_probe_statements() — parsing SCHEMA_SQL spins up an
 # in-memory SQLite database, so derive the statements once per process.
@@ -45,7 +45,7 @@ def schema_read_probe_statements() -> tuple:
     another profile's live DB), so a store created before a schema addition
     keeps 500ing on read paths until something opens it writable. Callers
     that heal on staleness (see ``_open_session_db_at_path`` in
-    ``hermes_cli/web_server.py``) run these probes right after a read-only
+    the web server) run these probes right after a read-only
     open: any missing table raises "no such table" and any missing column
     raises "no such column", both at prepare time.
 
@@ -53,7 +53,7 @@ def schema_read_probe_statements() -> tuple:
     reconciler diffs against — so a column added there is covered here
     automatically. A hand-maintained probe list went stale within days of
     shipping (it never learned ``sessions.last_activity_at``, so the sidebar
-    served an empty session list after `hermes update` until the user's
+    served an empty session list after a runtime upgrade until the user's
     first message forced a writable open).
 
     Each statement is ``LIMIT 0``: column resolution happens at prepare
@@ -124,8 +124,10 @@ class SessionSchemaMixin:
 
     def _sqlite_supports_fts5(self, cursor: sqlite3.Cursor) -> bool:
         try:
-            cursor.execute("CREATE VIRTUAL TABLE temp._hermes_fts5_probe USING fts5(x)")
-            cursor.execute("DROP TABLE temp._hermes_fts5_probe")
+            cursor.execute(
+                "CREATE VIRTUAL TABLE temp._pcbdraft_fts5_probe USING fts5(x)"
+            )
+            cursor.execute("DROP TABLE temp._pcbdraft_fts5_probe")
             return True
         except sqlite3.OperationalError as exc:
             if not self._is_fts5_unavailable_error(exc):
@@ -1122,7 +1124,7 @@ class SessionSchemaMixin:
                 # enough — is the wrong default. So on an EXISTING install we
                 # touch nothing here: the v22 inline FTS keeps working exactly
                 # as before, and we only record a flag advertising that the
-                # optimization is available. `hermes sessions optimize-storage`
+                # optimization is available. The offline storage helper
                 # performs the whole transition as one deliberate, disk-checked,
                 # progress-reported foreground operation.
                 #
@@ -1227,7 +1229,7 @@ class SessionSchemaMixin:
             # an earlier no-FTS5 runtime.
             #
             # OPT-IN v23 boundary: a legacy v22 install (inline-content FTS,
-            # not yet opted into `hermes db optimize`) must keep its EXISTING
+            # not yet opted into storage optimization) must keep its EXISTING
             # inline schema + triggers. Running the v23 external-content DDL
             # here would create the trigram source VIEW and leave the DB in a
             # mixed inline/external state. So for a legacy DB we only ensure

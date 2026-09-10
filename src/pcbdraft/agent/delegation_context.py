@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, Token
 
 _DELEGATED_CHILD_CONTEXT: ContextVar[bool] = ContextVar(
-    "hermes_delegated_child_context",
+    "pcbdraft_delegated_child_context",
     default=False,
 )
 
@@ -29,7 +29,7 @@ _DELEGATED_CHILD_CONTEXT: ContextVar[bool] = ContextVar(
 # _DELEGATED_CHILD_CONTEXT so the delegate_task-specific behaviour attached to
 # that flag (subprocess env scrubbing, its own error strings) is unchanged.
 _NON_DISPATCHER_OWNED_CONTEXT: ContextVar[bool] = ContextVar(
-    "hermes_non_dispatcher_owned_context",
+    "pcbdraft_non_dispatcher_owned_context",
     default=False,
 )
 

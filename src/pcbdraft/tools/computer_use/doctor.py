@@ -934,7 +934,7 @@ def run_doctor(
     if not binary:
         looked_for = driver_cmd or "cua-driver (PATH and canonical install paths)"
         print(f"cua-driver: not installed (looked for {looked_for!r}).")
-        print("  Run: hermes computer-use install")
+        print("  Run: pcbdraft doctor")
         return 2
 
     try:
@@ -954,7 +954,7 @@ def run_doctor(
         # attach Hermes identity under hermes_identity so existing parsers
         # that only read overall/checks keep working.
         payload = dict(report)
-        payload["hermes_identity"] = identity
+        payload["pcbdraft_identity"] = identity
         json.dump(payload, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
     else:

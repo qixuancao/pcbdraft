@@ -1,10 +1,10 @@
 """
-Backup and import commands for hermes CLI.
+Backup and import commands for pcbdraft CLI.
 
-`hermes backup` creates a zip archive of the entire ~/.hermes/ directory
-(excluding the hermes-agent repo and transient files).
+`internal backup` creates a zip archive of the entire ~/.pcbdraft/ directory
+(excluding the pcbdraft repo and transient files).
 
-`hermes import` restores from a backup zip, overlaying onto the current
+`internal import` restores from a backup zip, overlaying onto the current
 PCBDRAFT_RUNTIME_HOME root.
 """
 
@@ -49,8 +49,8 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Directory names to skip entirely (matched against each path component)
-# ``hermes-agent`` is special-cased to root level only in ``_should_exclude``
-# so that skill directories like ``skills/autonomous-ai-agents/hermes-agent/``
+# ``pcbdraft`` is special-cased to root level only in ``_should_exclude``
+# so that skill directories like ``skills/autonomous-ai-agents/pcbdraft/``
 # are not accidentally excluded.
 #
 # The dependency/cache entries below matter for more than tidiness: without
@@ -65,7 +65,7 @@ logger = logging.getLogger(__name__)
 # exclude ``.archive`` here because the curator's ``skills/.archive/`` holds
 # restorable user skills that must survive a backup.
 _EXCLUDED_DIRS = {
-    "hermes-agent",  # the codebase repo — re-clone instead
+    "pcbdraft",  # the codebase repo — re-clone instead
     "__pycache__",  # bytecode caches — regenerated on import
     ".git",  # nested git dirs (profiles shouldn't have these, but safety)
     "node_modules",  # js deps — reinstalled on demand
@@ -107,7 +107,7 @@ _EXCLUDED_NAMES = {
     "cron.pid",
 }
 
-# File names that ``hermes import`` must never overwrite, matched by basename so
+# File names that ``internal import`` must never overwrite, matched by basename so
 # they're caught for the root profile (``gateway_state.json``) and for named
 # profiles alike (``profiles/<name>/gateway_state.json``).
 #
@@ -152,7 +152,7 @@ _EXTERNAL_PREFIX = "_external/"
 
 
 class BackupInProgressError(RuntimeError):
-    """Raised when another process already owns the Hermes backup slot."""
+    """Raised when another process already owns the PCBDraft backup slot."""
 
 
 class _SQLiteSnapshotError(RuntimeError):
@@ -187,7 +187,7 @@ def _backup_operation_lock(runtime_home: Path, timeout_seconds: float = 0.25):
                 except (OSError, PermissionError):
                     if time.monotonic() >= deadline:
                         raise BackupInProgressError(
-                            "another Hermes backup is already running"
+                            "another PCBDraft backup is already running"
                         )
                     time.sleep(0.05)
         else:
@@ -201,7 +201,7 @@ def _backup_operation_lock(runtime_home: Path, timeout_seconds: float = 0.25):
                 except (BlockingIOError, OSError):
                     if time.monotonic() >= deadline:
                         raise BackupInProgressError(
-                            "another Hermes backup is already running"
+                            "another PCBDraft backup is already running"
                         )
                     time.sleep(0.05)
 
@@ -318,16 +318,16 @@ def _iter_external_files(base: Path) -> list[Path]:
 
 
 def _should_exclude(rel_path: Path) -> bool:
-    """Return True if *rel_path* (relative to hermes root) should be skipped."""
+    """Return True if *rel_path* (relative to pcbdraft root) should be skipped."""
     parts = rel_path.parts
 
     for part in parts:
         if part not in _EXCLUDED_DIRS:
             continue
-        # ``hermes-agent`` only matches at the root level (first component).
+        # ``pcbdraft`` only matches at the root level (first component).
         # Nested directories with the same name — e.g.
-        # ``skills/autonomous-ai-agents/hermes-agent/`` — must be preserved.
-        if part == "hermes-agent" and part != parts[0]:
+        # ``skills/autonomous-ai-agents/pcbdraft/`` — must be preserved.
+        if part == "pcbdraft" and part != parts[0]:
             continue
         return True
 
@@ -463,7 +463,7 @@ _SQLITE_HEADER = b"SQLite format 3\0"
 # of the (O(1)) header + structural probe. ``integrity_check`` walks every
 # b-tree page in the file, so its cost scales with database size: on a 30 GB
 # state.db it runs for many minutes of pegged CPU with no output, which reads
-# to the user as a hung `hermes update` (#70553 follow-up). Sessions databases
+# to the user as a hung `internal update` (#70553 follow-up). Sessions databases
 # in the tens of GB are normal for heavy users, so the size-unbounded check is
 # never an acceptable default on the update path.
 DEFAULT_INTEGRITY_CHECK_MAX_BYTES = 2 << 30  # 2 GiB
@@ -528,7 +528,7 @@ def verify_sqlite_integrity(
     if check_header:
         # Byte-level read: refused when a live connection exists, because
         # close() would cancel this process's POSIX locks on the file (see
-        # hermes_cli.sqlite_safe_read). Verification targets snapshots and
+        # pcbdraft.interfaces.tui.sqlite_safe_read). Verification targets snapshots and
         # backup artifacts, which are offline by construction.
         from pcbdraft.interfaces.tui.sqlite_safe_read import read_header_bytes_preopen
 
@@ -640,11 +640,11 @@ def copy_db_and_verify(src: Path, dst: Path) -> bool:
 
 
 def run_backup(args) -> None:
-    """Create a zip backup of the Hermes home directory."""
+    """Create a zip backup of the PCBDraft home directory."""
     runtime_root = get_default_runtime_root()
 
     if not runtime_root.is_dir():
-        print(f"Error: Hermes home directory not found at {runtime_root}")
+        print(f"Error: PCBDraft home directory not found at {runtime_root}")
         sys.exit(1)
 
     try:
@@ -664,10 +664,10 @@ def _run_backup_locked(args, runtime_root: Path) -> None:
         # If user gave a directory, put the zip inside it
         if out_path.is_dir():
             stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-            out_path = out_path / f"hermes-backup-{stamp}.zip"
+            out_path = out_path / f"pcbdraft-backup-{stamp}.zip"
     else:
         stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
-        out_path = Path.home() / f"hermes-backup-{stamp}.zip"
+        out_path = Path.home() / f"pcbdraft-backup-{stamp}.zip"
 
     # Ensure the suffix is .zip
     if out_path.suffix.lower() != ".zip":
@@ -688,14 +688,14 @@ def _run_backup_locked(args, runtime_root: Path) -> None:
         rel_dir = dp.relative_to(runtime_root)
 
         # Prune excluded directories in-place so os.walk doesn't descend
-        # ``hermes-agent`` is only pruned at the root level; nested dirs
+        # ``pcbdraft`` is only pruned at the root level; nested dirs
         # with the same name (e.g. in skills/) must be preserved.
         is_root = rel_dir == Path(".")
         orig_dirnames = dirnames[:]
         dirnames[:] = [
             d
             for d in dirnames
-            if d not in _EXCLUDED_DIRS or (d == "hermes-agent" and not is_root)
+            if d not in _EXCLUDED_DIRS or (d == "pcbdraft" and not is_root)
         ]
         for removed in set(orig_dirnames) - set(dirnames):
             skipped_dirs.add(str(rel_dir / removed))
@@ -854,7 +854,7 @@ def _run_backup_locked(args, runtime_root: Path) -> None:
             print(f"  ... and {len(errors) - 10} more")
 
     if not errors:
-        print(f"\nRestore with: hermes import {out_path.name}")
+        print("\nRestore with: pcbdraft --help")
 
 
 # ---------------------------------------------------------------------------
@@ -863,7 +863,7 @@ def _run_backup_locked(args, runtime_root: Path) -> None:
 
 
 def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
-    """Check that a zip looks like a Hermes backup.
+    """Check that a zip looks like a PCBDraft backup.
 
     Returns (ok, reason).
     """
@@ -871,7 +871,7 @@ def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
     if not names:
         return False, "zip archive is empty"
 
-    # Look for telltale files that a hermes home would have
+    # Look for telltale files that a pcbdraft home would have
     markers = {"config.yaml", ".env", "state.db"}
     found = set()
     for n in names:
@@ -882,7 +882,7 @@ def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
 
     if not found:
         return False, (
-            "zip does not appear to be a Hermes backup "
+            "zip does not appear to be a PCBDraft backup "
             "(no config.yaml, .env, or state databases found)"
         )
 
@@ -892,7 +892,7 @@ def _validate_backup_zip(zf: zipfile.ZipFile) -> tuple[bool, str]:
 def _detect_prefix(zf: zipfile.ZipFile) -> str:
     """Detect if the zip has a common directory prefix wrapping all entries.
 
-    Some tools zip as `.hermes/config.yaml` instead of `config.yaml`.
+    Some tools zip as `.pcbdraft/config.yaml` instead of `config.yaml`.
     Returns the prefix to strip (empty string if none).
     """
     names = [n for n in zf.namelist() if not n.endswith("/")]
@@ -906,8 +906,8 @@ def _detect_prefix(zf: zipfile.ZipFile) -> str:
     first_parts = {p[0] for p in parts_list if len(p) > 1}
     if len(first_parts) == 1:
         prefix = first_parts.pop()
-        # Only strip if it looks like a hermes dir name
-        if prefix in {".hermes", "hermes"}:
+        # Only strip if it looks like a pcbdraft dir name
+        if prefix in {".pcbdraft", "pcbdraft", ".hermes", "hermes"}:
             return prefix + "/"
 
     return ""
@@ -945,7 +945,7 @@ def _extract_member_atomically(
     ``open(target, "wb")`` truncates the user's existing file to zero *before*
     any replacement bytes exist.  A Ctrl-C, an ENOSPC, a corrupt member, or a
     crash between the truncate and the write therefore leaves that file empty
-    with nothing behind it — during ``hermes import``, which is the
+    with nothing behind it — during ``internal import``, which is the
     disaster-recovery path a user reaches for *because* they already lost
     something.  Staging into the target's own directory and publishing with a
     rename means the target only ever moves from its old contents to the
@@ -964,7 +964,7 @@ def _extract_member_atomically(
     Permission bits *and* ownership are carried across the replace so routing
     through mkstemp does not change the file the caller would otherwise have
     produced.  ``os.replace`` swaps in a temp file owned by the *writing* user,
-    so without the chown a ``sudo hermes import`` would silently re-own every
+    so without the chown a ``sudo internal import`` would silently re-own every
     restored file to root — on the disaster-recovery path, and on exactly the
     Docker/NAS installs ``utils._restore_file_owner`` documents.  Both concerns
     delegate to the shared ``utils`` helpers rather than being re-derived here.
@@ -992,9 +992,9 @@ def _extract_member_atomically(
         # ``_preserve_file_mode`` returns ``stat.S_IMODE``, i.e. all twelve
         # bits, and the content replacing this file comes from the archive.
         # Carrying the elevated bits across would let archive-controlled bytes
-        # take over an existing setuid/setgid file, so ``hermes import`` would
+        # take over an existing setuid/setgid file, so ``internal import`` would
         # hand whoever produced the zip the identity that file runs as.  Nothing
-        # constrains that to Hermes' own state either: the ``_external/`` branch
+        # constrains that to PCBDraft' own state either: the ``_external/`` branch
         # of ``run_import`` publishes members anywhere under ``$HOME``.  The
         # sticky bit is kept — it is inert on a regular file.
         mode &= ~(stat.S_ISUID | stat.S_ISGID)
@@ -1038,7 +1038,7 @@ def _extract_member_atomically(
 
 
 def run_import(args) -> None:
-    """Restore a Hermes backup from a zip file."""
+    """Restore a PCBDraft backup from a zip file."""
     zip_path = Path(args.zipfile).expanduser().resolve()
 
     if not zip_path.is_file():
@@ -1074,7 +1074,7 @@ def run_import(args) -> None:
 
         if (has_config or has_env) and not args.force:
             print()
-            print("Warning: Target directory already has Hermes configuration.")
+            print("Warning: Target directory already has PCBDraft configuration.")
             print("Importing will overwrite existing files with backup contents.")
             print()
             try:
@@ -1247,22 +1247,26 @@ def run_import(args) -> None:
                         print("  Add to your shell config (~/.bashrc or ~/.zshrc):")
                         print('    export PATH="$HOME/.local/bin:$PATH"')
             except ImportError:
-                # hermes_cli.profiles might not be available (fresh install)
+                # pcbdraft.interfaces.tui.profiles might not be available (fresh install)
                 if any(profiles_dir.iterdir()):
                     print("\n  Profiles detected but aliases could not be created.")
-                    print("  Run: hermes profile list  (after installing hermes)")
+                    print("  Run: pcbdraft --help)")
 
         # Guidance
         print()
-        if not (runtime_root / "hermes-agent").is_dir():
-            print("Note: The hermes-agent codebase was not included in the backup.")
-            print("  If this is a fresh install, run: hermes update")
+        if not (runtime_root / "pcbdraft").is_dir():
+            print("Note: The pcbdraft codebase was not included in the backup.")
+            print("  If this is a fresh install, run: pcbdraft --help")
 
         if restored_profiles:
             gw_profiles = [n for n, _ in restored_profiles]
-            print("\nTo re-enable gateway services for profiles:")
+            print(
+                "\nRestored profiles (legacy gateway services are not public CLI commands):"
+            )
             for pname in gw_profiles:
-                print(f"  hermes -p {pname} gateway install")
+                print(
+                    f"  {pname}: review configuration; public commands: pcbdraft --help"
+                )
 
         # Bring the restored install to life: the backup may contain bot
         # tokens and registered cron jobs, but they're inert without a
@@ -1281,13 +1285,13 @@ def run_import(args) -> None:
                 ensure_gateway_service(context="import")
         except Exception:
             print("\nStart the gateway to activate cron jobs and messaging:")
-            print("  hermes gateway install")
+            print("  pcbdraft --help")
 
-        print("Done. Your Hermes configuration has been restored.")
+        print("Done. Your PCBDraft configuration has been restored.")
 
 
 # ---------------------------------------------------------------------------
-# Quick state snapshots (used by /snapshot slash command and hermes backup --quick)
+# Quick state snapshots (used by /snapshot slash command and internal backup --quick)
 # ---------------------------------------------------------------------------
 
 # Critical state files to include in quick snapshots (relative to PCBDRAFT_RUNTIME_HOME).
@@ -1297,7 +1301,7 @@ def run_import(args) -> None:
 # Entries may be individual files OR directories.  Directories are captured
 # recursively; missing entries are silently skipped.  Pairing data lives in
 # platform-specific JSON blobs outside state.db, so it's listed here explicitly
-# — `hermes update` snapshots this set before pulling so approved-user lists
+# — `internal update` snapshots this set before pulling so approved-user lists
 # are recoverable if anything goes wrong (issue #15733).
 _QUICK_STATE_FILES = (
     "state.db",
@@ -1371,10 +1375,10 @@ def _create_quick_snapshot_locked(
         max_file_size: When set, individual files larger than this many bytes
             are skipped (with a printed warning) instead of copied. Used by
             the pre-update safety snapshot so a multi-GB ``state.db`` can
-            never stall ``hermes update`` or silently eat disk — the small
+            never stall ``internal update`` or silently eat disk — the small
             pairing/cron/config files the snapshot exists to protect are
             always captured. ``None`` (default) copies everything, which
-            preserves manual ``/snapshot`` and ``hermes backup --quick``
+            preserves manual ``/snapshot`` and ``internal backup --quick``
             behavior.
 
     Returns:
@@ -1515,7 +1519,7 @@ def _create_quick_snapshot_locked(
         print("  ⚠ CRITICAL: could not snapshot DB file(s): " + ", ".join(failed_dbs))
         print(
             "  ⚠ If sessions disappear after update, check "
-            f"{root} and run: hermes snapshot list"
+            f"{root} and run: pcbdraft --help"
         )
         logger.error(
             "Quick snapshot failed to capture DB file(s): %s",
@@ -1731,7 +1735,7 @@ def restore_cron_jobs_if_emptied(
     snapshot_id: str,
     runtime_home: Path | None = None,
 ) -> dict[str, Any] | None:
-    """Safety net for silent cron-job loss across ``hermes update``.
+    """Safety net for silent cron-job loss across ``internal update``.
 
     Config-version migrations have been observed to leave ``cron/jobs.json``
     valid-but-empty after an update, silently dropping every scheduled job
@@ -1752,7 +1756,7 @@ def restore_cron_jobs_if_emptied(
     Args:
         snapshot_id: The pre-update quick-snapshot id (from
             :func:`create_quick_snapshot`).
-        runtime_home: Override for the Hermes home directory (tests).
+        runtime_home: Override for the PCBDraft home directory (tests).
 
     Returns:
         ``None`` when no action was taken (the common, healthy path). On a
@@ -1840,7 +1844,7 @@ def prune_quick_snapshots(
 
 
 def run_quick_backup(args) -> None:
-    """CLI entry point for hermes backup --quick."""
+    """CLI entry point for internal backup --quick."""
     label = getattr(args, "label", None)
     snap_id = create_quick_snapshot(label=label)
     if snap_id:
@@ -2034,7 +2038,7 @@ def create_pre_update_backup(
 
     Returns the path to the created zip, or ``None`` if no files were
     found or the backup could not be created.  Never raises — the caller
-    (``hermes update``) should continue even if the backup fails.
+    (``internal update``) should continue even if the backup fails.
     """
     runtime_root = runtime_home or get_default_runtime_root()
     if not runtime_root.is_dir():
@@ -2059,7 +2063,7 @@ def create_pre_update_backup(
 
 
 # ---------------------------------------------------------------------------
-# Pre-migration auto-backup (used by `hermes claw migrate`)
+# Pre-migration auto-backup (used by `internal claw migrate`)
 # ---------------------------------------------------------------------------
 
 _PRE_MIGRATION_PREFIX = "pre-migration-"
@@ -2104,11 +2108,11 @@ def create_pre_migration_backup(
     keep: int = _PRE_MIGRATION_DEFAULT_KEEP,
 ) -> Path | None:
     """Create a full zip backup of PCBDRAFT_RUNTIME_HOME under ``backups/`` before a
-    ``hermes claw migrate`` apply.
+    ``internal claw migrate`` apply.
 
     Shares implementation with :func:`create_pre_update_backup` via
     ``_write_full_zip_backup`` — same exclusions, same SQLite safe-copy,
-    restorable with ``hermes import <archive>``.  Writes to
+    restorable with ``internal import <archive>``.  Writes to
     ``<PCBDRAFT_RUNTIME_HOME>/backups/pre-migration-<timestamp>.zip`` and auto-prunes
     old pre-migration backups.
 
@@ -2120,7 +2124,7 @@ def create_pre_migration_backup(
     if not runtime_root.is_dir():
         return None
 
-    # Reuses the shared backups/ directory so `hermes import` and the
+    # Reuses the shared backups/ directory so `internal import` and the
     # update-backup listing pick up pre-migration archives too.
     backup_dir = _pre_update_backup_dir(runtime_root)
     try:

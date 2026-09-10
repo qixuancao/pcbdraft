@@ -161,7 +161,7 @@ def _http_get_json(
     token, mode = _resolve_credential(api_key, token_provider)
     req = urllib_request.Request(url, method="GET")
     _apply_auth_headers(req, token, mode)
-    req.add_header("User-Agent", "hermes-agent/azure-detect")
+    req.add_header("User-Agent", "pcbdraft/azure-detect")
     try:
         with open_credentialed_url(req, timeout=timeout) as resp:
             body = resp.read()
@@ -277,7 +277,7 @@ def _probe_anthropic_messages(
     _apply_auth_headers(req, token, mode)
     req.add_header("anthropic-version", "2023-06-01")
     req.add_header("content-type", "application/json")
-    req.add_header("User-Agent", "hermes-agent/azure-detect")
+    req.add_header("User-Agent", "pcbdraft/azure-detect")
     try:
         with open_credentialed_url(req, timeout=6.0) as resp:
             # Should never 200 — "probe" isn't a real deployment.  But

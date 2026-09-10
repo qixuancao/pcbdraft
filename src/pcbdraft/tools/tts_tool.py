@@ -102,7 +102,7 @@ from pcbdraft.tools.tool_backend_helpers import (
     prefers_gateway,
     resolve_openai_audio_api_key,
 )
-from pcbdraft.tools.xai_http import hermes_xai_user_agent
+from pcbdraft.tools.xai_http import pcbdraft_xai_user_agent
 
 # ---------------------------------------------------------------------------
 # Lazy imports -- providers are imported only when actually used to avoid
@@ -281,9 +281,9 @@ TTS_RESPONSE_BODY_CHUNK_BYTES = 64 * 1024
 
 
 def _get_default_output_dir() -> str:
-    from pcbdraft.core.runtime_environment import get_hermes_dir
+    from pcbdraft.core.runtime_environment import get_pcbdraft_dir
 
-    return str(get_hermes_dir("cache/audio", "audio_cache"))
+    return str(get_pcbdraft_dir("cache/audio", "audio_cache"))
 
 
 DEFAULT_OUTPUT_DIR = _get_default_output_dir()
@@ -667,7 +667,7 @@ def _load_tts_config() -> dict[str, Any]:
         config = load_config()
         return config.get("tts") or {}
     except ImportError:
-        logger.debug("hermes_cli.config not available, using default TTS config")
+        logger.debug("Runtime configuration not available, using default TTS config")
         return {}
     except Exception as e:
         logger.warning("Failed to load TTS config: %s", e, exc_info=True)
@@ -1132,7 +1132,7 @@ def _render_command_tts_template(
 
     def replace_match(match: re.Match[str]) -> str:
         name = match.group("double") or match.group("single")
-        token = f"__HERMES_TTS_PLACEHOLDER_{len(replacements)}__"
+        token = f"__PCBDRAFT_TTS_PLACEHOLDER_{len(replacements)}__"
         replacements.append(
             (
                 token,
@@ -1230,9 +1230,9 @@ def _run_command_tts(
     propagating delegated-child lineage markers when applicable.
     """
     from pcbdraft.agent.delegation_context import delegated_child_subprocess_env
-    from pcbdraft.tools.environments.local import hermes_subprocess_env
+    from pcbdraft.tools.environments.local import pcbdraft_subprocess_env
 
-    scrubbed = hermes_subprocess_env(inherit_credentials=False)
+    scrubbed = pcbdraft_subprocess_env(inherit_credentials=False)
     for key in env_passthrough or []:
         value = os.environ.get(key)
         if value is not None:
@@ -2036,7 +2036,7 @@ def _generate_deepinfra_tts(
     api_key = _resolve_provider_key("DEEPINFRA_API_KEY", "deepinfra")
     if not api_key:
         raise ValueError(
-            "DEEPINFRA_API_KEY not set. Run `hermes setup` to configure, "
+            "DEEPINFRA_API_KEY not set. Run `pcbdraft connect` to configure, "
             "or set the env var directly."
         )
 
@@ -2210,7 +2210,7 @@ def _generate_xai_tts(text: str, output_path: str, tts_config: dict[str, Any]) -
     api_key = str(creds.get("api_key") or "").strip()
     if not api_key:
         raise ValueError(
-            "No xAI credentials found. Configure xAI OAuth in `hermes model` or set XAI_API_KEY."
+            "No xAI credentials found. Run `pcbdraft connect` or set XAI_API_KEY."
         )
 
     xai_config = tts_config.get("xai") or {}
@@ -2317,7 +2317,7 @@ def _generate_xai_tts(text: str, output_path: str, tts_config: dict[str, Any]) -
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
-            "User-Agent": hermes_xai_user_agent(),
+            "User-Agent": pcbdraft_xai_user_agent(),
         },
         json=payload,
         timeout=60,
@@ -2809,15 +2809,15 @@ def _generate_gemini_tts(
     headers = {"Content-Type": "application/json"}
     if urlparse(base_url).hostname == "generativelanguage.googleapis.com":
         try:
-            import pcbdraft.interfaces.tui as _hermes_cli
+            import pcbdraft as _pcbdraft_cli
 
-            _hermes_version = str(_hermes_cli.__version__)
+            _pcbdraft_version = str(_pcbdraft_cli.__version__)
         except Exception:
-            _hermes_version = "0.0.0"
+            _pcbdraft_version = "0.0.0"
         # Include Hermes client context following Gemini's partner
         # integration guidance:
         # https://ai.google.dev/gemini-api/docs/partner-integration
-        headers["X-Goog-Api-Client"] = f"hermes-agent/{_hermes_version}"
+        headers["X-Goog-Api-Client"] = f"pcbdraft/{_pcbdraft_version}"
 
     endpoint = f"{base_url}/models/{model}:generateContent"
     response = requests.post(
@@ -3104,9 +3104,9 @@ def _get_piper_voices_dir() -> Path:
     Resolves to ``~/.hermes/cache/piper-voices/`` under the active
     PCBDRAFT_RUNTIME_HOME so voice downloads follow profile boundaries.
     """
-    from pcbdraft.core.runtime_environment import get_hermes_dir
+    from pcbdraft.core.runtime_environment import get_pcbdraft_dir
 
-    root = Path(get_hermes_dir("cache/piper-voices", "piper_voices_cache"))
+    root = Path(get_pcbdraft_dir("cache/piper-voices", "piper_voices_cache"))
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -3586,7 +3586,7 @@ def _text_to_speech_single(
                     {
                         "success": False,
                         "error": "Mistral provider selected but 'mistralai' package not installed. "
-                        "Run `hermes setup` to install Mistral support.",
+                        "Run `pcbdraft doctor` for dependency diagnostics.",
                     },
                     ensure_ascii=False,
                 )
@@ -3603,7 +3603,7 @@ def _text_to_speech_single(
                     {
                         "success": False,
                         "error": "NeuTTS provider selected but neutts is not installed. "
-                        "Run hermes setup and choose NeuTTS, or install espeak-ng and run python -m pip install -U neutts[all].",
+                        "Install espeak-ng and run python -m pip install -U neutts[all].",
                     },
                     ensure_ascii=False,
                 )
@@ -3618,7 +3618,7 @@ def _text_to_speech_single(
                     {
                         "success": False,
                         "error": "KittenTTS provider selected but 'kittentts' package not installed. "
-                        "Run 'hermes setup tts' and choose KittenTTS, or install manually: "
+                        "Install KittenTTS manually: "
                         "pip install https://github.com/KittenML/KittenTTS/releases/download/0.8.1/kittentts-0.8.1-py3-none-any.whl",
                     },
                     ensure_ascii=False,
@@ -3634,7 +3634,7 @@ def _text_to_speech_single(
                     {
                         "success": False,
                         "error": "Piper provider selected but 'piper-tts' package not installed. "
-                        "Run 'hermes tools' and select Piper under TTS, or install manually: "
+                        "Install Piper manually: "
                         "pip install piper-tts",
                     },
                     ensure_ascii=False,

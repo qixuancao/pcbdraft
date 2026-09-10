@@ -1,5 +1,5 @@
 """
-Hermes Plugin System
+PCBDraft Plugin System
 ====================
 
 Discovers, loads, and manages plugins from four sources:
@@ -7,10 +7,10 @@ Discovers, loads, and manages plugins from four sources:
 1. **Bundled plugins** – ``<repo>/plugins/<name>/`` (shipped with hermes-agent;
    ``memory/`` and ``context_engine/`` subdirs are excluded — they have their
    own discovery paths)
-2. **User plugins**   – ``~/.hermes/plugins/<name>/``
-3. **Project plugins** – ``./.hermes/plugins/<name>/`` (opt-in via
+2. **User plugins**   – ``<PCBDRAFT_RUNTIME_HOME>/plugins/<name>/``
+3. **Project plugins** – ``./.pcbdraft/plugins/<name>/`` (opt-in via
    ``PCBDRAFT_RUNTIME_ENABLE_PROJECT_PLUGINS``)
-4. **Pip plugins**     – packages that expose the ``hermes_agent.plugins``
+4. **Pip plugins**     – packages that expose the ``pcbdraft.plugins``
    entry-point group.
 
 Later sources override earlier ones on name collision, so a user or project
@@ -110,7 +110,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 #
 # Set ``PCBDRAFT_RUNTIME_PLUGINS_DEBUG=1`` to surface verbose plugin-discovery logs to
-# stderr in addition to ~/.hermes/logs/agent.log. Aimed at plugin authors
+# stderr in addition to <PCBDRAFT_RUNTIME_HOME>/logs/agent.log. Aimed at plugin authors
 # trying to figure out why their plugin isn't showing up: which directories
 # were scanned, which manifests parsed, which plugins were skipped (and why),
 # what each ``register(ctx)`` call registered, and full tracebacks on load
@@ -404,8 +404,8 @@ SHELL_UNSUPPORTED_HOOKS: set[str] = {
     "transform_api_error_classification",
 }
 
-ENTRY_POINTS_GROUP = "hermes_agent.plugins"
-ENTRY_POINT_CAPABILITIES_GROUP = "hermes_agent.plugin_capabilities"
+ENTRY_POINTS_GROUP = "pcbdraft.plugins"
+ENTRY_POINT_CAPABILITIES_GROUP = "pcbdraft.plugin_capabilities"
 
 
 def _select_entry_point_group(entry_points: Any, group: str) -> list:
@@ -428,7 +428,7 @@ def discover_entrypoint_manifests() -> list[PluginManifest]:
       and model providers (``model-provider``) are routed to their own
       discovery systems instead of being eagerly imported here.
     * **Capability declarations** — read from the companion
-      ``hermes_agent.plugin_capabilities`` entry-point group (declarations
+      ``pcbdraft.plugin_capabilities`` entry-point group (declarations
       named ``<plugin-id>.<capability-id>`` pointing at the same object),
       so consent/introspection is accurate without importing plugin code.
 
@@ -510,8 +510,8 @@ MAX_SYSTEM_PROMPT_SECTIONS = 32
 MAX_SYSTEM_PROMPT_SECTIONS_TOTAL_CHARS = 8_000
 _SYSTEM_PROMPT_SECTION_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _SYSTEM_PROMPT_SECTION_HEADING_PREFIX = "## Plugin Context: "
-PLUGIN_SECTIONS_START = "<!-- hermes-plugin-sections:start -->"
-PLUGIN_SECTIONS_END = "<!-- hermes-plugin-sections:end -->"
+PLUGIN_SECTIONS_START = "<!-- pcbdraft-plugin-sections:start -->"
+PLUGIN_SECTIONS_END = "<!-- pcbdraft-plugin-sections:end -->"
 
 
 def is_valid_system_prompt_section_id(value: Any) -> bool:
@@ -525,7 +525,7 @@ def format_system_prompt_section(section_id: str, content: str) -> str:
     """Render an auditable, length-framed block recoverable from the full prompt."""
     return (
         f"{_SYSTEM_PROMPT_SECTION_HEADING_PREFIX}{section_id}\n"
-        f"<!-- hermes-plugin-section-chars:{len(content)} -->\n\n"
+        f"<!-- pcbdraft-plugin-section-chars:{len(content)} -->\n\n"
         f"{content}"
     )
 
@@ -540,8 +540,8 @@ def format_system_prompt_sections(sections: list) -> str:
     )
 
 
-# Reserved event namespace prefix — only core may publish ``hermes:<event>``.
-PCBDRAFT_RUNTIME_EVENT_NAMESPACE = "hermes"
+# Reserved event namespace prefix — only core may publish ``pcbdraft:<event>``.
+PCBDRAFT_RUNTIME_EVENT_NAMESPACE = "pcbdraft"
 
 # Max inter-plugin event dispatch recursion depth. A subscriber may itself
 # call ``ctx.emit``; this bound stops mutually-emitting plugins from looping
@@ -554,7 +554,7 @@ _EVENT_EMIT_DEPTH_CAP = 8
 _EVENT_PENDING_CAP = 64
 _EVENT_WORKER_STOP = object()
 
-_NS_PARENT = "hermes_plugins"
+_NS_PARENT = "pcbdraft_plugins"
 _MODULE_NAMESPACE_LOCK = threading.RLock()
 _BARE_MODULE_SCOPE: dict[str, str] = {}
 
@@ -703,7 +703,7 @@ _KNOWN_MANIFEST_FIELDS: set[str] = {
     "capabilities",
     "emits",
     "listens",
-    "hermes",
+    "pcbdraft",
     "depends",
 }
 
@@ -747,7 +747,7 @@ def _parse_manifest_v2_fields(data: Mapping, key: str) -> dict[str, Any]:
         mv = 1
     if mv > SUPPORTED_MANIFEST_VERSION:
         logger.warning(
-            "Plugin %s: manifest_version %d is newer than this Hermes "
+            "Plugin %s: manifest_version %d is newer than this PCBDraft "
             "supports (%d); loading anyway and ignoring unknown fields",
             key,
             mv,
@@ -957,7 +957,7 @@ def resolve_plugin_load_order(
                 logger.warning(
                     "Plugin %s requires plugin '%s' which is not enabled/"
                     "installed; loading anyway (probe availability at runtime "
-                    "via ctx.has_plugin). Run `hermes plugins enable %s` if "
+                    "via ctx.has_plugin). Enable plugin %s in runtime config if "
                     "it is installed.",
                     k,
                     dep_id,
@@ -1123,7 +1123,7 @@ class PluginManifest:
     # ``platform``: gateway messaging platform adapter (e.g. IRC). Bundled
     #              platform plugins auto-load so every shipped platform is
     #              available out of the box; user-installed platform plugins
-    #              in ~/.hermes/plugins/ still gated by ``plugins.enabled``
+    #              in runtime plugins/ still gated by ``plugins.enabled``
     #              (untrusted code).
     kind: str = "standalone"
     # Registry key — path-derived, used by ``plugins.enabled``/``disabled``
@@ -1681,7 +1681,7 @@ class PluginContext:
         ``_cli_ref`` (which is ``None`` outside an interactive CLI run).
 
         Returns ``"default"`` for the default profile, the profile id when
-        running under ``~/.hermes/profiles/<name>``, or ``"custom"`` when
+        running under ``<runtime-root>/profiles/<name>``, or ``"custom"`` when
         ``PCBDRAFT_RUNTIME_HOME`` points somewhere unrecognized.
         """
         try:
@@ -2688,17 +2688,17 @@ class PluginContext:
 
         ``source`` must be an instance of
         :class:`agent.secret_sources.base.SecretSource`.  Registered
-        sources run during ``load_hermes_dotenv()`` startup — after
-        ``~/.hermes/.env`` loads, before Hermes reads credentials — when
+        sources run during ``load_pcbdraft_dotenv()`` startup — after
+        the runtime ``.env`` loads, before PCBDraft reads credentials — when
         their ``secrets.<source.name>`` config section is enabled.  The
         orchestrator (``agent.secret_sources.registry.apply_all``) owns
         ordering, mapped-vs-bulk precedence, conflict warnings, and
         provenance; the source only fetches.
 
-        NOTE ON TIMING: ``load_hermes_dotenv()`` usually runs at import
+        NOTE ON TIMING: ``load_pcbdraft_dotenv()`` usually runs at import
         *before* plugin discovery.  After discovery completes, the plugin
         manager re-pulls enabled plugin secret sources (``reset_secret_source_cache``
-        + ``load_hermes_dotenv``) so the first process sees them (#64177).
+        + ``load_pcbdraft_dotenv``) so the first process sees them (#64177).
         Child processes that load env after plugins still work without that
         re-pull.  Failed re-pulls never block startup.
 
@@ -3065,7 +3065,7 @@ class PluginContext:
         Plugins use this to declare their own auxiliary tasks without touching
         core files. After registration, the task:
 
-          - Appears in the ``hermes model → Configure auxiliary models`` picker
+          - Appears in the auxiliary-model configuration picker
           - Has its provider/model/base_url/api_key bridged from config.yaml to
             ``AUXILIARY_<KEY_UPPER>_*`` env vars at gateway startup
           - Gets default routing fields (provider="auto", model="", etc.) merged
@@ -3339,8 +3339,8 @@ class PluginContext:
         a plugin may only publish under its own namespace.
 
         Passing an already-namespaced name (anything containing ``':'``,
-        including ``hermes:x`` or a foreign ``other:x``) is rejected with a
-        ``ValueError`` and a logged warning — fail-closed. The ``hermes:``
+        including ``pcbdraft:x`` or a foreign ``other:x``) is rejected with a
+        ``ValueError`` and a logged warning — fail-closed. The ``pcbdraft:``
         prefix is reserved for core.
 
         Delivery is fire-and-forget through a host-owned, single-worker queue:
@@ -3389,7 +3389,7 @@ class PluginContext:
     def subscribe(self, event: str, callback: Callable) -> None:
         """Subscribe *callback* to a fully-qualified event name.
 
-        *event* is the full ``<plugin_key>:<event>`` name (or ``hermes:<event>``
+        *event* is the full ``<plugin_key>:<event>`` name (or ``pcbdraft:<event>``
         if core ever emits). Subscribing is unrestricted — any plugin may
         listen to any published event; only *emitting* is namespace-gated.
 
@@ -3453,7 +3453,7 @@ class PluginContext:
 
         The skill becomes resolvable as ``'<plugin_name>:<name>'`` via
         ``skill_view()``.  It does **not** enter the flat
-        ``~/.hermes/skills/`` tree and is **not** listed in the system
+        ``<PCBDRAFT_RUNTIME_HOME>/skills/`` tree and is **not** listed in the system
         prompt's ``<available_skills>`` index — plugin skills are
         opt-in explicit loads only.
 
@@ -3925,7 +3925,7 @@ class PluginManager:
             try:
                 self._discover_and_load_inner()
                 # Plugin secret sources register during discover; the initial
-                # load_hermes_dotenv() already ran at import time. Re-pull so the
+                # load_pcbdraft_dotenv() already ran at import time. Re-pull so the
                 # first process sees plugin backends (tracking #64177).
                 self._refresh_secret_sources_after_discovery()
                 if force:
@@ -3963,7 +3963,7 @@ class PluginManager:
         try:
             from pcbdraft.agent.secret_sources.registry import list_plugin_sources
             from pcbdraft.model.env_loader import (
-                load_hermes_dotenv,
+                load_pcbdraft_dotenv,
                 reset_secret_source_cache,
             )
         except Exception:
@@ -3999,7 +3999,7 @@ class PluginManager:
             return
         try:
             reset_secret_source_cache()
-            load_hermes_dotenv()
+            load_pcbdraft_dotenv()
             logger.debug(
                 "Re-applied secret sources after plugin discovery for: %s",
                 ", ".join(sorted(enabled_names)),
@@ -4108,7 +4108,7 @@ class PluginManager:
             )
             if not is_enabled:
                 loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = "not enabled in config (run `hermes plugins enable {}` to activate)".format(
+                loaded.error = "not enabled in config (add {} to plugins.enabled to activate)".format(
                     lookup_key
                 )
                 self._plugins[lookup_key] = loaded
@@ -4207,17 +4207,17 @@ class PluginManager:
         logger.debug("  bundled/platforms: %d manifest(s)", len(bundled_platforms))
         manifests.extend(bundled_platforms)
 
-        # 2. User plugins (~/.hermes/plugins/)
+        # 2. User plugins (<PCBDRAFT_RUNTIME_HOME>/plugins/)
         user_dir = get_runtime_home() / "plugins"
         logger.debug("Scanning user plugins: %s", user_dir)
         user_manifests = self._scan_directory(user_dir, source="user")
         logger.debug("  user: %d manifest(s)", len(user_manifests))
         manifests.extend(user_manifests)
 
-        # 3. Project plugins (./.hermes/plugins/), only when explicitly opted
+        # 3. Project plugins (./.pcbdraft/plugins/), only when explicitly opted
         # in. This must match the full discovery gate exactly.
         if _env_enabled("PCBDRAFT_RUNTIME_ENABLE_PROJECT_PLUGINS"):
-            project_dir = Path.cwd() / ".hermes" / "plugins"
+            project_dir = Path.cwd() / ".pcbdraft" / "plugins"
             logger.debug("Scanning project plugins: %s", project_dir)
             project_manifests = self._scan_directory(project_dir, source="project")
             logger.debug("  project: %d manifest(s)", len(project_manifests))
@@ -4547,7 +4547,7 @@ class PluginManager:
         Delegates to ``discover_entrypoint_manifests()``, which composes
         kind classification (import-free source scan routing memory/model
         providers away from the general manager) with capability
-        declarations from the ``hermes_agent.plugin_capabilities`` group.
+        declarations from the ``pcbdraft.plugin_capabilities`` group.
         Capability declarations live in distribution metadata so discovery
         is available before importing untrusted plugin code and does not
         depend on a package-data ``plugin.yaml`` being present.
@@ -4814,7 +4814,7 @@ class PluginManager:
         if missing:
             logger.warning(
                 "Plugin %s declares Python dependencies that are not "
-                "installed: %s. Hermes does not install plugin dependencies "
+                "installed: %s. PCBDraft does not install plugin dependencies "
                 "automatically; install them yourself, e.g.: pip install %s",
                 key,
                 ", ".join(missing),
@@ -5108,11 +5108,11 @@ class PluginManager:
         *,
         module_name: str | None = None,
     ) -> types.ModuleType:
-        """Import a directory-based plugin as ``hermes_plugins.<slug>``.
+        """Import a directory-based plugin as ``pcbdraft_plugins.<slug>``.
 
         The module slug is derived from ``manifest.key`` so category-namespaced
         plugins (``image_gen/openai``) import as
-        ``hermes_plugins.image_gen__openai`` without colliding with any
+        ``pcbdraft_plugins.image_gen__openai`` without colliding with any
         future ``tts/openai``.
         """
         plugin_dir = Path(manifest.path)  # type: ignore[arg-type]
@@ -5344,7 +5344,7 @@ class PluginManager:
         worker = threading.Thread(
             target=self._event_worker_loop,
             args=(dispatch_queue,),
-            name="hermes-plugin-events",
+            name="pcbdraft-plugin-events",
             daemon=True,
         )
         self._event_worker = worker
@@ -5731,11 +5731,11 @@ def _clear_plugin_submodules(manager: PluginManager | None) -> None:
     """Purge ``sys.modules`` entries for directory-loaded plugins.
 
     ``PluginManager._load_directory_module`` imports each plugin as
-    ``hermes_plugins.<slug>`` and registers that top-level module in
+    ``pcbdraft_plugins.<slug>`` and registers that top-level module in
     ``sys.modules``. Anything the plugin's ``__init__.py`` imports with a
     *relative* import (``from . import foo``, ``from .sub import bar``)
     ends up cached in ``sys.modules`` too, under
-    ``hermes_plugins.<slug>.<submodule>``. When we swap in a fresh manager
+    ``pcbdraft_plugins.<slug>.<submodule>``. When we swap in a fresh manager
     for a new home, replacing only the parent module leaves those
     submodules behind: if a same-named plugin in the new profile does a
     relative import, Python resolves it from ``sys.modules`` first and
@@ -6664,7 +6664,7 @@ def resolve_plugin_command_result(result: Any) -> Any:
 
     thread = threading.Thread(
         target=_runner,
-        name="hermes-plugin-command-await",
+        name="pcbdraft-plugin-command-await",
         daemon=True,
     )
     thread.start()
@@ -6706,7 +6706,7 @@ def get_plugin_subscriptions() -> dict[str, list[Callable]]:
     """Return the inter-plugin event bus subscription registry.
 
     Returns a snapshot mapping each fully-qualified event name
-    (``<plugin_key>:<event>`` or ``hermes:<event>``) to subscriber callbacks in
+    (``<plugin_key>:<event>`` or ``pcbdraft:<event>``) to subscriber callbacks in
     registration order. Owner ledger metadata stays private to the manager.
     Triggers idempotent plugin discovery before reading the snapshot.
     """

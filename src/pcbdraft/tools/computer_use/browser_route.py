@@ -428,7 +428,7 @@ class CuaTypedBrowserRoute:
                     "browser_existing_profile_not_granted",
                     "Attaching to an existing browser profile requires the "
                     "one-time opt-in `computer_use.grant_existing_profile: "
-                    "true` in config.yaml. Hermes cannot grant this at "
+                    "true` in config.yaml. PCBDraft cannot grant this at "
                     "runtime, and an approval bypass does not substitute for "
                     "it. Use profile_mode=isolated_new to browse without it.",
                 )

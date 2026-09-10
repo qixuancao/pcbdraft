@@ -57,7 +57,7 @@ _TRANSPORT_CONNECT_TIMEOUT_SECONDS = 10.0
 
 _SIGN_IN_MESSAGE = (
     "BFL video generation needs a Nous Portal sign-in. "
-    "Ask the user to run `hermes model` and sign in to Nous, then retry."
+    "Ask the user to configure their Nous credentials explicitly, then retry; see `pcbdraft connect`."
 )
 
 # ---------------------------------------------------------------------------
@@ -618,9 +618,9 @@ def _default_directory():
 
     if _delivers_as_an_attachment():
         try:
-            from pcbdraft.core.runtime_environment import get_hermes_dir
+            from pcbdraft.core.runtime_environment import get_pcbdraft_dir
 
-            return get_hermes_dir("cache/videos", "video_cache")
+            return get_pcbdraft_dir("cache/videos", "video_cache")
         except Exception:
             logger.debug(
                 "Could not resolve the video cache dir; using Downloads", exc_info=True

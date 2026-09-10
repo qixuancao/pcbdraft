@@ -214,7 +214,7 @@ def _base_attrs(
     return {
         "service.instance.id": _safe_instance_id(install_id),
         "service.version": _safe_metric_value(version, limit=64),
-        "hermes.supervision_mode": mode if mode in _SUPERVISION_MODES else "unknown",
+        "pcbdraft.supervision_mode": mode if mode in _SUPERVISION_MODES else "unknown",
     }
 
 
@@ -256,12 +256,12 @@ def build_gateway_health_snapshot(
     )
 
     metrics: list[GatewayMetric] = [
-        _metric("hermes.gateway.up", 1 if gateway_running else 0, base),
-        _metric("hermes.gateway.active_agents", active_agents, base),
-        _metric("hermes.gateway.busy", 1 if busy else 0, base),
-        _metric("hermes.gateway.drainable", 1 if drainable else 0, base),
+        _metric("pcbdraft.gateway.up", 1 if gateway_running else 0, base),
+        _metric("pcbdraft.gateway.active_agents", active_agents, base),
+        _metric("pcbdraft.gateway.busy", 1 if busy else 0, base),
+        _metric("pcbdraft.gateway.drainable", 1 if drainable else 0, base),
         _metric(
-            "hermes.gateway.restart_requested",
+            "pcbdraft.gateway.restart_requested",
             1 if runtime.get("restart_requested") else 0,
             base,
         ),
@@ -269,10 +269,10 @@ def build_gateway_health_snapshot(
     if gateway_state:
         metrics.append(
             _metric(
-                "hermes.gateway.state",
+                "pcbdraft.gateway.state",
                 1,
                 base,
-                **{"hermes.gateway.state": str(gateway_state)},
+                **{"pcbdraft.gateway.state": str(gateway_state)},
             )
         )
 
@@ -289,21 +289,24 @@ def build_gateway_health_snapshot(
             fatal_count += 1
         metrics.append(
             _metric(
-                "hermes.platform.up",
+                "pcbdraft.platform.up",
                 1 if is_up else 0,
                 base,
-                **{"hermes.platform": str(platform), "hermes.platform.state": state},
+                **{
+                    "pcbdraft.platform": str(platform),
+                    "pcbdraft.platform.state": state,
+                },
             )
         )
         metrics.append(
             _metric(
-                "hermes.platform.degraded",
+                "pcbdraft.platform.degraded",
                 1 if is_degraded else 0,
                 base,
                 **{
-                    "hermes.platform": str(platform),
-                    "hermes.platform.state": state,
-                    "hermes.error_code": error_code,
+                    "pcbdraft.platform": str(platform),
+                    "pcbdraft.platform.state": state,
+                    "pcbdraft.error_code": error_code,
                 },
             )
         )

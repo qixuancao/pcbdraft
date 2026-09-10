@@ -359,7 +359,7 @@ class TokenMapping:
 # ---------------------------------------------------------------------------
 
 
-def _hermes_bin_dir() -> Path:
+def _pcbdraft_bin_dir() -> Path:
     from pcbdraft.core.runtime_environment import get_runtime_home
 
     return get_runtime_home() / "bin"
@@ -369,7 +369,7 @@ def _proxy_state_dir_ro() -> Path:
     """Return the proxy state dir without creating it.
 
     Read-only callers (status probes, pidfile reads, version queries) use
-    this — there's no reason to materialize ``~/.hermes/proxy/`` just to
+    this — there's no reason to materialize the runtime ``proxy/`` just to
     check whether a pidfile exists.
     """
     from pcbdraft.core.runtime_environment import get_runtime_home
@@ -447,7 +447,7 @@ def find_iron_proxy(*, install_if_missing: bool = False) -> Path | None:
     :func:`install_iron_proxy` to download and verify the pinned version.
     """
 
-    managed = _hermes_bin_dir() / _platform_binary_name()
+    managed = _pcbdraft_bin_dir() / _platform_binary_name()
     if managed.exists() and os.access(managed, os.X_OK):
         return managed
 
@@ -473,7 +473,7 @@ def install_iron_proxy(*, force: bool = False) -> Path:
     propagate so the wizard can show a clear error.
     """
 
-    bin_dir = _hermes_bin_dir()
+    bin_dir = _pcbdraft_bin_dir()
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / _platform_binary_name()
 
@@ -484,7 +484,7 @@ def install_iron_proxy(*, force: bool = False) -> Path:
     asset_url = f"{_IRON_PROXY_RELEASE_BASE}/{asset_name}"
     checksum_url = f"{_IRON_PROXY_RELEASE_BASE}/{_IRON_PROXY_CHECKSUM_NAME}"
 
-    with tempfile.TemporaryDirectory(prefix="hermes-iron-proxy-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="pcbdraft-iron-proxy-") as tmpdir:
         tmp = Path(tmpdir)
         archive_path = tmp / asset_name
         checksum_path = tmp / _IRON_PROXY_CHECKSUM_NAME
@@ -553,7 +553,7 @@ def install_iron_proxy(*, force: bool = False) -> Path:
 
 
 def _http_download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "hermes-agent"})
+    req = urllib.request.Request(url, headers={"User-Agent": "PCBDraft"})
     try:
         with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp:  # noqa: S310
             with open(dest, "wb") as f:
@@ -760,7 +760,7 @@ def ensure_ca_cert(*, force: bool = False) -> tuple[Path, Path]:
 
     # 10-year cert.  iron-proxy mints short-lived leaf certs from this CA,
     # so the CA itself only rotates when the user explicitly forces it.
-    with tempfile.TemporaryDirectory(prefix="hermes-proxy-ca-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="pcbdraft-proxy-ca-") as tmpdir:
         tmp = Path(tmpdir)
         tmp_key = tmp / "ca.key"
         tmp_crt = tmp / "ca.crt"
@@ -784,7 +784,7 @@ def ensure_ca_cert(*, force: bool = False) -> tuple[Path, Path]:
                 "-days",
                 "3650",
                 "-subj",
-                "/CN=hermes iron-proxy CA",
+                "/CN=PCBDraft iron-proxy CA",
                 "-addext",
                 "basicConstraints=critical,CA:TRUE",
                 "-addext",
@@ -845,7 +845,7 @@ def ensure_ca_cert(*, force: bool = False) -> tuple[Path, Path]:
 # ---------------------------------------------------------------------------
 
 
-def mint_proxy_token(prefix: str = "hermes-proxy") -> str:
+def mint_proxy_token(prefix: str = "pcbdraft-proxy") -> str:
     """Mint a fresh opaque token to hand to the sandbox.
 
     The token has no internal structure beyond a recognizable prefix —
@@ -879,7 +879,7 @@ def ensure_management_token(*, force: bool = False) -> str:
                 return existing
         except OSError:
             pass
-    token = mint_proxy_token(prefix="hermes-mgmt")
+    token = mint_proxy_token(prefix="pcbdraft-mgmt")
     fd = os.open(
         str(p),
         os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0),
@@ -948,20 +948,20 @@ def reload_proxy() -> bool:
     pid = _read_pid()
     if not pid or not _pid_alive(pid):
         raise RuntimeError(
-            "iron-proxy is not running — nothing to reload.  Run `hermes egress start`."
+            "iron-proxy is not running — nothing to reload. Review `pcbdraft doctor`."
         )
     mgmt = _read_management_listen_from_config()
     if mgmt is None:
         raise RuntimeError(
             "The generated proxy.yaml has no management listener (written "
-            "before reload support).  Re-run `hermes egress setup` and use "
-            "`hermes egress restart` this one time."
+            "before reload support). Reconfigure iron-proxy and "
+            "restart it this one time (see `pcbdraft --help`)."
         )
     token = _read_management_token()
     if not token:
         raise RuntimeError(
-            "management.token is missing — re-run `hermes egress setup`, "
-            "then `hermes egress restart`."
+            "management.token is missing — reconfigure iron-proxy, "
+            "then restart it (see `pcbdraft --help`)."
         )
 
     import urllib.error
@@ -996,7 +996,7 @@ def reload_proxy() -> bool:
             raise RuntimeError(
                 "management API rejected our key (401).  The running "
                 "daemon was started with a different management.token — "
-                "run `hermes egress restart`."
+                "restart iron-proxy (see `pcbdraft --help`)."
             ) from exc
         raise RuntimeError(
             f"management reload failed (HTTP {exc.code}): {body}"
@@ -1007,7 +1007,7 @@ def reload_proxy() -> bool:
         raise RuntimeError(
             f"could not reach the management API at {host}:{port} ({exc}).  "
             "If the daemon was started before reload support, run "
-            "`hermes egress restart` once."
+            "an iron-proxy restart once (see `pcbdraft --help`)."
         ) from exc
 
 
@@ -1628,7 +1628,7 @@ def _read_pid() -> int | None:
 # by ``_pid_alive`` to confirm a candidate PID still refers to *our* managed
 # binary even across PID recycling (a fresh process can't inherit our
 # arbitrary env value).
-_HERMES_IRON_PROXY_NONCE_ENV = "PCBDRAFT_RUNTIME_IRON_PROXY_NONCE"
+_PCBDRAFT_IRON_PROXY_NONCE_ENV = "PCBDRAFT_RUNTIME_IRON_PROXY_NONCE"
 _proxy_nonce: str | None = None
 
 
@@ -1758,7 +1758,7 @@ def _pid_alive(pid: int) -> bool:
         try:
             env_bytes = Path(f"/proc/{pid}/environ").read_bytes()
             for nonce in nonce_candidates:
-                needle = f"{_HERMES_IRON_PROXY_NONCE_ENV}={nonce}".encode()
+                needle = f"{_PCBDRAFT_IRON_PROXY_NONCE_ENV}={nonce}".encode()
                 if needle in env_bytes:
                     return True
         except OSError:
@@ -1831,13 +1831,13 @@ def start_proxy(
     bin_path = binary or find_iron_proxy(install_if_missing=install_if_missing)
     if bin_path is None:
         raise RuntimeError(
-            "iron-proxy binary not available — run `hermes egress install`."
+            "iron-proxy binary not available — install iron-proxy (see `pcbdraft --help`)."
         )
 
     cfg = config_path or (_proxy_state_dir() / "proxy.yaml")
     if not cfg.exists():
         raise RuntimeError(
-            f"iron-proxy config not found at {cfg}. Run `hermes egress setup` first."
+            f"iron-proxy config not found at {cfg}. Configure it first (see `pcbdraft --help`)."
         )
 
     # Build a minimal subprocess env.  os.environ.copy() would ship every
@@ -1863,7 +1863,7 @@ def start_proxy(
     # recycling.  Module-global is fine — only one managed proxy per
     # Hermes process.
     _proxy_nonce = hashlib.sha256(os.urandom(16)).hexdigest()
-    env[_HERMES_IRON_PROXY_NONCE_ENV] = _proxy_nonce
+    env[_PCBDRAFT_IRON_PROXY_NONCE_ENV] = _proxy_nonce
 
     log_path = _proxy_state_dir() / "iron-proxy.log"
     # Keep ownership of the fd tight: open with explicit 0o600 so the
@@ -2072,7 +2072,7 @@ def _write_pidfile_safely(pidfile: Path, pid: int) -> None:
             raise RuntimeError(
                 f"Another iron-proxy start appears to be in progress "
                 f"(pidfile {pidfile} -> pid {existing_pid}).  "
-                f"Run `hermes egress stop` if that proxy is stuck."
+                "Stop iron-proxy if that proxy is stuck (see `pcbdraft doctor`)."
             )
         # Stale — unlink and retry.
         try:
@@ -2233,7 +2233,7 @@ def _build_proxy_subprocess_env(
                             f"Bitwarden refresh did not return secrets for "
                             f"{missing}.  Either add the secrets to your BWS "
                             f"project, switch to credential_source: env via "
-                            f"`hermes egress setup --no-bitwarden`, or set "
+                            "the iron-proxy setup without Bitwarden, or set "
                             f"`proxy.allow_env_fallback: true` in config.yaml "
                             f"to opt into the legacy host-env fallback."
                         )
@@ -2250,7 +2250,7 @@ def _build_proxy_subprocess_env(
                 if warnings:
                     logger.warning(
                         "Bitwarden refresh produced %d warning(s); "
-                        "run `hermes secrets bitwarden status` for detail.",
+                        "run `pcbdraft doctor` for detail.",
                         len(warnings),
                     )
             else:

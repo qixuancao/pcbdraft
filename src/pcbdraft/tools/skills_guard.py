@@ -176,11 +176,11 @@ THREAT_PATTERNS = [
         "references Docker config (may contain registry creds)",
     ),
     (
-        r"\$HOME/\.hermes/\.env|\~/\.hermes/\.env",
-        "hermes_env_access",
+        r"(?:\$HOME|\~)/\.(?:pcbdraft/runtime|hermes)/\.env",
+        "pcbdraft_env_access",
         "critical",
         "exfiltration",
-        "directly references Hermes secrets file",
+        "directly references application secrets file",
     ),
     # Match `cat <secrets-file>` (reading credentials) but NOT `cat > <file>`
     # or `cat >> <file>`, which are output redirections that WRITE a file
@@ -846,11 +846,11 @@ THREAT_PATTERNS = [
         "references agent config files (could persist malicious instructions across sessions)",
     ),
     (
-        r"\.hermes/config\.yaml|\.hermes/SOUL\.md",
-        "hermes_config_mod",
+        r"\.(?:pcbdraft(?:/runtime)?|hermes)/(?:config\.yaml|SOUL\.md)",
+        "pcbdraft_config_mod",
         "critical",
         "persistence",
-        "references Hermes configuration files directly",
+        "references application configuration files directly",
     ),
     (
         r"\.claude/settings|\.codex/config",

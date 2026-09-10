@@ -542,7 +542,7 @@ def _unsupported_feature_reason(feature: str) -> str | None:
         return (
             "unsupported on Windows: Matrix E2EE depends on python-olm, "
             "which has no Windows wheel and requires make + libolm to build "
-            "from sdist. Run Hermes under WSL to use Matrix on Windows."
+            "from sdist. Run PCBDraft under WSL to use Matrix on Windows."
         )
     return None
 
@@ -686,7 +686,7 @@ def _core_constraints_file() -> Path | None:
             lines.append(f"{name}=={ver}")
         if not lines:
             return None
-        fd, path = tempfile.mkstemp(prefix="hermes-core-constraints-", suffix=".txt")
+        fd, path = tempfile.mkstemp(prefix="pcbdraft-core-constraints-", suffix=".txt")
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write("\n".join(sorted(lines)) + "\n")
         return Path(path)
@@ -733,9 +733,9 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
 
     try:
         venv_root = Path(sys.executable).parent.parent
-        from pcbdraft.tools.environments.local import hermes_subprocess_env
+        from pcbdraft.tools.environments.local import pcbdraft_subprocess_env
 
-        uv_env = hermes_subprocess_env(inherit_credentials=False)
+        uv_env = pcbdraft_subprocess_env(inherit_credentials=False)
         uv_env["VIRTUAL_ENV"] = str(venv_root)
 
         # Tier 1: uv (preferred — fast, doesn't need pip in the venv)
@@ -911,9 +911,9 @@ def ensure(feature: str, *, prompt: bool = True) -> None:
                 feature,
                 missing,
                 f"unsupported on {managed_by}-managed installs: this build's "
-                f"packages come from {managed_by}, so Hermes cannot install "
+                f"packages come from {managed_by}, so PCBDraft cannot install "
                 f"them at runtime. Add the dependencies for {feature!r} via "
-                f"{managed_by} (or run a pip/uv install of Hermes instead).",
+                f"{managed_by} (or run a pip/uv install of PCBDraft instead).",
             )
 
     # Validate every spec against the allowlist + safety regex. Belt and

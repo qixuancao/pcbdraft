@@ -1,10 +1,10 @@
-"""``hermes project`` CLI — manage first-class, multi-folder Projects.
+"""``internal project`` CLI — manage first-class, multi-folder Projects.
 
 A Project is a human-named workspace spanning one or more folders, with one
 designated primary repo. Projects anchor desktop session grouping and (when
 bound to a kanban board) give kanban tasks a deterministic worktree + branch
 convention. State lives in the per-profile ``$PCBDRAFT_RUNTIME_HOME/projects.db`` store
-(see :mod:`hermes_cli.projects_db`).
+(see :mod:`pcbdraft.interfaces.tui.projects_db`).
 
 This is a footprint-ladder rung-2 capability: a CLI command + gateway RPC,
 with zero model-tool schema cost.
@@ -36,7 +36,7 @@ def build_parser(
     sub = parser.add_subparsers(dest="project_action")
 
     p_create = sub.add_parser("create", help="Create a new project")
-    p_create.add_argument("name", help="Human name, e.g. 'Hermes Agent'")
+    p_create.add_argument("name", help="Human name, e.g. 'PCBDraft Agent'")
     p_create.add_argument(
         "folders", nargs="*", help="Folder paths to include (first = primary)"
     )
@@ -108,7 +108,7 @@ def build_parser(
 
 
 def projects_command(args: argparse.Namespace) -> int:
-    """Entry point from ``hermes project …`` argparse dispatch."""
+    """Entry point from ``internal project …`` argparse dispatch."""
     action = getattr(args, "project_action", None)
     if not action:
         parser = getattr(args, "_project_parser", None)
@@ -116,8 +116,7 @@ def projects_command(args: argparse.Namespace) -> int:
             parser.print_help()
         else:
             print(
-                "usage: hermes project <action> [options]\n"
-                "Run 'hermes project --help' for the full list.",
+                "usage: pcbdraft --help\nRun 'pcbdraft --help' for the full list.",
                 file=sys.stderr,
             )
         return 0
@@ -225,7 +224,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
             conn, include_archived=getattr(args, "include_archived", False)
         )
     if not projs:
-        print("No projects yet. Create one with `hermes project create <name>`.")
+        print("No projects yet. Create one with `pcbdraft --help`.")
         return 0
     for p in projs:
         marker = "*" if p.id == active else " "
@@ -271,7 +270,7 @@ def _cmd_set_primary(args, conn, proj) -> int:
     if not pdb.set_primary(conn, proj.id, args.path):
         print(
             f"project: '{args.path}' is not a folder of {proj.slug}; "
-            f"add it first with `hermes project add-folder`.",
+            f"add it first with `pcbdraft --help`.",
             file=sys.stderr,
         )
         return 1

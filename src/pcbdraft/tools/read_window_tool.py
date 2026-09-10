@@ -19,7 +19,7 @@ def read_window_below_tool(callback: Callable | None = None) -> str:
     """Return the window underneath the Hermes window as a JSON string."""
     if callback is None:
         return tool_error(
-            "read_window_below is only available in the Hermes desktop app."
+            "read_window_below is only available in the PCBDraft desktop app."
         )
 
     try:
@@ -44,12 +44,12 @@ READ_WINDOW_BELOW_SCHEMA = {
     "name": "read_window_below",
     "description": (
         "Identify the application window directly underneath (behind) the "
-        "Hermes desktop window — what the user is working in behind this app. "
+        "PCBDraft desktop window — what the user is working in behind this app. "
         "Returns JSON: {window: {app, title, bounds{x,y,width,height}, id}, "
         "frontmost: {app, title}, platform}. `title` may be empty when the OS "
         "withholds window titles (e.g. macOS without the Screen Recording "
-        "permission — never prompted for, noted in `note`). Other Hermes "
-        "windows are skipped: the nearest non-Hermes window is reported. "
+        "permission — never prompted for, noted in `note`). Other PCBDraft "
+        "windows are skipped: the nearest non-PCBDraft window is reported. "
         "Returns {error, platform} instead where the OS cannot enumerate "
         "windows at all (e.g. a Wayland session); `error` says what would fix "
         "it, so relay it rather than retrying. "

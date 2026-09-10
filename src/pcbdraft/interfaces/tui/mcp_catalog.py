@@ -2,12 +2,12 @@
 
 Mirrors the optional-skills/ pattern: each catalog entry lives under
 ``optional-mcps/<name>/manifest.yaml`` and ships disabled. Users discover
-entries via ``hermes mcp catalog`` or the interactive ``hermes mcp picker``,
-and install them with ``hermes mcp install <name>`` (or by toggling in the
+entries via ``internal mcp catalog`` or the interactive ``internal mcp picker``,
+and install them with ``internal mcp install <name>`` (or by toggling in the
 picker, which flows them through any required env/OAuth setup).
 
 Catalog policy:
-- Entries are added only by merging a PR into hermes-agent. Presence in the
+- Entries are added only by merging a PR into pcbdraft. Presence in the
   ``optional-mcps/`` directory = Nous approval. No community tier, no trust
   signals beyond "it's in the catalog".
 - Manifests pin transport details (commands, args, refs). Pins follow the
@@ -15,9 +15,9 @@ Catalog policy:
   package launchers (``uvx pkg==X``, ``npx pkg@X``), full commit SHAs for
   git installs, and the pinned release should be at least 2 weeks old at
   pin time. MCPs are never
-  auto-updated; users explicitly re-run ``hermes mcp install <name>`` to
+  auto-updated; users explicitly re-run ``internal mcp install <name>`` to
   pull a new manifest version after a repo update.
-- Secrets prompted at install time go to ``~/.hermes/.env`` (the
+- Secrets prompted at install time go to ``~/.pcbdraft/.env`` (the
   .env-is-for-secrets rule). Non-secret env vars also go to .env to keep
   one credential store.
 
@@ -84,7 +84,7 @@ class TransportSpec:
     version: str | None = None  # informational, pinned
     # Static environment variables for the stdio subprocess (e.g. telemetry
     # opt-outs, mode flags). NOT for secrets — credentials go through
-    # auth.env so they are prompted for and land in ~/.hermes/.env.
+    # auth.env so they are prompted for and land in ~/.pcbdraft/.env.
     env: dict[str, str] = field(default_factory=dict)
 
 
@@ -159,7 +159,7 @@ class CatalogError(Exception):
 
 
 def _catalog_root() -> Path:
-    """Return the optional-mcps/ directory shipped with this Hermes install."""
+    """Return the optional-mcps/ directory shipped with this PCBDraft install."""
     # Prefer the env-var override / packaged location; fall back to the repo's
     # optional-mcps/ next to the package (source checkout).
     return get_optional_mcps_dir(Path(__file__).parent.parent / "optional-mcps")
@@ -195,7 +195,7 @@ def _parse_manifest(path: Path) -> CatalogEntry:
     if mv != _MANIFEST_VERSION:
         raise CatalogError(
             f"{path}: manifest_version {mv!r} unsupported "
-            f"(this Hermes understands version {_MANIFEST_VERSION})"
+            f"(this PCBDraft understands version {_MANIFEST_VERSION})"
         )
 
     name = data.get("name") or ""
@@ -355,7 +355,7 @@ def list_catalog() -> list[CatalogEntry]:
     Invalid manifests are skipped silently (CI tests catch them at PR time).
     Manifests with a future ``manifest_version`` are also skipped, but the
     skip is surfaced via :func:`catalog_diagnostics` so the picker / catalog
-    UIs can tell the user their Hermes is out of date.
+    UIs can tell the user their PCBDraft is out of date.
     """
     root = _catalog_root()
     if not root.exists():
@@ -390,8 +390,8 @@ def catalog_diagnostics() -> list[tuple]:
 
     Returns a list of ``(entry_name, kind, message)`` tuples where ``kind``
     is one of:
-      - ``future_manifest`` — manifest_version is newer than this Hermes
-        understands. Update Hermes to install this entry.
+      - ``future_manifest`` — manifest_version is newer than this PCBDraft
+        understands. Update PCBDraft to install this entry.
       - ``invalid`` — manifest is malformed in some other way (caught by
         CI for shipped manifests; user-modified manifests can hit this).
     """
@@ -456,7 +456,7 @@ def _run_bootstrap(cwd: Path, commands: list[str]) -> None:
 
 
 def _do_git_install(entry: CatalogEntry) -> Path:
-    """Clone the entry's repo into ``~/.hermes/mcp-installs/<name>`` and run
+    """Clone the entry's repo into ``~/.pcbdraft/mcp-installs/<name>`` and run
     bootstrap commands. Returns the install directory."""
     assert entry.install is not None and entry.install.type == "git"
     install = entry.install
@@ -548,7 +548,7 @@ def _expand_install_dir(value: str, install_dir: Path | None) -> str:
 
 def _prompt_env_vars(specs: list[EnvVarSpec]) -> dict[str, str]:
     """Walk the env spec list, prompting the user for each. Writes secrets and
-    non-secrets alike to ~/.hermes/.env via save_env_value()."""
+    non-secrets alike to ~/.pcbdraft/.env via save_env_value()."""
     collected: dict[str, str] = {}
     for spec in specs:
         existing = get_env_value(spec.name)
@@ -572,7 +572,7 @@ def _prompt_env_vars(specs: list[EnvVarSpec]) -> dict[str, str]:
 
 def _build_server_config(entry: CatalogEntry, install_dir: Path | None) -> dict:
     """Translate a manifest into the ``mcp_servers.<name>`` block format used
-    by hermes_cli/mcp_config.py."""
+    by pcbdraft.interfaces.tui/mcp_config.py."""
     cfg: dict = {}
     t = entry.transport
     if t.type == "stdio":
@@ -671,7 +671,7 @@ def _apply_tool_selection(
     Probe-fail path:
       - If manifest declares ``tools.default_enabled`` → apply directly.
       - Otherwise → leave config with no filter (all on when reachable).
-      - Either way, point the user at ``hermes mcp configure <name>``.
+      - Either way, point the user at ``internal mcp configure <name>``.
     """
     print()
     print(color(f"  Probing '{entry.name}' for available tools...", Colors.CYAN))
@@ -686,7 +686,7 @@ def _apply_tool_selection(
                 color(
                     f"  Couldn't probe server. Applied manifest default "
                     f"({len(manifest_default)} tools). "
-                    f"Run `hermes mcp configure {entry.name}` after the server "
+                    f"Run `pcbdraft --help` after the server "
                     "is reachable to refine.",
                     Colors.YELLOW,
                 )
@@ -695,9 +695,9 @@ def _apply_tool_selection(
             _write_tools_include(entry.name, None)
             print(
                 color(
-                    f"  Couldn't probe server; installed with no tool filter "
+                    "  Couldn't probe server; installed with no tool filter "
                     "(all tools enabled when reachable). "
-                    f"Run `hermes mcp configure {entry.name}` after first "
+                    "Run `pcbdraft --help` after first "
                     "connect to prune.",
                     Colors.YELLOW,
                 )
@@ -759,8 +759,7 @@ def _apply_tool_selection(
         _write_tools_include(entry.name, [])
         print(
             color(
-                f"  No tools selected. Run `hermes mcp configure {entry.name}` "
-                "to change.",
+                "  No tools selected. Run `pcbdraft --help` to change.",
                 Colors.YELLOW,
             )
         )
@@ -770,7 +769,7 @@ def _apply_tool_selection(
         # Everything selected — clear filter for the cleanest config shape.
         # NOTE: this means any tools the server adds later (e.g. a future MCP
         # version) will also be auto-enabled. To pin to the current set,
-        # the user can re-run `hermes mcp configure <name>` and unselect a
+        # the user can re-run `internal mcp configure <name>` and unselect a
         # tool to switch back to include-mode.
         _write_tools_include(entry.name, None)
         print(
@@ -829,13 +828,13 @@ def install_entry(entry: CatalogEntry, *, enable: bool = True) -> None:
     elif entry.auth.type == "oauth":
         if entry.auth.provider:
             # Case 2: provider-mediated (Google, GitHub, etc.). We rely on
-            # the existing `hermes auth <provider>` flow. Surface guidance
+            # the existing `internal auth <provider>` flow. Surface guidance
             # here rather than auto-running it — keeps the catalog install
             # decoupled from provider-auth lifecycle.
             print(
                 color(
                     f"  This MCP uses {entry.auth.provider} OAuth. Run "
-                    f"`hermes auth {entry.auth.provider}` if you have not "
+                    f"`pcbdraft connect` if you have not "
                     "already authenticated.",
                     Colors.YELLOW,
                 )
@@ -875,7 +874,7 @@ def install_entry(entry: CatalogEntry, *, enable: bool = True) -> None:
         color(
             f"  ✓ Installed '{entry.name}' "
             f"({'enabled' if enable else 'disabled'}). "
-            f"Start a new Hermes session to load its tools.",
+            f"Start a new PCBDraft session to load its tools.",
             Colors.GREEN,
         )
     )

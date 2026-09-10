@@ -73,7 +73,7 @@ def resolve_cache_home(home_path: Path | None = None) -> Path:
     """Resolve the Hermes home used for cache paths.
 
     ``home_path`` is whatever ``load_hermes_dotenv()`` already resolved;
-    falling back to ``$PCBDRAFT_RUNTIME_HOME`` / ``~/.hermes`` keeps direct callers
+    falling back to the core runtime-home helper keeps direct callers
     (and tests that don't thread a home through) working.
     """
     if home_path is None:

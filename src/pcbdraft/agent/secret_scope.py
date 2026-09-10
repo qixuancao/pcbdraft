@@ -106,7 +106,7 @@ _GLOBAL_ENV_EXACT = frozenset(
         "PCBDRAFT_RUNTIME_API_TIMEOUT",
         "PCBDRAFT_RUNTIME_REDACT_SECRETS",
         "PCBDRAFT_RUNTIME_NOUS_TIMEOUT_SECONDS",
-        "_HERMES_GATEWAY",
+        "_PCBDRAFT_GATEWAY",
         # OS / interpreter
         "PATH",
         "HOME",

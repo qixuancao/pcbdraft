@@ -89,7 +89,7 @@ def _get_scratch_dir() -> Path:
 
     scratch = Path("/scratch")
     if scratch.exists() and os.access(scratch, os.W_OK):
-        user_scratch = scratch / os.getenv("USER", "hermes") / "hermes-agent"
+        user_scratch = scratch / os.getenv("USER", "pcbdraft") / "pcbdraft"
         user_scratch.mkdir(parents=True, exist_ok=True)
         logger.info("Using /scratch for sandboxes: %s", user_scratch)
         return user_scratch
@@ -181,6 +181,11 @@ class SingularityEnvironment(BaseEnvironment):
     CWD persists via in-band stdout markers.
     """
 
+    _remote_runtime_home = "/root/.pcbdraft/runtime"
+
+    def agent_visible_cache_base(self) -> str:
+        return self._remote_runtime_home
+
     def __init__(
         self,
         image: str,
@@ -195,7 +200,7 @@ class SingularityEnvironment(BaseEnvironment):
         super().__init__(cwd=cwd, timeout=timeout)
         self.executable = _ensure_singularity_available()
         self.image = _get_or_build_sif(image, self.executable)
-        self.instance_id = f"hermes_{uuid.uuid4().hex[:12]}"
+        self.instance_id = f"pcbdraft_{uuid.uuid4().hex[:12]}"
         self._instance_started = False
         self._persistent = persistent_filesystem
         self._task_id = task_id
@@ -204,7 +209,7 @@ class SingularityEnvironment(BaseEnvironment):
         self._memory = memory
 
         if self._persistent:
-            overlay_base = _get_scratch_dir() / "hermes-overlays"
+            overlay_base = _get_scratch_dir() / "pcbdraft-overlays"
             overlay_base.mkdir(parents=True, exist_ok=True)
             self._overlay_dir = overlay_base / f"overlay-{task_id}"
             self._overlay_dir.mkdir(parents=True, exist_ok=True)
@@ -223,6 +228,7 @@ class SingularityEnvironment(BaseEnvironment):
 
         try:
             from pcbdraft.tools.credential_files import (
+                get_cache_directory_mounts,
                 get_credential_file_mounts,
                 get_skills_directory_mount,
             )
@@ -234,15 +240,31 @@ class SingularityEnvironment(BaseEnvironment):
                         f"{mount_entry['host_path']}:{mount_entry['container_path']}:ro",
                     ]
                 )
-            for skills_mount in get_skills_directory_mount():
+            for skills_mount in get_skills_directory_mount(
+                container_base=self._remote_runtime_home
+            ):
                 cmd.extend(
                     [
                         "--bind",
                         f"{skills_mount['host_path']}:{skills_mount['container_path']}:ro",
                     ]
                 )
+            # --containall/--no-home disables the host-home auto-bind. Cache
+            # producers and consumers therefore use the same explicit mirror
+            # contract as credentials and skills, including late media files.
+            for cache_mount in get_cache_directory_mounts(
+                container_base=self._remote_runtime_home
+            ):
+                cmd.extend(
+                    [
+                        "--bind",
+                        f"{cache_mount['host_path']}:{cache_mount['container_path']}:ro",
+                    ]
+                )
         except Exception as e:
-            logger.debug("Singularity: could not load credential/skills mounts: %s", e)
+            raise RuntimeError(
+                "Singularity runtime mounts could not be prepared"
+            ) from e
 
         if self._memory > 0:
             cmd.extend(["--memory", f"{self._memory}M"])

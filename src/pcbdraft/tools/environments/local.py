@@ -201,7 +201,7 @@ def _resolve_safe_cwd(cwd: str) -> str:
 
 
 # Hermes-internal env vars that should NOT leak into terminal subprocesses.
-_HERMES_PROVIDER_ENV_FORCE_PREFIX = "_HERMES_FORCE_"
+_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX = "_PCBDRAFT_FORCE_"
 
 # Hermes-managed AWS *inference* credentials for ``auth_type="aws_sdk"``
 # providers (Bedrock).  Scoped DELIBERATELY NARROW: this lists only the
@@ -343,7 +343,7 @@ def _build_provider_env_blocklist() -> frozenset:
     return frozenset(blocked)
 
 
-_HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
+_PCBDRAFT_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 
 # Active-virtualenv markers that must NOT leak into terminal subprocesses.
 # The gateway runs inside its own venv, so its process environment carries
@@ -371,7 +371,7 @@ _HERMES_PROVIDER_ENV_BLOCKLIST = _build_provider_env_blocklist()
 _ACTIVE_VENV_MARKER_VARS = ("VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONHOME")
 
 
-def _is_hermes_internal_secret(key: str) -> bool:
+def _is_pcbdraft_internal_secret(key: str) -> bool:
     """Return True for Hermes-internal secrets injected under *dynamic* names.
 
     ``_HERMES_PROVIDER_ENV_BLOCKLIST`` is name-based and derived from the
@@ -491,28 +491,28 @@ def _sanitize_subprocess_env(
     sanitized: dict[str, str] = {}
 
     for key, value in (base_env or {}).items():
-        if key.startswith(_HERMES_PROVIDER_ENV_FORCE_PREFIX):
+        if key.startswith(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX):
             continue
-        if _is_hermes_internal_secret(key):
+        if _is_pcbdraft_internal_secret(key):
             continue
         passthrough = _is_passthrough(key)
-        if key in _HERMES_PROVIDER_ENV_BLOCKLIST and not passthrough:
+        if key in _PCBDRAFT_PROVIDER_ENV_BLOCKLIST and not passthrough:
             continue
         resolved = _resolve_passthrough_value(key, value) if passthrough else value
         if resolved is not None:
             sanitized[key] = resolved
 
     for key, value in (extra_env or {}).items():
-        if key.startswith(_HERMES_PROVIDER_ENV_FORCE_PREFIX):
-            real_key = key[len(_HERMES_PROVIDER_ENV_FORCE_PREFIX) :]
-            if _is_hermes_internal_secret(real_key):
+        if key.startswith(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX):
+            real_key = key[len(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX) :]
+            if _is_pcbdraft_internal_secret(real_key):
                 continue
             sanitized[real_key] = value
-        elif _is_hermes_internal_secret(key):
+        elif _is_pcbdraft_internal_secret(key):
             continue
         else:
             passthrough = _is_passthrough(key)
-            if key in _HERMES_PROVIDER_ENV_BLOCKLIST and not passthrough:
+            if key in _PCBDRAFT_PROVIDER_ENV_BLOCKLIST and not passthrough:
                 continue
             resolved = _resolve_passthrough_value(key, value) if passthrough else value
             if resolved is not None:
@@ -532,7 +532,7 @@ def _sanitize_subprocess_env(
     # can run the gateway under a base interpreter while VIRTUAL_ENV identifies
     # the separate Hermes runtime venv.  The filter validates that relationship
     # against the repo layout before trusting it.
-    _strip_hermes_owned_pythonpath_and_runtime_markers(sanitized)
+    _strip_pcbdraft_owned_pythonpath_and_runtime_markers(sanitized)
 
     _apply_windows_msys_bash_env_defaults(sanitized)
 
@@ -601,7 +601,7 @@ _ALWAYS_STRIP_KEYS: frozenset[str] = frozenset(
 )
 
 
-def hermes_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str]:
+def pcbdraft_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str]:
     """Build a sanitized environment dict for a spawned subprocess.
 
     Centralized helper for the **non-terminal** spawn surface (browser,
@@ -644,14 +644,14 @@ def hermes_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str
     # regardless of ``inherit_credentials`` — a model-driving CLI has no
     # legitimate use for them. See :func:`_is_hermes_internal_secret`.
     for key in list(env):
-        if key.startswith(_HERMES_PROVIDER_ENV_FORCE_PREFIX):
+        if key.startswith(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX):
             env.pop(key, None)
-        elif _is_hermes_internal_secret(key):
+        elif _is_pcbdraft_internal_secret(key):
             env.pop(key, None)
 
     if not inherit_credentials:
         # Tier 2 — strip provider/tool credentials unless explicitly inherited.
-        for key in _HERMES_PROVIDER_ENV_BLOCKLIST:
+        for key in _PCBDRAFT_PROVIDER_ENV_BLOCKLIST:
             env.pop(key, None)
 
     # Windows UTF-8 safety for spawned processes (#31420).
@@ -662,7 +662,7 @@ def hermes_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, str
 
     apply_subprocess_home_env(env)
 
-    _strip_hermes_owned_pythonpath_and_runtime_markers(env)
+    _strip_pcbdraft_owned_pythonpath_and_runtime_markers(env)
 
     _apply_windows_msys_bash_env_defaults(env)
 
@@ -775,16 +775,16 @@ def _find_bash() -> str:
     #   PortableGit: %LOCALAPPDATA%\hermes\git\bin\bash.exe   (primary)
     #   MinGit:      %LOCALAPPDATA%\hermes\git\usr\bin\bash.exe (legacy/32-bit fallback)
     _local_appdata = os.environ.get("LOCALAPPDATA", "")
-    _hermes_portable_git = (
-        os.path.join(_local_appdata, "hermes", "git") if _local_appdata else ""
-    )
-    if _hermes_portable_git:
+    from pcbdraft.core.runtime_environment import get_runtime_home
+
+    _pcbdraft_portable_git = str(get_runtime_home() / "git")
+    if _pcbdraft_portable_git:
         for candidate in (
             os.path.join(
-                _hermes_portable_git, "bin", "bash.exe"
+                _pcbdraft_portable_git, "bin", "bash.exe"
             ),  # PortableGit (primary)
             os.path.join(
-                _hermes_portable_git, "usr", "bin", "bash.exe"
+                _pcbdraft_portable_git, "usr", "bin", "bash.exe"
             ),  # MinGit fallback
         ):
             if os.path.isfile(candidate) and candidate not in candidates:
@@ -849,7 +849,7 @@ def _find_bash() -> str:
         return candidates[0]
 
     raise RuntimeError(
-        "Git Bash not found. Hermes Agent requires Git for Windows on Windows.\n"
+        "Git Bash not found. PCBDraft requires Git for Windows on Windows.\n"
         "Install it from: https://git-scm.com/download/win\n"
         "Or set PCBDRAFT_RUNTIME_GIT_BASH_PATH to your bash.exe location."
     )
@@ -940,7 +940,7 @@ def _git_bash_aslr_help(bash: str, details: str = "") -> str:
         'Get-Item "$gitRoot\\bin\\bash.exe", "$gitRoot\\usr\\bin\\*.exe" '
         "-ErrorAction SilentlyContinue | ForEach-Object { "
         "Set-ProcessMitigation -Name $_.FullName -Disable ForceRelocateImages }\n"
-        "Then restart Hermes. If the override is blocked or later re-applied, "
+        "Then restart PCBDraft. If the override is blocked or later re-applied, "
         "ask your Windows administrator to allow this per-program exception."
     )
 
@@ -1119,10 +1119,10 @@ _SANE_PATH = (
 # Cached directory containing the ``hermes`` console-script.
 # ``_SENTINEL`` distinguishes "not resolved yet" from a resolved ``None``.
 _SENTINEL = object()
-_HERMES_BIN_DIR: "str | None | object" = _SENTINEL
+_PCBDRAFT_BIN_DIR: "str | None | object" = _SENTINEL
 
 
-def _resolve_hermes_bin_dir() -> str | None:
+def _resolve_pcbdraft_bin_dir() -> str | None:
     """Return the directory holding the ``hermes`` console-script, or None.
 
     The terminal tool runs in a freshly-spawned subshell whose PATH is the
@@ -1145,13 +1145,13 @@ def _resolve_hermes_bin_dir() -> str | None:
       3. The directory of ``sys.executable`` — the running interpreter's
          venv ``bin``/``Scripts`` is where its console-scripts live.
     """
-    global _HERMES_BIN_DIR
-    if _HERMES_BIN_DIR is not _SENTINEL:
-        return _HERMES_BIN_DIR  # type: ignore[return-value]
+    global _PCBDRAFT_BIN_DIR
+    if _PCBDRAFT_BIN_DIR is not _SENTINEL:
+        return _PCBDRAFT_BIN_DIR  # type: ignore[return-value]
 
     candidate: str | None = None
 
-    which = shutil.which("hermes")
+    which = shutil.which("pcbdraft")
     if which:
         candidate = os.path.dirname(which)
 
@@ -1160,7 +1160,7 @@ def _resolve_hermes_bin_dir() -> str | None:
         base = os.path.basename(argv0).lower()
         if (
             os.path.isabs(argv0)
-            and (base == "hermes" or base.startswith("hermes."))
+            and (base == "pcbdraft" or base.startswith("pcbdraft."))
             and os.path.isfile(argv0)
         ):
             candidate = os.path.dirname(argv0)
@@ -1168,25 +1168,25 @@ def _resolve_hermes_bin_dir() -> str | None:
     if candidate is None:
         exe_dir = os.path.dirname(sys.executable) if sys.executable else ""
         if exe_dir:
-            shim = "hermes.exe" if _IS_WINDOWS else "hermes"
+            shim = "pcbdraft.exe" if _IS_WINDOWS else "pcbdraft"
             if os.path.isfile(os.path.join(exe_dir, shim)):
                 candidate = exe_dir
 
     if candidate and not os.path.isdir(candidate):
         candidate = None
 
-    _HERMES_BIN_DIR = candidate
+    _PCBDRAFT_BIN_DIR = candidate
     return candidate
 
 
-def _prepend_hermes_bin_dir(existing_path: str) -> str:
+def _prepend_pcbdraft_bin_dir(existing_path: str) -> str:
     """Prepend the hermes install dir to ``existing_path`` if it's missing.
 
     Cross-platform (uses ``os.pathsep``). First-occurrence wins, so a PATH
     that already contains the dir is returned unchanged. Returns the input
     unchanged when the install dir can't be resolved.
     """
-    bin_dir = _resolve_hermes_bin_dir()
+    bin_dir = _resolve_pcbdraft_bin_dir()
     if not bin_dir:
         return existing_path
     sep = os.pathsep
@@ -1218,10 +1218,10 @@ def _managed_runtime_path_entries() -> list[str]:
     try:
         from pcbdraft.core.runtime_environment import (
             get_runtime_home,
-            iter_hermes_node_dirs,
+            iter_pcbdraft_node_dirs,
         )
 
-        candidates = [*iter_hermes_node_dirs(), get_runtime_home() / "bin"]
+        candidates = [*iter_pcbdraft_node_dirs(), get_runtime_home() / "bin"]
         return [str(d) for d in candidates if d.is_dir()]
     except Exception:
         return []
@@ -1338,16 +1338,16 @@ def _make_run_env(env: dict) -> dict:
     merged = dict(os.environ | env)
     run_env = {}
     for k, v in merged.items():
-        if k.startswith(_HERMES_PROVIDER_ENV_FORCE_PREFIX):
-            real_key = k[len(_HERMES_PROVIDER_ENV_FORCE_PREFIX) :]
-            if _is_hermes_internal_secret(real_key):
+        if k.startswith(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX):
+            real_key = k[len(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX) :]
+            if _is_pcbdraft_internal_secret(real_key):
                 continue
             run_env[real_key] = v
-        elif _is_hermes_internal_secret(k):
+        elif _is_pcbdraft_internal_secret(k):
             continue
         else:
             passthrough = _is_passthrough(k)
-            if k in _HERMES_PROVIDER_ENV_BLOCKLIST and not passthrough:
+            if k in _PCBDRAFT_PROVIDER_ENV_BLOCKLIST and not passthrough:
                 continue
             value = _resolve_passthrough_value(k, v) if passthrough else v
             if value is not None:
@@ -1365,7 +1365,7 @@ def _make_run_env(env: dict) -> dict:
         # Ensure the hermes install dir is reachable so plugins can shell out
         # to bare ``hermes`` via the terminal tool even when the gateway was
         # launched without it on PATH (systemd, service managers, cron, etc.).
-        run_env[path_key] = _prepend_hermes_bin_dir(new_path)
+        run_env[path_key] = _prepend_pcbdraft_bin_dir(new_path)
 
     _inject_context_runtime_home(run_env)
 
@@ -1378,7 +1378,7 @@ def _make_run_env(env: dict) -> dict:
     # engaged so a sibling session's os.environ mirror can't leak in).
     _inject_session_context_env(run_env)
 
-    _strip_hermes_owned_pythonpath_and_runtime_markers(run_env)
+    _strip_pcbdraft_owned_pythonpath_and_runtime_markers(run_env)
 
     _apply_windows_msys_bash_env_defaults(run_env)
 
@@ -1394,7 +1394,7 @@ def _same_path(left: Path, right: Path) -> bool:
     return left_parts == right_parts
 
 
-def _build_hermes_repo_root_aliases(
+def _build_pcbdraft_repo_root_aliases(
     resolved_root: Path,
     lexical_root: Path,
     configured_home: Path,
@@ -1473,7 +1473,7 @@ def _build_hermes_repo_root_aliases(
 #: PYTHONPATH so the backend can do ``import tools``, ``import hermes_cli``,
 #: etc.  Subprocesses that are NOT the Hermes backend don't need it and it
 #: can shadow local packages.
-_hermes_repo_root: Path = Path(__file__).resolve().parents[2]
+_pcbdraft_repo_root: Path = Path(__file__).resolve().parents[2]
 
 #: Alternate spellings of the repo root that Hermes launchers may emit.
 #: ``Path(__file__).resolve()`` canonicalizes symlinks/junctions, but the
@@ -1483,8 +1483,8 @@ _hermes_repo_root: Path = Path(__file__).resolve().parents[2]
 #: ``Path(__file__)`` (unresolved) keeps that spelling, so a PYTHONPATH
 #: entry written by the launcher still matches even though it differs
 #: lexically from the resolved root.
-_hermes_repo_root_aliases: tuple[Path, ...] = _build_hermes_repo_root_aliases(
-    _hermes_repo_root,
+_pcbdraft_repo_root_aliases: tuple[Path, ...] = _build_pcbdraft_repo_root_aliases(
+    _pcbdraft_repo_root,
     Path(__file__).absolute().parents[2],
     get_process_runtime_home(),
 )
@@ -1500,7 +1500,7 @@ _in_venv: bool = getattr(sys, "base_prefix", sys.prefix) != sys.prefix or hasatt
 #: interpreter's own venv.  Computed lazily (once) because ``site`` import
 #: and path construction are not free and this function is called on every
 #: subprocess spawn.
-_hermes_site_packages: list[Path] | None = None
+_pcbdraft_site_packages: list[Path] | None = None
 
 
 def _validated_runtime_venv(env: dict) -> Path | None:
@@ -1518,7 +1518,7 @@ def _validated_runtime_venv(env: dict) -> Path | None:
     candidate = Path(value)
     if not any(
         _same_path(candidate, repo_root / "venv")
-        for repo_root in _hermes_repo_root_aliases
+        for repo_root in _pcbdraft_repo_root_aliases
     ):
         return None
 
@@ -1531,7 +1531,7 @@ def _validated_runtime_venv(env: dict) -> Path | None:
     return candidate
 
 
-def _get_hermes_site_packages(env: dict) -> list[Path]:
+def _get_pcbdraft_site_packages(env: dict) -> list[Path]:
     """Return exact site-packages dirs owned by the Hermes runtime.
 
     Uses ``site.getsitepackages()`` when available for robustness (it respects
@@ -1540,9 +1540,9 @@ def _get_hermes_site_packages(env: dict) -> list[Path]:
     A validated Windows base-interpreter launch contributes its separate
     ``VIRTUAL_ENV/Lib/site-packages`` directory as an additional exact entry.
     """
-    global _hermes_site_packages
-    if _hermes_site_packages is not None:
-        result = list(_hermes_site_packages)
+    global _pcbdraft_site_packages
+    if _pcbdraft_site_packages is not None:
+        result = list(_pcbdraft_site_packages)
     else:
         result = []
         if _in_venv:
@@ -1565,7 +1565,7 @@ def _get_hermes_site_packages(env: dict) -> list[Path]:
                     pyver = f"python{sys.version_info[0]}.{sys.version_info[1]}"
                     result.append(Path(sys.prefix) / "lib" / pyver / "site-packages")
 
-        _hermes_site_packages = list(result)
+        _pcbdraft_site_packages = list(result)
 
     runtime_venv = _validated_runtime_venv(env)
     if runtime_venv is not None:
@@ -1576,19 +1576,19 @@ def _get_hermes_site_packages(env: dict) -> list[Path]:
     return result
 
 
-def _strip_hermes_owned_pythonpath_and_runtime_markers(env: dict) -> None:
+def _strip_pcbdraft_owned_pythonpath_and_runtime_markers(env: dict) -> None:
     """Strip Hermes-owned PYTHONPATH entries, then the runtime marker vars.
 
     Ordering is load-bearing: PYTHONPATH filtering must run BEFORE the
     markers are removed so a validated Windows base-interpreter launch
     (VIRTUAL_ENV -> <repo>/venv) can still prove ownership.
     """
-    _strip_hermes_owned_pythonpath(env)
+    _strip_pcbdraft_owned_pythonpath(env)
     for _marker in _ACTIVE_VENV_MARKER_VARS:
         env.pop(_marker, None)
 
 
-def _strip_hermes_owned_pythonpath(env: dict) -> None:
+def _strip_pcbdraft_owned_pythonpath(env: dict) -> None:
     """Remove Hermes-owned PYTHONPATH entries from subprocess environments.
 
     Launchers prepend the Hermes repo root and the Hermes venv's
@@ -1613,7 +1613,7 @@ def _strip_hermes_owned_pythonpath(env: dict) -> None:
     if not pp:
         return
 
-    hermes_site_packages = _get_hermes_site_packages(env)
+    pcbdraft_site_packages = _get_pcbdraft_site_packages(env)
 
     kept: list[str] = []
     stripped: list[str] = []
@@ -1632,7 +1632,7 @@ def _strip_hermes_owned_pythonpath(env: dict) -> None:
         # --- Check 1: Hermes venv site-packages ---
         # Producers inject the exact directory, never a descendant.  Exact
         # matching avoids deleting a user path nested below site-packages.
-        for sp in hermes_site_packages:
+        for sp in pcbdraft_site_packages:
             if _same_path(entry_path, sp):
                 should_strip = True
                 break
@@ -1652,7 +1652,7 @@ def _strip_hermes_owned_pythonpath(env: dict) -> None:
         if not should_strip:
             should_strip = any(
                 _same_path(entry_path, repo_root)
-                for repo_root in _hermes_repo_root_aliases
+                for repo_root in _pcbdraft_repo_root_aliases
             )
 
         if should_strip:
@@ -1667,7 +1667,7 @@ def _strip_hermes_owned_pythonpath(env: dict) -> None:
 
     if stripped:
         logger.debug(
-            "Stripped Hermes-owned entries from PYTHONPATH: %s",
+            "Stripped PCBDraft-owned entries from PYTHONPATH: %s",
             stripped,
         )
 
@@ -1800,7 +1800,7 @@ class LocalEnvironment(BaseEnvironment):
 
                 cache_dir = get_runtime_home() / "cache" / "terminal"
             except Exception:
-                cache_dir = Path(tempfile.gettempdir()) / "hermes_terminal"
+                cache_dir = Path(tempfile.gettempdir()) / "pcbdraft_terminal"
             cache_dir.mkdir(parents=True, exist_ok=True)
             # Force forward slashes so the same string serves both contexts.
             return str(cache_dir).replace("\\", "/")
@@ -1894,7 +1894,7 @@ class LocalEnvironment(BaseEnvironment):
         )
         if not _IS_WINDOWS:
             try:
-                proc._hermes_pgid = os.getpgid(proc.pid)
+                proc._pcbdraft_pgid = os.getpgid(proc.pid)
             except ProcessLookupError:
                 pass
 
@@ -1953,7 +1953,7 @@ class LocalEnvironment(BaseEnvironment):
                 try:
                     pgid = os.getpgid(proc.pid)
                 except ProcessLookupError:
-                    pgid = getattr(proc, "_hermes_pgid", None)
+                    pgid = getattr(proc, "_pcbdraft_pgid", None)
                     if pgid is None:
                         raise
 

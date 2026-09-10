@@ -507,7 +507,11 @@ def render_graph(
     nodes = list(payload.get("nodes", []))
     if not nodes:
         placeholder = [
-            ["no learning yet — keep using Hermes and it maps out here", STYLE_DIM, 0.7]
+            [
+                "no learning yet — keep using PCBDraft and it maps out here",
+                STYLE_DIM,
+                0.7,
+            ]
         ]
         return {"grid": [placeholder], "date": "", "reveal": reveal, "visible": 0}
 

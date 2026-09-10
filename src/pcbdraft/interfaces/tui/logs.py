@@ -1,22 +1,22 @@
-"""``hermes logs`` — view and filter Hermes log files.
+"""``internal logs`` — view and filter PCBDraft log files.
 
 Supports tailing, following, session filtering, level filtering,
 component filtering, and relative time ranges.  All log files live
-under ``~/.hermes/logs/``.
+under ``~/.pcbdraft/logs/``.
 
 Usage examples::
 
-    hermes logs                    # last 50 lines of agent.log
-    hermes logs -f                 # follow agent.log in real time
-    hermes logs errors             # last 50 lines of errors.log
-    hermes logs gateway -n 100    # last 100 lines of gateway.log
-    hermes logs gui -f            # follow gui.log (dashboard/pty/ws)
-    hermes logs desktop -f        # follow desktop.log (Electron app boot/backend)
-    hermes logs --level WARNING    # only WARNING+ lines
-    hermes logs --session abc123   # filter by session ID substring
-    hermes logs --component tools  # only tool-related lines
-    hermes logs --since 1h         # lines from the last hour
-    hermes logs --since 30m -f     # follow, starting 30 min ago
+    internal logs                    # last 50 lines of agent.log
+    internal logs -f                 # follow agent.log in real time
+    internal logs errors             # last 50 lines of errors.log
+    internal logs gateway -n 100    # last 100 lines of gateway.log
+    internal logs gui -f            # follow gui.log (dashboard/pty/ws)
+    internal logs desktop -f        # follow desktop.log (Electron app boot/backend)
+    internal logs --level WARNING    # only WARNING+ lines
+    internal logs --session abc123   # filter by session ID substring
+    internal logs --component tools  # only tool-related lines
+    internal logs --since 1h         # lines from the last hour
+    internal logs --since 30m -f     # follow, starting 30 min ago
 """
 
 import re
@@ -179,7 +179,7 @@ def tail_log(
     log_path = get_runtime_home() / "logs" / filename
     if not log_path.exists():
         print(f"Log file not found: {log_path}")
-        print("(Logs are created when Hermes runs — try 'hermes chat' first)")
+        print("(Logs are created when PCBDraft runs — try 'pcbdraft --help' first)")
         sys.exit(1)
 
     # Parse --since into a datetime cutoff
@@ -423,4 +423,4 @@ def list_logs() -> None:
             found = True
 
     if not found:
-        print("  (no log files yet — run 'hermes chat' to generate logs)")
+        print("  (no log files yet — run 'pcbdraft --help' to generate logs)")

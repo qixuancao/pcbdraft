@@ -1,6 +1,6 @@
 """Kanban decomposer — fan a triage task out into a graph of child tasks.
 
-Invoked by ``hermes kanban decompose [task_id | --all]`` and the
+Invoked by ``internal kanban decompose [task_id | --all]`` and the
 auto-decompose path in the gateway dispatcher loop. Reads the user's
 profile roster (with descriptions) and asks the auxiliary LLM to
 return a task graph in JSON. Then atomically creates the children,
@@ -14,7 +14,7 @@ and add more tasks if the work isn't done yet.
 Design notes
 ------------
 
-* Mirrors the shape of ``hermes_cli/kanban_specify.py``: lazy aux
+* Mirrors the shape of ``pcbdraft.interfaces.tui/kanban_specify.py``: lazy aux
   client import inside the function, lenient response parse, never
   raises on expected failure modes.
 
@@ -48,7 +48,7 @@ from pcbdraft.interfaces.tui import profiles as profiles_mod
 logger = logging.getLogger(__name__)
 
 
-_SYSTEM_PROMPT = """You are the Kanban decomposer for the Hermes Agent board.
+_SYSTEM_PROMPT = """You are the Kanban decomposer for the PCBDraft Agent board.
 
 A user dropped a rough idea into the Triage column. Your job is to break it
 into a small graph of concrete child tasks and route each one to the best-
@@ -160,7 +160,7 @@ def _extract_json_blob(raw: str) -> dict | None:
 
 
 def _profile_author() -> str:
-    """Mirror of ``hermes_cli.kanban._profile_author``."""
+    """Mirror of ``pcbdraft.interfaces.tui.kanban._profile_author``."""
     return (
         os.environ.get("PCBDRAFT_RUNTIME_PROFILE")
         or os.environ.get("USER")

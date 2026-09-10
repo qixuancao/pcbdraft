@@ -1,5 +1,5 @@
 """
-Interactive setup wizard for Hermes Agent.
+Interactive setup wizard for PCBDraft Agent.
 
 Modular wizard with independently-runnable sections:
   1. Model & Provider — choose your AI provider and model
@@ -8,7 +8,7 @@ Modular wizard with independently-runnable sections:
   4. Messaging Platforms — connect Telegram, Discord, etc.
   5. Tools — configure TTS, web search, image generation, etc.
 
-Config files are stored in ~/.hermes/ for easy access.
+Config files are stored in ~/.pcbdraft/ for easy access.
 """
 
 import copy
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-_DOCS_BASE = "https://hermes-agent.nousresearch.com/docs"
+_DOCS_BASE = "https://github.com/qixuancao/pcbdraft#readme"
 
 
 def _model_config_dict(config: dict[str, Any]) -> dict[str, Any]:
@@ -192,7 +192,7 @@ def _set_reasoning_effort(config: dict[str, Any], effort: str) -> None:
 
 
 # Import config helpers
-# display_runtime_home imported lazily at call sites (stale-module safety during hermes update)
+# display_runtime_home imported lazily at call sites (stale-module safety during updates)
 from pcbdraft.interfaces.tui.colors import Colors, color
 from pcbdraft.model.configuration import (
     DEFAULT_CONFIG,
@@ -238,19 +238,21 @@ def is_interactive_stdin() -> bool:
 def print_noninteractive_setup_guidance(reason: str | None = None) -> None:
     """Print guidance for headless/non-interactive setup flows."""
     print()
-    print(color("⚕ Hermes Setup — Non-interactive mode", Colors.CYAN, Colors.BOLD))
+    print(color("⚕ PCBDraft Setup — Non-interactive mode", Colors.CYAN, Colors.BOLD))
     print()
     if reason:
         print_info(reason)
     print_info("The interactive wizard cannot be used here.")
     print()
-    print_info("Configure Hermes using environment variables or config commands:")
-    print_info("  hermes config set model.provider custom")
-    print_info("  hermes config set model.base_url http://localhost:8080/v1")
-    print_info("  hermes config set model.default your-model-name")
+    print_info(
+        "Configure model credentials using environment variables or the model wizard:"
+    )
+    print_info("  pcbdraft connect --no-browser   (run in an interactive terminal)")
+    print_info("  pcbdraft doctor                (inspect local configuration)")
+    print_info("  pcbdraft --help                (supported public commands)")
     print()
     print_info("Or set OPENROUTER_API_KEY / OPENAI_API_KEY in your environment.")
-    print_info("Run 'hermes setup' in an interactive terminal to use the full wizard.")
+    print_info("Run 'pcbdraft connect' in an interactive terminal to choose a model.")
     print()
 
 
@@ -344,7 +346,7 @@ def is_noninteractive() -> bool:
     """True when no human is available to answer a prompt.
 
     The dashboard/desktop spawn CLI actions with ``stdin=DEVNULL`` and
-    ``PCBDRAFT_RUNTIME_NONINTERACTIVE=1`` (see ``hermes_cli/web_server.py``). In that
+    ``PCBDRAFT_RUNTIME_NONINTERACTIVE=1`` (see ``pcbdraft.interfaces.tui/web_server.py``). In that
     context an ``input()`` raises ``EOFError`` immediately, so a prompt that
     aborts on EOF kills the spawned action — this is what made the desktop
     "restart gateway" fail when the Windows gateway service was not yet
@@ -451,7 +453,7 @@ def _prompt_api_key(var: dict):
         save_env_value(var["name"], value)
         print_success("  ✓ Saved")
     else:
-        print_warning("  Skipped (configure later with 'hermes setup')")
+        print_warning("  Skipped (configure later with 'pcbdraft setup')")
 
 
 def _print_setup_summary(config: dict, runtime_home):
@@ -470,10 +472,10 @@ def _print_setup_summary(config: dict, runtime_home):
         _provider_ready = False
     if not _provider_ready:
         print()
-        print_warning("No inference provider is configured — Hermes cannot chat yet.")
+        print_warning("No inference provider is configured — PCBDraft cannot chat yet.")
         print_info("  Finish this one step with either of:")
-        print_info("    hermes model            (pick any provider/model)")
-        print_info("    hermes setup --portal   (Nous Portal OAuth, no API key)")
+        print_info("    pcbdraft connect any provider/model)")
+        print_info("    pcbdraft setup)")
 
     # Tool availability summary
     print()
@@ -494,7 +496,7 @@ def _print_setup_summary(config: dict, runtime_home):
         tool_status.append(("Vision (image analysis)", True, None))
     else:
         tool_status.append(
-            ("Vision (image analysis)", False, "run 'hermes setup' to configure")
+            ("Vision (image analysis)", False, "run 'pcbdraft setup' to configure")
         )
 
     # Web tools (Exa, Parallel, Firecrawl, or Tavily)
@@ -575,7 +577,7 @@ def _print_setup_summary(config: dict, runtime_home):
         else:
             tool_status.append(("Image Generation", False, "FAL_KEY or OPENAI_API_KEY"))
 
-    # Video generation — opt-in via `hermes tools` → Video Generation.
+    # Video generation — opt-in via `internal tools` → Video Generation.
     # Only show the row when a plugin reports available so we don't badger
     # users who don't care about video gen with a "missing" status line.
     if subscription_features.video_gen.managed_by_nous:
@@ -635,7 +637,7 @@ def _print_setup_summary(config: dict, runtime_home):
                 (
                     "Text-to-Speech (NeuTTS — not installed)",
                     False,
-                    "run 'hermes setup tts'",
+                    "run 'pcbdraft setup'",
                 )
             )
     elif tts_provider == "kittentts":
@@ -650,7 +652,7 @@ def _print_setup_summary(config: dict, runtime_home):
                 (
                     "Text-to-Speech (KittenTTS — not installed)",
                     False,
-                    "run 'hermes setup tts'",
+                    "run 'pcbdraft setup'",
                 )
             )
     else:
@@ -687,7 +689,7 @@ def _print_setup_summary(config: dict, runtime_home):
                 (
                     "Speech-to-Text (Local Whisper — not installed)",
                     False,
-                    "run 'hermes tools' → Speech-to-Text",
+                    "run 'pcbdraft --help' → Speech-to-Text",
                 )
             )
 
@@ -697,9 +699,7 @@ def _print_setup_summary(config: dict, runtime_home):
         if subscription_features.modal.direct_override:
             tool_status.append(("Modal Execution (direct Modal)", True, None))
         else:
-            tool_status.append(
-                ("Modal Execution", False, "run 'hermes setup terminal'")
-            )
+            tool_status.append(("Modal Execution", False, "run 'pcbdraft setup'"))
     elif managed_nous_tools_enabled() and subscription_features.nous_auth_present:
         tool_status.append(
             ("Modal Execution (optional via Nous subscription)", True, None)
@@ -709,7 +709,7 @@ def _print_setup_summary(config: dict, runtime_home):
     if get_env_value("HASS_TOKEN"):
         tool_status.append(("Smart Home (Home Assistant)", True, None))
 
-    # Spotify (OAuth via hermes auth spotify — check auth.json, not env vars)
+    # Spotify (OAuth via internal auth spotify — check auth.json, not env vars)
     try:
         from pcbdraft.model.auth import get_provider_auth_state
 
@@ -754,7 +754,7 @@ def _print_setup_summary(config: dict, runtime_home):
     disabled_tools = [(name, var) for name, avail, var in tool_status if not avail]
     if disabled_tools:
         print_warning(
-            "Some tools are disabled. Run 'hermes setup tools' to configure them,"
+            "Some tools are disabled. Run 'pcbdraft setup' to configure them,"
         )
         from pcbdraft.core.runtime_environment import display_runtime_home as _dhh
 
@@ -796,18 +796,16 @@ def _print_setup_summary(config: dict, runtime_home):
     print()
     print(color("📝 To edit your configuration:", Colors.CYAN, Colors.BOLD))
     print()
-    print(f"   {color('hermes setup', Colors.GREEN)}          Re-run the full wizard")
-    print(f"   {color('hermes setup model', Colors.GREEN)}    Change model/provider")
-    print(f"   {color('hermes setup terminal', Colors.GREEN)} Change terminal backend")
-    print(f"   {color('hermes setup gateway', Colors.GREEN)}  Configure messaging")
-    print(f"   {color('hermes setup tools', Colors.GREEN)}    Configure tool providers")
-    print()
-    print(f"   {color('hermes config', Colors.GREEN)}         View current settings")
     print(
-        f"   {color('hermes config edit', Colors.GREEN)}    Open config in your editor"
+        f"   {color('pcbdraft connect', Colors.GREEN)}   Choose or reauthenticate a model/provider"
     )
-    print(f"   {color('hermes config set <key> <value>', Colors.GREEN)}")
-    print("                          Set a specific value")
+    print(
+        f"   {color('pcbdraft setup', Colors.GREEN)}     Detect KiCad and initialize library tables"
+    )
+    print(f"   {color('pcbdraft doctor', Colors.GREEN)}    Inspect local configuration")
+    print(
+        f"   {color('pcbdraft --help', Colors.GREEN)}    Show supported public commands"
+    )
     print()
     print("   Or edit the files directly:")
     print(f"   {color(f'nano {get_config_path()}', Colors.DIM)}")
@@ -818,9 +816,9 @@ def _print_setup_summary(config: dict, runtime_home):
     print()
     print(color("🚀 Ready to go!", Colors.CYAN, Colors.BOLD))
     print()
-    print(f"   {color('hermes', Colors.GREEN)}              Start chatting")
-    print(f"   {color('hermes gateway', Colors.GREEN)}      Start messaging gateway")
-    print(f"   {color('hermes doctor', Colors.GREEN)}       Check for issues")
+    print(f"   {color('pcbdraft', Colors.GREEN)}              Start chatting")
+    print(f"   {color('pcbdraft --help', Colors.GREEN)}      Show supported commands")
+    print(f"   {color('pcbdraft doctor', Colors.GREEN)}       Check for issues")
     print()
 
 
@@ -978,7 +976,7 @@ def _read_nearest_vercel_project(start: Path | None = None) -> dict[str, str]:
 
 
 # Tool categories and provider config are now in tools_config.py (shared
-# between `hermes tools` and `hermes setup tools`).
+# between `internal tools` and `pcbdraft setup tools`).
 
 
 # =============================================================================
@@ -989,10 +987,10 @@ def _read_nearest_vercel_project(start: Path | None = None) -> dict[str, str]:
 def setup_model_provider(config: dict, *, quick: bool = False):
     """Configure the inference provider and default model.
 
-    Delegates to ``cmd_model()`` (the same flow used by ``hermes model``)
+    Delegates to ``cmd_model()`` (the same flow used by ``internal model``)
     for provider selection, credential prompting, and model picking.
     This ensures a single code path for all provider setup — any new
-    provider added to ``hermes model`` is automatically available here.
+    provider added to ``internal model`` is automatically available here.
 
     When *quick* is True, skips credential rotation, vision, and TTS
     configuration — used by the streamlined first-time quick setup.
@@ -1001,10 +999,10 @@ def setup_model_provider(config: dict, *, quick: bool = False):
 
     print_header("Inference Provider")
     print_info("Choose how to connect to your main chat model.")
-    print_info(f"   Guide: {_DOCS_BASE}/integrations/providers")
+    print_info(f"   Guide: {_DOCS_BASE}")
     print()
 
-    # Delegate to the shared hermes model flow — handles provider picker,
+    # Delegate to the shared internal model flow — handles provider picker,
     # credential prompting, model selection, and config persistence.
     from pcbdraft.interfaces.tui.main import select_provider_and_model
 
@@ -1016,7 +1014,7 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     except Exception as exc:
         logger.debug("select_provider_and_model error during setup: %s", exc)
         print_warning(f"Provider setup encountered an error: {exc}")
-        print_info("You can try again later with: hermes model")
+        print_info("You can try again later with: pcbdraft connect")
 
     # Re-sync the wizard's config dict from what cmd_model saved to disk.
     # This is critical: cmd_model writes to disk via its own load/save cycle,
@@ -1031,8 +1029,8 @@ def setup_model_provider(config: dict, *, quick: bool = False):
     # Credential rotation, vision-backend selection, and TTS provider are no
     # longer prompted here. They have safe defaults (rotation off, vision
     # auto-detected from the main provider, TTS = Edge) and are configurable
-    # on demand via `hermes auth add`, `hermes setup` vision, and
-    # `hermes setup tts`. This keeps both quick and full setup thin.
+    # on demand via `internal auth add`, `pcbdraft setup` vision, and
+    # `pcbdraft setup tts`. This keeps both quick and full setup thin.
 
     # Tool Gateway prompt is already shown by _model_flow_nous() above.
     save_config(config)
@@ -1145,7 +1143,7 @@ def _xai_oauth_logged_in_for_setup() -> bool:
     """True iff xAI Grok OAuth credentials are already stored locally.
 
     Lets TTS / STT setup skip the API-key prompt for users who logged in
-    through ``hermes model`` -> xAI Grok OAuth (SuperGrok / Premium+).
+    through ``internal model`` -> xAI Grok OAuth (SuperGrok / Premium+).
     """
     try:
         from pcbdraft.model.auth import get_xai_oauth_auth_status
@@ -1271,7 +1269,7 @@ def _setup_tts_provider(config: dict):
         )
         if get_env_value("VOICE_TOOLS_OPENAI_KEY") or get_env_value("OPENAI_API_KEY"):
             print_warning(
-                "Direct OpenAI credentials are still configured and may take precedence until removed from ~/.hermes/.env."
+                "Direct OpenAI credentials are still configured and may take precedence until removed from ~/.pcbdraft/.env."
             )
 
     if selected == "neutts":
@@ -1331,7 +1329,7 @@ def _setup_tts_provider(config: dict):
 
     elif selected == "xai":
         # Resolution order: existing OAuth tokens (free for SuperGrok subscribers
-        # via the Hermes auth store) > existing XAI_API_KEY > prompt the user.
+        # via the PCBDraft auth store) > existing XAI_API_KEY > prompt the user.
         # When neither is configured, offer both options instead of forcing the
         # API-key path — xAI TTS works fine with OAuth bearer tokens too.
         oauth_logged_in = _xai_oauth_logged_in_for_setup()
@@ -1378,7 +1376,7 @@ def _setup_tts_provider(config: dict):
 
                     print_warning(
                         "No xAI API key provided for TTS. Configure XAI_API_KEY "
-                        f"via hermes setup model or {_dhh()}/.env to use xAI TTS. "
+                        f"via pcbdraft setup or {_dhh()}/.env to use xAI TTS. "
                         "Falling back to Edge TTS."
                     )
                     selected = "edge"
@@ -1471,7 +1469,7 @@ def _setup_tts_provider(config: dict):
 
 
 def setup_tts(config: dict):
-    """Standalone TTS setup (for 'hermes setup tts')."""
+    """Standalone TTS setup (for 'pcbdraft setup')."""
     _setup_tts_provider(config)
 
 
@@ -1485,11 +1483,9 @@ def setup_terminal_backend(config: dict):
     import platform as _platform
 
     print_header("Terminal Backend")
-    print_info("Choose where Hermes runs shell commands and code.")
+    print_info("Choose where PCBDraft runs shell commands and code.")
     print_info("This affects tool execution, file access, and isolation.")
-    print_info(
-        f"   Guide: {_DOCS_BASE}/user-guide/configuration#terminal-backend-configuration"
-    )
+    print_info(f"   Guide: {_DOCS_BASE}")
     print()
 
     current_backend = cfg_get(config, "terminal", "backend", default="local")
@@ -1549,7 +1545,7 @@ def setup_terminal_backend(config: dict):
         print_success("Terminal backend: Local")
         print_info("Commands run directly on this machine.")
         # Gateway working directory defaults to home; sudo stays off. Both are
-        # configurable later via `hermes setup terminal` / config.yaml.
+        # configurable later via `pcbdraft setup terminal` / config.yaml.
         config["terminal"].setdefault("cwd", str(Path.home()))
 
     elif selected_backend == "docker":
@@ -1563,7 +1559,7 @@ def setup_terminal_backend(config: dict):
         else:
             print_info(f"Docker found: {docker_bin}")
 
-        # Image and resource limits use defaults; tune via `hermes setup terminal`.
+        # Image and resource limits use defaults; tune via `pcbdraft setup terminal`.
         config["terminal"].setdefault(
             "docker_image", "nikolaik/python-nodejs:python3.11-nodejs20"
         )
@@ -1584,12 +1580,12 @@ def setup_terminal_backend(config: dict):
             proxy_cfg.setdefault("enforce_on_docker", True)
             print_success("Egress firewall enabled in config")
             print_info(
-                "Run `hermes egress setup` then `hermes egress start` to mint "
+                "Run `pcbdraft --help` then `pcbdraft --help` to mint "
                 "tokens and launch the proxy."
             )
         else:
             print_info(
-                "Skipping egress firewall. You can enable it later with `hermes egress setup`."
+                "Skipping egress firewall. You can enable it later with `pcbdraft --help`."
             )
 
     elif selected_backend == "singularity":
@@ -1605,7 +1601,7 @@ def setup_terminal_backend(config: dict):
         else:
             print_info(f"Found: {sing_bin}")
 
-        # Image and resource limits use defaults; tune via `hermes setup terminal`.
+        # Image and resource limits use defaults; tune via `pcbdraft setup terminal`.
         config["terminal"].setdefault(
             "singularity_image",
             "docker://nikolaik/python-nodejs:python3.11-nodejs20",
@@ -1727,7 +1723,7 @@ def setup_terminal_backend(config: dict):
                 save_env_value("DAYTONA_API_KEY", api_key)
                 print_success("    Configured")
 
-        # Image and resource limits use defaults; tune via `hermes setup terminal`.
+        # Image and resource limits use defaults; tune via `pcbdraft setup terminal`.
         config["terminal"].setdefault(
             "daytona_image", "nikolaik/python-nodejs:python3.11-nodejs20"
         )
@@ -1737,7 +1733,7 @@ def setup_terminal_backend(config: dict):
         print_info(
             "Cloud microVM sandboxes with snapshot-backed filesystem persistence."
         )
-        print_info("Requires the optional SDK: pip install 'hermes-agent[vercel]'")
+        print_info("Requires the optional SDK: pip install 'pcbdraft[vercel]'")
 
         try:
             __import__("vercel")
@@ -1746,7 +1742,7 @@ def setup_terminal_backend(config: dict):
             import subprocess
 
             # Managed uv first: $PCBDRAFT_RUNTIME_HOME/bin is never on PATH, so a bare
-            # which() misses the uv Hermes installed. Bootstrapping one is
+            # which() misses the uv PCBDraft installed. Bootstrapping one is
             # welcome here — this is the interactive setup wizard, already
             # mid-install, and the alternative tier is a pip that a `uv venv`
             # venv may not even have.
@@ -1771,7 +1767,7 @@ def setup_terminal_backend(config: dict):
                 print_success("vercel SDK installed")
             else:
                 print_warning(
-                    "Install failed — run manually: pip install 'hermes-agent[vercel]'"
+                    "Install failed — run manually: pip install 'pcbdraft[vercel]'"
                 )
                 if result.stderr:
                     print_info(f"  Error: {result.stderr.strip().splitlines()[-1]}")
@@ -1881,14 +1877,14 @@ def _apply_default_agent_settings(config: dict):
     print_info("  Tool progress: all")
     print_info("  Compression threshold: 0.50")
     print_info("  Session reset: never (use /reset or compression)")
-    print_info("  Run `hermes setup agent` later to customize.")
+    print_info("  Run `pcbdraft setup` later to customize.")
 
 
 def setup_agent_settings(config: dict):
     """Configure agent behavior: iterations, progress display, compression, session reset."""
 
     print_header("Agent Settings")
-    print_info(f"   Guide: {_DOCS_BASE}/user-guide/configuration")
+    print_info(f"   Guide: {_DOCS_BASE}")
     print()
 
     # ── Max Iterations ──
@@ -1926,7 +1922,7 @@ def setup_agent_settings(config: dict):
     print_info("  all     — Show every tool call with a short preview")
     print_info("  verbose — Full args, results, and debug logs")
     print_info(
-        "  log     — Silent in chat; write every tool call to ~/.hermes/logs/tool_calls.log (gateway only)"
+        "  log     — Silent in chat; write every tool call to ~/.pcbdraft/logs/tool_calls.log (gateway only)"
     )
 
     current_mode = cfg_get(config, "display", "tool_progress", default="all")
@@ -2213,7 +2209,7 @@ def _setup_telegram():
         print_info("⚠️  No allowlist set - anyone who finds your bot can use it!")
 
     print()
-    print_info("📬 Home Channel: where Hermes delivers cron job results,")
+    print_info("📬 Home Channel: where PCBDraft delivers cron job results,")
     print_info("   cross-platform messages, and notifications.")
     print_info("   For Telegram DMs, this is your user ID (same as above).")
 
@@ -2257,7 +2253,7 @@ def _setup_bluebubbles():
         if not prompt_yes_no("Reconfigure BlueBubbles?", False):
             return
 
-    print_info("Connects Hermes to iMessage via BlueBubbles — a free, open-source")
+    print_info("Connects PCBDraft to iMessage via BlueBubbles — a free, open-source")
     print_info("macOS server that bridges iMessage to any device.")
     print_info("   Requires a Mac running BlueBubbles Server v1.0.0+")
     print_info("   Download: https://bluebubbles.app/")
@@ -2346,9 +2342,7 @@ def _setup_webhooks():
     )
     print_warning("   (Docker, VM, etc.) to limit blast radius from prompt injection.")
     print()
-    print_info(
-        "   Full guide: https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/"
-    )
+    print_info("   Full guide: https://github.com/qixuancao/pcbdraft#readme")
     print()
 
     port = prompt("Webhook port (default 8644)")
@@ -2378,12 +2372,10 @@ def _setup_webhooks():
     print_info("      http://your-server:8644/webhooks/<route-name>")
     print()
     print_info("   Route configuration guide:")
-    print_info(
-        "   https://hermes-agent.nousresearch.com/docs/user-guide/messaging/webhooks/#configuring-routes"
-    )
+    print_info("   https://github.com/qixuancao/pcbdraft#readme")
     print()
-    print_info("   Open config in your editor:  hermes config edit")
-    print_info("   Open config in your editor:  hermes config edit")
+    print_info("   Open config in your editor:  pcbdraft --help")
+    print_info("   Open config in your editor:  pcbdraft --help")
 
 
 def setup_gateway(config: dict):
@@ -2395,7 +2387,7 @@ def setup_gateway(config: dict):
     )
 
     print_header("Messaging Platforms")
-    print_info("Connect to messaging platforms to chat with Hermes from anywhere.")
+    print_info("Connect to messaging platforms to chat with PCBDraft from anywhere.")
     print_info("Toggle with Space, confirm with Enter.")
     print()
 
@@ -2413,9 +2405,7 @@ def setup_gateway(config: dict):
     selected = prompt_checklist("Select platforms to configure:", items, pre_selected)
 
     if not selected:
-        print_info(
-            "No platforms selected. Run 'hermes setup gateway' later to configure."
-        )
+        print_info("No platforms selected. Run 'pcbdraft setup' later to configure.")
     else:
         for idx in selected:
             _configure_platform(platforms[idx])
@@ -2466,15 +2456,13 @@ def setup_gateway(config: dict):
             print_info("   messages can't be delivered to those platforms.")
             print_info("   Set one later with /set-home in your chat, or:")
             for plat in missing_home:
-                print_info(
-                    f"     hermes config set {plat.upper()}_HOME_CHANNEL <channel_id>"
-                )
+                print_info(f"     {plat}: configure its home channel in config.yaml.")
 
     # ── Gateway Service Setup ──
     # Runs UNCONDITIONALLY — even with zero platforms configured. A gateway
     # without platforms is a supported mode (cron scheduler keeps running,
     # and adapters come up automatically once tokens are added later, e.g.
-    # via `hermes import` or `hermes setup gateway`). Gating this on
+    # via `internal import` or `pcbdraft setup gateway`). Gating this on
     # messaging config was the bug that left install-then-import machines
     # with registered cron jobs and restored bot tokens but no process to
     # serve them.
@@ -2543,7 +2531,7 @@ def setup_gateway(config: dict):
 def setup_tools(config: dict, first_install: bool = False):
     """Configure tools — delegates to the unified tools_command() in tools_config.py.
 
-    Both `hermes setup tools` and `hermes tools` use the same flow:
+    Both `pcbdraft setup tools` and `internal tools` use the same flow:
     platform selection → toolset toggles → provider/API key configuration.
 
     Args:
@@ -2564,7 +2552,7 @@ def setup_telemetry(config: dict):
     """Configure the local, privacy-safe shared-metrics subscriber."""
     print_header("Shared Metrics")
     print_info("Shared metrics contain only bounded counters and histograms.")
-    print_info("Packages stay under this Hermes profile and are not uploaded.")
+    print_info("Packages stay under this PCBDraft profile and are not uploaded.")
 
     telemetry = config.get("telemetry")
     if not isinstance(telemetry, dict):
@@ -2595,7 +2583,7 @@ def _model_section_has_credentials(config: dict) -> bool:
     """Return True when any known inference provider has usable credentials.
 
     Sources of truth:
-      * ``PROVIDER_REGISTRY`` in ``hermes_cli.auth`` — lists every supported
+      * ``PROVIDER_REGISTRY`` in ``pcbdraft.interfaces.tui.auth`` — lists every supported
         provider along with its ``api_key_env_vars``.
       * ``active_provider`` in the auth store — covers OAuth device-code /
         external-OAuth providers (Nous, Codex, Qwen, Gemini CLI, ...).
@@ -2664,7 +2652,7 @@ def _get_section_config_summary(config: dict, section_key: str) -> str | None:
     """Return a short summary if a setup section is already configured, else None.
 
     Used after OpenClaw migration to detect which sections can be skipped.
-    ``get_env_value`` is the module-level import from hermes_cli.config
+    ``get_env_value`` is the module-level import from pcbdraft.interfaces.tui.config
     so that test patches on ``setup_mod.get_env_value`` take effect.
     """
     if section_key == "model":
@@ -2739,12 +2727,12 @@ _OPENCLAW_SCRIPT = (
     / "migration"
     / "openclaw-migration"
     / "scripts"
-    / "openclaw_to_hermes.py"
+    / "openclaw_to_pcbdraft.py"
 )
 
 
 def _load_openclaw_migration_module():
-    """Load the openclaw_to_hermes migration script as a module.
+    """Load the openclaw_to_pcbdraft migration script as a module.
 
     Returns the loaded module, or None if the script can't be loaded.
     """
@@ -2752,7 +2740,7 @@ def _load_openclaw_migration_module():
         return None
 
     spec = importlib.util.spec_from_file_location(
-        "openclaw_to_hermes", _OPENCLAW_SCRIPT
+        "openclaw_to_pcbdraft", _OPENCLAW_SCRIPT
     )
     if spec is None or spec.loader is None:
         return None
@@ -2773,15 +2761,15 @@ def _load_openclaw_migration_module():
 
 # Item kinds that represent high-impact changes warranting explicit warnings.
 # Gateway tokens/channels can hijack messaging platforms from the old agent.
-# Config values may have different semantics between OpenClaw and Hermes.
+# Config values may have different semantics between OpenClaw and PCBDraft.
 # Instruction/context files (.md) can contain incompatible setup procedures.
 _HIGH_IMPACT_KIND_KEYWORDS = {
-    "gateway": "⚠ Gateway/messaging — this will configure Hermes to use your OpenClaw messaging channels",
-    "telegram": "⚠ Telegram — this will point Hermes at your OpenClaw Telegram bot",
-    "slack": "⚠ Slack — this will point Hermes at your OpenClaw Slack workspace",
-    "discord": "⚠ Discord — this will point Hermes at your OpenClaw Discord bot",
-    "whatsapp": "⚠ WhatsApp — this will point Hermes at your OpenClaw WhatsApp connection",
-    "config": "⚠ Config values — OpenClaw settings may not map 1:1 to Hermes equivalents",
+    "gateway": "⚠ Gateway/messaging — this will configure PCBDraft to use your OpenClaw messaging channels",
+    "telegram": "⚠ Telegram — this will point PCBDraft at your OpenClaw Telegram bot",
+    "slack": "⚠ Slack — this will point PCBDraft at your OpenClaw Slack workspace",
+    "discord": "⚠ Discord — this will point PCBDraft at your OpenClaw Discord bot",
+    "whatsapp": "⚠ WhatsApp — this will point PCBDraft at your OpenClaw WhatsApp connection",
+    "config": "⚠ Config values — OpenClaw settings may not map 1:1 to PCBDraft equivalents",
     "soul": "⚠ Instruction file — may contain OpenClaw-specific setup/restart procedures",
     "memory": "⚠ Memory/context file — may reference OpenClaw-specific infrastructure",
     "context": "⚠ Context file — may contain OpenClaw-specific instructions",
@@ -2827,7 +2815,7 @@ def _print_migration_preview(report: dict):
     if conflict_items:
         print(
             color(
-                "  Would overwrite (conflicts with existing Hermes config):",
+                "  Would overwrite (conflicts with existing PCBDraft config):",
                 Colors.YELLOW,
             )
         )
@@ -2853,13 +2841,13 @@ def _print_migration_preview(report: dict):
         print()
         print(
             color(
-                "  Note: OpenClaw config values may have different semantics in Hermes.",
+                "  Note: OpenClaw config values may have different semantics in PCBDraft.",
                 Colors.YELLOW,
             )
         )
         print(
             color(
-                "  For example, OpenClaw's tool_call_execution: \"auto\" ≠ Hermes's yolo mode.",
+                "  For example, OpenClaw's tool_call_execution: \"auto\" ≠ PCBDraft's yolo mode.",
                 Colors.YELLOW,
             )
         )
@@ -2890,13 +2878,11 @@ def _offer_openclaw_migration(runtime_home: Path) -> bool:
     print()
     print_header("OpenClaw Installation Detected")
     print_info(f"Found OpenClaw data at {openclaw_dir}")
-    print_info("Hermes can preview what would be imported before making any changes.")
+    print_info("PCBDraft can preview what would be imported before making any changes.")
     print()
 
     if not prompt_yes_no("Would you like to see what can be imported?", default=True):
-        print_info(
-            "Skipping migration. You can run it later with: hermes claw migrate --dry-run"
-        )
+        print_info("Skipping migration. You can run it later with: pcbdraft --help")
         return False
 
     # Ensure config.yaml exists before migration tries to read it
@@ -2952,15 +2938,13 @@ def _offer_openclaw_migration(runtime_home: Path) -> bool:
 
     # ── Phase 2: Confirm and execute ──
     if not prompt_yes_no("Proceed with migration?", default=False):
-        print_info(
-            "Migration cancelled. You can run it later with: hermes claw migrate"
-        )
+        print_info("Migration cancelled. You can run it later with: pcbdraft --help")
         print_info(
             "Use --dry-run to preview again, or --preset minimal for a lighter import."
         )
         return False
 
-    # Execute the migration — overwrite=False so existing Hermes configs are
+    # Execute the migration — overwrite=False so existing PCBDraft configs are
     # preserved. The user saw the preview; conflicts are skipped by default.
     try:
         migrator = mod.Migrator(
@@ -2968,7 +2952,7 @@ def _offer_openclaw_migration(runtime_home: Path) -> bool:
             target_root=runtime_home.resolve(),
             execute=True,
             workspace_target=None,
-            overwrite=False,  # preserve existing Hermes config
+            overwrite=False,  # preserve existing PCBDraft config
             migrate_secrets=True,
             output_dir=None,
             selected_options=selected,
@@ -2992,7 +2976,7 @@ def _offer_openclaw_migration(runtime_home: Path) -> bool:
         print_success(f"Imported {migrated} item(s) from OpenClaw.")
     if conflicts:
         print_info(
-            f"Skipped {conflicts} item(s) that already exist in Hermes (use hermes claw migrate --overwrite to force)."
+            f"Skipped {conflicts} item(s) that already exist in PCBDraft (use pcbdraft --help to force)."
         )
     if skipped:
         print_info(f"Skipped {skipped} item(s) (not found or unchanged).")
@@ -3025,18 +3009,18 @@ SETUP_SECTIONS = [
 def _run_portal_one_shot(config: dict) -> None:
     """One-shot Nous Portal setup — OAuth + model pick + provider + Tool Gateway.
 
-    Wired into ``hermes setup --portal`` and ``hermes portal``. This is the
+    Wired into ``pcbdraft setup --portal`` and ``internal portal``. This is the
     Nous-Portal slice of the first-time quick setup, collapsed into a single
     shareable command so a brand-new user goes from zero to a fully working
-    Hermes session — model selected, provider set, and web/image/tts/browser
+    PCBDraft session — model selected, provider set, and web/image/tts/browser
     tools routed via their Portal sub — without being told to run
-    ``hermes setup`` and hunt for the quick-setup option.
+    ``pcbdraft setup`` and hunt for the quick-setup option.
 
     The login + model selection + provider switch + Tool Gateway opt-in are all
     delegated to ``_model_flow_nous`` — the exact same flow quick setup uses
-    (``_run_first_time_quick_setup``) and the same one ``hermes model`` runs
+    (``_run_first_time_quick_setup``) and the same one ``internal model`` runs
     when you pick Nous. Routing through it (instead of hand-rolling the auth +
-    provider write here) means ``hermes portal`` always offers a model picker,
+    provider write here) means ``internal portal`` always offers a model picker,
     and there is a single source of truth for the Nous onboarding steps.
     """
     from pcbdraft.model.configuration import load_config
@@ -3050,7 +3034,7 @@ def _run_portal_one_shot(config: dict) -> None:
     )
     print(
         color(
-            "│     ⚕ Hermes Setup — Nous Portal (one-shot)             │",
+            "│     ⚕ PCBDraft Setup — Nous Portal (one-shot)             │",
             Colors.MAGENTA,
         )
     )
@@ -3072,7 +3056,7 @@ def _run_portal_one_shot(config: dict) -> None:
     # which selects a model internally) and the already-logged-in path (curated
     # Nous model picker), then offers the Tool Gateway opt-in and sets
     # provider=nous via the login/model save. This is the same routine quick
-    # setup calls, so `hermes portal` == quick setup's Nous step.
+    # setup calls, so `internal portal` == quick setup's Nous step.
     try:
         from pcbdraft.interfaces.tui.main import _model_flow_nous
 
@@ -3085,13 +3069,13 @@ def _run_portal_one_shot(config: dict) -> None:
         # Treat all of these as a graceful cancel/abort for the portal flow.
         print()
         print_info("  Setup cancelled.")
-        print_info("  You can retry later with `hermes portal`.")
+        print_info("  You can retry later with `pcbdraft connect`.")
         return
     except Exception as exc:
-        logger.debug("_model_flow_nous error during `hermes portal`: %s", exc)
+        logger.debug("_model_flow_nous error during `pcbdraft connect`: %s", exc)
         print()
         print_error(f"  Nous Portal setup encountered an error: {exc}")
-        print_info("  You can retry later with `hermes portal`.")
+        print_info("  You can retry later with `pcbdraft connect`.")
         return
 
     # Re-sync the in-memory config from disk — _model_flow_nous (and the
@@ -3107,22 +3091,22 @@ def _run_portal_one_shot(config: dict) -> None:
 
     print()
     print_success("Portal setup complete.")
-    print_info("  Run `hermes portal info` to inspect routing.")
-    print_info("  Run `hermes` to start chatting.")
+    print_info("  Run `pcbdraft connect` to inspect routing.")
+    print_info("  Run `pcbdraft` to start chatting.")
 
 
 def run_setup_wizard(args):
     """Run the interactive setup wizard.
 
     Supports full, quick, and section-specific setup:
-      hermes setup           — full or quick (auto-detected)
-      hermes setup model     — just model/provider
-      hermes setup tts       — just text-to-speech
-      hermes setup terminal  — just terminal backend
-      hermes setup gateway   — just messaging platforms
-      hermes setup tools     — just tool configuration
-      hermes setup telemetry — just local shared metrics
-      hermes setup agent     — just agent settings
+      pcbdraft setup or quick (auto-detected)
+      pcbdraft setup
+      pcbdraft setup
+      pcbdraft setup
+      pcbdraft setup
+      pcbdraft setup
+      pcbdraft setup
+      pcbdraft setup
     """
     from pcbdraft.model.configuration import is_managed, managed_error
 
@@ -3187,7 +3171,7 @@ def run_setup_wizard(args):
                         Colors.MAGENTA,
                     )
                 )
-                print(color(f"│     ⚕ Hermes Setup — {label:<34s} │", Colors.MAGENTA))
+                print(color(f"│     ⚕ PCBDraft Setup — {label:<34s} │", Colors.MAGENTA))
                 print(
                     color(
                         "└─────────────────────────────────────────────────────────┘",
@@ -3223,7 +3207,8 @@ def run_setup_wizard(args):
     )
     print(
         color(
-            "│             ⚕ Hermes Agent Setup Wizard                │", Colors.MAGENTA
+            "│             ⚕ PCBDraft Agent Setup Wizard                │",
+            Colors.MAGENTA,
         )
     )
     print(
@@ -3234,7 +3219,8 @@ def run_setup_wizard(args):
     )
     print(
         color(
-            "│  Let's configure your Hermes Agent installation.       │", Colors.MAGENTA
+            "│  Let's configure your PCBDraft Agent installation.       │",
+            Colors.MAGENTA,
         )
     )
     print(
@@ -3263,11 +3249,11 @@ def run_setup_wizard(args):
 
         print()
         print_header("Reconfigure")
-        print_success("You already have Hermes configured.")
+        print_success("You already have PCBDraft configured.")
         print_info("Running the full wizard — each prompt shows your current value.")
         print_info("Press Enter to keep it, or type a new value to change it.")
         print_info("")
-        print_info("Tip: jump straight to a section with 'hermes setup model|terminal|")
+        print_info("Tip: jump straight to a section with 'pcbdraft setup")
         print_info(
             "     gateway|tools|agent', or fill only missing items with --quick."
         )
@@ -3290,7 +3276,7 @@ def run_setup_wizard(args):
             config = load_config()
 
         setup_mode = prompt_choice(
-            "How would you like to set up Hermes?",
+            "How would you like to set up PCBDraft?",
             [
                 "Quick Setup (Nous Portal) — free OAuth login, no API keys, model + tools (recommended)",
                 "Full setup — configure every provider, tool & option yourself (bring your own keys)",
@@ -3313,7 +3299,7 @@ def run_setup_wizard(args):
     print_info(f"Data folder:  {runtime_home}")
     print_info(f"Install dir:  {PROJECT_ROOT}")
     print()
-    print_info("You can edit these files directly or use 'hermes config edit'")
+    print_info("You can edit these files directly or use 'pcbdraft --help'")
 
     if migration_ran:
         print()
@@ -3338,7 +3324,7 @@ def run_setup_wizard(args):
 
     # Section 3: Agent Settings — no longer prompted. First installs get the
     # recommended defaults silently; existing installs keep whatever they have.
-    # Tune later with `hermes setup agent`.
+    # Tune later with `pcbdraft setup agent`.
     if not is_existing:
         _apply_default_agent_settings(config)
 
@@ -3374,8 +3360,8 @@ def _run_first_time_quick_setup(config: dict, runtime_home, is_existing: bool):
     Routes straight to the Nous Portal provider — runs the device-code OAuth
     login, picks a Nous model, then configures the terminal backend and (optionally)
     a messaging platform. Applies sensible defaults for everything else (agent
-    settings, tools); the user can customize later via ``hermes setup <section>``
-    or switch providers with ``hermes model``.
+    settings, tools); the user can customize later via ``pcbdraft setup <section>``
+    or switch providers with ``internal model``.
     """
     from pcbdraft.model.configuration import load_config
 
@@ -3399,7 +3385,7 @@ def _run_first_time_quick_setup(config: dict, runtime_home, is_existing: bool):
     except Exception as exc:
         logger.debug("_model_flow_nous error during quick setup: %s", exc)
         print_warning(f"Nous Portal setup encountered an error: {exc}")
-        print_info("You can try again later with: hermes model")
+        print_info("You can try again later with: pcbdraft connect")
 
     # Re-sync the wizard's config dict from disk — _model_flow_nous (and the
     # underlying login/model save) write via their own load/save cycle, and the
@@ -3422,7 +3408,7 @@ def _run_first_time_quick_setup(config: dict, runtime_home, is_existing: bool):
         "Connect a messaging platform? (Telegram, Discord, etc.)",
         [
             "Set up messaging now (recommended)",
-            "Skip — set up later with 'hermes setup gateway'",
+            "Skip — set up later with 'pcbdraft setup'",
         ],
         0,
     )
@@ -3433,7 +3419,7 @@ def _run_first_time_quick_setup(config: dict, runtime_home, is_existing: bool):
     else:
         # Messaging skipped — still install/start the gateway service so cron
         # jobs run and platforms come alive as soon as tokens are added later
-        # (e.g. via `hermes import` from another machine).
+        # (e.g. via `internal import` from another machine).
         from pcbdraft.interfaces.tui.gateway import ensure_gateway_service
 
         ensure_gateway_service(context="setup")
@@ -3441,9 +3427,9 @@ def _run_first_time_quick_setup(config: dict, runtime_home, is_existing: bool):
     print()
     print_success("Setup complete! You're ready to go.")
     print()
-    print_info("  Configure all settings:    hermes setup")
+    print_info("  Configure all settings:    pcbdraft setup")
     if gateway_choice != 0:
-        print_info("  Connect Telegram/Discord:  hermes setup gateway")
+        print_info("  Connect Telegram/Discord:  pcbdraft setup")
     print()
 
     _print_setup_summary(config, runtime_home)
@@ -3462,7 +3448,7 @@ def _blank_slate_minimal_toolsets(config: dict):
        non-configurable platform-toolset recovery that would otherwise re-add
        toolsets like ``kanban``). We list every known toolset except the two we
        keep, guaranteeing a true blank slate regardless of platform/recovery
-       quirks. The user re-enables any of them later via ``hermes tools`` (which
+       quirks. The user re-enables any of them later via ``internal tools`` (which
        rewrites ``platform_toolsets``) or by editing ``agent.disabled_toolsets``.
     """
     keep = {"file", "terminal"}
@@ -3481,7 +3467,7 @@ def _blank_slate_minimal_toolsets(config: dict):
         # Plain (non-composite) TOOLSETS entries — catches recovered toolsets
         # like ``kanban`` that aren't in CONFIGURABLE_TOOLSETS but get re-added.
         for k, tdef in TOOLSETS.items():
-            if k.startswith("hermes-"):
+            if k.startswith("pcbdraft-"):
                 continue  # platform composites — not user-facing toolsets
             if isinstance(tdef, dict) and tdef.get("includes"):
                 continue  # composite groupings, not leaf toolsets
@@ -3503,8 +3489,8 @@ def _blank_slate_minimal_toolsets(config: dict):
 def _blank_slate_minimize_config(config: dict):
     """Turn OFF the optional config features for a Blank Slate install.
 
-    Everything here is opt-in afterwards via ``hermes setup agent`` /
-    ``hermes config set``. We keep only what's needed to run.
+    Everything here is opt-in afterwards via ``pcbdraft setup agent`` /
+    ``internal config set``. We keep only what's needed to run.
     """
     config.setdefault("agent", {})["max_turns"] = 90
 
@@ -3583,7 +3569,7 @@ def _run_blank_slate_setup(config: dict, runtime_home, is_existing: bool):
     if path == 0:
         save_config(config)
         # Blank Slate means no bundled skills; record the opt-out so future
-        # `hermes update` runs don't re-inject them.
+        # `internal update` runs don't re-inject them.
         try:
             from pcbdraft.tools.skills_sync import set_bundled_skills_opt_out
 
@@ -3593,11 +3579,11 @@ def _run_blank_slate_setup(config: dict, runtime_home, is_existing: bool):
         print()
         print_success("Blank Slate setup complete — minimal agent ready.")
         print_info("Enable anything later, on demand:")
-        print_info("  Enable tools:        hermes tools")
-        print_info("  Seed skills:         hermes skills opt-in --sync")
-        print_info("  Add MCP servers:     hermes mcp add")
-        print_info("  Enable plugins:      hermes plugins")
-        print_info("  Tune agent settings: hermes setup agent")
+        print_info("  Enable tools:        pcbdraft --help")
+        print_info("  Seed skills:         pcbdraft --help")
+        print_info("  Add MCP servers:     pcbdraft --help")
+        print_info("  Enable plugins:      pcbdraft --help")
+        print_info("  Tune agent settings: pcbdraft setup")
         print()
         _print_setup_summary(config, runtime_home)
         return
@@ -3630,8 +3616,8 @@ def _blank_slate_walkthrough(config: dict, runtime_home):
         else:
             set_bundled_skills_opt_out(True)
             print_info("No skills seeded. A .no-bundled-skills marker keeps future")
-            print_info("`hermes update` runs from re-injecting them. Opt back in any")
-            print_info("time with `hermes skills opt-in --sync`.")
+            print_info("`pcbdraft --help` runs from re-injecting them. Opt back in any")
+            print_info("time with `pcbdraft --help`.")
     except Exception as exc:
         logger.debug("blank-slate skill handling error: %s", exc)
         print_warning(f"Skill setup step encountered an error: {exc}")
@@ -3655,27 +3641,25 @@ def _blank_slate_walkthrough(config: dict, runtime_home):
             logger.debug("blank-slate tools_command error: %s", exc)
             print_warning(f"Tool selector encountered an error: {exc}")
     else:
-        print_info("Keeping the minimal toolset. Add tools later with `hermes tools`.")
+        print_info(
+            "Keeping the minimal toolset. Add tools later with `pcbdraft --help`."
+        )
 
     # ── Built-in plugins (off unless chosen) ──
     print()
     print_header("Plugins")
     if prompt_yes_no("Review and enable built-in plugins now?", default=False):
-        print_info(
-            "Manage plugins with `hermes plugins list` / `hermes plugins install`."
-        )
+        print_info("Manage plugins with `pcbdraft --help` / `pcbdraft --help`.")
     else:
-        print_info("No plugins enabled. Add later with `hermes plugins`.")
+        print_info("No plugins enabled. Add later with `pcbdraft --help`.")
 
     # ── MCP servers (off unless chosen) ──
     print()
     print_header("MCP Servers")
     if prompt_yes_no("Add an MCP server now?", default=False):
-        print_info(
-            "Add servers with `hermes mcp add <name> --url ... | --command ...`."
-        )
+        print_info("Add servers with `pcbdraft --help... | --command ...`.")
     else:
-        print_info("No MCP servers configured. Add later with `hermes mcp add`.")
+        print_info("No MCP servers configured. Add later with `pcbdraft --help`.")
 
     # ── Optional messaging gateway ──
     print()
@@ -3688,10 +3672,10 @@ def _blank_slate_walkthrough(config: dict, runtime_home):
 
     print()
     print_success("Blank Slate setup complete — minimal agent ready.")
-    print_info("  Enable more tools:   hermes tools")
-    print_info("  Seed skills:         hermes skills opt-in --sync")
-    print_info("  Add MCP servers:     hermes mcp add")
-    print_info("  Tune agent settings: hermes setup agent")
+    print_info("  Enable more tools:   pcbdraft --help")
+    print_info("  Seed skills:         pcbdraft --help")
+    print_info("  Add MCP servers:     pcbdraft --help")
+    print_info("  Tune agent settings: pcbdraft setup")
     print()
 
     _print_setup_summary(config, runtime_home)
@@ -3728,7 +3712,7 @@ def _run_quick_setup(config: dict, runtime_home):
     if not has_anything_missing:
         print_success("Everything is configured! Nothing to do.")
         print()
-        print_info("Run 'hermes setup' and choose 'Full Setup' to reconfigure,")
+        print_info("Run 'pcbdraft setup' and choose 'Full Setup' to reconfigure,")
         print_info("or pick a specific section from the menu.")
         return
 
@@ -3790,8 +3774,8 @@ def _run_quick_setup(config: dict, runtime_home):
     if missing_messaging:
         print()
         print_header("Messaging Platforms")
-        print_info("Connect Hermes to messaging apps to chat from anywhere.")
-        print_info("You can configure these later with 'hermes setup gateway'.")
+        print_info("Connect PCBDraft to messaging apps to chat from anywhere.")
+        print_info("You can configure these later with 'pcbdraft setup'.")
 
         # Group by platform (preserving order)
         platform_order = []

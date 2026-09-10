@@ -4,6 +4,8 @@ import io
 import json
 import os
 import stat
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -33,12 +35,78 @@ from pcbdraft.services.provider_connection import (
 
 
 class ProviderConnectionTests(unittest.TestCase):
-    def test_registry_is_exactly_hermes_canonical_picker_identities(self) -> None:
+    def test_connect_loads_process_dotenv_before_config_and_wizard(self) -> None:
+        from pcbdraft.core import runtime_environment
+        from pcbdraft.model import env_loader
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            process_home = root / "process"
+            task_home = root / "task"
+            process_home.mkdir()
+            task_home.mkdir()
+            (process_home / ".env").write_text(
+                "OPENAI_API_KEY=process-test-key\n", encoding="utf-8"
+            )
+            (task_home / ".env").write_text(
+                "OPENAI_API_KEY=wrong-task-key\n", encoding="utf-8"
+            )
+            observed: list[str] = []
+
+            def observe(stage):
+                self.assertEqual(os.environ.get("OPENAI_API_KEY"), "process-test-key")
+                observed.append(stage)
+
+            token = runtime_environment.set_runtime_home_override(task_home)
+            try:
+                with (
+                    patch.dict(
+                        os.environ,
+                        {
+                            "PCBDRAFT_RUNTIME_HOME": str(process_home),
+                            "PCBDRAFT_HERMES_HOME": "",
+                            "OPENAI_API_KEY": "",
+                        },
+                    ),
+                    patch.object(env_loader, "_apply_external_secret_sources"),
+                    patch.object(env_loader, "_apply_managed_env"),
+                    patch.object(env_loader, "_reapply_terminal_config_bridge"),
+                    patch.object(
+                        env_loader,
+                        "load_pcbdraft_dotenv",
+                        wraps=env_loader.load_pcbdraft_dotenv,
+                    ) as load,
+                    patch(
+                        "pcbdraft.model.settings.write_runtime_config",
+                        side_effect=lambda: observe("config"),
+                    ),
+                    patch(
+                        "pcbdraft.model.configuration.read_raw_config", return_value={}
+                    ),
+                    patch(
+                        "pcbdraft.interfaces.tui.main.select_provider_and_model",
+                        side_effect=lambda **_: observe("wizard"),
+                    ),
+                    patch(
+                        "pcbdraft.services.provider_connection.connection_status",
+                        return_value=ConnectionStatus(
+                            False, False, None, None, None, None
+                        ),
+                    ),
+                ):
+                    result = connect()
+                    self.assertEqual(result.outcome, "cancelled")
+                    load.assert_called_once_with(runtime_home=process_home)
+            finally:
+                runtime_environment.reset_runtime_home_override(token)
+            self.assertEqual(observed, ["config", "wizard"])
+
+    def test_registry_is_exactly_pcbdraft_canonical_picker_identities(self) -> None:
         with (
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -57,14 +125,16 @@ class ProviderConnectionTests(unittest.TestCase):
             standalone.mkdir(parents=True)
             sentinel = standalone / "sentinel"
             sentinel.write_bytes(b"standalone-state")
-            product = root / "pcbdraft-hermes"
+            product = root / "xdg" / "pcbdraft" / "runtime"
             with patch.dict(
                 os.environ,
                 {
                     "HOME": str(root / "home"),
                     "XDG_CONFIG_HOME": str(root / "xdg"),
                     "HERMES_HOME": str(standalone),
-                    "PCBDRAFT_HERMES_HOME": str(product),
+                    "PCBDRAFT_HERMES_HOME": "",
+                    "PCBDRAFT_RUNTIME_HOME": "",
+                    "PCBDRAFT_CONFIG": str(product.parent / "config.json"),
                 },
                 clear=False,
             ):
@@ -92,7 +162,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -130,7 +200,7 @@ class ProviderConnectionTests(unittest.TestCase):
             patch.dict(
                 os.environ,
                 {
-                    "PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product"),
+                    "PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product"),
                     "PCBDRAFT_RUNTIME_SHARED_AUTH_DIR": str(
                         Path(temporary) / "standalone"
                     ),
@@ -195,7 +265,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -223,7 +293,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -285,7 +355,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -313,12 +383,12 @@ class ProviderConnectionTests(unittest.TestCase):
                 "unavailable",
             )
 
-    def test_connect_timeout_covers_vendor_flows_that_ignore_args(self) -> None:
+    def test_connect_timeout_covers_provider_flows_that_ignore_args(self) -> None:
         with (
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -345,7 +415,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -380,7 +450,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
             patch(
@@ -397,7 +467,7 @@ class ProviderConnectionTests(unittest.TestCase):
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -451,12 +521,12 @@ class ProviderConnectionTests(unittest.TestCase):
             self.assertIsNone(observed["state"])
             self.assertEqual(observed["choice"], "reauth")
 
-    def test_picker_uses_hermes_groups_and_saved_custom_rows(self) -> None:
+    def test_picker_uses_pcbdraft_groups_and_saved_custom_rows(self) -> None:
         with (
             tempfile.TemporaryDirectory() as temporary,
             patch.dict(
                 os.environ,
-                {"PCBDRAFT_HERMES_HOME": str(Path(temporary) / "product")},
+                {"PCBDRAFT_RUNTIME_HOME": str(Path(temporary) / "product")},
                 clear=False,
             ),
         ):
@@ -525,8 +595,376 @@ class ProviderConnectionTests(unittest.TestCase):
             self.assertEqual(launch_cli([]), 1)
 
 
+class ProviderEnvironmentInitializationTests(unittest.TestCase):
+    def setUp(self) -> None:
+        from pcbdraft.core import runtime_environment
+        from pcbdraft.interfaces.tui import managed_scope
+        from pcbdraft.model import env_loader
+        from pcbdraft.services import provider_connection
+
+        self.root = Path(self.enterContext(tempfile.TemporaryDirectory())).resolve()
+        self.home = self.root / "runtime"
+        self.home.mkdir()
+        self.enterContext(
+            patch.dict(
+                os.environ,
+                {
+                    "PCBDRAFT_RUNTIME_HOME": str(self.home),
+                    "PCBDRAFT_HERMES_HOME": "",
+                    "PCBDRAFT_RUNTIME_MANAGED_DIR": str(self.root / "managed-absent"),
+                    "PYTHON_DOTENV_DISABLED": "0",
+                    "HOME": str(self.root / "user"),
+                    "USERPROFILE": str(self.root / "user"),
+                    "XDG_CONFIG_HOME": str(self.root / "config"),
+                    "REVIEW_PROVIDER": "",
+                    "REVIEW_KEY": "",
+                },
+            )
+        )
+        self.enterContext(
+            patch.object(provider_connection, "_provider_environment_state", None)
+        )
+        token = runtime_environment.set_runtime_home_override(None)
+        self.addCleanup(runtime_environment.reset_runtime_home_override, token)
+        self.managed_default = self.root / "managed-default"
+        self.enterContext(
+            patch.object(managed_scope, "_DEFAULT_MANAGED_DIR", self.managed_default)
+        )
+        # Exercise the real dotenv loader and its external-source memo, with
+        # only the actual service boundary stubbed out for offline execution.
+        source = SimpleNamespace(
+            applied=(), result=SimpleNamespace(error=None, warnings=())
+        )
+        report = SimpleNamespace(sources=[source], applied_any=False, conflicts=())
+        self.service = self.enterContext(
+            patch(
+                "pcbdraft.agent.secret_sources.registry.apply_all", return_value=report
+            )
+        )
+        self.load = self.enterContext(
+            patch.object(
+                env_loader,
+                "load_pcbdraft_dotenv",
+                wraps=env_loader.load_pcbdraft_dotenv,
+            )
+        )
+
+    def write_config(
+        self, home: Path | None = None, *, revision: int = 1, secrets: bool = True
+    ) -> None:
+        home = home or self.home
+        document = {
+            "model": {
+                "provider": "${REVIEW_PROVIDER}",
+                "default": "board-review-model",
+                "api_key": "${REVIEW_KEY}",
+                "base_url": "http://127.0.0.1:11434/v1",
+            }
+        }
+        if secrets:
+            document["secrets"] = {"review": {"enabled": True, "revision": revision}}
+        (home / "config.yaml").write_text(json.dumps(document), encoding="utf-8")
+
+    def write_env(
+        self,
+        home: Path | None = None,
+        *,
+        provider: str = "custom",
+        key: str | None = "review-key-one",
+    ) -> None:
+        home = home or self.home
+        text = f"REVIEW_PROVIDER={provider}\n"
+        if key is not None:
+            text += f"REVIEW_KEY={key}\n"
+        (home / ".env").write_text(text, encoding="utf-8")
+
+    def test_cold_status_loads_provider_and_key_references_in_fresh_process(
+        self,
+    ) -> None:
+        self.write_config(secrets=False)
+        self.write_env()
+        code = (
+            "import json; "
+            "from pcbdraft.services.provider_connection import connection_status; "
+            "status = connection_status(verify=False); "
+            "from pcbdraft.model.configuration import load_config_readonly; "
+            "assert load_config_readonly()['model']['api_key'] == 'review-key-one'; "
+            "print(json.dumps(status.to_dict()))"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            env=dict(os.environ),
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        status_value = json.loads(result.stdout)
+        self.assertEqual(status_value["provider"], "custom")
+        self.assertTrue(status_value["configured"])
+        self.assertTrue(status_value["usable"])
+        self.assertNotIn("review-key-one", result.stdout + result.stderr)
+
+    def test_repeated_status_and_picker_reuse_loader_and_secret_service(self) -> None:
+        from pcbdraft.model.configuration import load_config_readonly
+
+        self.write_config()
+        self.write_env()
+        with patch(
+            "pcbdraft.model.runtime_provider.resolve_runtime_provider",
+            side_effect=lambda **kw: {
+                "provider": kw["requested"],
+                "source": "environment",
+            },
+        ) as resolve:
+            first = connection_status()
+            second = connection_status()
+        provider_identities()
+        self.assertEqual(first.provider, "custom")
+        self.assertEqual(first, second)
+        self.assertTrue(first.usable)
+        self.assertEqual(load_config_readonly()["model"]["api_key"], "review-key-one")
+        resolve.assert_called_with(
+            requested="custom", target_model="board-review-model"
+        )
+        self.load.assert_called_once_with(runtime_home=self.home)
+        self.assertEqual(self.service.call_count, 1)
+
+    def test_env_atomic_replacement_and_config_edit_refresh_once_each(self) -> None:
+        from pcbdraft.model.configuration import load_config_readonly
+
+        self.write_config()
+        self.write_env()
+        connection_status(verify=False)
+        previous = (self.home / ".env").stat()
+        replacement = self.home / "replacement.env"
+        replacement.write_text(
+            "REVIEW_PROVIDER=openai\nREVIEW_KEY=review-key-two\n", encoding="utf-8"
+        )
+        os.utime(replacement, ns=(previous.st_atime_ns, previous.st_mtime_ns))
+        replacement.replace(self.home / ".env")
+        self.assertEqual(connection_status(verify=False).provider, "openai")
+        connection_status(verify=False)
+        self.assertEqual(load_config_readonly()["model"]["api_key"], "review-key-two")
+        self.assertEqual(self.load.call_count, 2)
+        self.assertEqual(self.service.call_count, 2)
+        self.write_config(revision=2)
+        connection_status(verify=False)
+        connection_status(verify=False)
+        self.assertEqual(self.load.call_count, 3)
+        self.assertEqual(self.service.call_count, 3)
+        self.assertEqual(self.service.call_args.args[0]["review"]["revision"], 2)
+
+    def test_home_switch_and_removed_key_cannot_reuse_previous_profile_values(
+        self,
+    ) -> None:
+        from pcbdraft.core import runtime_environment
+
+        self.write_config()
+        self.write_env()
+        other = self.root / "profiles" / "other"
+        other.mkdir(parents=True)
+        self.write_config(other)
+        self.write_env(other, provider="zai", key=None)
+        token = runtime_environment.set_runtime_home_override(other)
+        try:
+            # Task-local overrides do not change the process-home environment
+            # used by startup status or its configuration expansion.
+            self.assertEqual(connection_status(verify=False).provider, "custom")
+            self.assertEqual(runtime_environment.get_runtime_home(), other)
+            os.environ["PCBDRAFT_RUNTIME_HOME"] = str(other)
+            self.assertEqual(connection_status(verify=False).provider, "zai")
+            self.assertEqual(os.environ.get("REVIEW_KEY"), "")
+            os.environ["PCBDRAFT_RUNTIME_HOME"] = str(self.home)
+            self.assertEqual(connection_status(verify=False).provider, "custom")
+            self.assertEqual(os.environ.get("REVIEW_KEY"), "review-key-one")
+            self.write_env(key=None)
+            connection_status(verify=False)
+            self.assertEqual(os.environ.get("REVIEW_KEY"), "")
+            self.assertEqual(self.load.call_count, 4)
+            self.assertEqual(
+                [call.kwargs["runtime_home"] for call in self.load.call_args_list],
+                [self.home, other, self.home, self.home],
+            )
+        finally:
+            runtime_environment.reset_runtime_home_override(token)
+
+    def test_environment_change_invalidates_cache_and_failed_load_is_retryable(
+        self,
+    ) -> None:
+        self.write_config()
+        self.write_env()
+        connection_status(verify=False)
+        os.environ["REVIEW_PROVIDER"] = "stale-export"
+        self.assertEqual(connection_status(verify=False).provider, "custom")
+        self.assertEqual(self.load.call_count, 2)
+        self.write_env(provider="zai")
+        original_loader = self.load._mock_wraps
+
+        def fail(**_kwargs):
+            os.environ["REVIEW_KEY"] = "partial-load"
+            raise RuntimeError("simulated loading failure")
+
+        self.load.side_effect = fail
+        with self.assertRaisesRegex(RuntimeError, "simulated loading failure"):
+            connection_status(verify=False)
+        self.assertNotEqual(os.environ.get("REVIEW_KEY"), "partial-load")
+        self.load.side_effect = original_loader
+        self.assertEqual(connection_status(verify=False).provider, "zai")
+        self.assertEqual(os.environ.get("REVIEW_KEY"), "review-key-one")
+        self.assertEqual(self.load.call_count, 4)
+
+    def test_edit_during_load_is_not_cached_as_already_applied(self) -> None:
+        self.write_config()
+        self.write_env()
+        original_loader = self.load._mock_wraps
+
+        def edit_after_read(**kwargs):
+            result = original_loader(**kwargs)
+            self.write_env(provider="zai", key="edited-during-load")
+            return result
+
+        self.load.side_effect = edit_after_read
+        self.assertEqual(connection_status(verify=False).provider, "custom")
+        self.load.side_effect = original_loader
+        self.assertEqual(connection_status(verify=False).provider, "zai")
+        self.assertEqual(os.environ.get("REVIEW_KEY"), "edited-during-load")
+        connection_status(verify=False)
+        self.assertEqual(self.load.call_count, 2)
+        self.assertEqual(self.service.call_count, 2)
+
+    def test_real_managed_loader_refreshes_rotation_and_directory_switch_once(
+        self,
+    ) -> None:
+        from pcbdraft.model import env_loader
+        from pcbdraft.model.configuration import load_config_readonly
+
+        self.write_config()
+        self.write_env(key="home-fallback")
+        managed_a = self.root / "managed-a"
+        managed_b = self.root / "managed-b"
+        for directory, value in ((managed_a, "managed-a"), (managed_b, "managed-c")):
+            directory.mkdir()
+            (directory / ".env").write_text(f"REVIEW_KEY={value}\n", encoding="utf-8")
+        os.environ["PCBDRAFT_RUNTIME_MANAGED_DIR"] = str(managed_a)
+        # The original loader's final value equals the existing input, so it
+        # does not appear in the write delta. It remains a cache dependency.
+        os.environ["REVIEW_KEY"] = "managed-a"
+
+        def snapshot():
+            return [
+                (path.stat().st_ino, path.stat().st_mtime_ns, path.stat().st_mode)
+                for directory in (managed_a, managed_b)
+                for path in (directory, directory / ".env")
+            ]
+
+        with patch.object(env_loader, "atomic_replace") as normalization_write:
+            for expected_calls, value in (
+                (1, "managed-a"),
+                (2, "managed-b"),
+                (3, "managed-c"),
+            ):
+                if expected_calls == 2:
+                    (managed_a / ".env").write_text(
+                        "REVIEW_KEY=managed-b\n", encoding="utf-8"
+                    )
+                elif expected_calls == 3:
+                    os.environ["PCBDRAFT_RUNTIME_MANAGED_DIR"] = str(managed_b)
+                before = snapshot()
+                connection_status(verify=False)
+                connection_status(verify=False)
+                self.assertEqual(os.environ["REVIEW_KEY"], value)
+                self.assertEqual(load_config_readonly()["model"]["api_key"], value)
+                self.assertEqual(self.load.call_count, expected_calls)
+                self.assertEqual(self.service.call_count, expected_calls)
+                self.assertEqual(snapshot(), before)
+            normalization_write.assert_not_called()
+        self.assertEqual((managed_a / ".env").read_text(), "REVIEW_KEY=managed-b\n")
+        self.assertEqual((managed_b / ".env").read_text(), "REVIEW_KEY=managed-c\n")
+
+    def test_managed_default_selector_tracks_pytest_presence_not_only_env_delta(
+        self,
+    ) -> None:
+        self.write_config()
+        self.write_env(key="home-fallback")
+        self.managed_default.mkdir()
+        (self.managed_default / ".env").write_text(
+            "REVIEW_KEY=managed-default\n", encoding="utf-8"
+        )
+        os.environ.pop("PCBDRAFT_RUNTIME_MANAGED_DIR", None)
+        os.environ.pop("PYTEST_CURRENT_TEST", None)
+        for count, expected in (
+            (1, "managed-default"),
+            (2, "home-fallback"),
+            (3, "managed-default"),
+        ):
+            if count == 2:
+                os.environ["PYTEST_CURRENT_TEST"] = ""
+            elif count == 3:
+                os.environ.pop("PYTEST_CURRENT_TEST")
+            connection_status(verify=False)
+            connection_status(verify=False)
+            self.assertEqual(os.environ["REVIEW_KEY"], expected)
+            self.assertEqual(self.load.call_count, count)
+
+    def test_managed_terminal_config_edit_refreshes_real_loader_bridge(self) -> None:
+        self.write_config()
+        self.write_env()
+        self.managed_default.mkdir()
+        os.environ["PCBDRAFT_RUNTIME_MANAGED_DIR"] = str(self.managed_default)
+        for count, timeout in ((1, 17), (2, 29)):
+            (self.managed_default / "config.yaml").write_text(
+                f"terminal:\n  timeout: {timeout}\n", encoding="utf-8"
+            )
+            connection_status(verify=False)
+            connection_status(verify=False)
+            self.assertEqual(os.environ["TERMINAL_TIMEOUT"], str(timeout))
+            self.assertEqual(self.load.call_count, count)
+
+    def test_dotenv_disable_and_interpolation_inputs_invalidate_without_file_edits(
+        self,
+    ) -> None:
+        self.write_config()
+        (self.home / ".env").write_text(
+            "REVIEW_PROVIDER=custom\nREVIEW_KEY=${REVIEW_INPUT}\n", encoding="utf-8"
+        )
+        os.environ["PYTHON_DOTENV_DISABLED"] = "1"
+        os.environ["REVIEW_INPUT"] = "interpolated-a"
+        for _ in range(2):
+            self.assertFalse(connection_status(verify=False).configured)
+        self.assertEqual(self.load.call_count, 1)
+        os.environ["PYTHON_DOTENV_DISABLED"] = "0"
+        for _ in range(2):
+            self.assertEqual(connection_status(verify=False).provider, "custom")
+        self.assertEqual(os.environ["REVIEW_KEY"], "interpolated-a")
+        self.assertEqual(self.load.call_count, 2)
+        os.environ["REVIEW_INPUT"] = "interpolated-b"
+        connection_status(verify=False)
+        connection_status(verify=False)
+        self.assertEqual(os.environ["REVIEW_KEY"], "interpolated-b")
+        self.assertEqual(self.load.call_count, 3)
+
+    def test_op_bootstrap_input_change_refreshes_without_file_edits(self) -> None:
+        self.write_config()
+        self.write_env()
+        (self.home / ".op.env").write_text(
+            "OP_SERVICE_ACCOUNT_TOKEN=file-token\n", encoding="utf-8"
+        )
+        os.environ["OP_SERVICE_ACCOUNT_TOKEN"] = "shell-" + "token"
+        connection_status(verify=False)
+        connection_status(verify=False)
+        self.assertEqual(os.environ["OP_SERVICE_ACCOUNT_TOKEN"], "shell-token")
+        self.assertEqual(self.load.call_count, 1)
+        os.environ.pop("OP_SERVICE_ACCOUNT_TOKEN")
+        connection_status(verify=False)
+        connection_status(verify=False)
+        self.assertEqual(os.environ["OP_SERVICE_ACCOUNT_TOKEN"], "file-token")
+        self.assertEqual(self.load.call_count, 2)
+
+
 class NativeIntentProviderTests(unittest.TestCase):
-    def test_interpret_uses_selected_hermes_provider_and_safe_artifacts(self) -> None:
+    def test_interpret_uses_selected_pcbdraft_provider_and_safe_artifacts(self) -> None:
         value = {
             "request_summary": "sensor board",
             "design_name": "sensor",
@@ -688,7 +1126,7 @@ class NativeIntentProviderTests(unittest.TestCase):
                         self.assertEqual(call.call_args.kwargs["provider"], provider_id)
 
 
-class HermesVendorContractTests(unittest.TestCase):
+class PCBDraftProviderContractTests(unittest.TestCase):
     def test_provider_adapter_contract_is_present(self) -> None:
         from pcbdraft.interfaces.tui.main import select_provider_and_model
         from pcbdraft.model.auxiliary_client import (

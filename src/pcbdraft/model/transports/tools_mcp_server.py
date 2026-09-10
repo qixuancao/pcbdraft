@@ -161,16 +161,16 @@ def _build_server() -> Any:
         from mcp.server import MCPServer
     except ImportError as exc:  # pragma: no cover - install hint
         raise ImportError(
-            f"hermes-tools MCP server requires the 'mcp' package: {exc}"
+            f"pcbdraft-tools MCP server requires the 'mcp' package: {exc}"
         ) from exc
 
     # Discover Hermes tools so dispatch works.
     from pcbdraft.tools.dispatch import get_tool_definitions, handle_function_call
 
     mcp = MCPServer(
-        "hermes-tools",
+        "pcbdraft-tools",
         instructions=(
-            "Hermes Agent's tool surface, exposed for use inside a Codex "
+            "PCBDraft's tool surface, exposed for use inside a Codex "
             "session. Use these for capabilities Codex's built-in toolset "
             "doesn't cover: web search/extract, browser automation, "
             "subagent delegation, vision, image generation, persistent "
@@ -191,10 +191,10 @@ def _build_server() -> Any:
     for name in EXPOSED_TOOLS:
         spec = all_defs.get(name)
         if spec is None:
-            logger.debug("skipping %s — not registered in this Hermes process", name)
+            logger.debug("skipping %s — not registered in this PCBDraft process", name)
             continue
 
-        description = spec.get("description") or f"Hermes {name} tool"
+        description = spec.get("description") or f"PCBDraft {name} tool"
         params_schema = spec.get("parameters") or {"type": "object", "properties": {}}
 
         # The SDK wants a Python callable and derives the input schema from
@@ -238,7 +238,7 @@ def _build_server() -> Any:
         exposed_count += 1
 
     logger.info(
-        "hermes-tools MCP server registered %d/%d tools",
+        "pcbdraft-tools MCP server registered %d/%d tools",
         exposed_count,
         len(EXPOSED_TOOLS),
     )
@@ -264,7 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         server = _build_server()
     except ImportError as exc:
-        sys.stderr.write(f"hermes-tools MCP server cannot start: {exc}\n")
+        sys.stderr.write(f"pcbdraft-tools MCP server cannot start: {exc}\n")
         return 2
 
     # MCPServer.run() defaults to stdio transport, which is what codex
@@ -274,8 +274,8 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         return 0
     except Exception as exc:
-        logger.exception("hermes-tools MCP server crashed")
-        sys.stderr.write(f"hermes-tools MCP server error: {exc}\n")
+        logger.exception("pcbdraft-tools MCP server crashed")
+        sys.stderr.write(f"pcbdraft-tools MCP server error: {exc}\n")
         return 1
     return 0
 

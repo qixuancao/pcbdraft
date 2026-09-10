@@ -26,7 +26,7 @@ Stop conditions (any of):
 - ``/loop stop`` / ``/loop clear`` — user control.
 - ``loops.max_ticks`` config backstop (default 100, 0 = unlimited).
 
-Design notes / invariants (same contract as ``hermes_cli/goals.py``):
+Design notes / invariants (same contract as ``pcbdraft.interfaces.tui/goals.py``):
 
 - A wakeup is just a normal user-role message appended via the surface's
   ordinary input path. No system-prompt mutation, no toolset swap —

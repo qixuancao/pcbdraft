@@ -1,6 +1,6 @@
 """Plugin packs — declarative, shareable plugin sets (#64166).
 
-A pack is a single YAML file (``hermes-pack.yaml``) that pins a set of
+A pack is a single YAML file (``pcbdraft-pack.yaml``) that pins a set of
 plugins (source + exact commit SHA + optional non-secret config seeds).
 Installing a pack is nothing new at runtime: it fans out to N ordinary
 plugin installs through the existing pinned-ref install path, then seeds
@@ -13,13 +13,13 @@ Format (canonical)::
     author: hyper
     version: 1.0.0
     plugins:
-      - name: hermes-media-studio          # bare community-index name…
+      - name: pcbdraft-media-studio          # bare community-index name…
         ref: e8d59971d2b7901405b39dac7b03bdd616272d0d
       - repo: owner/approval-relay         # …or explicit owner/repo / git URL
         ref: 8f3c2d1a9b4e5f6071829304a5b6c7d8e9f00112
         subdir: plugins/relay              # optional path within the repo
     config:                                # optional plugins.entries seeds
-      hermes-media-studio:
+      pcbdraft-media-studio:
         default_model: flux-3
     skills: []                             # declared seam — NOT auto-installed
 
@@ -32,7 +32,7 @@ Supply-chain posture:
   capability-grant keys (a pack cannot pre-consent capabilities).
 * Capability consent is NEVER bulk-granted: after each plugin installs,
   its declared capabilities ride the exact same per-plugin consent flow
-  as a normal ``hermes plugins install`` (#64228).
+  as a normal ``internal plugins install`` (#64228).
 
 ``skills:`` is parsed and displayed but not installed — wiring skill-hub
 ids into the skills installer is a documented follow-up seam.
@@ -399,9 +399,7 @@ def render_pack_review(
             "[yellow]Pack lists skills (NOT auto-installed yet):[/yellow] "
             + ", ".join(pack.skills)
         )
-        console.print(
-            "[dim]Install them manually, e.g. `hermes skills install <id>`.[/dim]"
-        )
+        console.print("[dim]Install them manually, e.g. `pcbdraft --help`.[/dim]")
     console.print(
         "\n[dim]Installing a pack runs third-party code × "
         f"{len(resolved)} plugins. Each plugin's declared capabilities still "
@@ -468,7 +466,7 @@ def install_pack_plugins(
 
     Each plugin goes through the existing exact-ref install path, then its
     declared capabilities go through the SAME per-plugin consent flow as a
-    single install (:func:`hermes_cli.plugins_cmd._run_capability_consent`).
+    single install (:func:`pcbdraft.interfaces.tui.plugins_cmd._run_capability_consent`).
     Successful installs are enabled (the user consented via the review
     screen) and their pack config seed is applied.
     """
@@ -599,7 +597,7 @@ def _sanitized_entry_config(plugin_id: str) -> dict[str, Any]:
 
 
 def export_pack(
-    *, enabled_only: bool = False, pack_name: str = "my-hermes-pack"
+    *, enabled_only: bool = False, pack_name: str = "my-pcbdraft-pack"
 ) -> tuple[str, list[str]]:
     """Build pack YAML from the current install.
 
@@ -655,7 +653,7 @@ def export_pack(
 
     doc: dict[str, Any] = {
         "name": pack_name,
-        "description": "Exported by `hermes plugins pack export`.",
+        "description": "Exported by `pcbdraft --help`.",
         "version": "1.0.0",
         "plugins": entries,
     }
@@ -675,7 +673,7 @@ def export_pack(
 
 
 def cmd_pack_show(source: str) -> None:
-    """``hermes plugins pack show <path-or-url>`` — dry-run review."""
+    """``internal plugins pack show <path-or-url>`` — dry-run review."""
     from rich.console import Console
 
     console = Console()
@@ -692,13 +690,11 @@ def cmd_pack_show(source: str) -> None:
             f"\n[yellow]{len(unresolved)} entr{'y' if len(unresolved) == 1 else 'ies'} "
             "could not be resolved — install would skip them and exit non-zero.[/yellow]"
         )
-    console.print(
-        "\n[dim]Dry run only. Install with `hermes plugins pack install ...`.[/dim]"
-    )
+    console.print("\n[dim]Dry run only. Install with `pcbdraft --help...`.[/dim]")
 
 
 def cmd_pack_install(source: str, *, force: bool = False) -> None:
-    """``hermes plugins pack install <path-or-url>``.
+    """``internal plugins pack install <path-or-url>``.
 
     Mandatory review screen → one summary consent for the pack contents →
     fan-out installs with pinned refs → per-plugin capability consent via
@@ -750,15 +746,15 @@ def cmd_pack_install(source: str, *, force: bool = False) -> None:
         console.print(f"  [red]✗[/red] {r.display}: {r.error}")
     if ok:
         console.print("[dim]Restart the gateway for the plugins to take effect:[/dim]")
-        console.print("[dim]  hermes gateway restart[/dim]")
+        console.print("[dim]  pcbdraft --help[/dim]")
     if failed:
         sys.exit(1)
 
 
 def cmd_pack_export(
-    *, enabled_only: bool = False, name: str = "my-hermes-pack"
+    *, enabled_only: bool = False, name: str = "my-pcbdraft-pack"
 ) -> None:
-    """``hermes plugins pack export [--enabled-only]`` — pack YAML on stdout."""
+    """``internal plugins pack export [--enabled-only]`` — pack YAML on stdout."""
     from rich.console import Console
 
     console = Console(stderr=True)
@@ -773,21 +769,19 @@ def cmd_pack_export(
 
 
 def pack_command(args) -> None:
-    """Dispatch ``hermes plugins pack <action>``."""
+    """Dispatch ``internal plugins pack <action>``."""
     action = getattr(args, "pack_action", None)
     if action == "install":
         cmd_pack_install(args.source, force=getattr(args, "force", False))
     elif action == "export":
         cmd_pack_export(
             enabled_only=getattr(args, "enabled_only", False),
-            name=getattr(args, "name", None) or "my-hermes-pack",
+            name=getattr(args, "name", None) or "my-pcbdraft-pack",
         )
     elif action == "show":
         cmd_pack_show(args.source)
     else:
         from rich.console import Console
 
-        Console().print(
-            "[red]Error:[/red] Usage: hermes plugins pack {install|export|show}"
-        )
+        Console().print("[red]Error:[/red] Usage: pcbdraft --help")
         sys.exit(1)

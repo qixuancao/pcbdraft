@@ -2,7 +2,7 @@
 
 Resolve provider credentials from 1Password ``op://vault/item/field``
 references at process startup so they don't have to live in plaintext in
-``~/.hermes/.env``.
+the runtime ``.env``.
 
 Design summary
 --------------
@@ -622,7 +622,7 @@ class OnePasswordSource(SecretSource):
             if isinstance(cfg, dict):
                 token_env = str(cfg.get("service_account_token_env") or token_env)
             return (
-                "Run `hermes secrets onepassword token` to paste a fresh "
+                "Use the 1Password secret-source settings to paste a fresh "
                 f"service-account token ({token_env}), or `op signin` for an "
                 "interactive session."
             )

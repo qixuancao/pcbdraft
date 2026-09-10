@@ -51,7 +51,7 @@ def _bounded_prompt_cache_key(value: Any) -> str | None:
 # server-side tool (incomplete hang or HTTP 400 duplicate names); this alias
 # avoids that while still dispatching through Hermes's configured provider
 # (Firecrawl / Tavily / …). Mapped back to ``web_search`` in normalize_response.
-_XAI_CLIENT_WEB_SEARCH_ALIAS = "hermes_web_search"
+_XAI_CLIENT_WEB_SEARCH_ALIAS = "pcbdraft_web_search"
 
 
 def _xai_prefers_native_web_search() -> bool:

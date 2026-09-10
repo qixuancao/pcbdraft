@@ -49,15 +49,20 @@ project until total store size is under ``max_total_size_mb``.
 """
 
 import hashlib
+import inspect
 import json
 import logging
 import os
 import re
 import shutil
 import subprocess
+import threading
 import time
+from contextlib import contextmanager
+from functools import wraps
 from pathlib import Path
 
+from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.core.runtime_utils import env_int
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags
@@ -72,7 +77,12 @@ CHECKPOINT_BASE = get_runtime_home() / "checkpoints"
 
 # Single shared store directory under CHECKPOINT_BASE.
 _STORE_DIRNAME = "store"
-_REFS_PREFIX = "refs/hermes"
+_REFS_PREFIX = "refs/pcbdraft"
+# Read compatibility inside the PCBDraft-owned shadow store only.
+_LEGACY_REFS_PREFIX = "refs/hermes"
+_MIGRATION_REF = "refs/pcbdraft-state/checkpoint-migration-v2"
+_MIGRATION_CONTENT = "pcbdraft-checkpoint-ref-migration-v2\n"
+_checkpoint_lock_state = threading.local()
 _INDEXES_DIRNAME = "indexes"
 _PROJECTS_DIRNAME = "projects"
 _LEDGERS_DIRNAME = "ledgers"
@@ -332,6 +342,11 @@ def _git_env(
     env["GIT_CONFIG_GLOBAL"] = os.devnull
     env["GIT_CONFIG_SYSTEM"] = os.devnull
     env["GIT_CONFIG_NOSYSTEM"] = "1"
+    # New snapshots use native attribution even in a migrated shadow store.
+    # Existing commit objects and user repository configuration are untouched.
+    for role in ("AUTHOR", "COMMITTER"):
+        env[f"GIT_{role}_NAME"] = "PCBDraft Checkpoint"
+        env[f"GIT_{role}_EMAIL"] = "pcbdraft@local"
     return env
 
 
@@ -359,6 +374,49 @@ def _repair_bare_repo_dirs(store: Path) -> None:
                 )
 
 
+@contextmanager
+def _checkpoint_lock(base: Path):
+    """One reentrant thread/process lock for the entire store lifecycle.
+
+    The lock lives outside the deletable checkpoint base, so clear_all cannot
+    replace its inode while another process is waiting on it.
+    """
+    base = Path(base).resolve()
+    key = (os.getpid(), str(base))
+    held = getattr(_checkpoint_lock_state, "held", None)
+    if held is None:
+        held = _checkpoint_lock_state.held = set()
+    if key in held:
+        yield
+        return
+    with ResourceLock(base, base.parent / ".checkpoint-locks", timeout=30):
+        held.add(key)
+        try:
+            yield
+        finally:
+            held.remove(key)
+
+
+def _checkpoint_operation(function):
+    """Keep nested reads, ref changes, metadata changes and GC under one lock."""
+    signature = inspect.signature(function)
+
+    @wraps(function)
+    def locked(*args, **kwargs):
+        arguments = signature.bind(*args, **kwargs).arguments
+        store = arguments.get("store", arguments.get("shadow_repo"))
+        base = (
+            Path(store).parent
+            if store is not None
+            else (arguments.get("checkpoint_base") or CHECKPOINT_BASE)
+        )
+        with _checkpoint_lock(base):
+            return function(*args, **kwargs)
+
+    return locked
+
+
+@_checkpoint_operation
 def _run_git(
     args: list[str],
     store: Path,
@@ -366,6 +424,7 @@ def _run_git(
     timeout: int = _GIT_TIMEOUT,
     allowed_returncodes: set[int] | None = None,
     index_file: Path | None = None,
+    input_text: str | None = None,
 ) -> tuple[bool, str, str]:
     """Run a git command against the shared store.  Returns (ok, stdout, stderr).
 
@@ -402,7 +461,8 @@ def _run_git(
             timeout=timeout,
             env=env,
             cwd=str(normalized_working_dir),
-            stdin=subprocess.DEVNULL,
+            input=input_text,
+            stdin=subprocess.DEVNULL if input_text is None else None,
             # Checkpoints fire several bare git calls per turn from the
             # console-less desktop/gateway backend; suppress the per-call
             # conhost flash on Windows (no-op on POSIX).
@@ -490,12 +550,87 @@ def _migrate_legacy_store(base: Path) -> Path | None:
     if legacy_root is not None:
         logger.info(
             "Migrated pre-v2 checkpoint repos to %s. "
-            "Clear with `hermes checkpoints clear-legacy` when safe.",
+            "Retained for manual recovery; diagnostics: `pcbdraft doctor`.",
             legacy_root,
         )
     return legacy_root
 
 
+@_checkpoint_operation
+def _copy_legacy_refs(store: Path, working_dir: str) -> str | None:
+    """Publish native refs and their durable completion ref in one Git transaction.
+
+    Every deletion/prune holds the same outer lock and completes this operation
+    first. After a crash or rejected transaction there is no separate last-step
+    filesystem marker to misreport a partial migration as complete.
+    """
+    done, _, _ = _run_git(
+        ["show-ref", "--verify", "--hash", _MIGRATION_REF],
+        store,
+        working_dir,
+        allowed_returncodes={1, 128},
+    )
+    if done:
+        ok, content, error = _run_git(
+            ["cat-file", "blob", _MIGRATION_REF], store, working_dir
+        )
+        if not ok or content.strip() != _MIGRATION_CONTENT.strip():
+            return f"Invalid checkpoint migration completion state: {error}"
+        return None
+
+    # Accept a validated completion record from the previous tools migration.
+    # Re-copying its old refs could resurrect deliberately deleted native refs.
+    old_marker = store / "pcbdraft-refs-migrated"
+    completed_before = False
+    if old_marker.exists():
+        if old_marker.is_symlink() or old_marker.read_text(encoding="utf-8") != "1\n":
+            return "Invalid legacy checkpoint migration completion state"
+        completed_before = True
+
+    transaction = ["start"]
+    if not completed_before:
+        ok, output, error = _run_git(
+            [
+                "for-each-ref",
+                "--format=%(refname) %(objectname)",
+                _LEGACY_REFS_PREFIX,
+                _REFS_PREFIX,
+            ],
+            store,
+            working_dir,
+        )
+        if not ok:
+            return f"Could not read checkpoint refs: {error}"
+        refs = dict(line.split() for line in output.splitlines() if line.strip())
+        for old, sha in refs.items():
+            if not old.startswith(_LEGACY_REFS_PREFIX + "/"):
+                continue
+            native = _REFS_PREFIX + old[len(_LEGACY_REFS_PREFIX) :]
+            transaction.append(f"verify {old} {sha}")
+            if native in refs:
+                transaction.append(f"verify {native} {refs[native]}")
+            else:
+                transaction.append(f"create {native} {sha}")
+
+    ok, marker_oid, error = _run_git(
+        ["-c", "core.fsync=loose-object", "hash-object", "-w", "--stdin"],
+        store,
+        working_dir,
+        input_text=_MIGRATION_CONTENT,
+    )
+    if not ok:
+        return f"Could not prepare checkpoint migration completion state: {error}"
+    transaction.extend([f"create {_MIGRATION_REF} {marker_oid}", "prepare", "commit"])
+    ok, _, error = _run_git(
+        ["-c", "core.fsync=reference", "update-ref", "--no-deref", "--stdin"],
+        store,
+        working_dir,
+        input_text="\n".join(transaction) + "\n",
+    )
+    return None if ok else f"Checkpoint ref migration transaction failed: {error}"
+
+
+@_checkpoint_operation
 def _init_store(store: Path, working_dir: str) -> str | None:
     """Initialise the shared shadow store if needed.  Returns error or None.
 
@@ -514,7 +649,7 @@ def _init_store(store: Path, working_dir: str) -> str | None:
         _migrate_legacy_store(base)
 
     if (store / "HEAD").exists():
-        return None
+        return _copy_legacy_refs(store, working_dir)
 
     store.mkdir(parents=True, exist_ok=True)
     (store / _INDEXES_DIRNAME).mkdir(exist_ok=True)
@@ -560,8 +695,8 @@ def _init_store(store: Path, working_dir: str) -> str | None:
     # Use the base dir as the working_dir for config commands — it always
     # exists since we just created the store inside it.
     cfg_wd = str(base)
-    _run_git(["config", "user.email", "hermes@local"], store, cfg_wd)
-    _run_git(["config", "user.name", "Hermes Checkpoint"], store, cfg_wd)
+    _run_git(["config", "user.email", "pcbdraft@local"], store, cfg_wd)
+    _run_git(["config", "user.name", "PCBDraft Checkpoint"], store, cfg_wd)
     _run_git(["config", "commit.gpgsign", "false"], store, cfg_wd)
     _run_git(["config", "tag.gpgSign", "false"], store, cfg_wd)
     _run_git(["config", "gc.auto", "0"], store, cfg_wd)
@@ -573,7 +708,18 @@ def _init_store(store: Path, working_dir: str) -> str | None:
     )
 
     logger.debug("Initialised checkpoint store at %s", store)
-    return None
+    return _copy_legacy_refs(store, working_dir)
+
+
+@_checkpoint_operation
+def _open_existing_store(store: Path) -> bool:
+    """Single entry for existing stores: absent is empty, failed migration is not."""
+    if not (store / "HEAD").exists():
+        return False
+    error = _init_store(store, str(store.parent))
+    if error:
+        raise RuntimeError(error)
+    return True
 
 
 def _volume_evidence(workdir: Path) -> dict:
@@ -765,6 +911,7 @@ def _dir_size_bytes(path: Path) -> int:
 # those markers, but inside the shared store + under ``projects/<hash>.json``.
 # The shim initialises the store and registers the project so the old
 # surface keeps roughly the same shape.
+@_checkpoint_operation
 def _init_shadow_repo(shadow_repo: Path, working_dir: str) -> str | None:
     """Backwards-compatible initialiser.
 
@@ -841,6 +988,7 @@ class CheckpointManager:
     # Public API
     # ------------------------------------------------------------------
 
+    @_checkpoint_operation
     def record_agent_write(self, file_path: str) -> None:
         """Record the content hash of a file Hermes just successfully wrote.
 
@@ -867,6 +1015,7 @@ class CheckpointManager:
         except Exception as exc:
             logger.debug("record_agent_write failed for %s: %s", file_path, exc)
 
+    @_checkpoint_operation
     def safe_restore_plan(self, working_dir: str, commit_hash: str) -> dict:
         """Classify files changed since ``commit_hash`` for a safe restore.
 
@@ -882,7 +1031,7 @@ class CheckpointManager:
 
         abs_dir = str(_normalize_path(working_dir))
         store = _store_path(CHECKPOINT_BASE)
-        if not (store / "HEAD").exists():
+        if not _open_existing_store(store):
             return {
                 "success": False,
                 "error": "No checkpoints exist for this directory",
@@ -985,12 +1134,13 @@ class CheckpointManager:
             logger.debug("Checkpoint failed (non-fatal): %s", e)
             return False
 
+    @_checkpoint_operation
     def list_checkpoints(self, working_dir: str) -> list[dict]:
         """List available checkpoints for a directory (most recent first)."""
         abs_dir = str(_normalize_path(working_dir))
         store = _store_path(CHECKPOINT_BASE)
 
-        if not (store / "HEAD").exists():
+        if not _open_existing_store(store):
             return []
 
         ref = _ref_name(_project_hash(abs_dir))
@@ -1041,6 +1191,7 @@ class CheckpointManager:
         if m:
             entry["deletions"] = int(m.group(1))
 
+    @_checkpoint_operation
     def diff(self, working_dir: str, commit_hash: str) -> dict:
         """Show diff between a checkpoint and the current working tree."""
         hash_err = _validate_commit_hash(commit_hash)
@@ -1050,7 +1201,7 @@ class CheckpointManager:
         abs_dir = str(_normalize_path(working_dir))
         store = _store_path(CHECKPOINT_BASE)
 
-        if not (store / "HEAD").exists():
+        if not _open_existing_store(store):
             return {
                 "success": False,
                 "error": "No checkpoints exist for this directory",
@@ -1109,6 +1260,7 @@ class CheckpointManager:
             "diff": diff_out if ok_diff else "",
         }
 
+    @_checkpoint_operation
     def session_diff(self, working_dir: str) -> dict:
         """Show the cumulative diff of everything changed in this directory.
 
@@ -1141,6 +1293,7 @@ class CheckpointManager:
                 result["empty"] = True
         return result
 
+    @_checkpoint_operation
     def restore(
         self,
         working_dir: str,
@@ -1168,7 +1321,7 @@ class CheckpointManager:
 
         store = _store_path(CHECKPOINT_BASE)
 
-        if not (store / "HEAD").exists():
+        if not _open_existing_store(store):
             return {
                 "success": False,
                 "error": "No checkpoints exist for this directory",
@@ -1315,6 +1468,7 @@ class CheckpointManager:
     # Internal
     # ------------------------------------------------------------------
 
+    @_checkpoint_operation
     def _take(self, working_dir: str, reason: str) -> bool:
         """Take a snapshot.  Returns True on success."""
         store = _store_path(CHECKPOINT_BASE)
@@ -1527,6 +1681,7 @@ class CheckpointManager:
                 allowed_returncodes={128},
             )
 
+    @_checkpoint_operation
     def _prune(self, store: Path, working_dir: str, ref: str) -> None:
         """Keep only the last ``max_snapshots`` commits on the per-project ref.
 
@@ -1536,6 +1691,8 @@ class CheckpointManager:
         commits older than ``max_snapshots`` and then runs ``git gc`` on the
         store so unreachable objects are reclaimed.
         """
+        if not _open_existing_store(store):
+            return
         ok, stdout, _ = _run_git(
             ["rev-list", "--count", ref],
             store,
@@ -1612,11 +1769,14 @@ class CheckpointManager:
         )
         _repair_bare_repo_dirs(store)
 
+    @_checkpoint_operation
     def _enforce_size_cap(self, store: Path) -> None:
         """If total store size exceeds ``max_total_size_mb``, drop oldest
         checkpoints across ALL projects until under the cap.
         """
         if self.max_total_size_mb <= 0:
+            return
+        if not _open_existing_store(store):
             return
         cap_bytes = self.max_total_size_mb * 1024 * 1024
         size = _dir_size_bytes(store)
@@ -1761,8 +1921,11 @@ def format_checkpoint_list(checkpoints: list[dict], directory: str) -> str:
 _PRUNE_MARKER_NAME = ".last_prune"
 
 
+@_checkpoint_operation
 def _delete_ref(store: Path, ref: str) -> bool:
     """Delete a ref from the store.  Returns True on success."""
+    if not _open_existing_store(store):
+        return False
     ok, _, _ = _run_git(
         ["update-ref", "-d", ref],
         store,
@@ -1770,6 +1933,20 @@ def _delete_ref(store: Path, ref: str) -> bool:
         allowed_returncodes={128},
     )
     return ok
+
+
+@_checkpoint_operation
+def _delete_project_checkpoint(store: Path, dir_hash: str) -> bool:
+    """Delete a project's ref before removing its index and retention metadata."""
+    if not _delete_ref(store, _ref_name(dir_hash)):
+        return False
+    for path in (_index_path(store, dir_hash), _project_meta_path(store, dir_hash)):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as exc:
+            logger.warning("Could not remove checkpoint metadata %s: %s", path, exc)
+            return False
+    return True
 
 
 def _workdir_is_observably_gone(
@@ -1879,6 +2056,34 @@ def prune_checkpoints(
     max_total_size_mb: int = 0,
     orphan_allowlist: set | None = None,
 ) -> dict[str, int]:
+    """Run locked maintenance, reporting migration/lock failures without deletion."""
+    try:
+        return _prune_checkpoints_locked(
+            retention_days,
+            delete_orphans,
+            checkpoint_base,
+            max_total_size_mb,
+            orphan_allowlist,
+        )
+    except Exception as exc:  # noqa: BLE001 - maintenance reports all failures via counts
+        logger.warning("Checkpoint maintenance failed: %s", exc)
+        return {
+            "scanned": 0,
+            "deleted_orphan": 0,
+            "deleted_stale": 0,
+            "errors": 1,
+            "bytes_freed": 0,
+        }
+
+
+@_checkpoint_operation
+def _prune_checkpoints_locked(
+    retention_days: int = 7,
+    delete_orphans: bool = True,
+    checkpoint_base: Path | None = None,
+    max_total_size_mb: int = 0,
+    orphan_allowlist: set | None = None,
+) -> dict[str, int]:
     """Delete stale/orphan checkpoints and reclaim store space.
 
     A project entry is deleted when either:
@@ -1921,6 +2126,8 @@ def prune_checkpoints(
     if not base.exists():
         return result
 
+    store = _store_path(base)
+    store_ready = _open_existing_store(store)
     size_before = _dir_size_bytes(base)
 
     # --- Legacy pre-v2 per-project shadow repos (kept directly under base) ---
@@ -2006,8 +2213,7 @@ def prune_checkpoints(
             logger.warning("Failed to prune checkpoint repo %s: %s", child.name, exc)
 
     # --- v2 shared store: per-project ref pruning via metadata ---
-    store = _store_path(base)
-    if (store / "HEAD").exists():
+    if store_ready:
         for meta in _list_projects(store):
             dir_hash = meta.get("_hash") or ""
             workdir = meta.get("workdir") or ""
@@ -2040,21 +2246,9 @@ def prune_checkpoints(
                     reason = "stale"
             if reason is None:
                 continue
-            ref = _ref_name(dir_hash)
-            _delete_ref(store, ref)
-            # Drop per-project index and metadata.
-            try:
-                idx = _index_path(store, dir_hash)
-                if idx.exists():
-                    idx.unlink()
-            except OSError:
-                pass
-            try:
-                mp = _project_meta_path(store, dir_hash)
-                if mp.exists():
-                    mp.unlink()
-            except OSError:
-                pass
+            if not _delete_project_checkpoint(store, dir_hash):
+                result["errors"] += 1
+                continue
             if reason == "orphan":
                 result["deleted_orphan"] += 1
             else:
@@ -2172,6 +2366,7 @@ def prune_checkpoints(
     return result
 
 
+@_checkpoint_operation
 def maybe_auto_prune_checkpoints(
     retention_days: int = 7,
     min_interval_hours: int = 24,
@@ -2220,6 +2415,10 @@ def maybe_auto_prune_checkpoints(
         )
         out["result"] = result
 
+        if result["errors"]:
+            out["error"] = "Checkpoint maintenance did not complete"
+            return out
+
         try:
             marker.write_text(str(now), encoding="utf-8")
         except OSError as exc:
@@ -2247,6 +2446,7 @@ def maybe_auto_prune_checkpoints(
 # ---------------------------------------------------------------------------
 
 
+@_checkpoint_operation
 def store_status(checkpoint_base: Path | None = None) -> dict:
     """Return a summary of the shadow store.
 
@@ -2278,7 +2478,7 @@ def store_status(checkpoint_base: Path | None = None) -> dict:
     store = _store_path(base)
     if store.exists():
         out["store_size_bytes"] = _dir_size_bytes(store)
-        if (store / "HEAD").exists():
+        if _open_existing_store(store):
             for meta in _list_projects(store):
                 dir_hash = meta.get("_hash") or ""
                 workdir = meta.get("workdir") or ""
@@ -2337,6 +2537,7 @@ def store_status(checkpoint_base: Path | None = None) -> dict:
     return out
 
 
+@_checkpoint_operation
 def clear_all(checkpoint_base: Path | None = None) -> dict[str, int]:
     """Nuke the entire checkpoint base (store + legacy).  Irreversible.
 
@@ -2356,6 +2557,7 @@ def clear_all(checkpoint_base: Path | None = None) -> dict[str, int]:
     return out
 
 
+@_checkpoint_operation
 def clear_legacy(checkpoint_base: Path | None = None) -> dict[str, int]:
     """Delete all ``legacy-*`` archive directories.
 

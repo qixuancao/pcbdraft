@@ -23,8 +23,8 @@ from pcbdraft.tools.environments.base import (
     _popen_bash,
 )
 from pcbdraft.tools.environments.local import (
-    _HERMES_PROVIDER_ENV_BLOCKLIST,
-    _is_hermes_internal_secret,
+    _PCBDRAFT_PROVIDER_ENV_BLOCKLIST,
+    _is_pcbdraft_internal_secret,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ _DOCKER_SEARCH_PATHS = [
 
 _docker_executable: str | None = None  # resolved once, cached
 _ENV_VAR_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-_EGRESS_LABEL_KEY = "hermes-egress"
+_EGRESS_LABEL_KEY = "pcbdraft-egress"
 
 
 def _normalize_forward_env_names(forward_env: list[str] | None) -> list[str]:
@@ -101,8 +101,8 @@ def _normalize_env_dict(env: dict | None) -> dict[str, str]:
     return normalized
 
 
-def _load_hermes_env_vars() -> dict[str, str]:
-    """Load ~/.hermes/.env values without failing Docker command execution."""
+def _load_pcbdraft_env_vars() -> dict[str, str]:
+    """Load runtime .env values without failing Docker command execution."""
     try:
         from pcbdraft.model.configuration import load_env
 
@@ -152,15 +152,15 @@ def reap_orphan_containers(
     profile_filter: str | None = None,
     docker_exe: str | None = None,
 ) -> int:
-    """Remove stale hermes-tagged containers left behind by prior processes.
+    """Remove stale pcbdraft-tagged containers left behind by prior processes.
 
     Targets containers that match all of:
 
-    * ``label=hermes-agent=1`` (created by this codebase)
+    * ``label=pcbdraft-agent=1`` (created by this codebase)
     * ``status=exited`` (running containers are NEVER reaped — they may
       belong to a sibling Hermes process whose reuse path will pick them
       up; killing them would crash the sibling mid-command)
-    * (optional) ``label=hermes-profile=<profile_filter>`` (sweep only the
+    * (optional) ``label=pcbdraft-profile=<profile_filter>`` (sweep only the
       caller's profile by default; a hermes process in profile A must not
       tear down profile B's containers)
     * ``State.FinishedAt`` older than *max_age_seconds* ago (so a sibling
@@ -180,12 +180,12 @@ def reap_orphan_containers(
     pair.
     """
     docker = docker_exe or find_docker() or "docker"
-    filters = ["--filter", "label=hermes-agent=1", "--filter", "status=exited"]
+    filters = ["--filter", "label=pcbdraft-agent=1", "--filter", "status=exited"]
     if profile_filter:
         filters.extend(
             [
                 "--filter",
-                f"label=hermes-profile={_sanitize_label_value(profile_filter)}",
+                f"label=pcbdraft-profile={_sanitize_label_value(profile_filter)}",
             ]
         )
 
@@ -477,7 +477,7 @@ def _egress_proxy_args_for_docker() -> tuple[list[str], dict[str, str], list[str
     if not status.configured:
         msg = (
             "proxy.enabled is true but iron-proxy is not configured. "
-            "Run `hermes egress setup` to mint tokens and write proxy.yaml."
+            "Run `pcbdraft doctor` to check the egress configuration."
         )
         if enforce:
             raise RuntimeError(msg)
@@ -487,7 +487,7 @@ def _egress_proxy_args_for_docker() -> tuple[list[str], dict[str, str], list[str
     if not (status.pid and status.listening):
         msg = (
             f"iron-proxy is enabled but not running on port {status.tunnel_port}. "
-            "Start it with `hermes egress start`."
+            "Check its configuration with `pcbdraft doctor`."
         )
         if enforce:
             raise RuntimeError(msg)
@@ -504,7 +504,7 @@ def _egress_proxy_args_for_docker() -> tuple[list[str], dict[str, str], list[str
         # vars AND any other isolation, opening the sandbox.
         msg = (
             f"iron-proxy CA cert vanished from {status.ca_cert_path}. "
-            "Re-run `hermes egress setup` to regenerate it."
+            "Check its configuration with `pcbdraft doctor`."
         )
         if enforce:
             raise RuntimeError(msg)
@@ -519,7 +519,7 @@ def _egress_proxy_args_for_docker() -> tuple[list[str], dict[str, str], list[str
     if not mappings:
         msg = (
             "iron-proxy is configured but mappings.json is empty or "
-            "corrupt.  Re-run `hermes egress setup` to mint provider "
+            "corrupt.  Run `pcbdraft doctor` and configure provider "
             "tokens before starting a sandbox."
         )
         if enforce:
@@ -527,7 +527,7 @@ def _egress_proxy_args_for_docker() -> tuple[list[str], dict[str, str], list[str
         logger.warning("%s — continuing without proxy (enforce_on_docker=false).", msg)
         return ([], {}, [])
 
-    container_ca = "/etc/ssl/certs/hermes-egress-ca.crt"
+    container_ca = "/etc/ssl/certs/pcbdraft-egress-ca.crt"
     volume_args = ["-v", f"{status.ca_cert_path}:{container_ca}:ro"]
 
     # tunnel_port serves CONNECT (HTTPS); the plain-HTTP forward listener
@@ -571,7 +571,7 @@ def _egress_proxy_args_for_docker() -> tuple[list[str], dict[str, str], list[str
         "PCBDRAFT_RUNTIME_EGRESS_PROXY": "1",
         # Sentinel that DockerEnvironment uses to do the NODE_OPTIONS
         # append-merge.  Stripped from the final env before docker run.
-        "_HERMES_EGRESS_NODE_OPTIONS_APPEND": "--use-openssl-ca",
+        "_PCBDRAFT_EGRESS_NODE_OPTIONS_APPEND": "--use-openssl-ca",
     }
 
     # Surface the per-provider proxy tokens under the standard provider env
@@ -939,6 +939,7 @@ class DockerEnvironment(BaseEnvironment):
     across container restarts.
     """
 
+    _remote_runtime_home = "/root/.pcbdraft/runtime"
     _profile_scoped_passthrough = True
 
     def _additional_profile_scoped_passthrough_names(self) -> tuple[str, ...]:
@@ -1365,9 +1366,9 @@ class DockerEnvironment(BaseEnvironment):
         # ``docker_env: {NODE_OPTIONS: "--max-old-space-size=8192"}``
         # MUST be preserved — replacing it would silently drop their
         # tuning.  We carry the egress flag in a sentinel key
-        # ``_HERMES_EGRESS_NODE_OPTIONS_APPEND`` and merge here.
+        # ``_PCBDRAFT_EGRESS_NODE_OPTIONS_APPEND`` and merge here.
         _egress_node_append = merged_env.pop(
-            "_HERMES_EGRESS_NODE_OPTIONS_APPEND",
+            "_PCBDRAFT_EGRESS_NODE_OPTIONS_APPEND",
             None,
         )
         if _egress_node_append:
@@ -1496,7 +1497,7 @@ class DockerEnvironment(BaseEnvironment):
         logger.info("Docker run_args: %s", all_run_args)
 
         # Start the container directly via `docker run -d`.
-        container_name = f"hermes-{uuid.uuid4().hex[:8]}"
+        container_name = f"pcbdraft-{uuid.uuid4().hex[:8]}"
         # Labels make hermes-created containers identifiable to:
         #   * the orphan reaper (`hermes-agent=1` for the global sweep filter)
         #   * future cross-process reuse (`hermes-task-id`, `hermes-profile`)
@@ -1508,11 +1509,11 @@ class DockerEnvironment(BaseEnvironment):
         task_label = _sanitize_label_value(task_id)
         label_args = [
             "--label",
-            "hermes-agent=1",
+            "pcbdraft-agent=1",
             "--label",
-            f"hermes-task-id={task_label}",
+            f"pcbdraft-task-id={task_label}",
             "--label",
-            f"hermes-profile={profile_name}",
+            f"pcbdraft-profile={profile_name}",
             "--label",
             f"{_EGRESS_LABEL_KEY}={egress_label}",
         ]
@@ -1523,9 +1524,9 @@ class DockerEnvironment(BaseEnvironment):
         self._all_run_args = all_run_args
 
         self._labels = {
-            "hermes-agent": "1",
-            "hermes-task-id": task_label,
-            "hermes-profile": profile_name,
+            "pcbdraft-agent": "1",
+            "pcbdraft-task-id": task_label,
+            "pcbdraft-profile": profile_name,
             _EGRESS_LABEL_KEY: egress_label,
         }
 
@@ -1746,15 +1747,15 @@ class DockerEnvironment(BaseEnvironment):
         # (AUXILIARY_*_API_KEY / _BASE_URL, GATEWAY_RELAY_* auth) that the
         # name-based blocklist doesn't cover — see _is_hermes_internal_secret.
         _implicit_forward = {
-            k for k in passthrough_keys if not _is_hermes_internal_secret(k)
+            k for k in passthrough_keys if not _is_pcbdraft_internal_secret(k)
         }
         forward_keys = explicit_forward_keys | (
-            _implicit_forward - _HERMES_PROVIDER_ENV_BLOCKLIST
+            _implicit_forward - _PCBDRAFT_PROVIDER_ENV_BLOCKLIST
         )
-        hermes_env = _load_hermes_env_vars() if forward_keys else {}
+        pcbdraft_env = _load_pcbdraft_env_vars() if forward_keys else {}
         unset_names: set[str] = set()
         for key in sorted(forward_keys):
-            value = os.getenv(key) or hermes_env.get(key)
+            value = os.getenv(key) or pcbdraft_env.get(key)
             if resolve_passthrough_value is not None:
                 value = resolve_passthrough_value(key, value)
             if value is not None:
@@ -1848,8 +1849,8 @@ class DockerEnvironment(BaseEnvironment):
         self._container_id = None
 
         # 1. Try label-based reuse (another process may have recreated it).
-        task_label = self._labels.get("hermes-task-id", "")
-        profile_label = self._labels.get("hermes-profile", "")
+        task_label = self._labels.get("pcbdraft-task-id", "")
+        profile_label = self._labels.get("pcbdraft-profile", "")
         existing = self._find_reusable_container(
             task_label,
             profile_label,
@@ -1887,7 +1888,7 @@ class DockerEnvironment(BaseEnvironment):
             try:
                 import uuid as _uuid
 
-                new_name = f"hermes-{_uuid.uuid4().hex[:8]}"
+                new_name = f"pcbdraft-{_uuid.uuid4().hex[:8]}"
                 init_args = [] if self._image_uses_s6_init else ["--init"]
                 label_args = []
                 for k, v in self._labels.items():
@@ -2079,11 +2080,11 @@ class DockerEnvironment(BaseEnvironment):
         try:
             filters = [
                 "--filter",
-                "label=hermes-agent=1",
+                "label=pcbdraft-agent=1",
                 "--filter",
-                f"label=hermes-task-id={task_label}",
+                f"label=pcbdraft-task-id={task_label}",
                 "--filter",
-                f"label=hermes-profile={profile_label}",
+                f"label=pcbdraft-profile={profile_label}",
             ]
             if egress_label != "off":
                 filters.extend(
@@ -2275,7 +2276,7 @@ class DockerEnvironment(BaseEnvironment):
         import threading
 
         t = threading.Thread(
-            target=_do_cleanup, daemon=True, name=f"hermes-cleanup-{log_id}"
+            target=_do_cleanup, daemon=True, name=f"pcbdraft-cleanup-{log_id}"
         )
         t.start()
         self._cleanup_thread = t

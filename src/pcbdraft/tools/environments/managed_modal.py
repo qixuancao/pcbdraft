@@ -35,7 +35,7 @@ class _ManagedModalExecHandle:
 
 
 class ManagedModalEnvironment(BaseModalExecutionEnvironment):
-    """Gateway-owned Modal sandbox with Hermes-compatible execute/cleanup."""
+    """Gateway-owned Modal sandbox with PCBDraft-scoped execution and reuse."""
 
     _CONNECT_TIMEOUT_SECONDS = _request_timeout_env(
         "TERMINAL_MANAGED_MODAL_CONNECT_TIMEOUT_SECONDS", 1.0
@@ -82,7 +82,11 @@ class ManagedModalEnvironment(BaseModalExecutionEnvironment):
         exec_id = str(uuid.uuid4())
         payload: dict[str, Any] = {
             "execId": exec_id,
-            "command": prepared.command,
+            "command": (
+                "export PCBDRAFT_RUNTIME_HOME=/root/.pcbdraft/runtime "
+                'AI_AGENT="${AI_AGENT:-pcbdraft}" PCBDRAFT_RUNTIME_AGENT=true; '
+                + prepared.command
+            ),
             "cwd": prepared.cwd,
             "timeoutMs": int(prepared.timeout * 1000),
         }
@@ -202,7 +206,7 @@ class ManagedModalEnvironment(BaseModalExecutionEnvironment):
             "timeoutMs": 3_600_000,
             "idleTimeoutMs": max(300_000, int(self.timeout * 1000)),
             "persistentFilesystem": self._persistent,
-            "logicalKey": self._task_id,
+            "logicalKey": f"pcbdraft:{self._task_id}",
         }
         if disk is not None:
             create_payload["diskMiB"] = disk
@@ -254,6 +258,7 @@ class ManagedModalEnvironment(BaseModalExecutionEnvironment):
         headers = {
             "Authorization": f"Bearer {self._nous_user_token}",
             "Content-Type": "application/json",
+            "User-Agent": "PCBDraft/managed-modal",
         }
         if extra_headers:
             headers.update(extra_headers)

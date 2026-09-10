@@ -1,172 +1,48 @@
-"""Install and remove the Linux desktop entry (``hermes.desktop``).
-
-``hermes desktop`` builds and launches the Electron app. On Linux, a
-freshly-built app has no launcher presence: no menu item, no icon. This
-module writes the XDG desktop entry that gives it one.
-``hermes uninstall --gui`` removes the entry again.
-
-Two values must be absolute for the entry to work:
-
-  - ``Exec`` — the launcher runs without shell ``PATH`` customizations, so
-    a bare ``hermes desktop`` fails when hermes lives in ``~/.local/bin``
-    or a venv. Resolve the real binary and write its full path.
-  - ``Icon`` — an unqualified icon name needs an indexed icon theme. The
-    spec allows an absolute path instead, so point at the app icon in the
-    checkout. Do not copy the icon: ``Exec`` already depends on that tree.
-
-Cache refresh is best-effort and tool-gated: ``update-desktop-database``
-for the freedesktop menu cache, and ``kbuildsycoca6``/``kbuildsycoca5``
-for Plasma. Run each tool only when it exists. A missing tool is not an
-error.
-
-Import-light and side-effect-free at import time: the uninstaller and the
-Electron main process both use this without loading the full CLI.
-"""
-
-from __future__ import annotations
+"""Read-only desktop metadata; inherited Electron installation is retired."""
 
 import os
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 
-DESKTOP_ENTRY_NAME = "hermes.desktop"
+from pcbdraft.interfaces.tui.update_cmd import unsupported_lifecycle
+
+DESKTOP_ENTRY_NAME = "pcbdraft.desktop"
 
 
 def is_supported() -> bool:
-    """XDG desktop entries exist only on Linux and BSD."""
-    return sys.platform.startswith(("linux", "freebsd", "openbsd", "netbsd"))
-
-
-def _xdg_data_home() -> Path:
-    raw = os.environ.get("XDG_DATA_HOME")
-    if raw and raw.strip():
-        return Path(raw).expanduser()
-    return Path.home() / ".local" / "share"
+    return False
 
 
 def desktop_entry_path() -> Path:
-    """Where the ``hermes.desktop`` entry lives."""
-    return _xdg_data_home() / "applications" / DESKTOP_ENTRY_NAME
-
-
-def icon_path(project_root: Path) -> Path:
-    """The app icon shipped in the desktop workspace."""
-    return project_root / "apps" / "desktop" / "assets" / "icon.png"
+    base = os.environ.get("XDG_DATA_HOME", "").strip()
+    root = Path(base).expanduser() if base else Path.home() / ".local" / "share"
+    return root / "applications" / DESKTOP_ENTRY_NAME
 
 
 def resolve_exec_command() -> str:
-    """Build the absolute ``Exec=`` command line for ``hermes desktop``.
+    """Return a real product command for metadata consumers."""
+    from pcbdraft.interfaces.tui.relaunch import build_relaunch_argv
 
-    Prefer the real ``hermes`` executable (argv[0] or PATH). When Hermes
-    runs as a module with no launcher installed, use the current
-    interpreter, also absolute.
-    """
-    from pcbdraft.interfaces.tui.relaunch import resolve_hermes_bin
-
-    bin_path = resolve_hermes_bin()
-    if bin_path:
-        argv = [str(Path(bin_path).resolve()), "desktop"]
-    else:
-        argv = [str(Path(sys.executable).resolve()), "-m", "hermes_cli.main", "desktop"]
-    return " ".join(_quote_exec_arg(a) for a in argv)
+    return " ".join(
+        _quote_exec_arg(arg)
+        for arg in build_relaunch_argv(["gui"], preserve_inherited=False)
+    )
 
 
 def _quote_exec_arg(arg: str) -> str:
-    """Quote one ``Exec`` argument per the desktop entry spec.
-
-    Reserved characters require double quotes. Inside the quotes, escape
-    a backslash and a double quote with a backslash.
-    """
-    if not any(c in arg for c in " \t\n\"'\\><~|&;$*?#()`"):
-        return arg
-    escaped = arg.replace("\\", "\\\\").replace('"', '\\"')
+    # Desktop entries have field-code expansion even inside quoted arguments.
+    escaped = arg.replace("%", "%%").replace("\\", "\\\\\\\\")
+    for char in ('"', "`", "$"):
+        escaped = escaped.replace(char, "\\\\" + char)
     return f'"{escaped}"'
 
 
 def render_desktop_entry(exec_command: str, icon: str) -> str:
     return (
-        "[Desktop Entry]\n"
-        "Type=Application\n"
-        "Name=Hermes\n"
-        "GenericName=Hermes Desktop\n"
-        "Comment=Launch Hermes Desktop\n"
-        f"Exec={exec_command}\n"
-        f"Icon={icon}\n"
-        "Terminal=false\n"
-        "Categories=Utility;\n"
-        "StartupNotify=true\n"
-        "StartupWMClass=Hermes\n"
+        "[Desktop Entry]\nType=Application\nName=PCBDraft\n"
+        "Comment=Open the local PCB interface\n"
+        f"Exec={exec_command}\nIcon={icon}\nTerminal=false\nCategories=Development;\n"
     )
 
 
-def refresh_desktop_databases(applications_dir: Path) -> list[str]:
-    """Reindex the menu caches. Run each tool only when it exists.
-
-    Return the names of the tools that ran (for logging and tests).
-    """
-    ran: list[str] = []
-
-    update_db = shutil.which("update-desktop-database")
-    if update_db:
-        if _run_quiet([update_db, str(applications_dir)]):
-            ran.append("update-desktop-database")
-
-    # Plasma 6 first, then Plasma 5. Only one of them is ever installed.
-    for tool in ("kbuildsycoca6", "kbuildsycoca5"):
-        resolved = shutil.which(tool)
-        if not resolved:
-            continue
-        if _run_quiet([resolved, "--noincremental"]):
-            ran.append(tool)
-        break
-
-    return ran
-
-
-def _run_quiet(cmd: list[str]) -> bool:
-    try:
-        result = subprocess.run(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=60,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return result.returncode == 0
-
-
-def install_desktop_entry(project_root: Path) -> Path | None:
-    """Write (or refresh) the Hermes desktop entry. Return its path.
-
-    Return ``None`` on non-Linux platforms or when the write fails. This
-    is a convenience, never a reason to fail a launch.
-    """
-    if not is_supported():
-        return None
-
-    entry_path = desktop_entry_path()
-    icon = icon_path(project_root)
-    # Use the themed name when the checkout has no icon (a lite or
-    # packaged install). A broken absolute path renders as no icon.
-    icon_value = str(icon) if icon.is_file() else "hermes"
-    contents = render_desktop_entry(resolve_exec_command(), icon_value)
-
-    try:
-        entry_path.parent.mkdir(parents=True, exist_ok=True)
-        # When nothing changed, skip the rewrite. Then a launch does not
-        # churn the menu caches.
-        if entry_path.is_file() and entry_path.read_text(encoding="utf-8") == contents:
-            return entry_path
-        entry_path.write_text(contents, encoding="utf-8")
-        # Some launchers (and older Plasma) offer the entry only when it
-        # is executable.
-        entry_path.chmod(0o755)
-    except OSError:
-        return None
-
-    refresh_desktop_databases(entry_path.parent)
-    return entry_path
+install_desktop_entry = unsupported_lifecycle
+refresh_desktop_databases = unsupported_lifecycle

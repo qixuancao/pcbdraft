@@ -1,7 +1,7 @@
 """Bitwarden Secrets Manager (`bws` CLI) integration.
 
 Hermes pulls API keys from Bitwarden Secrets Manager at process startup
-so they don't have to live in plaintext in ``~/.hermes/.env``.
+so they don't have to live in plaintext in the runtime ``.env``.
 
 Design summary
 --------------
@@ -10,7 +10,7 @@ Design summary
   first use.  Hermes pins one version (``_BWS_VERSION``) and downloads
   the matching asset from the official GitHub Releases page, verifying
   the SHA-256 against the release's published checksum file.
-* The access token is stored in ``~/.hermes/.env`` as
+* The access token is stored in the runtime ``.env`` as
   ``BWS_ACCESS_TOKEN`` (or whatever name the user picked in
   ``secrets.bitwarden.access_token_env``).  This is the one
   bootstrap secret — every other provider key can live in Bitwarden.
@@ -46,6 +46,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from pcbdraft.agent.legacy_compat import BITWARDEN_CACHE_KDF_INFO
 from pcbdraft.agent.secret_sources._cache import CachedFetch as _CachedFetch
 from pcbdraft.agent.secret_sources._cache import DiskCache, FetchResult
 from pcbdraft.agent.secret_sources._cache import is_valid_env_name as _is_valid_env_name
@@ -88,14 +89,14 @@ _CACHE: dict[_CacheKey, _CachedFetch] = {}
 #
 # Layout: one JSON object per cache key, written atomically with mode 0600 in
 # <runtime_home>/cache/bws_cache.json. The file holds only the secret VALUES,
-# never the access token. It's plaintext-equivalent to ~/.hermes/.env (which
+# never the access token. It's plaintext-equivalent to the runtime .env (which
 # we already accept) but kept out of the .env file so users editing it won't
 # accidentally commit BSM-sourced secrets. The atomic-write/0600/TTL mechanics
 # live in agent.secret_sources._cache.DiskCache, shared with the other backends.
 _DISK_CACHE_BASENAME = "bws_cache.json"
 _ENCRYPTED_CACHE_BASENAME = "bws_cache.enc.json"
 _ENCRYPTED_CACHE_VERSION = 1
-_ENCRYPTED_CACHE_INFO = b"hermes-bws-encrypted-cache-v1"
+_ENCRYPTED_CACHE_INFO = BITWARDEN_CACHE_KDF_INFO
 
 
 def _cache_key_str(cache_key: _CacheKey) -> str:
@@ -111,7 +112,7 @@ def _disk_cache_path(home_path: Path | None = None) -> Path:
     """Return the disk cache path under runtime_home/cache/.
 
     Thin wrapper over the shared DiskCache, kept for tests and any direct
-    callers; falls back to `$PCBDRAFT_RUNTIME_HOME` / `~/.hermes` when home is None.
+    callers; uses the core runtime-home helper when home is None.
     """
     return _DISK_CACHE.path(home_path)
 
@@ -128,7 +129,7 @@ def _encrypted_disk_cache_path(home_path: Path | None = None) -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _hermes_bin_dir() -> Path:
+def _pcbdraft_bin_dir() -> Path:
     """Where Hermes stores its managed binaries.  Profile-aware."""
     from pcbdraft.core.runtime_environment import get_runtime_home
 
@@ -145,7 +146,7 @@ def find_bws(*, install_if_missing: bool = False) -> Path | None:
     When ``install_if_missing`` is True and neither resolves, this calls
     :func:`install_bws` to download and verify the pinned version.
     """
-    managed = _hermes_bin_dir() / _platform_binary_name()
+    managed = _pcbdraft_bin_dir() / _platform_binary_name()
     if managed.exists() and os.access(managed, os.X_OK):
         return managed
 
@@ -217,7 +218,7 @@ def install_bws(*, force: bool = False) -> Path:
     path catch these; the user-facing ``hermes secrets bitwarden setup``
     surface lets them propagate so the wizard can show a clear error.
     """
-    bin_dir = _hermes_bin_dir()
+    bin_dir = _pcbdraft_bin_dir()
     bin_dir.mkdir(parents=True, exist_ok=True)
     target = bin_dir / _platform_binary_name()
 
@@ -228,7 +229,7 @@ def install_bws(*, force: bool = False) -> Path:
     asset_url = f"{_BWS_RELEASE_BASE}/{asset_name}"
     checksum_url = f"{_BWS_RELEASE_BASE}/{_BWS_CHECKSUM_NAME}"
 
-    with tempfile.TemporaryDirectory(prefix="hermes-bws-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="pcbdraft-bws-") as tmpdir:
         tmp = Path(tmpdir)
         zip_path = tmp / asset_name
         checksum_path = tmp / _BWS_CHECKSUM_NAME
@@ -274,7 +275,7 @@ def install_bws(*, force: bool = False) -> Path:
 
 
 def _http_download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "hermes-agent"})
+    req = urllib.request.Request(url, headers={"User-Agent": "PCBDraft"})
     try:
         with urllib.request.urlopen(req, timeout=_BWS_DOWNLOAD_TIMEOUT) as resp:  # noqa: S310
             with open(dest, "wb") as f:
@@ -564,7 +565,7 @@ def fetch_bitwarden_secrets(
             "bws binary not available — auto-install failed and `bws` is "
             "not on PATH.  Install manually from "
             "https://github.com/bitwarden/sdk-sm/releases or re-run "
-            "`hermes secrets bitwarden setup`."
+            "the Bitwarden secret-source setup (see `pcbdraft --help`)."
         )
 
     try:
@@ -786,14 +787,14 @@ def apply_bitwarden_secrets(
     if not access_token:
         result.error = (
             f"secrets.bitwarden.enabled is true but {access_token_env} is "
-            "not set.  Run `hermes secrets bitwarden setup`."
+            "not set. Configure the Bitwarden secret source (see `pcbdraft --help`)."
         )
         return result
 
     if not project_id:
         result.error = (
             "secrets.bitwarden.project_id is empty.  "
-            "Run `hermes secrets bitwarden setup`."
+            "Configure the Bitwarden secret source (see `pcbdraft --help`)."
         )
         return result
 
@@ -802,7 +803,7 @@ def apply_bitwarden_secrets(
     if binary is None:
         result.error = (
             "bws binary not available and auto-install is disabled.  "
-            "Run `hermes secrets bitwarden setup` to install."
+            "Install the Bitwarden helper CLI (see `pcbdraft --help`)."
         )
         return result
 
@@ -918,7 +919,7 @@ class BitwardenSource(SecretSource):
         if not access_token:
             result.error = (
                 f"secrets.bitwarden.enabled is true but {access_token_env} is "
-                "not set.  Run `hermes secrets bitwarden setup`."
+                "not set. Configure the Bitwarden secret source (see `pcbdraft --help`)."
             )
             result.error_kind = ErrorKind.NOT_CONFIGURED
             return result
@@ -927,7 +928,7 @@ class BitwardenSource(SecretSource):
         if not project_id:
             result.error = (
                 "secrets.bitwarden.project_id is empty.  "
-                "Run `hermes secrets bitwarden setup`."
+                "Configure the Bitwarden secret source (see `pcbdraft --help`)."
             )
             result.error_kind = ErrorKind.NOT_CONFIGURED
             return result
@@ -938,7 +939,7 @@ class BitwardenSource(SecretSource):
         if binary is None:
             result.error = (
                 "bws binary not available and auto-install is disabled.  "
-                "Run `hermes secrets bitwarden setup` to install."
+                "Install the Bitwarden helper CLI (see `pcbdraft --help`)."
             )
             result.error_kind = ErrorKind.BINARY_MISSING
             return result
@@ -987,10 +988,10 @@ class BitwardenSource(SecretSource):
     def remediation(self, kind, cfg: dict) -> str:
         if kind in (ErrorKind.AUTH_FAILED, ErrorKind.AUTH_EXPIRED):
             return (
-                "Run `hermes secrets bitwarden token` to paste a fresh access "
+                "Use the Bitwarden secret-source settings to paste a fresh access "
                 "token (create one in the Bitwarden web app: Secrets Manager → "
                 "Machine accounts → Access tokens).  Wrong region?  Re-run "
-                "`hermes secrets bitwarden setup` and pick EU/self-hosted."
+                "the Bitwarden secret-source settings and pick EU/self-hosted."
             )
         return super().remediation(kind, cfg)
 

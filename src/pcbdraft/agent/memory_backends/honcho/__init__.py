@@ -366,12 +366,35 @@ class HonchoMemoryProvider(MemoryProvider):
         from pathlib import Path
 
         config_path = Path(runtime_home) / "honcho.json"
+        from pcbdraft.agent.memory_backends.honcho.client import resolve_config_path
+        from pcbdraft.core.runtime_environment import (
+            reset_runtime_home_override,
+            set_runtime_home_override,
+        )
+
+        scope = set_runtime_home_override(runtime_home)
+        try:
+            source_path = resolve_config_path()
+        finally:
+            reset_runtime_home_override(scope)
         existing = {}
-        if config_path.exists():
+        if source_path.exists():
             try:
-                existing = json.loads(config_path.read_text(encoding="utf-8"))
+                existing = json.loads(source_path.read_text(encoding="utf-8"))
             except Exception:
                 pass
+        from pcbdraft.agent.legacy_compat import (
+            materialize_honcho_namespaces,
+            memory_profile_environment,
+        )
+
+        environment = memory_profile_environment(runtime_home)
+        existing = materialize_honcho_namespaces(
+            existing,
+            existing=source_path.exists(),
+            env_only=not source_path.exists(),
+            environ=environment,
+        )
         existing.update(values)
         from pcbdraft.core.runtime_utils import atomic_json_write
 
@@ -486,7 +509,7 @@ class HonchoMemoryProvider(MemoryProvider):
                 gateway_session_key=gateway_session_key,
             )
             or session_id
-            or "hermes-default"
+            or "pcbdraft-default"
         )
 
     def _start_session_init_background(self, *, wait_timeout: float = 0.0) -> None:
@@ -513,7 +536,7 @@ class HonchoMemoryProvider(MemoryProvider):
 
             cfg = self._config
             init_kwargs = dict(self._lazy_init_kwargs)
-            init_session_id = self._lazy_init_session_id or "hermes-default"
+            init_session_id = self._lazy_init_session_id or "pcbdraft-default"
 
             def _run() -> None:
                 from pcbdraft.agent.memory_backends.honcho.session import (
@@ -656,7 +679,7 @@ class HonchoMemoryProvider(MemoryProvider):
         try:
             self._do_session_init(
                 self._config,
-                self._lazy_init_session_id or "hermes-default",
+                self._lazy_init_session_id or "pcbdraft-default",
                 **self._lazy_init_kwargs,
             )
             # Clear lazy refs
@@ -974,7 +997,7 @@ class HonchoMemoryProvider(MemoryProvider):
             "has expired and automatic token refresh failed, so memory sync and "
             f"recall are paused. Reason: {msg}\n"
             "Tell the user (once) that Honcho memory is paused and that running "
-            "'hermes honcho setup' to re-authenticate will restore it."
+            "refreshing the Honcho credentials will restore it (see 'pcbdraft --help')."
         )
 
     def _consume_pending_dialectic(self) -> str:

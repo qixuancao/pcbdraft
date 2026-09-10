@@ -776,7 +776,7 @@ class UsageReceiptTests(unittest.TestCase):
             "service_tier": None,
         }
 
-    def test_real_hermes_usage_receipt_is_bounded_and_campaign_bound(self) -> None:
+    def test_real_pcbdraft_usage_receipt_is_bounded_and_campaign_bound(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "usage.json"
             atomic_write_text(path, json.dumps(self._document()) + "\n")

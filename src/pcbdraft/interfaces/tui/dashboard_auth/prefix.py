@@ -1,8 +1,8 @@
 """Helpers for X-Forwarded-Prefix support.
 
 Mission-control style deploys reverse-proxy the dashboard at a path
-prefix (e.g. ``mission-control.tilos.com/hermes/*`` -> dashboard on
-:9119), injecting ``X-Forwarded-Prefix: /hermes`` so the backend can
+prefix (e.g. ``mission-control.tilos.com/pcbdraft/*`` -> dashboard on
+:9119), injecting ``X-Forwarded-Prefix: /pcbdraft`` so the backend can
 reconstruct prefixed URLs (Location: headers, OAuth redirect_uri,
 cookie Path attributes, SPA asset URLs).
 
@@ -50,8 +50,8 @@ def _warn_if_malformed(source: str, raw: str) -> None:
     was rejected by :func:`_normalise_public_url`.
 
     A non-empty value that normalises to ``""`` is almost always a
-    missing scheme (``hermes.example.com`` instead of
-    ``https://hermes.example.com``) — the single most common cause of
+    missing scheme (``pcbdraft.example.com`` instead of
+    ``https://pcbdraft.example.com``) — the single most common cause of
     "I set PCBDRAFT_RUNTIME_DASHBOARD_PUBLIC_URL but the OAuth callback is still
     http://". Without this warning the value is silently discarded and
     the dashboard falls back to reconstructing the redirect URI from
@@ -74,7 +74,7 @@ def _warn_if_malformed(source: str, raw: str) -> None:
         "scheme behind a reverse proxy.",
         source,
         cleaned,
-        cleaned.split("://")[-1] or "hermes.example.com",
+        cleaned.split("://")[-1] or "pcbdraft.example.com",
     )
 
 
@@ -98,7 +98,7 @@ def _warn_if_malformed_prefix(raw: str | None, reason: str) -> None:
 def normalise_prefix(raw: str | None) -> str:
     """Normalise an X-Forwarded-Prefix header value.
 
-    Returns a string like ``"/hermes"`` (no trailing slash) or ``""``
+    Returns a string like ``"/pcbdraft"`` (no trailing slash) or ``""``
     when no prefix is set / the header is malformed. We deliberately
     reject anything containing ``..`` or non-printable bytes so a
     hostile proxy can't inject HTML or path-traversal sequences via the

@@ -134,7 +134,7 @@ def _resolve_discovery_timeout(
     and fail-safe — a missing/invalid value or a broken config falls back to a
     short safe bound so startup can never hang or crash.
 
-    When ``single_query`` is True (``hermes -z "..."`` / ``-q``), the larger
+    When ``single_query`` is True (``pcbdraft -z "..."`` / ``-q``), the larger
     ``mcp_single_query_discovery_timeout`` bound is used instead. In single-query
     mode there is only ONE turn, so the between-turns late-binding refresh never
     runs — a server that misses the small interactive bound would be invisible to
@@ -205,7 +205,7 @@ def mcp_discovery_in_flight() -> bool:
     Mirrors ``tui_gateway.entry.mcp_discovery_in_flight`` for the surfaces that
     start discovery through ``start_background_mcp_discovery`` here (the desktop
     app + dashboard WebSocket sidecar via ``tui_gateway/ws.py``, and
-    ``hermes dashboard``).  Those processes populate THIS module's
+    ``internal dashboard``).  Those processes populate THIS module's
     ``_mcp_discovery_thread``, not ``tui_gateway.entry``'s, so the late-refresh
     scheduler must consult both to decide whether a slow server's tools are
     still pending (see #51587).
@@ -238,7 +238,7 @@ def ensure_mcp_discovery_before_agent_build(
 ) -> None:
     """Give configured MCP tools a bounded chance to register before AIAgent.
 
-    Non-interactive first turns (``chat -q``, ``hermes -z``) can construct
+    Non-interactive first turns (``chat -q``, ``pcbdraft -z``) can construct
     ``AIAgent`` before the normal banner or tool-list paths touch
     ``get_tool_definitions()``.  Because the agent snapshots its tool
     registry at construction time, the first and only model turn can miss

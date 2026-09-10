@@ -182,7 +182,7 @@ def request_permissions_grant(driver_cmd: str | None = None) -> int:
 
     binary = _resolve_driver_cmd(driver_cmd)
     if not binary:
-        print("cua-driver: not installed. Run: hermes computer-use install")
+        print("cua-driver: not installed. Run: pcbdraft doctor")
         return 2
 
     print(

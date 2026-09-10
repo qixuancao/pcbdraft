@@ -67,14 +67,14 @@ def _is_bot_managed(profile_dir: Path) -> bool:
         if not meta.is_file():
             return False
         raw = meta.read_text(encoding="utf-8", errors="replace")
-        if "hermes-bots" not in raw:
+        if "pcbdraft-bots" not in raw:
             return False
         import yaml
 
         data = yaml.safe_load(raw)
         ui_meta = data.get("ui_meta") if isinstance(data, dict) else None
         return isinstance(ui_meta, dict) and isinstance(
-            ui_meta.get("hermes-bots"), dict
+            ui_meta.get("pcbdraft-bots"), dict
         )
     except Exception:
         return False
@@ -106,7 +106,7 @@ def _soul_has_protocol(profile_dir: Path) -> bool:
 
 def _handle(name: str) -> str:
     # The mention middleware aliases the default profile as @hermes.
-    return "hermes" if name == "default" else name
+    return "pcbdraft" if name == "default" else name
 
 
 def _peers(root: Path) -> list[str]:
@@ -141,14 +141,8 @@ def _peer_paragraph(root: Path) -> str:
     listed = ", ".join(f"`{p}`" for p in peers)
     return (
         "\n\nTeammates on OTHER machines: this install also has peer gateways "
-        f"registered ({listed}). Message an agent on a peer the same way, via "
-        "`hermes peer dm` (same terminal-tool pattern: background=true, "
-        "notify_on_complete=true; the reply prints on stdout when it completes):\n"
-        "```\n"
-        'hermes peer dm <peer>/<agent-name> "Message from 🤖 <you> (@<you>): your message"\n'
-        "```\n"
-        "Use `<peer>` alone for the peer's main agent. Run `hermes peer list` "
-        "for the live peer list."
+        f"registered ({listed}). Use the explicitly configured messaging "
+        "integration to contact them. Run `pcbdraft --help` for supported commands."
     )
 
 
@@ -171,21 +165,16 @@ def _build_section(home: Path) -> str:
 
     return (
         f"{_PROTOCOL_HEADING}\n"
-        "This install runs Bot Mode: each Hermes profile is an agent teammate with "
-        'one canonical "Bot Chat" conversation. To message a teammate, run on the '
-        "terminal tool (background=true, notify_on_complete=true), then finish your "
-        "turn — the reply arrives later as a new message:\n"
-        "```\n"
-        f'hermes -p <agent-name> chat --in ~ -c "Bot Chat" --create-if-missing -Q -q "Message from 🤖 {handle} (@{handle}): your message"\n'
-        "```\n"
+        "This install runs Bot Mode: each PCBDraft profile is an agent teammate with "
+        'one canonical "Bot Chat" conversation. Use the configured messaging '
+        "integration to contact teammates.\n"
         f'Always open with the "Message from 🤖 {handle} (@{handle}):" prefix so they '
         "know who is talking. When YOU receive a message with that prefix, you are "
         "being messaged by a teammate agent — address them (not the user) and reply "
         'concisely. When the user says "ask <name>" or "tell <name> ...", that is a '
         "handoff: message that agent, wait for the reply, and report back, saying "
-        "which agent it came from. Run `hermes profile list` for the LIVE teammate "
-        f"list before a handoff. Teammates at session start: {teammates}."
-        + _peer_paragraph(root)
+        "which agent it came from. Confirm the configured teammate list before "
+        f"a handoff. Teammates at session start: {teammates}." + _peer_paragraph(root)
     )
 
 
@@ -198,11 +187,9 @@ def get_bot_mode_protocol_section(
     not the ambient PCBDRAFT_RUNTIME_HOME — build threads can lose the ContextVar
     override and the env var would then name the wrong profile.
     """
-    resolved = (
-        str(home)
-        if home
-        else (os.getenv("PCBDRAFT_RUNTIME_HOME") or os.path.expanduser("~/.hermes"))
-    )
+    from pcbdraft.core.runtime_environment import get_runtime_home
+
+    resolved = str(home if home else get_runtime_home())
     with _lock:
         if force_refresh or resolved not in _cached:
             try:
@@ -242,11 +229,9 @@ def capability_fingerprint(home: str | os.PathLike | None = None) -> str:
     import hashlib
     import json
 
-    resolved = Path(
-        str(home)
-        if home
-        else (os.getenv("PCBDRAFT_RUNTIME_HOME") or os.path.expanduser("~/.hermes"))
-    )
+    from pcbdraft.core.runtime_environment import get_runtime_home
+
+    resolved = Path(home) if home else get_runtime_home()
     surface: dict = {}
     try:
         # Canonical loader (managed overlay + env expansion + normalization),

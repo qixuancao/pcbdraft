@@ -124,7 +124,11 @@ def parse_flags(argv: list[str] | None = None) -> dict[str, str]:
     return flags
 
 
-def build_oss_config(flags: dict[str, str]) -> tuple[dict, dict[str, str]]:
+def build_oss_config(
+    flags: dict[str, str],
+    *,
+    runtime_home: str | None = None,
+) -> tuple[dict, dict[str, str]]:
     """Build OSS config dict + env_writes from parsed flags.
 
     Returns (oss_config, env_writes) where oss_config goes into mem0.json
@@ -153,8 +157,20 @@ def build_oss_config(flags: dict[str, str]) -> tuple[dict, dict[str, str]]:
     vector_def = VECTOR_PROVIDERS[vector_id]
     vector_config = dict(vector_def["default_config"])
     if vector_id == "qdrant":
+        from pcbdraft.core.runtime_environment import get_runtime_home
+
+        home = Path(runtime_home) if runtime_home is not None else get_runtime_home()
+        config_path = home / "mem0.json"
+        if config_path.exists():
+            saved = json.loads(config_path.read_text(encoding="utf-8"))
+            vector = saved.get("oss", {}).get("vector_store", {})
+            if vector.get("provider") == "qdrant":
+                vector_config.update(vector.get("config") or {})
         if flags.get("oss_vector_path"):
+            vector_config.pop("url", None)
             vector_config["path"] = flags["oss_vector_path"]
+        elif not vector_config.get("path") and not vector_config.get("url"):
+            vector_config["path"] = str(home / "mem0_qdrant")
         if flags.get("oss_vector_url"):
             vector_config.pop("path", None)
             vector_config["url"] = flags["oss_vector_url"]
@@ -225,15 +241,9 @@ def _write_env(env_path: Path, env_writes: dict[str, str]) -> None:
 
 def _save_mem0_json(runtime_home: str, data: dict) -> None:
     """Merge-write to mem0.json."""
-    config_path = Path(runtime_home) / "mem0.json"
-    existing = {}
-    if config_path.exists():
-        try:
-            existing = json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-    existing.update(data)
-    config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+    from pcbdraft.agent.memory_backends.mem0 import Mem0MemoryProvider
+
+    Mem0MemoryProvider().save_config(data, runtime_home)
 
 
 def _setup_platform(runtime_home: str, config: dict, flags: dict[str, str]) -> None:
@@ -251,8 +261,12 @@ def _setup_platform(runtime_home: str, config: dict, flags: dict[str, str]) -> N
             "env_var": "MEM0_API_KEY",
             "url": "https://app.mem0.ai",
         },
-        {"key": "user_id", "description": "User identifier", "default": "hermes-user"},
-        {"key": "agent_id", "description": "Agent identifier", "default": "hermes"},
+        {
+            "key": "user_id",
+            "description": "User identifier",
+            "default": "pcbdraft-user",
+        },
+        {"key": "agent_id", "description": "Agent identifier", "default": "pcbdraft"},
         {
             "key": "rerank",
             "description": "Enable reranking for recall",
@@ -261,15 +275,9 @@ def _setup_platform(runtime_home: str, config: dict, flags: dict[str, str]) -> N
         },
     ]
 
-    existing_config = {}
-    config_path = Path(runtime_home) / "mem0.json"
-    if config_path.exists():
-        try:
-            existing_config = json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    from pcbdraft.agent.memory_backends.mem0 import _materialize_config_for_save
 
-    provider_config = dict(existing_config)
+    provider_config = _materialize_config_for_save(runtime_home)
     env_writes: dict[str, str] = {}
 
     print("\n  Configuring mem0:\n")
@@ -332,13 +340,13 @@ def _setup_platform(runtime_home: str, config: dict, flags: dict[str, str]) -> N
     provider_config["host"] = ""
     # The json-file clear above can't help when the host comes from the
     # environment: _load_config() seeds ``host`` from MEM0_HOST, and the
-    # docs tell self-hosted users to put MEM0_HOST in ~/.hermes/.env. Warn
+    # docs tell self-hosted users to put MEM0_HOST in the runtime .env. Warn
     # so the user knows platform mode won't take effect until it's removed.
     if os.environ.get("MEM0_HOST", "").strip():
         print(
             "\n  ⚠ MEM0_HOST is set in your environment "
             f"({os.environ['MEM0_HOST']}). It overrides platform mode — "
-            "remove it from ~/.hermes/.env (or unset it) or Hermes will keep "
+            "remove it from the runtime .env (or unset it) or PCBDraft will keep "
             "routing to the self-hosted server."
         )
 
@@ -388,15 +396,9 @@ def _setup_selfhosted(runtime_home: str, config: dict, flags: dict[str, str]) ->
     server URL (behavioral -> mem0.json) and an optional API key
     (secret -> .env as MEM0_API_KEY).
     """
-    existing_config = {}
-    config_path = Path(runtime_home) / "mem0.json"
-    if config_path.exists():
-        try:
-            existing_config = json.loads(config_path.read_text(encoding="utf-8"))
-        except Exception:
-            pass
+    from pcbdraft.agent.memory_backends.mem0 import _materialize_config_for_save
 
-    provider_config = dict(existing_config)
+    provider_config = _materialize_config_for_save(runtime_home)
 
     print("\n  Configuring mem0 (self-hosted server):\n")
 
@@ -427,10 +429,10 @@ def _setup_selfhosted(runtime_home: str, config: dict, flags: dict[str, str]) ->
             env_writes["MEM0_API_KEY"] = val
 
     user_id = flags.get("user_id") or _prompt(
-        "User identifier", default=provider_config.get("user_id") or "hermes-user"
+        "User identifier", default=provider_config.get("user_id") or "pcbdraft-user"
     )
     agent_id = _prompt(
-        "Agent identifier", default=provider_config.get("agent_id") or "hermes"
+        "Agent identifier", default=provider_config.get("agent_id") or "pcbdraft"
     )
 
     if flags.get("dry_run"):
@@ -481,14 +483,16 @@ def _setup_oss(runtime_home: str, config: dict, flags: dict[str, str]) -> None:
         _setup_oss_interactive(runtime_home, config)
         return
 
-    oss_config, env_writes = build_oss_config(flags)
+    oss_config, env_writes = build_oss_config(flags, runtime_home=runtime_home)
     errors = validate_oss_config(oss_config)
     if errors:
         for e in errors:
             print(f"  Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    user_id = flags.get("user_id") or os.getenv("USER", "hermes-user")
+    existing = _existing_memory_identity(runtime_home)
+    user_id = flags.get("user_id") or existing["user_id"]
+    agent_id = flags.get("agent_id") or existing["agent_id"]
 
     llm_id = oss_config["llm"]["provider"]
     embedder_id = oss_config["embedder"]["provider"]
@@ -513,7 +517,7 @@ def _setup_oss(runtime_home: str, config: dict, flags: dict[str, str]) -> None:
         _write_env(Path(runtime_home) / ".env", env_writes)
     _save_mem0_json(
         runtime_home,
-        {"mode": "oss", "user_id": user_id, "agent_id": "hermes", "oss": oss_config},
+        {"mode": "oss", "user_id": user_id, "agent_id": agent_id, "oss": oss_config},
     )
 
     _install_provider_deps(llm_id, embedder_id, vector_id)
@@ -562,9 +566,9 @@ def _prompt_api_key(label: str, env_var: str, runtime_home: str) -> str:
     return getpass.getpass(f"  {label} API key: ").strip()
 
 
-_PGVECTOR_CONTAINER = "hermes-pgvector"
+_PGVECTOR_CONTAINER = "pcbdraft-pgvector"
 _PGVECTOR_IMAGE = "pgvector/pgvector:pg17"
-_PGVECTOR_PASSWORD = "hermes"
+_PGVECTOR_PASSWORD = "pcbdraft"
 
 
 def _ensure_pgvector(host: str = "localhost", port: int = 5432) -> dict | None:
@@ -826,6 +830,14 @@ def _vector_description(pid: str, v: dict) -> str:
     return pid
 
 
+def _existing_memory_identity(runtime_home: str) -> dict[str, str]:
+    """Keep persisted namespaces when rerunning setup, including legacy names."""
+    from pcbdraft.agent.memory_backends.mem0 import _load_config
+
+    effective = _load_config(runtime_home)
+    return {key: effective[key] for key in ("user_id", "agent_id")}
+
+
 def _setup_oss_interactive(runtime_home: str, config: dict) -> None:
     """Interactive OSS setup using curses pickers."""
     llm_items = [
@@ -922,11 +934,12 @@ def _setup_oss_interactive(runtime_home: str, config: dict) -> None:
             if pg_password:
                 pgvector_config["password"] = pg_password
 
-    user_id = input(f"  User ID [{os.getenv('USER', 'hermes-user')}]: ").strip()
-    user_id = user_id or os.getenv("USER", "hermes-user")
+    existing = _existing_memory_identity(runtime_home)
+    user_id = input(f"  User ID [{existing['user_id']}]: ").strip()
+    user_id = user_id or existing["user_id"]
 
-    agent_id = input("  Agent ID [hermes]: ").strip()
-    agent_id = agent_id or "hermes"
+    agent_id = input(f"  Agent ID [{existing['agent_id']}]: ").strip()
+    agent_id = agent_id or existing["agent_id"]
 
     flags = {
         "oss_llm": llm_id,
@@ -950,7 +963,7 @@ def _setup_oss_interactive(runtime_home: str, config: dict) -> None:
             flags["oss_vector_password"] = pgvector_config["password"]
         flags["oss_vector_dbname"] = pgvector_config["dbname"]
 
-    oss_config, _ = build_oss_config(flags)
+    oss_config, _ = build_oss_config(flags, runtime_home=runtime_home)
 
     if env_writes:
         _write_env(Path(runtime_home) / ".env", env_writes)

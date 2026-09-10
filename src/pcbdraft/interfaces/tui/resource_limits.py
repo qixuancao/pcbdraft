@@ -35,7 +35,7 @@ def _configured_nofile_soft_limit(
     """
     if config is None:
         try:
-            # Use Hermes's real, profile-aware loader rather than reading YAML
+            # Use PCBDraft's real, profile-aware loader rather than reading YAML
             # here. This also applies managed-scope overlays and defaults.
             from pcbdraft.model.configuration import load_config_readonly
 

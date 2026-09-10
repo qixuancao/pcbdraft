@@ -2,7 +2,7 @@
 
 These helpers define which credential-pool entries are references to borrowed
 runtime secrets and strip raw values before those entries are written to
-``auth.json``.  They intentionally have no dependency on ``hermes_cli.auth`` so
+``auth.json``.  They intentionally have no dependency on ``pcbdraft.model.auth`` so
 both the pool model and the final auth-store write boundary can share the same
 policy without import cycles.
 """
@@ -14,12 +14,12 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-# Sources Hermes owns and can intentionally persist in auth.json.  Everything
+# Sources PCBDraft owns and can intentionally persist in auth.json. Everything
 # else with a non-empty source is treated as borrowed/reference-only by default
 # so future external secret providers fail closed at the disk boundary.
 _PERSISTABLE_PROVIDER_SOURCES = frozenset(
     {
-        ("anthropic", "hermes_pkce"),
+        ("anthropic", "pcbdraft_pkce"),
         ("minimax-oauth", "oauth"),
         ("nous", "device_code"),
         ("openai-codex", "device_code"),
@@ -106,9 +106,58 @@ def _normalize_key(key: Any) -> str:
     return raw.lower().replace("-", "_").replace(".", "_")
 
 
+def normalize_credential_source(source: Any) -> str:
+    """Read legacy owned source labels; emit only native labels on write.
+
+    This migrates metadata, never scans a legacy home or grants ownership to
+    another provider. Manual PKCE grants keep their manual lifecycle semantics.
+    """
+    value = str(source or "").strip()
+    return {
+        "hermes_pkce": "pcbdraft_pkce",
+        "manual:hermes_pkce": "manual:pcbdraft_pkce",
+        "hermes-auth-store": "pcbdraft-auth-store",
+    }.get(value, value)
+
+
+def is_pcbdraft_pkce_source(source: Any, provider_id: Any) -> bool:
+    """Whether this is a native or migrated Anthropic PKCE grant."""
+    return str(provider_id or "").strip().lower() == "anthropic" and (
+        normalize_credential_source(source) in {"pcbdraft_pkce", "manual:pcbdraft_pkce"}
+    )
+
+
+def normalize_auth_store_sources(store: dict[str, Any]) -> None:
+    """Migrate known source labels in memory, including removal tombstones.
+
+    The reader does not write to disk; the next intentional save persists the
+    native labels. Unknown sources and all credential values stay untouched.
+    """
+    pool = store.get("credential_pool")
+    if isinstance(pool, dict):
+        for entries in pool.values():
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                if isinstance(entry, dict) and "source" in entry:
+                    entry["source"] = normalize_credential_source(entry["source"])
+    providers = store.get("providers")
+    if isinstance(providers, dict):
+        for state in providers.values():
+            if isinstance(state, dict) and "source" in state:
+                state["source"] = normalize_credential_source(state["source"])
+    suppressed = store.get("suppressed_sources")
+    if isinstance(suppressed, dict):
+        for provider, sources in suppressed.items():
+            if isinstance(sources, (list, dict)):
+                suppressed[provider] = list(
+                    dict.fromkeys(normalize_credential_source(s) for s in sources)
+                )
+
+
 def is_borrowed_credential_source(source: Any, provider_id: Any = None) -> bool:
     """Return True when ``source`` points at a borrowed/reference-only secret."""
-    normalized_source = str(source or "").strip().lower()
+    normalized_source = normalize_credential_source(str(source or "").strip().lower())
     if not normalized_source:
         return False
     if normalized_source == "manual" or normalized_source.startswith("manual:"):
@@ -167,12 +216,14 @@ def sanitize_borrowed_credential_payload(
 ) -> dict[str, Any]:
     """Return a disk-safe credential-pool payload.
 
-    Owned sources (manual entries and Hermes-owned OAuth/device-code state)
+    Owned sources (manual entries and PCBDraft-owned OAuth/device-code state)
     pass through unchanged.  Borrowed/reference-only sources keep labels,
     source refs, status/cooldown metadata, counters, and a non-reversible
     fingerprint, but raw secret value fields are removed.
     """
     result = dict(payload)
+    if "source" in result:
+        result["source"] = normalize_credential_source(result["source"])
     if not is_borrowed_credential_source(result.get("source"), provider_id):
         return result
 

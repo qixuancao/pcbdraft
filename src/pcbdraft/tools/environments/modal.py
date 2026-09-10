@@ -172,6 +172,7 @@ class ModalEnvironment(BaseEnvironment):
     """
 
     _stdin_mode = "heredoc"
+    _remote_runtime_home = "/root/.pcbdraft/runtime"
     _snapshot_timeout = 60  # Modal cold starts can be slow
 
     def __init__(
@@ -246,7 +247,7 @@ class ModalEnvironment(BaseEnvironment):
         self._worker.start()
 
         async def _create_sandbox(image_spec: Any):
-            app = await _modal.App.lookup.aio("hermes-agent", create_if_missing=True)
+            app = await _modal.App.lookup.aio("pcbdraft", create_if_missing=True)
             create_kwargs = dict(sandbox_kwargs)
             if cred_mounts:
                 existing_mounts = list(create_kwargs.pop("mounts", []))
@@ -294,7 +295,7 @@ class ModalEnvironment(BaseEnvironment):
         logger.info("Modal: sandbox created (task=%s)", self._task_id)
 
         self._sync_manager = FileSyncManager(
-            get_files_fn=lambda: iter_sync_files("/root/.hermes"),
+            get_files_fn=lambda: iter_sync_files("/root/.pcbdraft/runtime"),
             upload_fn=self._modal_upload,
             delete_fn=self._modal_delete,
             bulk_upload_fn=self._modal_bulk_upload,
@@ -378,15 +379,15 @@ class ModalEnvironment(BaseEnvironment):
         self._worker.run_coroutine(_bulk(), timeout=120)
 
     def _modal_bulk_download(self, dest: Path) -> None:
-        """Download remote .hermes/ as a tar archive.
+        """Download remote .pcbdraft/runtime/ as a tar archive.
 
-        Modal sandboxes always run as root, so /root/.hermes is hardcoded
+        Modal sandboxes always run as root, so /root/.pcbdraft/runtime is hardcoded
         (consistent with iter_sync_files call on line 269).
         """
 
         async def _download():
             proc = await self._sandbox.exec.aio(
-                "bash", "-c", "tar cf - -C / root/.hermes"
+                "bash", "-c", "tar cf - -C / root/.pcbdraft/runtime"
             )
             data = await proc.stdout.read.aio()
             exit_code = await proc.wait.aio()

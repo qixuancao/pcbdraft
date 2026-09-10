@@ -1,6 +1,6 @@
 """Profile describer — auto-generate ``description`` for a profile.
 
-Used by ``hermes profile describe <name> --auto`` and the dashboard's
+Used by ``internal profile describe <name> --auto`` and the dashboard's
 "auto-generate description" button. Reads the profile's installed
 skills, model+provider, name, and optionally a small slice of memory,
 then asks the auxiliary LLM to produce a 1-2 sentence description of
@@ -12,7 +12,7 @@ badge. User can edit afterward to confirm.
 
 Design notes
 ------------
-- Mirrors the shape of ``hermes_cli/kanban_specify.py``: lazy aux
+- Mirrors the shape of ``pcbdraft.interfaces.tui/kanban_specify.py``: lazy aux
   client import inside the function, lenient response parse, never
   raises on expected failure modes.
 - Reads at most ``MAX_SKILLS_FOR_PROMPT`` skill names to keep the
@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 MAX_SKILLS_FOR_PROMPT = 60
 
 
-_SYSTEM_PROMPT = """You are a profile-describer for the Hermes Agent kanban board.
+_SYSTEM_PROMPT = """You are a profile-describer for the PCBDraft Agent kanban board.
 
 A user runs multiple "profiles" — distinct agent identities, each with their
 own skills, model, and configuration. The kanban board's orchestrator routes
@@ -69,7 +69,7 @@ Rules:
                          refactors functions, opens GitHub PRs."
   - 1-2 sentences, <= 280 characters total.
   - Never invent capabilities the skills don't suggest.
-  - Never write "Hermes Agent profile" or other meta-narration.
+  - Never write "PCBDraft Agent profile" or other meta-narration.
   - No code fences, no preamble, no closing remarks. Output only JSON.
 """
 

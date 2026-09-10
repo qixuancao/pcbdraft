@@ -446,11 +446,11 @@ def _handle_send(args):
                 )
             else:
                 return tool_error(
-                    f"Platform '{platform_name}' is not configured. Set up credentials in ~/.hermes/config.yaml or environment variables."
+                    f"Platform '{platform_name}' is not configured. Set up credentials in the PCBDraft runtime config or environment variables."
                 )
         else:
             return tool_error(
-                f"Platform '{platform_name}' is not configured. Set up credentials in ~/.hermes/config.yaml or environment variables."
+                f"Platform '{platform_name}' is not configured. Set up credentials in the PCBDraft runtime config or environment variables."
             )
 
     from pcbdraft.services.messaging.platforms.base import BasePlatformAdapter
@@ -486,7 +486,7 @@ def _handle_send(args):
             return tool_error(
                 f"No home channel set for {platform_name} to determine where to send the message. "
                 f"Either specify a channel directly with '{platform_name}:CHANNEL_NAME', "
-                f"or set a home channel via: hermes config set {home_env} <channel_id>"
+                f"or set {home_env} to the channel ID in the runtime environment."
             )
 
     duplicate_skip = _maybe_skip_cron_duplicate_send(platform_name, chat_id, thread_id)

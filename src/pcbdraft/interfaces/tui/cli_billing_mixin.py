@@ -5,7 +5,7 @@ This module hosts the Nous billing/subscription methods lifted out of
 ``CLIBillingMixin`` so every ``self.<handler>`` call resolves unchanged
 via the MRO — behavior-neutral apart from focused billing fixes.
 
-Import discipline mirrors ``hermes_cli.cli_commands_mixin``:
+Import discipline mirrors ``pcbdraft.interfaces.tui.cli_commands_mixin``:
   * Neutral, non-cyclic dependencies are imported at module top level below.
   * cli.py-internal symbols (the ``_cprint``/``_b``/``_d`` helpers and
     display constants) are imported LAZILY inside each method via
@@ -135,7 +135,7 @@ class CLIBillingMixin:
                 _cprint(f"  💳 {_d(f'Could not load subscription: {state.error}')}")
             else:
                 _cprint(f"  💳 {_d('Not logged into Nous Portal.')}")
-                print("  Run `hermes portal` to log in, then /subscription.")
+                print("  Run `pcbdraft connect` to log in, then /subscription.")
             return
 
         # Team context: no personal plan — teams run on a shared balance.
@@ -305,7 +305,7 @@ class CLIBillingMixin:
 
         The one opener behind every "open the portal" path in this mixin. Applies
         the same console-browser / remote-session guard the device-code auth flows
-        use (``hermes_cli.auth``): ``webbrowser.open()`` returns ``True`` even when
+        use (``pcbdraft.interfaces.tui.auth``): ``webbrowser.open()`` returns ``True`` even when
         it launched a text-mode browser (w3m/lynx over SSH) that hijacks the TTY,
         so we refuse those and let the caller print the URL instead. Returns
         ``False`` on any guard refusal or open failure, ``True`` only when a real
@@ -810,7 +810,7 @@ class CLIBillingMixin:
         )
         if not getattr(self, "_app", None):
             print(
-                "  Run `hermes portal` and allow Remote Spending, then re-run /subscription."
+                "  Run `pcbdraft connect` and allow Remote Spending, then re-run /subscription."
             )
             return
         confirm_choices = [
@@ -929,7 +929,7 @@ class CLIBillingMixin:
                 _cprint(f"  💳 {_d(_msg)}")
             else:
                 _cprint(f"  💳 {_d('Not logged into Nous Portal.')}")
-                print("  Run `hermes portal` to log in, then /topup.")
+                print("  Run `pcbdraft connect` to log in, then /topup.")
             return
 
         # Any sub-arg is intentionally ignored — always open the menu.
@@ -1005,7 +1005,7 @@ class CLIBillingMixin:
             _cprint(f"  {_d('Remote spending is off for this org.')}")
             self._billing_portal_hint(
                 state,
-                reason="A billing admin can turn it on from the portal's Hermes Agent page to add funds here.",
+                reason="A billing admin can turn it on from the portal's PCBDraft Agent page to add funds here.",
             )
             return
 
@@ -1127,7 +1127,7 @@ class CLIBillingMixin:
             _cprint(f"  💳 {_d('Remote spending is off for this org.')}")
             self._billing_portal_hint(
                 state,
-                reason="A billing admin can turn it on from the portal's Hermes Agent page before adding funds.",
+                reason="A billing admin can turn it on from the portal's PCBDraft Agent page before adding funds.",
             )
             return False
         return True
@@ -1425,11 +1425,11 @@ class CLIBillingMixin:
                 else "You stopped this terminal's spending."
             )
             print(
-                f"  🔴 {who} Reconnect to restore — run `hermes portal` to re-authorize."
+                f"  🔴 {who} Reconnect to restore — run `pcbdraft connect` to re-authorize."
             )
         elif isinstance(exc, BillingSessionRevoked) or code == "session_revoked":
             print(
-                "  🔴 Your session was logged out. Run `hermes portal` to log in again."
+                "  🔴 Your session was logged out. Run `pcbdraft connect` to log in again."
             )
         elif code == "no_payment_method":
             print("  💳 No card on file — top up and manage billing on the portal.")
@@ -1438,7 +1438,7 @@ class CLIBillingMixin:
             or getattr(exc, "code", None) == "remote_spending_disabled"
         ):
             print(
-                "  Remote spending is off for this account — a billing admin can turn it on from the portal's Hermes Agent page."
+                "  Remote spending is off for this account — a billing admin can turn it on from the portal's PCBDraft Agent page."
             )
         elif code == "role_required":
             print(
@@ -1493,7 +1493,7 @@ class CLIBillingMixin:
             f"  {_d(f'To charge from this terminal, allow Remote Spending once. It opens your browser to authorize, then {amount_str} picks up right here.')}"
         )
         if not getattr(self, "_app", None):
-            print("  Run `hermes portal` and allow Remote Spending, then retry.")
+            print("  Run `pcbdraft connect` and allow Remote Spending, then retry.")
             return
         confirm_choices = [
             ("yes", "Allow Remote Spending", "open your browser to authorize"),
@@ -1532,7 +1532,7 @@ class CLIBillingMixin:
         fresh = build_billing_state()
         if not (fresh.logged_in and fresh.cli_billing_enabled):
             print(
-                "  Remote Spending is allowed for this terminal, but it's still off for this org. A billing admin can turn it on from the portal's Hermes Agent page, then run /topup again."
+                "  Remote Spending is allowed for this terminal, but it's still off for this org. A billing admin can turn it on from the portal's PCBDraft Agent page, then run /topup again."
             )
             self._billing_portal_hint(fresh)
             return

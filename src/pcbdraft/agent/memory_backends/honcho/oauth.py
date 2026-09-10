@@ -208,7 +208,9 @@ def reauth_required(path: Path, host: str) -> bool:
     cached = _reauth_check_cache.get(key)
     if cached is not None and cached[0] == mtime:
         return cached[1]
-    block = (_read_config(path).get("hosts") or {}).get(host) or {}
+    from pcbdraft.agent.legacy_compat import read_honcho_host
+
+    block = read_honcho_host(_read_config(path), host)
     cred = OAuthCredential.from_host_block(block)
     result = cred is not None and _grant_is_dead(key, cred)
     _reauth_check_cache[key] = (mtime, result)
@@ -426,7 +428,7 @@ def _rotate_and_persist(
             _mark_grant_dead(key, cred)
             logger.error(
                 "Honcho OAuth grant for host %s is no longer valid (%s); "
-                "run 'hermes honcho setup' to re-authenticate",
+                "review 'pcbdraft --help' and refresh the Honcho credentials",
                 host,
                 exc,
             )
@@ -458,6 +460,9 @@ def _read_config(path: Path) -> dict[str, Any]:
 
 def _atomic_write_config(path: Path, raw: dict[str, Any]) -> None:
     """Write ``raw`` to ``path`` atomically, preserving 0600 on the new file."""
+    from pcbdraft.agent.legacy_compat import materialize_honcho_namespaces
+
+    raw = materialize_honcho_namespaces(raw, existing=path.exists())
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f".{path.name}.tmp")
     text = json.dumps(raw, indent=2) + "\n"
@@ -485,7 +490,9 @@ def _persist_credential(path: Path, host: str, cred: OAuthCredential) -> None:
     """Persist ``cred`` into ``host``'s block (apiKey + oauth), leaving all else intact."""
     raw = _read_config(path)
     hosts = raw.setdefault("hosts", {})
-    block = hosts.setdefault(host, {})
+    from pcbdraft.agent.legacy_compat import configured_host_key
+
+    block = hosts.setdefault(configured_host_key(hosts, host), {})
     block["apiKey"] = cred.access_token
     block["oauth"] = cred.oauth_block()
     _atomic_write_config(path, raw)
@@ -521,7 +528,9 @@ def ensure_fresh_token(
             return cached[1], False
 
     source = raw if raw is not None else _read_config(path)
-    block = (source.get("hosts") or {}).get(host) or {}
+    from pcbdraft.agent.legacy_compat import read_honcho_host
+
+    block = read_honcho_host(source, host)
     cred = OAuthCredential.from_host_block(block)
     if cred is None:
         _expiry_cache.pop(key, None)
@@ -537,7 +546,7 @@ def ensure_fresh_token(
     with _refresh_lock, _config_refresh_lock(path):
         # Re-read under both locks: another thread or process may have just
         # rotated the token — adopt theirs instead of replaying the old one.
-        fresh_block = (_read_config(path).get("hosts") or {}).get(host) or {}
+        fresh_block = read_honcho_host(_read_config(path), host)
         current = OAuthCredential.from_host_block(fresh_block) or cred
         if not current.is_expired(now=now):
             return current.access_token, current.access_token != cred.access_token
@@ -560,8 +569,10 @@ def force_refresh_token(path: Path, host: str) -> str | None:
     """
     now = time.time()
     key = (str(path), host)
+    from pcbdraft.agent.legacy_compat import read_honcho_host
+
     with _refresh_lock, _config_refresh_lock(path):
-        block = (_read_config(path).get("hosts") or {}).get(host) or {}
+        block = read_honcho_host(_read_config(path), host)
         cred = OAuthCredential.from_host_block(block)
         if cred is None:
             _expiry_cache.pop(key, None)
@@ -640,7 +651,9 @@ def install_grant(
     _dead_grants.pop((str(path), host), None)
     _refresh_failure_at.pop((str(path), host), None)
     hosts = raw.setdefault("hosts", {})
-    block = hosts.setdefault(host, {})
+    from pcbdraft.agent.legacy_compat import configured_host_key
+
+    block = hosts.setdefault(configured_host_key(hosts, host), {})
     block["apiKey"] = cred.access_token
     block["oauth"] = cred.oauth_block()
     _atomic_write_config(path, raw)

@@ -789,16 +789,16 @@ def _spawn_powershell_es(root: str, ctx: ServerContext) -> SpawnSpec | None:
     )
     # Session details file: PSES writes connection info here on startup.
     session_path = os.path.join(
-        hermes_lsp_session_dir(), f"pses-session-{os.getpid()}.json"
+        pcbdraft_lsp_session_dir(), f"pses-session-{os.getpid()}.json"
     )
-    log_path = os.path.join(hermes_lsp_session_dir(), "pses.log")
+    log_path = os.path.join(pcbdraft_lsp_session_dir(), "pses.log")
     inner = (
         f"& '{start_script}' "
         f"-BundledModulesPath '{bundle}' "
         f"-LogPath '{log_path}' "
         f"-SessionDetailsPath '{session_path}' "
         f"-FeatureFlags @() -AdditionalModules @() "
-        f"-HostName Hermes -HostProfileId hermes -HostVersion 1.0.0 "
+        f"-HostName PCBDraft -HostProfileId pcbdraft -HostVersion 1.0.0 "
         f"-Stdio -LogLevel Normal"
     )
     return SpawnSpec(
@@ -823,7 +823,7 @@ def _spawn_powershell_es(root: str, ctx: ServerContext) -> SpawnSpec | None:
     )
 
 
-def hermes_lsp_session_dir() -> str:
+def pcbdraft_lsp_session_dir() -> str:
     """Return (and create) the dir for PSES session/log scratch files."""
     from pcbdraft.core.runtime_environment import get_runtime_home
 

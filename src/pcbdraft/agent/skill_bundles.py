@@ -7,7 +7,7 @@ referenced skill's full content into a single user message, the same way
 
 Storage
 -------
-Bundles live in ``~/.hermes/skill-bundles/*.yaml`` (and the equivalent
+Bundles live in ``<PCBDRAFT_RUNTIME_HOME>/skill-bundles/*.yaml`` (and the equivalent
 profile-aware directory under ``PCBDRAFT_RUNTIME_HOME``). Each file looks like::
 
     name: backend-dev

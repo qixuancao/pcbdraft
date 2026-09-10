@@ -65,13 +65,13 @@ def _auth_error_message(exc: BaseException) -> str:
     return (
         "Honcho rejected our credentials and a forced token refresh did not "
         f"recover: {_redact_tokens(str(exc))}. "
-        "Re-authenticate with 'hermes honcho setup'."
+        "Refresh the Honcho credentials (see 'pcbdraft --help')."
     )
 
 
 _REAUTH_REQUIRED_MESSAGE = (
     "Honcho OAuth grant is revoked and cannot be refreshed; "
-    "re-authenticate with 'hermes honcho setup'."
+    "refresh the Honcho credentials (see 'pcbdraft --help')."
 )
 
 
@@ -640,7 +640,7 @@ class HonchoSessionManager:
         user_peer_id = self._resolve_user_peer_id(key)
 
         assistant_peer_id = self._sanitize_id(
-            self._config.ai_peer if self._config else "hermes-assistant"
+            self._config.ai_peer if self._config else "pcbdraft-assistant"
         )
 
         # All expensive I/O outside the lock — Honcho's persistence is source of truth
@@ -1193,7 +1193,7 @@ class HonchoSessionManager:
 
         Args:
             session_key: The session key to associate files with.
-            memory_dir: Path to the memories directory (~/.hermes/memories/).
+            memory_dir: Path to the runtime memories directory (memories/).
 
         Returns:
             True if at least one file was uploaded, False otherwise.

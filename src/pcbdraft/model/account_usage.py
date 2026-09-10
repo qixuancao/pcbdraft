@@ -642,7 +642,7 @@ def redeem_codex_reset_credit(
     except Exception:
         return CodexResetRedeemResult(
             status="unavailable",
-            message="No Codex credentials available. Run `hermes auth` to sign in with your ChatGPT account.",
+            message="No Codex credentials available. Run `pcbdraft connect` to sign in with your ChatGPT account.",
         )
     usage_url, _credits_url, consume_url = _codex_backend_urls(resolved_base_url)
     headers = {
@@ -710,7 +710,7 @@ def redeem_codex_reset_credit(
                 message=(
                     "Codex backend rejected the request (HTTP "
                     f"{code}). Reset credits require ChatGPT-account (OAuth) auth — "
-                    "run `hermes auth` and sign in with your ChatGPT account."
+                    "run `pcbdraft connect` and sign in with your ChatGPT account."
                 ),
             )
         return CodexResetRedeemResult(

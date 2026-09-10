@@ -681,28 +681,30 @@ _SENSITIVE_PATH_PREFIXES = (
 )
 _SENSITIVE_EXACT_PATHS = {"/var/run/docker.sock", "/run/docker.sock"}
 
-_hermes_config_resolved: str | None = None
-_hermes_config_resolved_loaded = False
+_pcbdraft_config_resolved: str | None = None
+_pcbdraft_config_resolved_loaded = False
 
 
-def _get_hermes_config_resolved() -> str | None:
+def _get_pcbdraft_config_resolved() -> str | None:
     """Return the resolved absolute path of the Hermes config file (cached)."""
-    global _hermes_config_resolved, _hermes_config_resolved_loaded
-    if _hermes_config_resolved_loaded:
-        return _hermes_config_resolved
-    _hermes_config_resolved_loaded = True
+    global _pcbdraft_config_resolved, _pcbdraft_config_resolved_loaded
+    if _pcbdraft_config_resolved_loaded:
+        return _pcbdraft_config_resolved
+    _pcbdraft_config_resolved_loaded = True
     try:
         from pcbdraft.model.configuration import get_config_path
 
-        _hermes_config_resolved = str(get_config_path().resolve())
+        _pcbdraft_config_resolved = str(get_config_path().resolve())
     except Exception:
         try:
-            _hermes_config_resolved = str(
-                Path(_expand_tilde("~/.hermes/config.yaml")).resolve()
+            from pcbdraft.core.runtime_environment import get_runtime_home
+
+            _pcbdraft_config_resolved = str(
+                (get_runtime_home() / "config.yaml").resolve()
             )
         except Exception:
-            _hermes_config_resolved = None
-    return _hermes_config_resolved
+            _pcbdraft_config_resolved = None
+    return _pcbdraft_config_resolved
 
 
 def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None:
@@ -725,12 +727,14 @@ def _check_sensitive_path(filepath: str, task_id: str = "default") -> str | None
     # approvals.mode and other security settings live here; a malicious or
     # prompt-injected agent could silently disable exec approval by writing to
     # this file.
-    hermes_config = _get_hermes_config_resolved()
-    if hermes_config and (resolved == hermes_config or normalized == hermes_config):
+    pcbdraft_config = _get_pcbdraft_config_resolved()
+    if pcbdraft_config and (
+        resolved == pcbdraft_config or normalized == pcbdraft_config
+    ):
         return (
-            f"Refusing to write to Hermes config file: {filepath}\n"
+            f"Refusing to write to PCBDraft config file: {filepath}\n"
             "Agent cannot modify security-sensitive configuration. "
-            "Edit ~/.hermes/config.yaml directly or use 'hermes config' instead."
+            "Edit the runtime config directly or run 'pcbdraft doctor' for diagnostics."
         )
     return None
 
@@ -782,7 +786,9 @@ def _get_real_runtime_home() -> str | None:
         _real_runtime_home_cached = os.path.realpath(str(get_runtime_home()))
     except Exception:
         try:
-            _real_runtime_home_cached = os.path.realpath(_expand_tilde("~/.hermes"))
+            from pcbdraft.core.runtime_paths import runtime_home
+
+            _real_runtime_home_cached = os.path.realpath(runtime_home())
         except Exception:
             _real_runtime_home_cached = None
     return _real_runtime_home_cached
@@ -870,7 +876,7 @@ def _protected_instruction_reason(
         # checkout that happens to live under ~/.hermes (e.g. the
         # hermes-agent repo itself at ~/.hermes/hermes-agent).
         parts = candidate.replace("\\", "/").rstrip("/").split("/")
-        if len(parts) >= 2 and parts[-2] == ".hermes":
+        if len(parts) >= 2 and parts[-2] in {".pcbdraft", ".hermes"}:
             return candidate
     return None
 
@@ -1098,7 +1104,7 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
             if env.__class__.__name__ == "DockerEnvironment" and bool(
                 getattr(env, "_persistent", False)
             ):
-                return "/root/.hermes"
+                return "/root/.pcbdraft/runtime"
             return None
 
         config = _get_env_config()
@@ -1106,7 +1112,7 @@ def _get_container_mirror_prefix_for_task(task_id: str = "default") -> str | Non
         return None
 
     if config.get("env_type") == "docker" and config.get("container_persistent", True):
-        return "/root/.hermes"
+        return "/root/.pcbdraft/runtime"
     return None
 
 
@@ -2858,7 +2864,7 @@ WRITE_FILE_SCHEMA = {
             },
             "cross_profile": {
                 "type": "boolean",
-                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another Hermes profile's skills/plugins/cron/memories — by default these writes are blocked with a warning because they affect a different profile than the one this session is running under.",
+                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another PCBDraft profile's skills/plugins/cron/memories — by default these writes are blocked with a warning because they affect a different profile than the one this session is running under.",
                 "default": False,
             },
         },
@@ -2909,7 +2915,7 @@ PATCH_SCHEMA = {
             },
             "cross_profile": {
                 "type": "boolean",
-                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another Hermes profile's skills/plugins/cron/memories.",
+                "description": "Opt out of the cross-profile soft guard. Defaults to false. Set true ONLY after explicit user direction to edit another PCBDraft profile's skills/plugins/cron/memories.",
                 "default": False,
             },
         },
@@ -2991,7 +2997,7 @@ def _handle_write_file(args, **kw):
             "write_file: missing required field 'content'. The tool call included a "
             "path but no content argument — this is almost always a dropped-arg bug "
             "under context pressure. Re-emit the tool call with the full content "
-            "payload, or use execute_code with hermes_tools.write_file() for very "
+            "payload, or use execute_code with pcbdraft_tools.write_file() for very "
             "large files."
         )
     if not isinstance(args["content"], str):

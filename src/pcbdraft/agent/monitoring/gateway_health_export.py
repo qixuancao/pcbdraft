@@ -17,7 +17,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_DIAGNOSTIC_SCOPE = "hermes.gateway.diagnostics"
+_DEFAULT_DIAGNOSTIC_SCOPE = "pcbdraft.gateway.diagnostics"
 
 _RESOURCE_ATTRIBUTE_KEYS = frozenset(
     {
@@ -88,7 +88,7 @@ def _runtime_resource_attributes(
     attrs = _safe_resource_attributes(gh.get("resource_attributes"))
     from pcbdraft.agent.monitoring.gateway_health import _safe_instance_id
 
-    attrs["service.name"] = "hermes-gateway"
+    attrs["service.name"] = "pcbdraft-gateway"
     attrs["service.instance.id"] = _safe_instance_id(_install_id(config))
     attrs["telemetry.scope"] = telemetry_scope
     return attrs
@@ -100,7 +100,7 @@ def _diagnostic_log_attributes(event: dict[str, Any]) -> dict[str, Any]:
         value = event.get(key)
         if value is None:
             continue
-        attrs[f"hermes.{key}"] = (
+        attrs[f"pcbdraft.{key}"] = (
             _redact_string(value) if isinstance(value, str) else value
         )
     return attrs
@@ -161,7 +161,7 @@ class GatewayHealthExportRuntime:
         if closeables:
             worker = threading.Thread(
                 target=_close,
-                name="hermes-gateway-health-export-shutdown",
+                name="pcbdraft-gateway-health-export-shutdown",
                 daemon=True,
             )
             worker.start()
@@ -391,14 +391,14 @@ def _read_runtime_snapshot(config: dict[str, Any]):
         )
         gateway_snapshot.metrics.append(
             GatewayMetric(
-                name="hermes.gateway.background_work",
+                name="pcbdraft.gateway.background_work",
                 value=_read_background_work_count(),
                 attributes=base,
             )
         )
         gateway_snapshot.metrics.append(
             GatewayMetric(
-                name="hermes.gateway.background_delegations",
+                name="pcbdraft.gateway.background_delegations",
                 value=_read_background_delegations_count(),
                 attributes=base,
             )
@@ -459,26 +459,26 @@ def _start_metric_provider(config: dict[str, Any], sdk: dict[str, Any]) -> Any:
         metric_readers=[reader],
         resource=sdk["Resource"].create(resource_attrs),
     )
-    meter = provider.get_meter("hermes.gateway.health")
+    meter = provider.get_meter("pcbdraft.gateway.health")
     Observation = sdk["Observation"]
 
     metric_names = [
-        "hermes.gateway.up",
-        "hermes.gateway.state",
-        "hermes.gateway.active_agents",
-        "hermes.gateway.busy",
-        "hermes.gateway.drainable",
-        "hermes.gateway.restart_requested",
-        "hermes.gateway.background_work",
-        "hermes.gateway.background_delegations",
-        "hermes.platform.up",
-        "hermes.platform.degraded",
-        "hermes.cron.scheduler.heartbeat_age_seconds",
-        "hermes.cron.scheduler.last_success_age_seconds",
-        "hermes.cron.scheduler.catch_up_occurrences",
-        "hermes.cron.jobs.enabled",
-        "hermes.cron.jobs.running",
-        "hermes.cron.jobs.overdue",
+        "pcbdraft.gateway.up",
+        "pcbdraft.gateway.state",
+        "pcbdraft.gateway.active_agents",
+        "pcbdraft.gateway.busy",
+        "pcbdraft.gateway.drainable",
+        "pcbdraft.gateway.restart_requested",
+        "pcbdraft.gateway.background_work",
+        "pcbdraft.gateway.background_delegations",
+        "pcbdraft.platform.up",
+        "pcbdraft.platform.degraded",
+        "pcbdraft.cron.scheduler.heartbeat_age_seconds",
+        "pcbdraft.cron.scheduler.last_success_age_seconds",
+        "pcbdraft.cron.scheduler.catch_up_occurrences",
+        "pcbdraft.cron.jobs.enabled",
+        "pcbdraft.cron.jobs.running",
+        "pcbdraft.cron.jobs.overdue",
     ]
 
     def callback(name: str):
@@ -607,7 +607,7 @@ def _start_snapshot_thread(
             _emit_snapshot_events(config)
 
     thread = threading.Thread(
-        target=_run, name="hermes-gateway-health-export", daemon=True
+        target=_run, name="pcbdraft-gateway-health-export", daemon=True
     )
     thread.start()
     return thread
@@ -646,7 +646,7 @@ def start_gateway_health_export(config: dict[str, Any]) -> GatewayHealthExportRu
         except Exception:
             logger.warning(
                 "monitoring.gateway_health_export.enabled but OTLP SDK is unavailable; "
-                "install 'hermes-agent[otlp]'",
+                "install opentelemetry-sdk and opentelemetry-exporter-otlp-proto-http",
                 exc_info=True,
             )
             return GatewayHealthExportRuntime(enabled=False, reason="otlp_unavailable")

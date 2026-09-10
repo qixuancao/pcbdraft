@@ -148,7 +148,7 @@ def build_models_payload(
     - ``pricing``: enrich each row with formatted per-model pricing and,
       for Nous, ``free_tier``/``unavailable_models`` so the GUI picker can
       show $/Mtok columns and gate paid models on free accounts —
-      mirroring the ``hermes model`` CLI picker. Adds network calls
+      mirroring the ``internal model`` CLI picker. Adds network calls
       (pricing fetch + Nous tier check); only set for interactive pickers.
     - ``capabilities``: add a per-row ``capabilities`` map
       ``{model: {fast, reasoning}}`` so pickers can gate the model-options
@@ -353,7 +353,7 @@ def build_aux_picker_rows(
     MoA reference fan-out, and ``auxiliary_client`` unwraps a ``moa``
     provider to its aggregator slot anyway (see ``_resolve_auto``), so
     offering it here would be a choice silently rewritten behind the user's
-    back. Mirrors the same filter in ``hermes_cli/moa_cmd.py``.
+    back. Mirrors the same filter in ``pcbdraft.interfaces.tui/moa_cmd.py``.
 
     Rows are the standard ``list_authenticated_providers`` shape. Pair with
     :func:`format_aux_picker_entries` to render them.
@@ -523,7 +523,7 @@ def _apply_custom_aliases(rows: list[dict]) -> None:
     the bare config key as ``slug``. GUI pickers compare the two to decide
     which row is active; exact equality never matches for custom providers
     (#87035). Exposing ``aliases`` — every current and legacy spelling from
-    :func:`hermes_cli.providers.custom_provider_aliases` — lets the frontend
+    :func:`pcbdraft.interfaces.tui.providers.custom_provider_aliases` — lets the frontend
     do a membership check instead.
     """
     from pcbdraft.model.provider_config import custom_provider_aliases
@@ -577,7 +577,7 @@ def _append_unconfigured_rows(
                 f"Configured provider missing usable credentials; paste {key_env} to reactivate. "
                 "Showing the saved model only."
                 if auth_type == "api_key" and key_env
-                else "Configured provider is not authenticated; run `hermes model` to reactivate. "
+                else "Configured provider is not authenticated; run `pcbdraft connect` to reactivate. "
                 "Showing the saved model only."
             )
             extras.append(
@@ -615,7 +615,7 @@ def _filter_explicit_provider_rows(rows: list[dict], ctx: ConfigContext) -> list
 
     ``list_authenticated_providers`` intentionally discovers ambient / auto-
     seeded credentials (for example GitHub CLI -> Copilot). Desktop chat model
-    pickers want the narrower subset the user explicitly configured for Hermes.
+    pickers want the narrower subset the user explicitly configured for PCBDraft.
     """
     from pcbdraft.model.auth import is_provider_explicitly_configured
 
@@ -719,7 +719,7 @@ def _apply_picker_hints(rows: list[dict]) -> None:
         row["warning"] = (
             f"paste {key_env} to activate"
             if auth_type == "api_key" and key_env
-            else f"run `hermes model` to configure ({auth_type})"
+            else f"run `pcbdraft connect` to configure ({auth_type})"
         )
 
 
@@ -851,7 +851,7 @@ def _moa_provider_row(current_provider: str = "") -> dict | None:
     """Build the virtual ``moa`` provider row for model pickers.
 
     Shared by the CLI inventory (:func:`build_models_payload`) and the gateway
-    picker path (:func:`hermes_cli.model_switch.list_picker_providers`) so the
+    picker path (:func:`pcbdraft.interfaces.tui.model_switch.list_picker_providers`) so the
     row shape stays in one place. Returns ``None`` when no MoA presets exist.
     """
     try:

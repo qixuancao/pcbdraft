@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import tempfile
 import threading
@@ -16,6 +17,7 @@ from pcbdraft.agent.tool_bindings import (
     set_current_project_id,
 )
 from pcbdraft.core.errors import PCBDraftError, ValidationError
+from pcbdraft.core.legacy_migration import migrate_legacy_runtime_home
 from pcbdraft.core.repository import configure_repository
 from pcbdraft.core.runtime_paths import runtime_home
 from pcbdraft.interfaces.terminal import _take_deferred_connection, launch_cli
@@ -240,10 +242,10 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertIn("zai / glm-test", result)
 
     def test_process_command_wrapper_routes_and_renders_errors(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
 
-        with patch.object(hermes_cli_module, "_cprint") as mocked_print:
-            continue_loop = hermes_cli_module.TerminalApp.process_command(
+        with patch.object(tui_module, "_cprint") as mocked_print:
+            continue_loop = tui_module.TerminalApp.process_command(
                 object(), "/new wrapper board"
             )
         self.assertTrue(continue_loop)
@@ -251,8 +253,8 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertIn("wrapper board", rendered)
         self.assertEqual(get_current_project_id(), "wrapper board-abcd1234")
 
-        with patch.object(hermes_cli_module, "_cprint") as mocked_print:
-            continue_loop = hermes_cli_module.TerminalApp.process_command(
+        with patch.object(tui_module, "_cprint") as mocked_print:
+            continue_loop = tui_module.TerminalApp.process_command(
                 object(), "/open missing-project"
             )
         self.assertTrue(continue_loop)
@@ -260,16 +262,16 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertIn("✗", rendered)
         self.assertIn("project not found", rendered)
 
-    def test_trusted_project_commands_rotate_the_actual_hermes_conversation(
+    def test_trusted_project_commands_rotate_the_actual_pcbdraft_conversation(
         self,
     ) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
 
         existing = self.service.create_empty_project("existing")
         existing_id = str(existing["project"]["id"])
 
         def cli_with_old_project_history() -> Any:
-            cli = hermes_cli_module.TerminalApp.__new__(hermes_cli_module.TerminalApp)
+            cli = tui_module.TerminalApp.__new__(tui_module.TerminalApp)
             cli.session_id = "old-project-session"
             cli.agent = None
             cli._session_db = None
@@ -288,32 +290,30 @@ class SlashHandlerTests(unittest.TestCase):
                 cli = cli_with_old_project_history()
                 with (
                     patch.object(
-                        hermes_cli_module,
+                        tui_module,
                         "CLI_CONFIG",
                         {"agent": {}, "model": {}},
                     ),
-                    patch.object(hermes_cli_module, "_cprint"),
+                    patch.object(tui_module, "_cprint"),
                 ):
-                    continue_loop = hermes_cli_module.TerminalApp.process_command(
-                        cli, command
-                    )
+                    continue_loop = tui_module.TerminalApp.process_command(cli, command)
 
                 self.assertTrue(continue_loop)
                 self.assertNotEqual(cli.session_id, "old-project-session")
                 self.assertEqual(cli.conversation_history, [])
 
     def test_failed_project_open_keeps_the_existing_conversation(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
 
-        cli = hermes_cli_module.TerminalApp.__new__(hermes_cli_module.TerminalApp)
+        cli = tui_module.TerminalApp.__new__(tui_module.TerminalApp)
         cli.session_id = "current-session"
         cli.agent = None
         cli._session_db = None
         old_history = [{"role": "user", "content": "keep this context"}]
         cli.conversation_history = old_history
 
-        with patch.object(hermes_cli_module, "_cprint"):
-            continue_loop = hermes_cli_module.TerminalApp.process_command(
+        with patch.object(tui_module, "_cprint"):
+            continue_loop = tui_module.TerminalApp.process_command(
                 cli, "/open missing-project"
             )
 
@@ -409,13 +409,13 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertEqual(recovered["event_sequence"], 1)
 
     def test_repl_connect_defers_wizard_until_after_terminal_exit(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
 
         with (
             patch("pcbdraft.interfaces.terminal.connect") as wizard,
-            patch.object(hermes_cli_module, "_cprint") as mocked_print,
+            patch.object(tui_module, "_cprint") as mocked_print,
         ):
-            continue_loop = hermes_cli_module.TerminalApp.process_command(
+            continue_loop = tui_module.TerminalApp.process_command(
                 object(), "/connect --no-browser --reauthenticate"
             )
         self.assertFalse(continue_loop)
@@ -429,10 +429,10 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertIn("model connection wizard", rendered)
 
     def test_bare_model_defers_full_wizard_outside_process_command(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
 
         with patch("pcbdraft.interfaces.terminal.connect") as wizard:
-            continue_loop = hermes_cli_module.TerminalApp.process_command(
+            continue_loop = tui_module.TerminalApp.process_command(
                 object(), "/model --refresh"
             )
         self.assertFalse(continue_loop)
@@ -443,18 +443,18 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertTrue(requested.refresh)
 
     def test_deferred_exit_restores_terminal_without_global_cleanup(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
 
-        before_cleanup_done = hermes_cli_module._cleanup_done
+        before_cleanup_done = tui_module._cleanup_done
         with patch.object(
-            hermes_cli_module, "_reset_terminal_input_modes_on_exit"
+            tui_module, "_reset_terminal_input_modes_on_exit"
         ) as reset_modes:
             from pcbdraft.interfaces.terminal import _defer_connection
 
             _defer_connection(ConnectionOptions(refresh=True))
-            hermes_cli_module._run_cleanup()
+            tui_module._run_cleanup()
         reset_modes.assert_called_once_with()
-        self.assertEqual(hermes_cli_module._cleanup_done, before_cleanup_done)
+        self.assertEqual(tui_module._cleanup_done, before_cleanup_done)
         self.assertEqual(_take_deferred_connection(), ConnectionOptions(refresh=True))
 
     def test_deferred_wizard_runs_on_main_thread_and_relaunches(self) -> None:
@@ -475,10 +475,10 @@ class SlashHandlerTests(unittest.TestCase):
             nonlocal launches
             launches += 1
             if launches == 1:
-                import pcbdraft.interfaces.tui.app as hermes_cli_module
+                import pcbdraft.interfaces.tui.app as tui_module
 
                 self.assertFalse(
-                    hermes_cli_module.TerminalApp.process_command(
+                    tui_module.TerminalApp.process_command(
                         object(), "/connect --refresh"
                     )
                 )
@@ -526,10 +526,10 @@ class SlashHandlerTests(unittest.TestCase):
             nonlocal launches
             launches += 1
             if launches == 1:
-                import pcbdraft.interfaces.tui.app as hermes_cli_module
+                import pcbdraft.interfaces.tui.app as tui_module
 
                 self.assertFalse(
-                    hermes_cli_module.TerminalApp.process_command(object(), "/connect")
+                    tui_module.TerminalApp.process_command(object(), "/connect")
                 )
 
         with (
@@ -558,10 +558,10 @@ class SlashHandlerTests(unittest.TestCase):
             nonlocal launches
             launches += 1
             if launches == 1:
-                import pcbdraft.interfaces.tui.app as hermes_cli_module
+                import pcbdraft.interfaces.tui.app as tui_module
 
                 self.assertFalse(
-                    hermes_cli_module.TerminalApp.process_command(object(), "/connect")
+                    tui_module.TerminalApp.process_command(object(), "/connect")
                 )
 
         errors = io.StringIO()
@@ -612,7 +612,7 @@ class SlashHandlerTests(unittest.TestCase):
         self.assertIsNone(_take_deferred_connection())
 
     def test_explicit_model_forms_always_use_the_persistent_authority(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
         from pcbdraft.interfaces.tui import inventory
         from pcbdraft.model import model_switch
 
@@ -630,27 +630,25 @@ class SlashHandlerTests(unittest.TestCase):
             patch.object(
                 model_switch, "switch_model", return_value=failed_result
             ) as switch,
-            patch.object(hermes_cli_module, "_cprint"),
+            patch.object(tui_module, "_cprint"),
         ):
-            hermes_cli_module.TerminalApp._handle_model_switch(
-                target, "/model board-target"
-            )
+            tui_module.TerminalApp._handle_model_switch(target, "/model board-target")
             self.assertTrue(switch.call_args.kwargs["is_global"])
-            hermes_cli_module.TerminalApp._handle_model_switch(
+            tui_module.TerminalApp._handle_model_switch(
                 target, "/model board-target --provider anthropic"
             )
             self.assertTrue(switch.call_args.kwargs["is_global"])
             self.assertEqual(switch.call_args.kwargs["explicit_provider"], "anthropic")
 
     def test_ephemeral_model_flags_are_rejected_before_switching(self) -> None:
-        import pcbdraft.interfaces.tui.app as hermes_cli_module
+        import pcbdraft.interfaces.tui.app as tui_module
         from pcbdraft.model import model_switch
 
         with (
             patch.object(model_switch, "switch_model") as switch,
-            patch.object(hermes_cli_module, "_cprint") as rendered,
+            patch.object(tui_module, "_cprint") as rendered,
         ):
-            hermes_cli_module.TerminalApp._handle_model_switch(
+            tui_module.TerminalApp._handle_model_switch(
                 object(), "/model board-target --session"
             )
         switch.assert_not_called()
@@ -681,7 +679,9 @@ class CommandSurfaceTests(unittest.TestCase):
 
 
 class RuntimePathsTests(unittest.TestCase):
-    def test_default_ignores_standalone_agent_home(self) -> None:
+    def test_fresh_default_is_pcbdraft_runtime_and_ignores_standalone_home(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             with patch.dict(
@@ -689,22 +689,83 @@ class RuntimePathsTests(unittest.TestCase):
                 {
                     "PCBDRAFT_CONFIG": str(root / "config" / "config.json"),
                     "HERMES_HOME": str(root / "standalone"),
+                    "PCBDRAFT_HERMES_HOME": str(root / "ignored-legacy-override"),
                 },
                 clear=True,
             ):
                 self.assertEqual(runtime_home(), root / "config" / "runtime")
                 self.assertFalse((root / "standalone").exists())
+                self.assertFalse((root / "config").exists())
+                self.assertFalse((root / "ignored-legacy-override").exists())
 
-    def test_existing_product_connection_directory_is_preserved(self) -> None:
+    def test_legacy_only_product_runtime_is_atomically_migrated_and_idempotent(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            (root / "hermes").mkdir()
+            legacy = root / "hermes"
+            legacy.mkdir(mode=0o700)
+            state = legacy / "opaque-provider-state"
+            state.write_bytes(b"opaque-state")
+            state.chmod(0o600)
+            source_inode = state.stat().st_ino
             with patch.dict(
                 os.environ, {"PCBDRAFT_CONFIG": str(root / "config.json")}, clear=True
             ):
-                self.assertEqual(runtime_home(), root / "hermes")
-                (root / "runtime").mkdir()
                 self.assertEqual(runtime_home(), root / "runtime")
+                self.assertTrue(legacy.is_dir())
+                self.assertFalse((root / "runtime").exists())
+                self.assertFalse((root / "runtime-migration.json").exists())
+                resolution = migrate_legacy_runtime_home()
+                self.assertEqual(resolution.path, runtime_home())
+                self.assertEqual(resolution.migration, "migrated")
+                self.assertFalse(legacy.exists())
+                migrated = root / "runtime" / state.name
+                self.assertEqual(migrated.read_bytes(), b"opaque-state")
+                self.assertEqual(migrated.stat().st_ino, source_inode)
+                self.assertEqual(migrated.stat().st_mode & 0o777, 0o600)
+                self.assertFalse((root / "runtime").is_symlink())
+                record = root / "runtime-migration.json"
+                payload = json.loads(record.read_text(encoding="utf-8"))
+                self.assertEqual(payload["outcome"], "migrated")
+                self.assertEqual(payload["source_directory"], "hermes")
+                self.assertEqual(payload["target_directory"], "runtime")
+                first_record = record.read_bytes()
+                self.assertEqual(runtime_home(), root / "runtime")
+                repeated = migrate_legacy_runtime_home()
+                self.assertEqual(repeated.path, runtime_home())
+                self.assertEqual(repeated.migration, "native")
+                self.assertEqual(record.read_bytes(), first_record)
+
+    def test_coexisting_runtime_directories_do_not_overwrite_either_side(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            legacy = root / "hermes"
+            native = root / "runtime"
+            legacy.mkdir()
+            native.mkdir()
+            (legacy / "legacy-only").write_bytes(b"legacy")
+            (native / "native-only").write_bytes(b"native")
+            with patch.dict(
+                os.environ, {"PCBDRAFT_CONFIG": str(root / "config.json")}, clear=True
+            ):
+                self.assertEqual(runtime_home(), native)
+                self.assertFalse((root / "runtime-migration-conflict.json").exists())
+                resolution = migrate_legacy_runtime_home()
+                self.assertEqual(resolution.path, native)
+                self.assertEqual(resolution.migration, "conflict")
+                self.assertEqual((legacy / "legacy-only").read_bytes(), b"legacy")
+                self.assertEqual((native / "native-only").read_bytes(), b"native")
+                record = root / "runtime-migration-conflict.json"
+                payload = json.loads(record.read_text(encoding="utf-8"))
+                self.assertEqual(payload["outcome"], "conflict")
+                self.assertTrue(payload["source_retained"])
+                first_record = record.read_bytes()
+                self.assertEqual(runtime_home(), native)
+                repeated = migrate_legacy_runtime_home()
+                self.assertEqual(repeated.path, native)
+                self.assertEqual(repeated.migration, "conflict")
+                self.assertEqual(record.read_bytes(), first_record)
 
 
 class RepositoryInvariantTests(unittest.TestCase):
@@ -714,7 +775,7 @@ class RepositoryInvariantTests(unittest.TestCase):
             repository_path = root / "pbd-repo"
             environment = {
                 "PCBDRAFT_REPOSITORY_CONFIG": str(root / "pointer.json"),
-                "PCBDRAFT_HERMES_HOME": str(root / "hermes-home"),
+                "PCBDRAFT_RUNTIME_HOME": str(root / "runtime-home"),
             }
             with patch.dict(os.environ, environment, clear=False):
                 configure_repository(repository_path)
@@ -727,7 +788,7 @@ class RepositoryInvariantTests(unittest.TestCase):
                     str(project_dir).startswith(str(repository_path.resolve()))
                 )
                 home = runtime_home()
-                self.assertEqual(home, root / "hermes-home")
+                self.assertEqual(home, root / "runtime-home")
                 self.assertFalse(str(home).startswith(str(repository_path.resolve())))
                 self.assertIsNone(get_current_project_id())
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 import tempfile
 import unittest
 from collections.abc import Sequence
@@ -181,7 +180,7 @@ class _FakeWorkerProcess:
             {
                 "estimated_cost_usd": 0.125,
                 "cost_status": "estimated",
-                "cost_source": "hermes_pricing_catalog",
+                "cost_source": "pcbdraft_pricing_catalog",
                 "input_tokens": 1200,
                 "output_tokens": 300,
                 "cache_read_tokens": 0,
@@ -297,7 +296,6 @@ class BoardBenchRunnerTests(unittest.TestCase):
         fake_kicad.chmod(0o700)
 
         def snapshot() -> RunnerEnvironment:
-            vendor_root = Path(__file__).resolve().parents[2] / "vendor" / "hermes"
             status = self._git(
                 repository,
                 "status",
@@ -306,7 +304,6 @@ class BoardBenchRunnerTests(unittest.TestCase):
                 "--untracked-files=all",
             )
             with (
-                mock.patch.object(sys, "path", [str(vendor_root), *sys.path]),
                 mock.patch("pcbdraft.model.settings.write_runtime_config"),
                 mock.patch(
                     "pcbdraft.services.provider_connection.activate_provider_runtime"
@@ -444,7 +441,7 @@ class BoardBenchRunnerTests(unittest.TestCase):
             _effective_tool_call_budget({"agent": {"max_turns": True}}), 500
         )
 
-    def test_plan_freezes_exactly_sixty_ids_and_effective_hermes_budget(self) -> None:
+    def test_plan_freezes_exactly_sixty_ids_and_effective_pcbdraft_budget(self) -> None:
         self.assertEqual(DEFAULT_WALL_TIMEOUT_SECONDS, 3600.0)
         with self.assertRaisesRegex(ValidationError, "fixed at 500"):
             plan_campaign(

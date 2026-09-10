@@ -11,12 +11,12 @@ import time
 import uuid
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pcbdraft.model.auth as auth_mod
 from pcbdraft.agent.secret_scope import get_secret as _get_secret
 from pcbdraft.core.runtime_environment import OPENROUTER_BASE_URL
+from pcbdraft.core.runtime_paths import default_runtime_home
 from pcbdraft.model.auth import (
     CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
     PROVIDER_REGISTRY,
@@ -39,6 +39,8 @@ from pcbdraft.model.auth import (
 from pcbdraft.model.configuration import load_env
 from pcbdraft.model.credential_persistence import (
     is_borrowed_credential_source,
+    is_pcbdraft_pkce_source,
+    normalize_credential_source,
     sanitize_borrowed_credential_payload,
 )
 
@@ -231,6 +233,7 @@ class PooledCredential:
     extra: dict[str, Any] = None  # type: ignore[assignment]
 
     def __post_init__(self):
+        self.source = normalize_credential_source(self.source)
         if self.extra is None:
             self.extra = {}
         self.auth_type = _normalize_pool_auth_type(
@@ -663,7 +666,7 @@ def _write_through_provider_state_to_global_root(
     if os.environ.get("PYTEST_CURRENT_TEST"):
         real_home_env = os.environ.get("HOME", "")
         if real_home_env:
-            real_root = Path(real_home_env) / ".hermes" / "auth.json"
+            real_root = default_runtime_home() / "auth.json"
             try:
                 if global_path.resolve(strict=False) == real_root.resolve(strict=False):
                     return
@@ -1380,7 +1383,7 @@ class CredentialPool:
 
                 refreshed = refresh_anthropic_oauth_pure(
                     entry.refresh_token,
-                    use_json=entry.source.endswith("hermes_pkce"),
+                    use_json=is_pcbdraft_pkce_source(entry.source, entry.provider),
                 )
                 updated = replace(
                     entry,
@@ -1903,7 +1906,7 @@ class CredentialPool:
                         _label = entry.label or entry.id[:8]
                         logger.warning(
                             "credential pool: pruning DEAD manual entry %s "
-                            "(reason=%s, age=%.1fh) — re-add via `hermes auth add %s`",
+                            "(reason=%s, age=%.1fh) — reconnect via `pcbdraft connect` (%s)",
                             _label,
                             entry.last_error_reason or "unknown",
                             (now - dead_at) / 3600.0,
@@ -2498,7 +2501,7 @@ def _normalize_pool_priorities(provider: str, entries: list[PooledCredential]) -
     source_rank = {
         "env:ANTHROPIC_TOKEN": 0,
         "env:CLAUDE_CODE_OAUTH_TOKEN": 1,
-        "hermes_pkce": 2,
+        "pcbdraft_pkce": 2,
         "claude_code": 3,
         "env:ANTHROPIC_API_KEY": 4,
     }
@@ -2588,16 +2591,18 @@ def _seed_from_singletons(
             retained = [
                 entry
                 for entry in entries
-                if entry.source not in {"hermes_pkce", "claude_code"}
+                if entry.source not in {"pcbdraft_pkce", "claude_code"}
             ]
             if len(retained) != len(entries):
                 entries[:] = retained
                 changed = True
             return changed, active_sources
 
-        from pcbdraft.model.anthropic_adapter import read_hermes_oauth_credentials
+        from pcbdraft.model.anthropic_adapter import read_pcbdraft_oauth_credentials
 
-        for source_name, creds in (("hermes_pkce", read_hermes_oauth_credentials()),):
+        for source_name, creds in (
+            ("pcbdraft_pkce", read_pcbdraft_oauth_credentials()),
+        ):
             if creds and creds.get("accessToken"):
                 if _is_suppressed(provider, source_name):
                     continue
@@ -2927,7 +2932,7 @@ def get_env_prefer_dotenv(key: str) -> str:
     # If .env contains an unresolved op:// reference, prefer the
     # already-resolved value supplied by the active secret scope (or by
     # os.environ in legacy single-profile mode), set by
-    # load_hermes_dotenv() -> apply_onepassword_secrets()).  The raw
+    # load_pcbdraft_dotenv() -> apply_onepassword_secrets()).  The raw
     # "op://Vault/Item/field" string would otherwise win and every
     # provider auth attempt would receive a URL instead of a key.  This
     # happens during a partial migration, or when the user wrote op://
@@ -3091,7 +3096,7 @@ def _prune_stale_seeded_entries(
         # PKCE should disappear from the pool when their backing file is gone.
         return (
             is_borrowed_credential_source(entry.source, entry.provider)
-            or entry.source == "hermes_pkce"
+            or entry.source == "pcbdraft_pkce"
         )
 
     retained = [

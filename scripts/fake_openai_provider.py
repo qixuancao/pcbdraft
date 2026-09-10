@@ -10,17 +10,15 @@ import threading
 import time
 from dataclasses import dataclass
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler
-from http.server import ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
-from typing import ClassVar
+from typing import Any, ClassVar
 
 E2E_API_KEY = "pcbdraft-local-e2e-key"
 MAX_REQUEST_BYTES = 2 * 1024 * 1024
 
-_HERMES_AGENT_STEPS: tuple[tuple[str, dict[str, Any]], ...] = (
-    ("pcb_create_project", {"name": "Hermes KiCad release smoke"}),
+_PCBDRAFT_AGENT_STEPS: tuple[tuple[str, dict[str, Any]], ...] = (
+    ("pcb_create_project", {"name": "PCBDraft KiCad release smoke"}),
     (
         "pcb_add_block",
         {
@@ -445,23 +443,23 @@ def _patch(prompt: str) -> dict[str, Any]:
     }
 
 
-def _hermes_agent_message(body: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    """Return one deterministic decision for the current Hermes conversation."""
+def _pcbdraft_agent_message(body: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    """Return one deterministic decision for the current PCBDraft conversation."""
 
     messages = body.get("messages")
     tools = body.get("tools")
     if not isinstance(messages, list) or not isinstance(tools, list):
-        raise TypeError("Hermes agent request must contain messages and tools")
+        raise TypeError("PCBDraft agent request must contain messages and tools")
     available = {
         str(function.get("name"))
         for item in tools
         if isinstance(item, dict)
         and isinstance((function := item.get("function")), dict)
     }
-    required = {name for name, _arguments in _HERMES_AGENT_STEPS}
+    required = {name for name, _arguments in _PCBDRAFT_AGENT_STEPS}
     if not required <= available:
         raise ValueError(
-            "Hermes request omitted PCBDraft tools: "
+            "PCBDraft request omitted PCB tools: "
             + ", ".join(sorted(required - available))
         )
 
@@ -490,22 +488,24 @@ def _hermes_agent_message(body: dict[str, Any]) -> tuple[dict[str, Any], str]:
         if isinstance(result, dict) and result.get("success") is False:
             failed_result = True
 
-    expected_prefix = [name for name, _arguments in _HERMES_AGENT_STEPS]
+    expected_prefix = [name for name, _arguments in _PCBDRAFT_AGENT_STEPS]
     if prior_calls != expected_prefix[: len(prior_calls)]:
-        raise ValueError("Hermes agent replay contains an unexpected PCB tool sequence")
+        raise ValueError(
+            "PCBDraft agent replay contains an unexpected PCB tool sequence"
+        )
     if failed_result:
         return (
             {
                 "role": "assistant",
                 "content": (
-                    "The Hermes/KiCad smoke stopped because a PCB tool reported "
+                    "The PCBDraft/KiCad smoke stopped because a PCB tool reported "
                     "failure; the board is incomplete and is not production ready."
                 ),
             },
             "stop",
         )
-    if len(prior_calls) < len(_HERMES_AGENT_STEPS):
-        name, arguments = _HERMES_AGENT_STEPS[len(prior_calls)]
+    if len(prior_calls) < len(_PCBDRAFT_AGENT_STEPS):
+        name, arguments = _PCBDRAFT_AGENT_STEPS[len(prior_calls)]
         return (
             {
                 "role": "assistant",
@@ -531,7 +531,7 @@ def _hermes_agent_message(body: dict[str, Any]) -> tuple[dict[str, Any], str]:
         {
             "role": "assistant",
             "content": (
-                "Hermes/KiCad smoke completed with retained ERC and DRC evidence. "
+                "PCBDraft/KiCad smoke completed with retained ERC and DRC evidence. "
                 "These checks do not establish production readiness."
             ),
         },
@@ -606,7 +606,7 @@ class _ProviderHandler(BaseHTTPRequestHandler):
                 message = {"role": "assistant", "content": json.dumps(content)}
                 finish_reason = "stop"
             else:
-                message, finish_reason = _hermes_agent_message(body)
+                message, finish_reason = _pcbdraft_agent_message(body)
             self.server.request_count += 1
             prompt_tokens = max(1, len(json.dumps(body.get("messages", []))) // 4)
             completion_tokens = max(1, len(json.dumps(message)) // 4)

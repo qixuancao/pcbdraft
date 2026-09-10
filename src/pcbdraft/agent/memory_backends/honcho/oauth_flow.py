@@ -22,6 +22,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
+from pcbdraft.agent.legacy_compat import HONCHO_OAUTH_CLIENT_ID
 from pcbdraft.agent.memory_backends.honcho import oauth
 from pcbdraft.agent.memory_backends.honcho.client import (
     resolve_active_host,
@@ -77,7 +78,7 @@ _LOCAL_TOKEN_URL = "http://localhost:8000/oauth/token"
 # One OAuth client for every surface. Consent branding/UI adapt via the
 # ``source`` query param (not a separate client_id), so there's a single grant
 # identity to refresh — no clientId-vs-refresh-token desync to revoke the grant.
-_DEFAULT_CLIENT_ID = "hermes-agent"
+_DEFAULT_CLIENT_ID = HONCHO_OAUTH_CLIENT_ID
 
 
 def _is_loopback_url(url: str | None) -> bool:
@@ -253,7 +254,7 @@ _CALLBACK_HTML = (
     b"<title>Honcho connected</title>"
     b"<body style='font:14px ui-monospace,monospace;background:#0b0e14;color:#c9d1d9;"
     b"display:flex;align-items:center;justify-content:center;height:100vh;margin:0'>"
-    b"<div>Connected to Honcho. You can close this tab and return to Hermes.</div>"
+    b"<div>Connected to Honcho. You can close this tab and return to PCBDraft.</div>"
 )
 
 _CALLBACK_ERROR_HTML = (
@@ -640,7 +641,7 @@ def start_loopback_flow_background(
     *,
     config_path: Path | None = None,
     host: str | None = None,
-    source: str = "hermes-desktop",
+    source: str = "pcbdraft-desktop",
     timeout: float = 300.0,
 ) -> dict[str, str]:
     """Launch the loopback flow in a daemon thread; returns the initial status.

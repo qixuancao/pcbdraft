@@ -1,4 +1,4 @@
-"""Windows UTF-8 bootstrap for Hermes entry points.
+"""Windows UTF-8 bootstrap for PCBDraft entry points.
 
 Python on Windows has two long-standing text-encoding footguns:
 
@@ -13,9 +13,8 @@ Python on Windows has two long-standing text-encoding footguns:
    cp1252 defaults and hits the same UnicodeEncodeError.
 
 This module fixes both on Windows *only* — POSIX is untouched.  It
-should be imported at the very top of every Hermes entry point
-(``hermes``, ``hermes-agent``, ``hermes-acp``, ``python -m gateway.run``,
-``batch_runner.py``, ``cron/scheduler.py``) before any other imports
+should be imported at the very top of every PCBDraft entry point
+before any other imports
 that might do file I/O or print to stdout.
 
 What this module does on Windows:
@@ -144,12 +143,12 @@ def suppress_platform_ver_console() -> None:
     Stubbing ``_syscmd_ver`` to return its inputs makes ``win32_ver()`` hit
     its documented fallback and read the version from
     ``sys.getwindowsversion()`` — same data, in-process, no subprocess.
-    Mirrors ``hermes_cli._subprocess_compat.suppress_platform_ver_console``
+    Mirrors ``pcbdraft.core.runtime_process.suppress_platform_ver_console``
     (kept there for callers that don't import bootstrap); double
     application is harmless. Lives here so EVERY entry point gets it —
     ``tui_gateway/slash_worker.py``, ``tui_gateway/entry.py``,
     ``run_agent.py``, ``batch_runner.py``, and ``cli.py`` import only
-    ``hermes_bootstrap``, never ``hermes_cli.main``.
+    ``pcbdraft.core.stdio``, without importing the terminal.
     """
     if not _IS_WINDOWS:
         return
@@ -198,8 +197,8 @@ def activate_durable_lazy_target() -> None:
         logger.debug("Durable lazy-install target activation failed", exc_info=True)
 
 
-# Apply on import — entry points just need ``import hermes_bootstrap``
-# (or ``from hermes_bootstrap import apply_windows_utf8_bootstrap``) at
+# Apply on import — entry points just need ``from pcbdraft.core import stdio``
+# (or an explicit ``apply_windows_utf8_bootstrap`` import) at
 # the very top of their module, before importing anything else.  The
 # import side effect does the right thing.
 apply_windows_utf8_bootstrap()

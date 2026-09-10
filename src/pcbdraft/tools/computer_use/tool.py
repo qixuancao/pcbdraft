@@ -666,7 +666,7 @@ def handle_computer_use(args: dict[str, Any], **kwargs) -> Any:
         return json.dumps(
             {
                 "error": f"computer_use backend unavailable: {e}",
-                "hint": "If the cua-driver binary is missing, run `hermes computer-use install`. "
+                "hint": "If the cua-driver binary is missing, run `pcbdraft doctor` for diagnostics. "
                 "If a Python dependency is missing, the error above shows the exact install command.",
             }
         )
@@ -1622,7 +1622,7 @@ def _route_capture_through_aux_vision(
         import os as _os
         import uuid as _uuid
 
-        from pcbdraft.core.runtime_environment import get_hermes_dir
+        from pcbdraft.core.runtime_environment import get_pcbdraft_dir
         from pcbdraft.tools.dispatch import _run_async
         from pcbdraft.tools.vision_tools import vision_analyze_tool
     except Exception as exc:  # pragma: no cover - defensive
@@ -1647,7 +1647,7 @@ def _route_capture_through_aux_vision(
             ext = ".jpg"
         else:
             ext = ".png"
-        cache_dir = get_hermes_dir("cache/vision", "temp_vision_images")
+        cache_dir = get_pcbdraft_dir("cache/vision", "temp_vision_images")
         cache_dir.mkdir(parents=True, exist_ok=True)
         temp_image_path = cache_dir / f"computer_use_{_uuid.uuid4().hex}{ext}"
         raw, scale_note = _shrink_capture_for_vision(raw, ext)
@@ -1832,9 +1832,9 @@ def _spill_elements_to_file(cap: CaptureResult) -> str | None:
     try:
         import uuid as _uuid
 
-        from pcbdraft.core.runtime_environment import get_hermes_dir
+        from pcbdraft.core.runtime_environment import get_pcbdraft_dir
 
-        cache_dir = get_hermes_dir("cache/computer_use", "computer_use_cache")
+        cache_dir = get_pcbdraft_dir("cache/computer_use", "computer_use_cache")
         cache_dir.mkdir(parents=True, exist_ok=True)
         # Prune oldest spills beyond the cap (best-effort).
         try:

@@ -1,10 +1,10 @@
 """Managed scope — IT-pushed, user-immutable config & env layer.
 
-A system-level directory (default ``/etc/hermes``, root-owned and not
+A system-level directory (default ``/etc/pcbdraft``, root-owned and not
 user-writable) supplies ``config.yaml`` and ``.env`` values that WIN over the
-user's ``~/.hermes/config.yaml`` and ``~/.hermes/.env`` on a per-leaf-key basis.
+user's ``~/.pcbdraft/config.yaml`` and ``~/.pcbdraft/.env`` on a per-leaf-key basis.
 
-This is DISTINCT from ``hermes_cli.config.is_managed()`` / ``PCBDRAFT_RUNTIME_MANAGED``,
+This is DISTINCT from ``pcbdraft.interfaces.tui.config.is_managed()`` / ``PCBDRAFT_RUNTIME_MANAGED``,
 which is a coarse package-manager write-lock (declarative-distro / formula
 installs). That lock blocks all mutation; this layer injects specific immutable
 values. The two are independent and may coexist.
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 # POSIX default. Other-platform locations are a deliberate v2 item; when added,
 # they belong ONLY inside get_managed_dir().
-_DEFAULT_MANAGED_DIR = Path("/etc/hermes")
+_DEFAULT_MANAGED_DIR = Path("/etc/pcbdraft")
 
 _CACHE_LOCK = threading.Lock()
 # path_key -> (mtime_ns, size, parsed)
@@ -41,7 +41,7 @@ _ENV_CACHE: dict[str, tuple] = {}
 def _under_pytest() -> bool:
     """True when running inside the test suite.
 
-    Used to ignore the system default ``/etc/hermes`` during tests so a real
+    Used to ignore the system default ``/etc/pcbdraft`` during tests so a real
     managed scope on a developer/CI box can't leak policy into the suite. Tests
     that exercise managed scope set ``PCBDRAFT_RUNTIME_MANAGED_DIR`` explicitly, which is
     still honored (the override path below runs before this guard takes effect).
@@ -56,7 +56,7 @@ def get_managed_dir() -> Path | None:
       1. ``$PCBDRAFT_RUNTIME_MANAGED_DIR`` — deployment/bootstrap path override (IT-only;
          never persisted to any .env). Honored only when set to a non-empty value
          AND the directory exists.
-      2. ``/etc/hermes`` — POSIX default, when it exists. Ignored under pytest so
+      2. ``/etc/pcbdraft`` — POSIX default, when it exists. Ignored under pytest so
          a real system managed scope can't leak into the test suite.
 
     A non-existent directory at either tier resolves to None (no managed scope),
@@ -138,8 +138,8 @@ def apply_managed_overlay(config: dict) -> dict:
     """Overlay administrator-pinned config values on top of an already-built dict.
 
     The single, shared way for any config loader that builds its own dict
-    (rather than going through hermes_cli.config.load_config) to honor managed
-    scope. Mirrors hermes_cli.config._load_config_impl's managed merge exactly:
+    (rather than going through pcbdraft.interfaces.tui.config.load_config) to honor managed
+    scope. Mirrors pcbdraft.interfaces.tui.config._load_config_impl's managed merge exactly:
 
       * expand the managed config's ``${VAR}`` refs against the PROCESS env only
         (never user-config-defined refs), so a user cannot shadow a managed

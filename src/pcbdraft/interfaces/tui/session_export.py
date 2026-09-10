@@ -166,7 +166,7 @@ def _render_full_markdown(sessions: list[dict[str, Any]]) -> str:
         lines.append("")
         _append_session_messages(lines, session, heading_level=2)
     else:
-        lines.append("# Hermes sessions export")
+        lines.append("# PCBDraft sessions export")
         lines.append("")
         for session in sessions:
             lines.append(f"## Session: {_heading_text(_session_title_or_id(session))}")
@@ -329,7 +329,7 @@ Formats:
 
 Options:
   filename   optional output name/path (default: auto-named;
-             CLI saves under ~/.hermes/sessions/saved/)
+             CLI saves under ~/.pcbdraft/sessions/saved/)
   redact     scrub API keys, tokens, and credentials before writing
 
 Examples:
@@ -374,4 +374,4 @@ def default_save_filename(session_id: str, fmt: str) -> str:
         "".join(ch for ch in str(session_id) if ch.isalnum() or ch in ("-", "_"))
         or "session"
     )
-    return f"hermes_session_{safe_id}.{fmt}"
+    return f"pcbdraft_session_{safe_id}.{fmt}"

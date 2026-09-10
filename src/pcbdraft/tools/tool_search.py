@@ -212,9 +212,9 @@ def _core_tool_names() -> frozenset[str]:
     and we don't want a hard cycle.
     """
     try:
-        from pcbdraft.tools.toolsets import _HERMES_CORE_TOOLS
+        from pcbdraft.tools.toolsets import _PCBDRAFT_CORE_TOOLS
 
-        return frozenset(_HERMES_CORE_TOOLS)
+        return frozenset(_PCBDRAFT_CORE_TOOLS)
     except Exception:
         return frozenset()
 

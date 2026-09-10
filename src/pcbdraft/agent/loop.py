@@ -23,7 +23,7 @@ Usage:
 # IMPORTANT: hermes_bootstrap must be the very first import — UTF-8 stdio
 # on Windows.  No-op on POSIX.  See hermes_bootstrap.py for full rationale.
 try:
-    import pcbdraft.core.stdio as hermes_bootstrap  # noqa: F401
+    import pcbdraft.core.stdio as pcbdraft_bootstrap  # noqa: F401
 except ModuleNotFoundError:
     # Graceful fallback when hermes_bootstrap isn't registered in the venv
     # yet — happens during partial ``hermes update`` where git-reset landed
@@ -119,7 +119,7 @@ from pcbdraft.agent.process_bootstrap import (
     _get_proxy_for_base_url,
     _SafeWriter,
 )
-from pcbdraft.model.env_loader import load_hermes_dotenv
+from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 from pcbdraft.model.timeouts import (
     get_provider_request_timeout,
     get_provider_stale_timeout,
@@ -127,7 +127,7 @@ from pcbdraft.model.timeouts import (
 
 _runtime_home = get_runtime_home()
 _project_env = Path(__file__).parent / ".env"
-_loaded_env_paths = load_hermes_dotenv(
+_loaded_env_paths = load_pcbdraft_dotenv(
     runtime_home=_runtime_home, project_env=_project_env
 )
 if _loaded_env_paths:
@@ -323,10 +323,10 @@ _QWEN_CODE_VERSION = "0.14.1"
 
 def _routermint_headers() -> dict:
     """Return the User-Agent RouterMint needs to avoid Cloudflare 1010 blocks."""
-    from pcbdraft.interfaces.tui import __version__ as _HERMES_VERSION
+    from pcbdraft.interfaces.tui import __version__ as _PCBDRAFT_VERSION
 
     return {
-        "User-Agent": f"HermesAgent/{_HERMES_VERSION}",
+        "User-Agent": f"PCBDraft/{_PCBDRAFT_VERSION}",
     }
 
 
@@ -373,7 +373,7 @@ def _safe_session_filename_component(session_id: str) -> str:
 
     Session IDs can originate from untrusted input (e.g. the
     ``X-Hermes-Session-Id`` API header) and are otherwise interpolated raw
-    into on-disk artifact filenames under ``~/.hermes/sessions/``.  Without
+    into on-disk artifact filenames under ``<PCBDRAFT_RUNTIME_HOME>/sessions/``. Without
     sanitization, a traversal-shaped ID such as ``../../../../etc/pwned``
     would let a caller write the session snapshot / request dump outside the
     sessions directory.  This collapses every non ``[A-Za-z0-9_-]`` character
@@ -441,7 +441,7 @@ class AIAgent:
     """
 
     _TOOL_CALL_ARGUMENTS_CORRUPTION_MARKER = (
-        "[hermes-agent: tool call arguments were corrupted in this session and "
+        "[pcbdraft: tool call arguments were corrupted in this session and "
         "have been dropped to keep the conversation alive. See issue #15236.]"
     )
 
@@ -2761,7 +2761,7 @@ class AIAgent:
                 marker in str(current).lower() for marker in network_resolution_markers
             ):
                 return (
-                    "Hermes can't reach the model provider. You may be offline. "
+                    "PCBDraft can't reach the model provider. You may be offline. "
                     "Check your internet connection and try again."
                 )
             current = current.__cause__ or current.__context__
@@ -3217,7 +3217,7 @@ class AIAgent:
 
         Gated by ``sessions.write_json_snapshots`` (default False).  state.db
         is the canonical message store; this writer exists only for users
-        whose external tooling consumes ``~/.hermes/sessions/session_{sid}.json``
+        whose external tooling consumes ``<PCBDRAFT_RUNTIME_HOME>/sessions/session_{sid}.json``
         directly.  When the flag is off this is a fast no-op.
 
         When enabled, rewrites the snapshot after every persistence point with
@@ -3823,7 +3823,7 @@ class AIAgent:
         path and any path echoed inside the tool's error preview — is
         backtick-wrapped via ``_neutralize_footer_paths`` so the gateway's
         bare-path media extractor can never auto-attach a protected file
-        (e.g. ``~/.hermes/config.yaml``) to a messaging channel (#35584).
+        (e.g. the runtime ``config.yaml``) to a messaging channel (#35584).
         """
         if not failed:
             return ""
@@ -4000,7 +4000,7 @@ class AIAgent:
                 )
             if cause == "turn_lease":
                 return (
-                    prefix + "the turn was stopped because another Hermes process "
+                    prefix + "the turn was stopped because another PCBDraft process "
                     "took over this session. Your reply was not saved — wait "
                     "for the other process to finish, then send your message "
                     "again."
@@ -4008,7 +4008,7 @@ class AIAgent:
             if cause == "locked":
                 return (
                     prefix + "the turn was stopped because session storage was busy "
-                    "(another Hermes process was writing to the state "
+                    "(another PCBDraft process was writing to the state "
                     "database). Your message should already be saved — "
                     "please send it again in a moment."
                 )
@@ -4018,10 +4018,10 @@ class AIAgent:
                     "reported structural corruption (the transcript would "
                     "have been lost on restart). Freeing disk space will "
                     "not help. Recovery options:\n"
-                    "1. Run `hermes doctor --fix`\n"
-                    '2. Salvage with: sqlite3 ~/.hermes/state.db ".recover" '
+                    "1. Run `pcbdraft doctor`\n"
+                    '2. Salvage with sqlite3 on the runtime state.db using ".recover" '
                     "(then replace state.db)\n"
-                    "3. Restore from a backup in ~/.hermes/backups/\n"
+                    "3. Restore from a backup in <PCBDRAFT_RUNTIME_HOME>/backups/\n"
                     "Then send your message again."
                 )
             if cause == "disk":
@@ -4035,7 +4035,7 @@ class AIAgent:
             return (
                 prefix + "the turn was stopped because session storage could not be "
                 "written (the transcript would have been lost on restart). "
-                "Check the state database health (`hermes doctor`), then "
+                "Check the state database health (`pcbdraft doctor`), then "
                 "send your message again."
             )
         # Unknown/diagnostic-only reasons (e.g. "unknown", guardrail_halt
@@ -6066,7 +6066,7 @@ class AIAgent:
         return True
 
     def _try_refresh_env_client_credentials(self) -> bool:
-        """Adopt ~/.hermes/.env credential/base-url edits at the turn boundary.
+        """Adopt runtime .env credential/base-url edits at the turn boundary.
 
         A Settings save (desktop ``PUT /api/env``, ``hermes setup``) updates
         ``.env`` and the *saving* process's os.environ, but a live session
@@ -6528,9 +6528,9 @@ class AIAgent:
             )
         elif base_url_host_matches(base_url, "x.ai"):
             # Cover both provider=xai and provider=xai-oauth (api.x.ai).
-            from pcbdraft.tools.xai_http import hermes_xai_default_headers
+            from pcbdraft.tools.xai_http import pcbdraft_xai_default_headers
 
-            self._client_kwargs["default_headers"] = hermes_xai_default_headers()
+            self._client_kwargs["default_headers"] = pcbdraft_xai_default_headers()
         else:
             # No URL-specific headers — check profile.default_headers before clearing.
             _ph_headers = None
@@ -8969,12 +8969,12 @@ class AIAgent:
                     _lease_waited = True
                     if elapsed < 1.0:
                         self._emit_status(
-                            "⏳ Another Hermes process is using this session; "
+                            "⏳ Another PCBDraft process is using this session; "
                             "waiting for it to finish before starting your turn..."
                         )
                     else:
                         self._emit_status(
-                            "⏳ Still waiting for the other Hermes process on "
+                            "⏳ Still waiting for the other PCBDraft process on "
                             f"this session ({int(elapsed)}s)..."
                         )
 
@@ -8993,7 +8993,7 @@ class AIAgent:
                         )
                         relay_outcome = "cancelled"
                         interrupt_msg = (
-                            "Stopped waiting for another Hermes process on "
+                            "Stopped waiting for another PCBDraft process on "
                             "this session. Your message was not processed."
                         )
                         interrupt_result = {
@@ -9019,7 +9019,7 @@ class AIAgent:
                     # enter load/run/flush, and surface a resend notice instead
                     # of a bare TimeoutError that looks like a hang.
                     timeout_msg = (
-                        "⏳ Another Hermes process kept this session busy too "
+                        "⏳ Another PCBDraft process kept this session busy too "
                         "long. Your message was not processed - wait for the "
                         "other process to finish, then send it again."
                     )

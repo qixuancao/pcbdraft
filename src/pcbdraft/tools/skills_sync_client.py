@@ -303,7 +303,7 @@ def dev_gate_open() -> bool:
 # ---------------------------------------------------------------------------
 
 #: Production Skill Sync plane. Overridable per the resolution order below.
-DEFAULT_SYNC_BASE_URL = "https://gateway-gateway.nousresearch.com"
+DEFAULT_SYNC_BASE_URL = ""
 
 
 def resolve_sync_base_url() -> str | None:
@@ -1283,8 +1283,8 @@ def _check_version(caps: dict[str, Any]) -> None:
     major = ver.split(".", 1)[0]
     if major != WIRE_VERSION:
         raise SyncError(
-            f"this server speaks sync version {ver!r}, but this Hermes speaks "
-            f"{WIRE_VERSION} — update Hermes to sync with it"
+            f"this server speaks sync version {ver!r}, but this PCBDraft speaks "
+            f"{WIRE_VERSION} — use a compatible sync server"
         )
 
 
@@ -1298,7 +1298,7 @@ def push_skills(
     *,
     skill_names: list[str] | None = None,
     identity: dict[str, Any] | None = None,
-    message: str = "hermes skill sync",
+    message: str = "pcbdraft skill sync",
 ) -> dict[str, Any]:
     """Push opted-in skills to the owner's HEAD (sync contract).
 
@@ -1458,7 +1458,7 @@ def _resolve_push_conflict(
             "actual_head": actual_head,
             "message": (
                 f"{len(overlaps)} skill(s) changed on both sides; wrote "
-                f"{conflict_ref}. Resolve out-of-band (hermes sync / NAS UI)."
+                f"{conflict_ref}. Resolve through your configured sync integration."
             ),
         }
 
@@ -1662,7 +1662,7 @@ def _opted_in_rel_paths() -> list[str]:
 # ---------------------------------------------------------------------------
 
 
-def maybe_push_skills(*, message: str = "hermes skill sync") -> dict[str, Any] | None:
+def maybe_push_skills(*, message: str = "pcbdraft skill sync") -> dict[str, Any] | None:
     """Best-effort push if all gates pass. Returns a result dict or None.
     Never raises. Called from the debounced skill_manage push hook."""
     try:

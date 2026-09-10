@@ -28,7 +28,7 @@ import os
 import re
 from pathlib import Path
 
-logger = logging.getLogger("hermes.security_audit")
+logger = logging.getLogger("pcbdraft.security_audit")
 
 # Sentinel so the audit only runs once per process even if both the CLI and
 # gateway startup paths call it.
@@ -52,7 +52,7 @@ def _running_as_root() -> str | None:
     return (
         "Running as ROOT. The agent's terminal/file tools execute with full "
         "root privileges — a single prompt-injection or exposed endpoint is a "
-        "full host compromise. Run Hermes as an unprivileged user (or in a "
+        "full host compromise. Run PCBDraft as an unprivileged user (or in a "
         "sandboxed terminal backend / container with a non-root user)."
     )
 

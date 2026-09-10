@@ -106,12 +106,14 @@ def parse_blueprint(skill_md_text: str) -> BlueprintSpec | None:
     name = str(fm.get("name", "")).strip()
 
     meta = fm.get("metadata")
-    hermes = meta.get("hermes") if isinstance(meta, dict) else None
-    blueprint = hermes.get("blueprint") if isinstance(hermes, dict) else None
+    from pcbdraft.tools.legacy_metadata import read_pcbdraft_metadata
+
+    native = read_pcbdraft_metadata(meta)
+    blueprint = native.get("blueprint")
     if blueprint is None:
         return None
     if not isinstance(blueprint, dict):
-        raise BlueprintError("metadata.hermes.blueprint must be a mapping")
+        raise BlueprintError("metadata.pcbdraft.blueprint must be a mapping")
 
     schedule = str(blueprint.get("schedule", "")).strip()
     if not schedule:
@@ -293,7 +295,7 @@ def export_blueprint(
         "version": "1.0.0",
         "license": "MIT",
         "metadata": {
-            "hermes": {
+            "pcbdraft": {
                 "tags": ["blueprint", "automation"],
                 "blueprint": blueprint_block,
             }

@@ -1,26 +1,9 @@
-"""Pre-import startup fast paths — THE canonical lightweight helpers.
+"""Lightweight local startup queries using the canonical core runtime paths.
 
-This module is imported by ``hermes_cli/main.py`` BEFORE its heavy import
-wall (config, argparse tree, logging, providers). Everything here must stay
-**stdlib-only and cheap** (os/sys file probes; no yaml, no hermes_cli.config,
-no argparse). A guard test (``test_startup_fast_import_weight``) subprocess-
-imports this module and fails if any heavy module sneaks into sys.modules.
-
-Why this module exists (the bug class it kills): version-printing kept being
-reimplemented as ``*_fast()`` copies at the top of main.py (Termux first,
-then globally), each duplicating canonical logic — project-root resolution,
-container detection, profile detection. The copies drifted: eb4040242
-changed the canonical output and referenced ``PROJECT_ROOT`` inside the fast
-function, which doesn't exist yet on the fast path → the Termux fast path
-NameError'd on --version and nobody noticed. One implementation, imported
-by both the fast path and the module constants, makes that drift
-structurally impossible; the parity guard test would have caught eb4040242
-the day it landed.
-
-``hermes_cli/config.py``'s ``get_container_exec_info()`` reads the same
-``.container-mode`` file; keep the file-format assumptions here and there in
-sync (this module deliberately only PROBES existence/typos cheaply and errs
-toward the slow path, which then does the authoritative parse).
+Importing this module is side-effect free. Path queries defer to core so native
+platform defaults, explicit overrides and product-owned data migration agree.
+Historical container markers are readable metadata, not permission to launch a
+container or restart a service.
 """
 
 from __future__ import annotations
@@ -29,23 +12,25 @@ import os
 import sys
 
 __all__ = [
-    "project_root_str",
-    "is_termux_env",
-    "is_termux_fast_version_argv",
-    "is_global_fast_version_argv",
-    "is_container_startup_environment",
     "active_profile_may_override_home",
     "container_mode_may_be_active",
-    "read_openai_version",
-    "read_install_method",
+    "is_container_startup_environment",
+    "is_global_fast_version_argv",
+    "is_termux_env",
+    "is_termux_fast_version_argv",
     "print_fast_version_info",
+    "project_root_str",
+    "read_install_method",
+    "read_openai_version",
     "try_fast_version",
 ]
 
 
 def project_root_str() -> str:
-    """Repo root as a str — the single source for main.py's PROJECT_ROOT."""
-    return os.path.realpath(os.path.join(os.path.dirname(__file__), os.pardir))
+    """Installed native resource root, independent of checkout layout."""
+    from pcbdraft.core.resources import PACKAGE_ROOT
+
+    return str(PACKAGE_ROOT)
 
 
 def is_termux_env() -> bool:
@@ -92,10 +77,9 @@ def active_profile_may_override_home(runtime_root: str) -> bool:
 
 
 def _resolved_home() -> str:
-    runtime_home = os.environ.get("PCBDRAFT_RUNTIME_HOME", "").strip()
-    if runtime_home:
-        return runtime_home
-    return os.path.join(os.path.expanduser("~"), ".hermes")
+    from pcbdraft.core.runtime_environment import get_process_runtime_home
+
+    return str(get_process_runtime_home())
 
 
 def container_mode_may_be_active() -> bool:
@@ -121,7 +105,7 @@ def container_mode_may_be_active() -> bool:
             runtime_home
         )
 
-    default_home = os.path.join(os.path.expanduser("~"), ".hermes")
+    default_home = _resolved_home()
     if active_profile_may_override_home(default_home):
         return True
     return os.path.exists(os.path.join(default_home, ".container-mode"))
@@ -168,7 +152,7 @@ def read_install_method() -> str | None:
 def print_fast_version_info() -> None:
     from pcbdraft.interfaces.tui import __release_date__, __version__
 
-    print(f"Hermes Agent v{__version__} ({__release_date__})")
+    print(f"PCBDraft v{__version__} ({__release_date__})")
     print(f"Install directory: {project_root_str()}")
     install_method = read_install_method()
     if install_method:
@@ -182,11 +166,11 @@ def print_fast_version_info() -> None:
         if openai_version
         else "OpenAI SDK: Not installed"
     )
-    print("Run 'hermes version' for update status.")
+    print("Run 'pcbdraft doctor' for local runtime diagnostics.")
 
 
 def try_fast_version(argv: list[str] | None = None) -> bool:
-    """Handle ``hermes --version`` before the heavy import wall.
+    """Handle an internal version request using local metadata only.
 
     Termux keeps its historical contract (also accepts the ``version``
     subcommand + the PCBDRAFT_RUNTIME_TERMUX_DISABLE_FAST_CLI escape hatch). Everywhere
@@ -202,9 +186,7 @@ def try_fast_version(argv: list[str] | None = None) -> bool:
     if is_termux:
         if not is_termux_fast_version_argv(argv):
             return False
-    elif not is_global_fast_version_argv(argv):
-        return False
-    elif container_mode_may_be_active():
+    elif not is_global_fast_version_argv(argv) or container_mode_may_be_active():
         return False
 
     print_fast_version_info()

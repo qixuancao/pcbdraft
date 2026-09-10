@@ -712,7 +712,7 @@ class ToolRegistry:
                 return max(matches, key=len)
         # Also gate plugin modules currently loading but not yet policy-recorded
         # (defensive: a handler defined in the plugin namespace is plugin code).
-        if module_namespace.startswith("hermes_plugins."):
+        if module_namespace.startswith("pcbdraft_plugins."):
             return ".".join(module_namespace.split(".")[:2])
         return None
 
@@ -928,9 +928,9 @@ class ToolRegistry:
             if not entry.toolset.startswith("mcp-"):
                 owner = self._plugin_owner_of(entry.handler)
                 # Ownership check: bind to the plugin package root
-                # (``hermes_plugins.{name}``), not the exact module string.
-                # A handler defined in ``hermes_plugins.pkg.handlers`` is
-                # still owned by the ``hermes_plugins.pkg`` package — exact
+                # (``pcbdraft_plugins.{name}``), not the exact module string.
+                # A handler defined in ``pcbdraft_plugins.pkg.handlers`` is
+                # still owned by the ``pcbdraft_plugins.pkg`` package — exact
                 # string equality would wrongly block root-module cleanup code
                 # from removing tools registered by a submodule of the same
                 # plugin (egilewski review on #55840).

@@ -84,12 +84,12 @@ class RuntimeLintRegressionTests(unittest.TestCase):
             patch.object(runtime_environment, "_managed_node_heal_attempted", False),
             patch.object(
                 runtime_environment,
-                "hermes_managed_node_tree_present",
+                "pcbdraft_managed_node_tree_present",
                 return_value=True,
             ),
         ):
             self.assertTrue(runtime_environment._bootstrap_managed_node_posix())
-            self.assertTrue(runtime_environment.heal_hermes_managed_node())
+            self.assertTrue(runtime_environment.heal_pcbdraft_managed_node())
 
     def test_missing_shell_does_not_spawn_a_process(self) -> None:
         script = self.home / "bootstrap.sh"
@@ -124,6 +124,40 @@ class SessionDBLintRegressionTests(unittest.TestCase):
             session_db._ephemeral_child_sql, session_db_common._ephemeral_child_sql
         )
         self.assertTrue(callable(session_db.describe_skill_invocation))
+
+    def test_production_guard_blocks_native_and_profile_before_any_db_io(self) -> None:
+        root = self.home / "production" / "runtime"
+        with (
+            patch(
+                "pcbdraft.core.platform_paths.production_runtime_roots",
+                return_value=(root,),
+            ),
+            patch.object(session_db, "_in_test_context", return_value=True),
+            patch.object(session_db, "_STATE_DB_GUARD_BYPASS", False),
+            patch.dict("os.environ", {session_db._STATE_DB_GUARD_BYPASS_ENV: ""}),
+            patch.object(session_db.sqlite3, "connect") as connect,
+            patch.object(
+                Path, "read_bytes", side_effect=AssertionError("credential read")
+            ),
+        ):
+            for path in (root / "state.db", root / "profiles" / "coder" / "state.db"):
+                with (
+                    self.subTest(path=path),
+                    self.assertRaisesRegex(RuntimeError, "real PCBDraft root"),
+                ):
+                    session_db.SessionDB(path)
+            connect.assert_not_called()
+        self.assertFalse(root.exists())
+
+    def test_mixins_share_product_session_logger(self) -> None:
+        from pcbdraft.services import (
+            session_db_portability,
+            session_db_schema,
+            session_db_search,
+        )
+
+        for module in (session_db_portability, session_db_schema, session_db_search):
+            self.assertIs(module.logger, session_db.logger)
 
     def test_search_filters_sorting_and_hostile_fragments(self) -> None:
         if not self.db._fts_enabled:

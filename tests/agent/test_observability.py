@@ -26,7 +26,7 @@ from pcbdraft.model.settings import write_runtime_config
 
 
 class FakePluginContext:
-    """Minimal stand-in for the Hermes ``PluginContext`` hook registry."""
+    """Minimal stand-in for the PCBDraft ``PluginContext`` hook registry."""
 
     def __init__(self) -> None:
         self.hooks: dict[str, list] = {}
@@ -1017,7 +1017,18 @@ class NativeLifecycleTests(unittest.TestCase):
             }
             save_config(config, strip_defaults=False)
             write_runtime_config()
-            write_runtime_config()
+            config_path = Path(temporary) / "config.yaml"
+            before = config_path.stat()
+            before_bytes = config_path.read_bytes()
+            with patch(
+                "pcbdraft.model.configuration.save_config", wraps=save_config
+            ) as persist:
+                write_runtime_config()
+            persist.assert_not_called()
+            after = config_path.stat()
+            self.assertEqual(config_path.read_bytes(), before_bytes)
+            self.assertEqual(after.st_ino, before.st_ino)
+            self.assertEqual(after.st_mtime_ns, before.st_mtime_ns)
             configured = read_raw_config()
             self.assertNotIn("pcbdraft-debug", configured["plugins"]["enabled"])
             self.assertEqual(configured["model"]["default"], "board-model")

@@ -290,7 +290,7 @@ def _apply_active_turn_redirect(
     "Provider returned an empty response" storms that no retry, nudge, or
     empty-recovery branch can escape (July 2026: four sessions bricked this
     way; every reasoning-free checkpoint that week was untouched — same
-    mechanism as the ~/.hermes/prefill.json incident, 20/20 blocked with
+    mechanism as the upstream runtime prefill.json incident, 20/20 blocked with
     assistant-exposed CoT vs 0/20 without). The interrupted reasoning was
     incomplete by definition; the model regenerates it on the retried turn.
     If a future path needs to preserve interrupted thinking, carry it in a
@@ -448,7 +448,7 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> str | None:
     tool_count = len(getattr(agent, "tools", None) or [])
 
     logger.warning(
-        "Ollama runtime context too small for Hermes tool use: "
+        "Ollama runtime context too small for PCBDraft tool use: "
         "model=%s provider=%s base_url=%s runtime_context=%d "
         "minimum_context=%d estimated_request_tokens=%d tool_count=%d "
         "session=%s",
@@ -464,11 +464,11 @@ def _ollama_context_limit_error(agent: Any, request_tokens: int) -> str | None:
 
     return (
         f"Ollama loaded `{model}` with only {runtime_ctx:,} tokens of runtime "
-        f"context, but Hermes needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens "
+        f"context, but PCBDraft needs at least {MINIMUM_CONTEXT_LENGTH:,} tokens "
         "for reliable tool use.\n\n"
         "Increase the Ollama context for this model and restart/reload the "
         "model before trying again. A known-good starting point is 65,536 "
-        "tokens. In Hermes config, set `model.ollama_num_ctx: 65536` "
+        "tokens. In PCBDraft config, set `model.ollama_num_ctx: 65536` "
         "(and `model.context_length: 65536` if you also override the displayed "
         "model context). If you manage the model through an Ollama Modelfile, "
         "set `PARAMETER num_ctx 65536` there instead."
@@ -586,7 +586,7 @@ def _billing_or_entitlement_message(
                 "/model <model> --provider <provider>.",
                 # The exhaustion latch replays the stored error without issuing
                 # a request, so a real fix looks like it didn't work.
-                "Retry with a fresh credential state: `hermes auth reset anthropic`. Until "
+                "Retry with a fresh credential state using `pcbdraft connect`. Until "
                 "that cooldown clears, this error can be replayed from cache without "
                 "contacting the API.",
             ]
@@ -1159,7 +1159,7 @@ _EMPTY_TOOL_RESPONSE_NUDGE = (
 # share one trailer to keep the guidance from drifting between the two sites.
 _CONTENT_POLICY_RECOVERY_HINT = (
     "Try rephrasing the request, narrowing the context, or "
-    "adding a fallback provider with `hermes fallback add`."
+    "configuring a fallback provider (see `pcbdraft --help`)."
 )
 
 
@@ -1831,7 +1831,7 @@ def run_conversation(
                 exc_info=True,
             )
 
-    # Adopt any ~/.hermes/.env credential/base-url edits made since the last
+    # Adopt any runtime .env credential/base-url edits made since the last
     # turn — a Settings save updates .env but not this worker's client, which
     # was built at agent init (#67821). No-op when .env is unchanged.
     try:
@@ -2551,7 +2551,7 @@ def run_conversation(
             _turn_exit_reason = "ollama_runtime_context_too_small"
             append_message(messages, {"role": "assistant", "content": final_response})
             agent._emit_status(
-                "❌ Ollama runtime context is too small for Hermes tool use"
+                "❌ Ollama runtime context is too small for PCBDraft tool use"
             )
             api_call_count -= 1
             agent._api_call_count = api_call_count
@@ -3702,7 +3702,7 @@ def run_conversation(
                     )
                     _refusal_response = (
                         "⚠️  The model declined to respond to this request "
-                        "(safety refusal — not a Hermes/gateway failure).\n\n"
+                        "(safety refusal — not a PCBDraft/gateway failure).\n\n"
                         f"{_refusal_detail}\n\n"
                         f"{_CONTENT_POLICY_RECOVERY_HINT}"
                     )
@@ -5099,9 +5099,7 @@ def run_conversation(
                             f"{agent.log_prefix}   Most likely: Portal OAuth expired, account out of credits, or agent key revoked."
                         )
                     print(f"{agent.log_prefix}   Troubleshooting:")
-                    print(
-                        f"{agent.log_prefix}     • Re-authenticate: hermes auth add nous"
-                    )
+                    print(f"{agent.log_prefix}     • Re-authenticate: pcbdraft connect")
                     print(
                         f"{agent.log_prefix}     • Check credits / billing: https://portal.nousresearch.com"
                     )
@@ -5152,7 +5150,7 @@ def run_conversation(
                             f"{agent.log_prefix}   Auth method: Microsoft Entra ID (httpx event hook)"
                         )
                         print(
-                            f"{agent.log_prefix}   Run `hermes doctor` for credential-chain diagnostics, or"
+                            f"{agent.log_prefix}   Run `pcbdraft doctor` for credential-chain diagnostics, or"
                         )
                         print(
                             f"{agent.log_prefix}   `az login` if your developer session expired."
@@ -5176,7 +5174,7 @@ def run_conversation(
 
                     _dhh = _dhh_fn()
                     print(
-                        f"{agent.log_prefix}     • Check ANTHROPIC_TOKEN in {_dhh}/.env for Hermes-managed OAuth/setup tokens"
+                        f"{agent.log_prefix}     • Check ANTHROPIC_TOKEN in {_dhh}/.env for PCBDraft-managed OAuth/setup tokens"
                     )
                     print(
                         f"{agent.log_prefix}     • Check ANTHROPIC_API_KEY in {_dhh}/.env for API keys or legacy token values"
@@ -5188,10 +5186,10 @@ def run_conversation(
                         f"{agent.log_prefix}     • For Claude Code: run 'claude /login' to refresh, then retry"
                     )
                     print(
-                        f'{agent.log_prefix}     • Legacy cleanup: hermes config set ANTHROPIC_TOKEN ""'
+                        f"{agent.log_prefix}     • Legacy cleanup: clear ANTHROPIC_TOKEN in the runtime .env"
                     )
                     print(
-                        f'{agent.log_prefix}     • Clear stale keys: hermes config set ANTHROPIC_API_KEY ""'
+                        f"{agent.log_prefix}     • Clear stale ANTHROPIC_API_KEY in the runtime .env"
                     )
 
                 # Thinking block signature recovery.
@@ -5450,7 +5448,7 @@ def run_conversation(
                             f"it is missing its vendor prefix."
                         )
                         agent._buffer_vprint(
-                            f"      Did you mean '{_suggestion}'?  Re-pick it with `hermes model`."
+                            f"      Did you mean '{_suggestion}'?  Re-pick it with `pcbdraft connect`."
                         )
 
                 # Check for interrupt before deciding to retry
@@ -5828,7 +5826,7 @@ def run_conversation(
                         force=True,
                     )
                     agent._vprint(
-                        f"{agent.log_prefix}      request at ~8K tokens. Hermes' system prompt + tool schemas baseline",
+                        f"{agent.log_prefix}      request at ~8K tokens. PCBDraft's system prompt + tool schemas baseline",
                         force=True,
                     )
                     agent._vprint(
@@ -5836,11 +5834,11 @@ def run_conversation(
                         force=True,
                     )
                     agent._vprint(
-                        f"{agent.log_prefix}      Use the `copilot` provider with a Copilot subscription token (`hermes",
+                        f"{agent.log_prefix}      Use the `copilot` provider with a Copilot subscription token (`pcbdraft",
                         force=True,
                     )
                     agent._vprint(
-                        f"{agent.log_prefix}      setup` → GitHub Copilot), or pick any other provider.",
+                        f"{agent.log_prefix}      connect` → GitHub Copilot), or pick any other provider.",
                         force=True,
                     )
 
@@ -6553,7 +6551,7 @@ def run_conversation(
                                     force=True,
                                 )
                                 agent._vprint(
-                                    f"{agent.log_prefix}      2. Then run `hermes auth` to re-authenticate.",
+                                    f"{agent.log_prefix}      2. Then run `pcbdraft connect` to re-authenticate.",
                                     force=True,
                                 )
                             elif _provider == "xai-oauth":
@@ -6562,7 +6560,7 @@ def run_conversation(
                                     force=True,
                                 )
                                 agent._vprint(
-                                    f"{agent.log_prefix}      re-authenticate with xAI Grok OAuth (SuperGrok / Premium+) from `hermes model`.",
+                                    f"{agent.log_prefix}      re-authenticate with xAI Grok OAuth (SuperGrok / Premium+) from `pcbdraft connect`.",
                                     force=True,
                                 )
                             else:  # nous
@@ -6575,7 +6573,7 @@ def run_conversation(
                                     force=True,
                                 )
                                 agent._vprint(
-                                    f"{agent.log_prefix}      1. Re-authenticate: hermes portal",
+                                    f"{agent.log_prefix}      1. Re-authenticate: pcbdraft connect",
                                     force=True,
                                 )
                                 agent._vprint(
@@ -6603,7 +6601,7 @@ def run_conversation(
                                 force=True,
                             )
                             agent._vprint(
-                                f"{agent.log_prefix}      • Is the key valid? Run: hermes setup",
+                                f"{agent.log_prefix}      • Is the key valid? Run: pcbdraft connect",
                                 force=True,
                             )
                             agent._vprint(
@@ -6639,7 +6637,7 @@ def run_conversation(
                             force=True,
                         )
                         agent._vprint(
-                            f"{agent.log_prefix}        hermes fallback add   (interactive picker — same as `hermes model`)",
+                            f"{agent.log_prefix}        pcbdraft connect   (provider connection settings)",
                             force=True,
                         )
                     # TLS certificate failures are environment problems, not
@@ -6700,7 +6698,7 @@ def run_conversation(
                     if classified.reason == FailoverReason.content_policy_blocked:
                         _policy_response = (
                             "⚠️  The model provider's safety filter blocked this request "
-                            "(not a Hermes/gateway failure).\n\n"
+                            "(not a PCBDraft/gateway failure).\n\n"
                             f"Provider message: {_nonretryable_summary}\n\n"
                             f"{_CONTENT_POLICY_RECOVERY_HINT}"
                         )
@@ -6890,8 +6888,8 @@ def run_conversation(
                         agent._vprint(
                             f"{agent.log_prefix}      1. Set "
                             f"`providers.{_provider}.models.{_model}.stale_timeout_seconds: 900` "
-                            f"in `~/.hermes/config.yaml` to extend the per-call "
-                            f"timeout. (Hermes's built-in floor is 600s for "
+                            f"in the runtime `config.yaml` to extend the per-call "
+                            f"timeout. (PCBDraft's built-in floor is 600s for "
                             f"known reasoning models — if you still see this "
                             f"after raising, the upstream cap is even shorter.)",
                             force=True,

@@ -103,7 +103,7 @@ class _ProviderEntry:
 # ---------------------------------------------------------------------------
 
 
-def _make_hermes_provider_class() -> type | None:
+def _make_pcbdraft_provider_class() -> type | None:
     """Lazy-import the SDK base class and return our subclass.
 
     Wrapped in a function so this module imports cleanly even when the
@@ -114,7 +114,7 @@ def _make_hermes_provider_class() -> type | None:
     except ImportError:  # pragma: no cover — SDK required in CI
         return None
 
-    class HermesMCPOAuthProvider(OAuthClientProvider):
+    class PCBDraftMCPOAuthProvider(OAuthClientProvider):
         """OAuthClientProvider with pre-flow disk-mtime reload.
 
         Before every ``async_auth_flow`` invocation, asks the manager to
@@ -137,14 +137,14 @@ def _make_hermes_provider_class() -> type | None:
             **kwargs: Any,
         ):
             super().__init__(*args, **kwargs)
-            self._hermes_server_name = server_name
+            self._pcbdraft_server_name = server_name
             self._runtime_home = ""
             # When the client_id comes from config.yaml (pre-registered), an
             # invalid_client rejection means the *config* is wrong — deleting
             # client.json would just be re-seeded from config and re-running
             # registration can't help. Only auto-heal dynamically-registered
             # clients. See _maybe_flag_poisoned_client.
-            self._hermes_preregistered = preregistered
+            self._pcbdraft_preregistered = preregistered
 
         def _coerce_client_secret_post(self) -> None:
             """Use client_secret_post when dynamic registration returned a secret.
@@ -248,7 +248,7 @@ def _make_hermes_provider_class() -> type | None:
             ``async_auth_flow`` takes the ``can_refresh_token()`` branch,
             and the SDK quietly refreshes before the first real request.
 
-            Paired with :class:`HermesTokenStorage` persisting an absolute
+            Paired with :class:`PCBDraftTokenStorage` persisting an absolute
             ``expires_at`` timestamp (``mcp_oauth.py:set_tokens``) so the
             remaining TTL we compute here reflects real wall-clock age.
             """
@@ -263,10 +263,10 @@ def _make_hermes_provider_class() -> type | None:
             # guessed ``{server_url}/token`` path (returns 404 on most real
             # providers) and require a full browser re-authorization.
             storage = self.context.storage
-            from pcbdraft.tools.mcp_oauth import HermesTokenStorage
+            from pcbdraft.tools.mcp_oauth import PCBDraftTokenStorage
 
             if (
-                isinstance(storage, HermesTokenStorage)
+                isinstance(storage, PCBDraftTokenStorage)
                 and self.context.oauth_metadata is None
             ):
                 meta = storage.load_oauth_metadata()
@@ -275,7 +275,7 @@ def _make_hermes_provider_class() -> type | None:
                     logger.debug(
                         "MCP OAuth '%s': restored metadata from disk "
                         "(token_endpoint=%s)",
-                        self._hermes_server_name,
+                        self._pcbdraft_server_name,
                         meta.token_endpoint,
                     )
 
@@ -293,7 +293,7 @@ def _make_hermes_provider_class() -> type | None:
                     logger.debug(
                         "MCP OAuth '%s': pre-flight metadata discovery "
                         "failed (non-fatal): %s",
-                        self._hermes_server_name,
+                        self._pcbdraft_server_name,
                         exc,
                     )
 
@@ -335,7 +335,7 @@ def _make_hermes_provider_class() -> type | None:
                     except httpx.HTTPError as exc:
                         logger.debug(
                             "MCP OAuth '%s': PRM discovery to %s failed: %s",
-                            self._hermes_server_name,
+                            self._pcbdraft_server_name,
                             url,
                             exc,
                         )
@@ -360,7 +360,7 @@ def _make_hermes_provider_class() -> type | None:
                     except httpx.HTTPError as exc:
                         logger.debug(
                             "MCP OAuth '%s': ASM discovery to %s failed: %s",
-                            self._hermes_server_name,
+                            self._pcbdraft_server_name,
                             url,
                             exc,
                         )
@@ -373,14 +373,14 @@ def _make_hermes_provider_class() -> type | None:
                         # Persist immediately so a subsequent cold-load can
                         # skip discovery entirely.
                         storage = self.context.storage
-                        from pcbdraft.tools.mcp_oauth import HermesTokenStorage
+                        from pcbdraft.tools.mcp_oauth import PCBDraftTokenStorage
 
-                        if isinstance(storage, HermesTokenStorage):
+                        if isinstance(storage, PCBDraftTokenStorage):
                             storage.save_oauth_metadata(asm)
                         logger.debug(
                             "MCP OAuth '%s': pre-flight ASM discovered "
                             "token_endpoint=%s",
-                            self._hermes_server_name,
+                            self._pcbdraft_server_name,
                             asm.token_endpoint,
                         )
                         break
@@ -396,9 +396,9 @@ def _make_hermes_provider_class() -> type | None:
             if meta is None:
                 return
             storage = self.context.storage
-            from pcbdraft.tools.mcp_oauth import HermesTokenStorage
+            from pcbdraft.tools.mcp_oauth import PCBDraftTokenStorage
 
-            if not isinstance(storage, HermesTokenStorage):
+            if not isinstance(storage, PCBDraftTokenStorage):
                 return
             existing = storage.load_oauth_metadata()
             if existing is None or str(existing.token_endpoint) != str(
@@ -437,7 +437,7 @@ def _make_hermes_provider_class() -> type | None:
             back to ``hermes mcp reauth``.
             """
             try:
-                if self._hermes_preregistered:
+                if self._pcbdraft_preregistered:
                     return
                 status = getattr(response, "status_code", None)
                 if status not in (400, 401):
@@ -462,9 +462,9 @@ def _make_hermes_provider_class() -> type | None:
                     return
 
                 storage = self.context.storage
-                from pcbdraft.tools.mcp_oauth import HermesTokenStorage
+                from pcbdraft.tools.mcp_oauth import PCBDraftTokenStorage
 
-                if isinstance(storage, HermesTokenStorage):
+                if isinstance(storage, PCBDraftTokenStorage):
                     storage.poison_client_registration()
                 # Drop the in-memory client so the SDK re-registers next flow.
                 self.context.client_info = None
@@ -472,7 +472,7 @@ def _make_hermes_provider_class() -> type | None:
             except Exception as exc:  # pragma: no cover — defensive, must not throw
                 logger.debug(
                     "MCP OAuth '%s': invalid_client detection failed (non-fatal): %s",
-                    self._hermes_server_name,
+                    self._pcbdraft_server_name,
                     exc,
                 )
 
@@ -482,13 +482,13 @@ def _make_hermes_provider_class() -> type | None:
             # whatever state the SDK already has.
             try:
                 await get_manager().invalidate_if_disk_changed(
-                    self._hermes_server_name,
+                    self._pcbdraft_server_name,
                     runtime_home=self._runtime_home,
                 )
             except Exception as exc:  # pragma: no cover — defensive
                 logger.debug(
                     "MCP OAuth '%s': pre-flow disk-watch failed (non-fatal): %s",
-                    self._hermes_server_name,
+                    self._pcbdraft_server_name,
                     exc,
                 )
 
@@ -521,11 +521,11 @@ def _make_hermes_provider_class() -> type | None:
                 self._persist_oauth_metadata_if_changed()
                 return
 
-    return HermesMCPOAuthProvider
+    return PCBDraftMCPOAuthProvider
 
 
 # Cached at import time. Tested and used by :class:`MCPOAuthManager`.
-_HERMES_PROVIDER_CLS: type | None = _make_hermes_provider_class()
+_PCBDRAFT_PROVIDER_CLS: type | None = _make_pcbdraft_provider_class()
 
 
 # ---------------------------------------------------------------------------
@@ -615,7 +615,7 @@ class MCPOAuthManager:
 
         Returns None if the MCP SDK's OAuth support is unavailable.
         """
-        if _HERMES_PROVIDER_CLS is None:
+        if _PCBDRAFT_PROVIDER_CLS is None:
             logger.warning(
                 "MCP OAuth '%s': SDK auth module unavailable",
                 server_name,
@@ -625,8 +625,8 @@ class MCPOAuthManager:
         # Local imports avoid circular deps at module import time.
         from pcbdraft.tools.mcp_oauth import (
             _OAUTH_AVAILABLE,
-            HermesTokenStorage,
             OAuthNonInteractiveError,
+            PCBDraftTokenStorage,
             _build_client_metadata,
             _configure_callback_port,
             _is_interactive,
@@ -644,7 +644,7 @@ class MCPOAuthManager:
         apply_oauth_provider_defaults(
             cfg, server_name=server_name, server_url=entry.server_url
         )
-        storage = HermesTokenStorage(server_name)
+        storage = PCBDraftTokenStorage(server_name)
 
         from pcbdraft.tools.mcp_dashboard_oauth import get_dashboard_oauth_flow
 
@@ -656,8 +656,8 @@ class MCPOAuthManager:
             raise OAuthNonInteractiveError(
                 "MCP OAuth for "
                 f"'{server_name}': non-interactive environment and no "
-                "cached tokens found. Run `hermes mcp login "
-                f"{server_name}` interactively first to complete initial "
+                "cached tokens found. Use the configured MCP integration "
+                f"for {server_name} interactively first to complete initial "
                 "authorization."
             )
 
@@ -674,7 +674,7 @@ class MCPOAuthManager:
             resolved_port, timeout=float(cfg.get("timeout", 300))
         )
 
-        return _HERMES_PROVIDER_CLS(
+        return _PCBDRAFT_PROVIDER_CLS(
             server_name=server_name,
             preregistered=bool(cfg.get("client_id")),
             server_url=entry.server_url,

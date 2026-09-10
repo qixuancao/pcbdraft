@@ -53,7 +53,7 @@ def _sanitize_url(url: str | None) -> str | None:
     return None
 
 
-HOST = "hermes"
+HOST = "pcbdraft"
 
 
 def profile_host_key(profile: str | None) -> str:
@@ -68,12 +68,9 @@ def profile_host_key(profile: str | None) -> str:
 
 def _host_block(raw: dict, host: str) -> dict:
     """Return host config, accepting legacy dot-form profile host keys."""
-    hosts = raw.get("hosts") or {}
-    block = hosts.get(host, {})
-    if block or not host.startswith(f"{HOST}_"):
-        return block
-    legacy = f"{HOST}.{host[len(HOST) + 1 :]}"
-    return hosts.get(legacy, {})
+    from pcbdraft.agent.legacy_compat import read_honcho_host
+
+    return read_honcho_host(raw, host)
 
 
 def resolve_active_host() -> str:
@@ -112,7 +109,15 @@ def resolve_active_host() -> str:
         except Exception:
             pass
 
-    return profile_host
+    try:
+        from pcbdraft.agent.legacy_compat import honcho_effective_namespaces
+
+        raw = json.loads(resolve_config_path().read_text(encoding="utf-8"))
+        return honcho_effective_namespaces(raw, profile_host, existing=True)[0]
+    except (OSError, ValueError, TypeError, AttributeError):
+        from pcbdraft.agent.legacy_compat import honcho_effective_namespaces
+
+        return honcho_effective_namespaces({}, profile_host)[0]
 
 
 def resolve_global_config_path() -> Path:
@@ -125,7 +130,7 @@ def resolve_config_path() -> Path:
 
     Resolution order:
       1. $PCBDRAFT_RUNTIME_HOME/honcho.json      (profile-local, if it exists)
-      2. ~/.hermes/honcho.json          (default profile — shared host blocks live here)
+      2. <runtime-root>/honcho.json     (default profile — shared host blocks live here)
       3. ~/.honcho/config.json          (global, cross-app interop)
 
     Returns the global path if none exist (for first-time setup writes).
@@ -393,7 +398,7 @@ class HonchoClientConfig:
     """Configuration for Honcho client, resolved for a specific host."""
 
     host: str = HOST
-    workspace_id: str = "hermes"
+    workspace_id: str = "pcbdraft"
     api_key: str | None = None
     environment: str = "production"
     # Optional base URL for self-hosted Honcho (overrides environment mapping)
@@ -402,7 +407,7 @@ class HonchoClientConfig:
     timeout: float | None = None
     # Identity
     peer_name: str | None = None
-    ai_peer: str = "hermes"
+    ai_peer: str = "pcbdraft"
     # When True, ``peer_name`` wins over any gateway-supplied runtime
     # identity (Telegram UID, Discord ID, …) when resolving the user peer.
     # This keeps memory unified across platforms for single-user deployments
@@ -488,7 +493,7 @@ class HonchoClientConfig:
     sessions: dict[str, str] = field(default_factory=dict)
     # Raw global config for anything else consumers need
     raw: dict[str, Any] = field(default_factory=dict)
-    # True when Honcho was explicitly configured for this host (hosts.hermes
+    # True when Honcho was explicitly configured for this host (hosts.pcbdraft
     # block exists or enabled was set explicitly), vs auto-enabled from a
     # stray HONCHO_API_KEY env var.
     explicitly_configured: bool = False
@@ -514,7 +519,7 @@ class HonchoClientConfig:
     @classmethod
     def from_env(
         cls,
-        workspace_id: str = "hermes",
+        workspace_id: str | None = None,
         host: str | None = None,
     ) -> HonchoClientConfig:
         """Create config from environment variables (fallback)."""
@@ -531,15 +536,20 @@ class HonchoClientConfig:
             or None
         )
         timeout = _resolve_optional_float(os.environ.get("HONCHO_TIMEOUT"))
+        from pcbdraft.agent.legacy_compat import honcho_effective_namespaces
+
+        resolved_host, default_workspace, peer = honcho_effective_namespaces(
+            {}, resolved_host, existing=bool(api_key or base_url), env_only=True
+        )
         _resolved_path = resolve_config_path()
         return cls(
             host=resolved_host,
-            workspace_id=workspace_id,
+            workspace_id=workspace_id or default_workspace,
             api_key=api_key,
             environment=os.environ.get("HONCHO_ENVIRONMENT", "production"),
             base_url=base_url,
             timeout=timeout,
-            ai_peer=resolved_host,
+            ai_peer=peer,
             enabled=bool(api_key or base_url),
             config_path=_resolved_path,
             runtime_home=get_runtime_home(),
@@ -568,14 +578,17 @@ class HonchoClientConfig:
             logger.warning("Failed to read %s: %s, falling back to env", path, e)
             return cls.from_env(host=resolved_host)
 
+        from pcbdraft.agent.legacy_compat import honcho_effective_namespaces
+
         host_block = _host_block(raw, resolved_host)
-        # A hosts.hermes block or explicit enabled flag means the user
+        resolved_host, workspace, ai_peer = honcho_effective_namespaces(
+            raw, resolved_host, existing=True
+        )
+        # A configured host block or explicit enabled flag means the user
         # intentionally configured Honcho for this host.
         _explicitly_configured = bool(host_block) or raw.get("enabled") is True
 
         # Explicit host block fields win, then flat/global, then defaults
-        workspace = host_block.get("workspace") or raw.get("workspace") or resolved_host
-        ai_peer = host_block.get("aiPeer") or raw.get("aiPeer") or resolved_host
         api_key = (
             host_block.get("apiKey")
             or raw.get("apiKey")
@@ -1265,7 +1278,7 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
         raise ValueError(
             "Honcho API key not found. "
             "Get your API key at https://app.honcho.dev, "
-            "then run 'hermes honcho setup' or set HONCHO_API_KEY. "
+            "then review 'pcbdraft --help' or set HONCHO_API_KEY. "
             "For local instances, set HONCHO_BASE_URL instead."
         )
 
@@ -1291,7 +1304,7 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
             raise ImportError(
                 "honcho-ai is required for Honcho integration. "
                 "Install it with: pip install honcho-ai  "
-                "(or run `hermes honcho setup` to configure)."
+                "(see `pcbdraft --help` for configuration)."
             )
 
         # Allow config.yaml honcho.base_url to override the SDK's environment
@@ -1303,8 +1316,8 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
             try:
                 from pcbdraft.model.configuration import load_config
 
-                hermes_cfg = load_config()
-                honcho_cfg = hermes_cfg.get("honcho", {})
+                pcbdraft_cfg = load_config()
+                honcho_cfg = pcbdraft_cfg.get("honcho", {})
                 if isinstance(honcho_cfg, dict):
                     if not resolved_base_url:
                         resolved_base_url = _sanitize_url(

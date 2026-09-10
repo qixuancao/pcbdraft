@@ -25,7 +25,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
-from pcbdraft.tools.environments.local import hermes_subprocess_env
+from pcbdraft.core.runtime_environment import get_runtime_home
+from pcbdraft.tools.environments.local import pcbdraft_subprocess_env
 
 # Default minimum codex version we test against. The PR sets this from the
 # `codex --version` parsed at install time; bumping is a one-line change here.
@@ -87,7 +88,7 @@ class CodexAppServerClient:
         # centralized helper so Tier-1 + dynamic-internal secrets are always
         # stripped while provider creds still flow, matching copilot_acp_client
         # (#29157 sibling spawn-site gap).
-        spawn_env = hermes_subprocess_env(inherit_credentials=True)
+        spawn_env = pcbdraft_subprocess_env(inherit_credentials=True)
         if env:
             spawn_env.update(env)
         if codex_home:
@@ -107,9 +108,7 @@ class CodexAppServerClient:
                 else spawn_env.get(
                     "PCBDRAFT_RUNTIME_KANBAN_ROOT",
                     os.path.join(
-                        spawn_env.get(
-                            "PCBDRAFT_RUNTIME_HOME", os.path.expanduser("~/.hermes")
-                        ),
+                        spawn_env.get("PCBDRAFT_RUNTIME_HOME", str(get_runtime_home())),
                         "kanban",
                     ),
                 )
@@ -161,8 +160,8 @@ class CodexAppServerClient:
 
     def initialize(
         self,
-        client_name: str = "hermes",
-        client_title: str = "Hermes Agent",
+        client_name: str = "pcbdraft",
+        client_title: str = "PCBDraft",
         client_version: str = "0.1",
         capabilities: dict | None = None,
         timeout: float = 10.0,

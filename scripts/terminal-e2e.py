@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a deterministic Hermes one-shot through flat PCB tools and real KiCad."""
+"""Run a deterministic PCBDraft one-shot through flat PCB tools and real KiCad."""
 
 from __future__ import annotations
 
@@ -15,16 +15,12 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
-from typing import BinaryIO
+from typing import Any, BinaryIO
 
 import yaml
-from fake_openai_provider import E2E_API_KEY
-from fake_openai_provider import start_fake_provider
+from fake_openai_provider import E2E_API_KEY, start_fake_provider
 
-from pcbdraft.core.io import atomic_write_text
-from pcbdraft.core.io import load_json_limited
-from pcbdraft.core.io import read_text_limited
+from pcbdraft.core.io import atomic_write_text, load_json_limited, read_text_limited
 from pcbdraft.core.project import sha256_file
 from pcbdraft.core.redaction import sanitize_user_text
 
@@ -96,7 +92,7 @@ def initialize_clean_home(home: Path) -> None:
 
 
 def write_model_config(runtime_home: Path, base_url: str) -> Path:
-    """Write an isolated fake-provider config using current Hermes ownership."""
+    """Write an isolated fake-provider config in the PCBDraft runtime home."""
 
     runtime_home.mkdir(parents=True, mode=0o700)
     path = runtime_home / "config.yaml"
@@ -141,7 +137,7 @@ def _read_trace(path: Path) -> list[dict[str, Any]]:
 
 def _prepare_output(value: Path | None) -> Path:
     if value is None:
-        output = Path(tempfile.mkdtemp(prefix="pcbdraft-hermes-evidence-"))
+        output = Path(tempfile.mkdtemp(prefix="pcbdraft-evidence-"))
         output.chmod(0o700)
         return output.resolve()
     output = value.expanduser().resolve(strict=False)
@@ -196,7 +192,7 @@ def _run_bounded(
     )
     if process.stdout is None or process.stderr is None:
         _kill_process(process)
-        raise RuntimeError("failed to capture Hermes child output")
+        raise RuntimeError("failed to capture PCBDraft child output")
 
     stdout = bytearray()
     stderr = bytearray()
@@ -273,7 +269,7 @@ def _project_path(workspace: Path) -> Path:
     )
     if len(candidates) != 1:
         raise RuntimeError(
-            f"Hermes smoke must retain exactly one project, found {len(candidates)}"
+            f"PCBDraft smoke must retain exactly one project, found {len(candidates)}"
         )
     return candidates[0]
 
@@ -371,15 +367,19 @@ def _validate_run(
     provider_requests: int,
 ) -> dict[str, Any]:
     if completed.timed_out:
-        raise RuntimeError("Hermes one-shot timed out")
+        raise RuntimeError("PCBDraft one-shot timed out")
     if completed.output_limited:
-        raise RuntimeError("Hermes one-shot exceeded its output limit")
+        raise RuntimeError("PCBDraft one-shot exceeded its output limit")
     if completed.returncode != 0:
-        raise RuntimeError(f"Hermes one-shot exited with status {completed.returncode}")
+        raise RuntimeError(
+            f"PCBDraft one-shot exited with status {completed.returncode}"
+        )
     if project is None:
-        raise RuntimeError("Hermes one-shot retained no project")
+        raise RuntimeError("PCBDraft one-shot retained no project")
     if "do not establish production readiness" not in completed.stdout:
-        raise RuntimeError("Hermes final reply omitted the production-readiness limit")
+        raise RuntimeError(
+            "PCBDraft final reply omitted the production-readiness limit"
+        )
     state = _read_json(project / "project.json")
     design = project / "design"
     native_files = {
@@ -387,10 +387,10 @@ def _validate_run(
         for suffix in ("kicad_pro", "kicad_sch", "kicad_pcb")
     }
     if any(len(paths) != 1 for paths in native_files.values()):
-        raise RuntimeError("Hermes project omitted a matching native KiCad file set")
+        raise RuntimeError("PCBDraft project omitted a matching native KiCad file set")
     stems = {paths[0].stem for paths in native_files.values()}
     if len(stems) != 1:
-        raise RuntimeError("Hermes project retained mismatched KiCad file names")
+        raise RuntimeError("PCBDraft project retained mismatched KiCad file names")
     receipts = _check_receipts(project)
     last_validation = state.get("last_validation")
     if not isinstance(last_validation, dict):
@@ -406,11 +406,11 @@ def _validate_run(
         if isinstance(event.get("data"), dict)
     ]
     if sequence != list(EXPECTED_TOOLS):
-        raise RuntimeError(f"unexpected Hermes PCB tool sequence: {sequence}")
+        raise RuntimeError(f"unexpected PCBDraft PCB tool sequence: {sequence}")
     for event in tool_events:
         data = event["data"]
         if data.get("status") != "ok":
-            raise RuntimeError(f"Hermes tool execution failed: {data}")
+            raise RuntimeError(f"PCBDraft tool execution failed: {data}")
         result = _tool_result(event)
         if result.get("success") is not True:
             raise RuntimeError(f"PCBDraft tool reported failure: {result}")
@@ -445,10 +445,10 @@ def _validate_run(
             f"{provider_requests} requests instead of {len(EXPECTED_TOOLS) + 1}"
         )
     return {
-        "schema": "pcbdraft-hermes-kicad-e2e",
+        "schema": "pcbdraft-kicad-e2e",
         "version": 1,
         "fixture": "non_baseline_fixture",
-        "hermes_mode": "one_shot_quiet",
+        "pcbdraft_mode": "one_shot",
         "provider": "local-openai-compatible",
         "provider_requests": provider_requests,
         "project_id": state["id"],
@@ -473,7 +473,7 @@ def _validate_run(
     }
 
 
-def run_hermes_smoke(
+def run_pcbdraft_smoke(
     python: str,
     output: Path,
     *,
@@ -482,12 +482,12 @@ def run_hermes_smoke(
 ) -> dict[str, Any]:
     provider = start_fake_provider()
     try:
-        with tempfile.TemporaryDirectory(prefix="pcbdraft-hermes-e2e-") as temporary:
+        with tempfile.TemporaryDirectory(prefix="pcbdraft-e2e-") as temporary:
             root = Path(temporary)
             home = root / "home"
             home.mkdir(mode=0o700)
             initialize_clean_home(home)
-            runtime_home = root / "hermes"
+            runtime_home = root / "runtime"
             write_model_config(runtime_home, provider.base_url)
             workspace = root / "workspace"
             trace = root / "agent-trace.jsonl"
@@ -495,7 +495,6 @@ def run_hermes_smoke(
             for name in (
                 "PCBDRAFT_CONFIG",
                 "PCBDRAFT_HOME",
-                "PCBDRAFT_HERMES_DIR",
                 "PCBDRAFT_REPOSITORY_CONFIG",
                 "PCBDRAFT_RUNTIME_HOME",
                 "PCBDRAFT_RUNTIME_SHARED_AUTH_DIR",
@@ -506,7 +505,7 @@ def run_hermes_smoke(
                     "HOME": str(home),
                     "XDG_CONFIG_HOME": str(home / ".config"),
                     "XDG_DATA_HOME": str(home / ".local" / "share"),
-                    "PCBDRAFT_HERMES_HOME": str(runtime_home),
+                    "PCBDRAFT_RUNTIME_HOME": str(runtime_home),
                     "PCBDRAFT_REPOSITORY_CONFIG": str(root / "repository.json"),
                     "PCBDRAFT_E2E_REPOSITORY": str(workspace),
                     "PCBDRAFT_DEBUG_TRACE": "1",
@@ -546,7 +545,7 @@ def run_hermes_smoke(
                     "from pcbdraft.core.repository import configure_repository; "
                     "from pcbdraft.interfaces.terminal import launch_cli; "
                     "configure_repository(os.environ['PCBDRAFT_E2E_REPOSITORY']); "
-                    f"raise SystemExit(launch_cli({['chat', '--query', REQUEST, '--quiet']!r}))"
+                    f"raise SystemExit(launch_cli({['--query', REQUEST]!r}))"
                 ),
             ]
             completed = _run_bounded(
@@ -571,7 +570,7 @@ def run_hermes_smoke(
             )
             summary["installed_distribution"] = require_installed
             _write_text(
-                output / "hermes-e2e.json",
+                output / "pcbdraft-e2e.json",
                 json.dumps(summary, indent=2, sort_keys=True) + "\n",
             )
             return summary
@@ -592,7 +591,7 @@ def main() -> int:
     if arguments.timeout <= 0 or arguments.timeout > 900:
         raise SystemExit("timeout must be in (0, 900] seconds")
     output = _prepare_output(arguments.output)
-    summary = run_hermes_smoke(
+    summary = run_pcbdraft_smoke(
         str(python),
         output,
         timeout=arguments.timeout,
@@ -600,7 +599,7 @@ def main() -> int:
     )
     print(
         json.dumps(
-            {"report": str(output / "hermes-e2e.json"), **summary},
+            {"report": str(output / "pcbdraft-e2e.json"), **summary},
             sort_keys=True,
         )
     )

@@ -1,7 +1,7 @@
 """Nous Portal Remote Spending HTTP client (Phase 2b).
 
 Thin, fail-loud client for the four ``/api/billing/*`` endpoints the terminal
-billing screens drive. Companion to ``hermes_cli/nous_account.py`` (which owns
+billing screens drive. Companion to ``pcbdraft.interfaces.tui/nous_account.py`` (which owns
 read-only entitlement/balance) — this module owns the *write* side: buy credits,
 poll a charge, configure auto-reload.
 
@@ -15,7 +15,7 @@ Design rules:
   decide how to degrade. A raw network/HTTP error here surfaces as
   :class:`BillingError` (or a subclass) carrying the parsed server ``error`` code,
   HTTP status, ``portalUrl`` deep-link, and ``retry_after``.
-- **Auth** = the OAuth bearer JWT Hermes already holds for inference
+- **Auth** = the OAuth bearer JWT PCBDraft already holds for inference
   (``get_provider_auth_state("nous")["access_token"]``). No API-key auth on these.
 - **Portal base URL** resolves with the same precedence as the device-flow login
   (``auth.py``): ``PCBDRAFT_RUNTIME_PORTAL_BASE_URL`` → ``NOUS_PORTAL_BASE_URL`` → the
@@ -39,7 +39,7 @@ DEFAULT_PORTAL_BASE_URL = "https://portal.nousresearch.com"
 DEFAULT_TIMEOUT = 15.0
 
 # Scope the privileged billing endpoints require. Mirrored from
-# hermes_cli.auth.NOUS_BILLING_MANAGE_SCOPE (kept here too so this module has no
+# pcbdraft.interfaces.tui.auth.NOUS_BILLING_MANAGE_SCOPE (kept here too so this module has no
 # import-time dependency on the much heavier auth module).
 BILLING_MANAGE_SCOPE = "billing:manage"
 
@@ -233,7 +233,7 @@ def invalidate_cached_token() -> None:
 def _billing_not_logged_in(exc: BaseException | None = None) -> BillingAuthError:
     """Build the canonical 'not logged in' BillingAuthError (single source)."""
     err = BillingAuthError(
-        "Not logged into Nous Portal — run `hermes portal` to log in.",
+        "Not logged into Nous Portal — run `pcbdraft connect` to log in.",
         status=401,
         error="invalid_token",
     )

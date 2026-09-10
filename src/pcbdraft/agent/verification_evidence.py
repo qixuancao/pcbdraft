@@ -26,7 +26,7 @@ _MAX_OUTPUT_SUMMARY_CHARS = 2000
 _MAX_EVIDENCE_AGE_DAYS = 30
 _MAX_EVENTS_PER_SESSION_ROOT = 100
 _MAX_TOTAL_UNREFERENCED_EVENTS = 10_000
-_AD_HOC_SCRIPT_NAME_PREFIXES = ("hermes-verify-", "hermes-ad-hoc-")
+_AD_HOC_SCRIPT_NAME_PREFIXES = ("pcbdraft-verify-", "pcbdraft-ad-hoc-")
 _VERIFY_SCHEMA_VERSION = 1
 
 
@@ -588,14 +588,14 @@ def record_verify_run(
     root: str | Path,
     session_id: str | None = None,
     ok: bool,
-    command: str = "hermes verify",
+    command: str = "python -m pcbdraft.agent.verify",
     scope: str = "full",
     output: str = "",
 ) -> dict[str, Any] | None:
-    """Record a completed ``hermes verify`` run as verification evidence.
+    """Record a completed ``python -m pcbdraft.agent.verify`` run as evidence.
 
     Explicit CLI-side write: unlike :func:`record_terminal_result` there is
-    nothing to classify — the caller (the ``hermes verify`` command) already
+    nothing to classify — the caller (the verification module entrypoint) already
     knows the run was a verification pass and whether it succeeded. A passing
     run marks the workspace ``passed`` for the verify-on-stop guard exactly
     like a passing canonical test command would; a failing run records the
@@ -615,7 +615,7 @@ def record_verify_run(
     resolved = str(Path(root).resolve())
     evidence = VerificationEvidence(
         command=command,
-        canonical_command="hermes verify",
+        canonical_command="python -m pcbdraft.agent.verify",
         kind="verify",
         scope=scope if scope in {"full", "targeted"} else "full",
         status="passed" if ok else "failed",

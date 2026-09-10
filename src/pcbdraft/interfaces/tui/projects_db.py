@@ -105,7 +105,7 @@ CREATE TABLE IF NOT EXISTS discovered_repos (
 
 # Lowercase alphanumerics, hyphens, underscores; 1-64 chars; no leading
 # separator. Strict enough to stop traversal and path separators, loose enough
-# for kebab-case names like ``hermes-agent``. Display formatting (spaces,
+# for kebab-case names like ``pcbdraft``. Display formatting (spaces,
 # emoji, capitalisation) lives in ``name``; the slug is just a stable handle.
 _SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\-_]{0,63}$")
 
@@ -159,7 +159,7 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     """Open (and initialize if needed) the per-profile projects DB.
 
     WAL with DELETE fallback for network filesystems (shared helper from
-    ``hermes_state``). Schema init is idempotent (``CREATE TABLE IF NOT
+    ``pcbdraft_state``). Schema init is idempotent (``CREATE TABLE IF NOT
     EXISTS`` + additive migrations) and cached per-path per-process.
     """
     path = db_path if db_path is not None else projects_db_path()

@@ -188,9 +188,9 @@ def _format_changed_paths(paths: list[str]) -> str:
 
 
 def _workspace_has_runnable_recipe(root: Any) -> bool:
-    """Whether the workspace has a runtime verify recipe ``hermes verify`` can run.
+    """Whether the workspace has a recipe the verification module can run.
 
-    True when a saved ``.hermes/environment.json`` manifest exists, or when
+    True when a saved ``.pcbdraft/environment.json`` manifest exists, or when
     cheap static detection (:func:`agent.verify.recipes.detect_recipe`) finds a
     recipe with a start command. Deliberately fail-silent and cheap — this only
     decorates the nudge text; it must never break or slow the nudge path.
@@ -281,7 +281,7 @@ def build_verify_on_stop_nudge(
         if _workspace_has_runnable_recipe(facts.get("root")):
             command_instruction += (
                 " For a full check including a runtime boot (build + test + "
-                "start + readiness), prefer `hermes verify --json` — a passing "
+                "start + readiness), prefer `python -m pcbdraft.agent.verify --json` — a passing "
                 "run records verification evidence for this workspace."
             )
     else:
@@ -289,7 +289,7 @@ def build_verify_on_stop_nudge(
         if _workspace_has_runnable_recipe(facts.get("root")):
             command_instruction = (
                 "No canonical test/lint/build command was detected, but the "
-                "project has a runnable verification recipe. Run `hermes verify "
+                "project has a runnable verification recipe. Run `python -m pcbdraft.agent.verify "
                 "--json` (detect -> build -> test -> boot -> readiness poll); a "
                 "passing run records verification evidence for this workspace. "
                 "Read any failure, repair the code, and summarize what passed."
@@ -298,7 +298,7 @@ def build_verify_on_stop_nudge(
             command_instruction = (
                 "No canonical test/lint/build command was detected. Create a focused "
                 f"temporary verification script under `{temp_dir}` using an OS-safe "
-                "`tempfile` path with a `hermes-verify-` filename prefix, run it "
+                "`tempfile` path with a `pcbdraft-verify-` filename prefix, run it "
                 "against the changed behavior, clean it up when possible, and "
                 "summarize it explicitly as ad-hoc verification rather than suite "
                 "green."

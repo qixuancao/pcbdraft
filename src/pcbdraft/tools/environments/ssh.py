@@ -67,7 +67,7 @@ class SSHEnvironment(BaseEnvironment):
         self.port = port
         self.key_path = key_path
 
-        self.control_dir = Path(tempfile.gettempdir()) / "hermes-ssh"
+        self.control_dir = Path(tempfile.gettempdir()) / "pcbdraft-ssh"
         self.control_dir.mkdir(parents=True, exist_ok=True)
         # Keep the socket filename short and deterministic so the full path
         # stays under the 104-byte sun_path limit that macOS enforces on
@@ -82,10 +82,13 @@ class SSHEnvironment(BaseEnvironment):
         _ensure_ssh_available()
         self._establish_connection()
         self._remote_home = self._detect_remote_home()
+        self._remote_runtime_home = f"{self._remote_home.rstrip('/')}/.pcbdraft/runtime"
 
         self._ensure_remote_dirs()
         self._sync_manager = FileSyncManager(
-            get_files_fn=lambda: iter_sync_files(f"{self._remote_home}/.hermes"),
+            get_files_fn=lambda: iter_sync_files(
+                f"{self._remote_home}/.pcbdraft/runtime"
+            ),
             upload_fn=self._scp_upload,
             delete_fn=self._ssh_delete,
             bulk_upload_fn=self._ssh_bulk_upload,
@@ -176,8 +179,8 @@ class SSHEnvironment(BaseEnvironment):
     # ------------------------------------------------------------------
 
     def _ensure_remote_dirs(self) -> None:
-        """Create base ~/.hermes directory tree on remote in one SSH call."""
-        base = f"{self._remote_home}/.hermes"
+        """Create the remote .pcbdraft/runtime tree in one SSH call."""
+        base = f"{self._remote_home}/.pcbdraft/runtime"
         dirs = [base, f"{base}/skills", f"{base}/credentials", f"{base}/cache"]
         cmd = self._build_ssh_command()
         cmd.append(quoted_mkdir_command(dirs))
@@ -251,7 +254,7 @@ class SSHEnvironment(BaseEnvironment):
         if not files:
             return
 
-        base = f"{self._remote_home}/.hermes"
+        base = f"{self._remote_home}/.pcbdraft/runtime"
         parents = unique_parent_dirs(files)
         if parents:
             cmd = self._build_ssh_command()
@@ -280,7 +283,7 @@ class SSHEnvironment(BaseEnvironment):
         # OSError with winerror 1314 (privilege not held).  Catch only
         # that specific error and fall back to a plain copy; all other
         # OSErrors (e.g. disk full, bad path) are re-raised as normal.
-        with tempfile.TemporaryDirectory(prefix="hermes-ssh-bulk-") as staging:
+        with tempfile.TemporaryDirectory(prefix="pcbdraft-ssh-bulk-") as staging:
             for host_path, remote_path in files:
                 try:
                     rel_remote = os.path.relpath(remote_path, base)
@@ -374,10 +377,10 @@ class SSHEnvironment(BaseEnvironment):
         logger.debug("SSH: bulk-uploaded %d file(s) via tar pipe", len(files))
 
     def _ssh_bulk_download(self, dest: Path) -> None:
-        """Download remote .hermes/ as a tar archive."""
+        """Download remote .pcbdraft/runtime/ as a tar archive."""
         # Tar from / with the full path so archive entries preserve absolute
-        # paths (e.g. home/user/.hermes/skills/f.py), matching _pushed_hashes keys.
-        rel_base = f"{self._remote_home}/.hermes".lstrip("/")
+        # paths matching the upload-side _pushed_hashes keys.
+        rel_base = f"{self._remote_home}/.pcbdraft/runtime".lstrip("/")
         ssh_cmd = self._build_ssh_command()
         ssh_cmd.append(f"tar cf - -C / {shlex.quote(rel_base)}")
         with open(dest, "wb") as f:

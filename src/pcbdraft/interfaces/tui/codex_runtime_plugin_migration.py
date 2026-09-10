@@ -1,4 +1,4 @@
-"""Migrate Hermes' MCP server config and Codex's installed curated plugins
+"""Migrate PCBDraft' MCP server config and Codex's installed curated plugins
 to the format Codex expects in ~/.codex/config.toml.
 
 When the user enables the codex_app_server runtime, the codex subprocess
@@ -7,7 +7,7 @@ Asana, plus per-account ChatGPT apps via app/list). For both of those to
 be useful, the user's choices need to be visible to codex too. This
 module:
 
-  1. Reads Hermes' YAML and writes equivalent [mcp_servers.<name>]
+  1. Reads PCBDraft' YAML and writes equivalent [mcp_servers.<name>]
      entries to ~/.codex/config.toml.
   2. Queries codex's `plugin/list` for the openai-curated marketplace
      and writes [plugins."<name>@<marketplace>"] entries for any plugin
@@ -19,17 +19,17 @@ module:
      don't get an approval prompt on every write attempt.
 
 What translates (MCP servers):
-  Hermes mcp_servers.<n>.command/args/env  → codex stdio transport
-  Hermes mcp_servers.<n>.url/headers       → codex streamable_http transport
-  Hermes mcp_servers.<n>.timeout           → codex tool_timeout_sec
-  Hermes mcp_servers.<n>.connect_timeout   → codex startup_timeout_sec
+  PCBDraft mcp_servers.<n>.command/args/env  → codex stdio transport
+  PCBDraft mcp_servers.<n>.url/headers       → codex streamable_http transport
+  PCBDraft mcp_servers.<n>.timeout           → codex tool_timeout_sec
+  PCBDraft mcp_servers.<n>.connect_timeout   → codex startup_timeout_sec
 
 What does NOT translate (warned + skipped):
-  Hermes-specific keys (sampling, etc.) — codex's MCP client has no
+  PCBDraft-specific keys (sampling, etc.) — codex's MCP client has no
   equivalent. Listed in the per-server skipped[] field of the report.
 
 What's NOT migrated (intentional):
-  AGENTS.md — codex respects this file natively in its cwd. Hermes' own
+  AGENTS.md — codex respects this file natively in its cwd. PCBDraft' own
   AGENTS.md (project-level) is already in the worktree, so codex picks
   it up without translation. No code needed.
 """
@@ -47,8 +47,12 @@ logger = logging.getLogger(__name__)
 
 # Marker comments wrapping the managed section so re-runs can detect
 # what's ours and what's user-edited. Both must appear or strip is a no-op.
-MIGRATION_MARKER = "# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section"
-MIGRATION_END_MARKER = "# end hermes-agent managed section"
+MIGRATION_MARKER = "# managed by pcbdraft — model connection regenerates this section"
+MIGRATION_END_MARKER = "# end pcbdraft managed section"
+# Read-only recognition of previously generated sections. Never claim ownership
+# of unmarked MCP servers, plugin tables, or permission settings.
+LEGACY_MIGRATION_MARKER = "# managed by hermes-agent — `hermes codex-runtime migrate` regenerates this section"
+LEGACY_MIGRATION_END_MARKER = "# end hermes-agent managed section"
 
 
 @dataclass
@@ -78,7 +82,7 @@ class MigrationReport:
                 note = f" (skipped: {', '.join(skipped)})" if skipped else ""
                 lines.append(f"  - {name}{note}")
         else:
-            lines.append("No MCP servers found in Hermes config.")
+            lines.append("No MCP servers found in PCBDraft config.")
         if self.migrated_plugins:
             lines.append(
                 f"Migrated {len(self.migrated_plugins)} native Codex plugin(s):"
@@ -96,10 +100,10 @@ class MigrationReport:
         return "\n".join(lines)
 
 
-# Hermes keys that codex's MCP schema doesn't support — dropped during
+# PCBDraft keys that codex's MCP schema doesn't support — dropped during
 # migration with a warning. Anything not on the keep list AND not the
 # transport keys is added to skipped.
-_KNOWN_HERMES_KEYS = {
+_KNOWN_PCBDRAFT_KEYS = {
     # transport — stdio
     "command",
     "args",
@@ -119,25 +123,27 @@ _KNOWN_HERMES_KEYS = {
 
 # Subset that have a direct codex equivalent.
 _KEYS_DROPPED_WITH_WARNING = {
-    # Hermes' sampling subsection — codex MCP has no equivalent
+    # PCBDraft' sampling subsection — codex MCP has no equivalent
     "sampling",
 }
 
 
-def _translate_one_server(name: str, hermes_cfg: dict) -> tuple[dict | None, list[str]]:
-    """Translate one Hermes MCP server config to the codex inline-table dict
+def _translate_one_server(
+    name: str, pcbdraft_cfg: dict
+) -> tuple[dict | None, list[str]]:
+    """Translate one PCBDraft MCP server config to the codex inline-table dict
     representation. Returns (codex_entry, skipped_keys).
 
     codex_entry is a dict ready for TOML serialization, or None when the
     server can't be translated (e.g. neither command nor url present)."""
-    if not isinstance(hermes_cfg, dict):
+    if not isinstance(pcbdraft_cfg, dict):
         return None, []
 
     skipped: list[str] = []
     out: dict[str, Any] = {}
 
-    has_command = bool(hermes_cfg.get("command"))
-    has_url = bool(hermes_cfg.get("url"))
+    has_command = bool(pcbdraft_cfg.get("command"))
+    has_url = bool(pcbdraft_cfg.get("url"))
 
     if has_command and has_url:
         skipped.append("url (both command and url set; preferring stdio)")
@@ -145,51 +151,51 @@ def _translate_one_server(name: str, hermes_cfg: dict) -> tuple[dict | None, lis
 
     if has_command:
         # Stdio transport
-        out["command"] = str(hermes_cfg["command"])
-        args = hermes_cfg.get("args") or []
+        out["command"] = str(pcbdraft_cfg["command"])
+        args = pcbdraft_cfg.get("args") or []
         if args:
             out["args"] = [str(a) for a in args]
-        env = hermes_cfg.get("env") or {}
+        env = pcbdraft_cfg.get("env") or {}
         if env:
             # Codex expects string values
             out["env"] = {str(k): str(v) for k, v in env.items()}
-        cwd = hermes_cfg.get("cwd")
+        cwd = pcbdraft_cfg.get("cwd")
         if cwd:
             out["cwd"] = str(cwd)
     elif has_url:
         # streamable_http transport (codex covers both http and SSE here)
-        out["url"] = str(hermes_cfg["url"])
-        headers = hermes_cfg.get("headers") or {}
+        out["url"] = str(pcbdraft_cfg["url"])
+        headers = pcbdraft_cfg.get("headers") or {}
         if headers:
             out["http_headers"] = {str(k): str(v) for k, v in headers.items()}
-        # Hermes' transport: sse hint is informational; codex auto-negotiates
-        if hermes_cfg.get("transport") == "sse":
+        # PCBDraft' transport: sse hint is informational; codex auto-negotiates
+        if pcbdraft_cfg.get("transport") == "sse":
             skipped.append("transport=sse (codex auto-negotiates)")
     else:
         return None, ["no command or url field"]
 
     # Timeouts
-    if "timeout" in hermes_cfg:
+    if "timeout" in pcbdraft_cfg:
         try:
-            out["tool_timeout_sec"] = float(hermes_cfg["timeout"])
+            out["tool_timeout_sec"] = float(pcbdraft_cfg["timeout"])
         except (TypeError, ValueError):
             skipped.append("timeout (not numeric)")
-    if "connect_timeout" in hermes_cfg:
+    if "connect_timeout" in pcbdraft_cfg:
         try:
-            out["startup_timeout_sec"] = float(hermes_cfg["connect_timeout"])
+            out["startup_timeout_sec"] = float(pcbdraft_cfg["connect_timeout"])
         except (TypeError, ValueError):
             skipped.append("connect_timeout (not numeric)")
 
     # Enabled flag (codex defaults to true so we only emit when explicitly false)
-    if hermes_cfg.get("enabled") is False:
+    if pcbdraft_cfg.get("enabled") is False:
         out["enabled"] = False
 
     # Detect keys we explicitly drop with warning
-    for key in hermes_cfg:
+    for key in pcbdraft_cfg:
         if key in _KEYS_DROPPED_WITH_WARNING:
             skipped.append(f"{key} (no codex equivalent)")
-        elif key not in _KNOWN_HERMES_KEYS:
-            skipped.append(f"{key} (unknown Hermes key)")
+        elif key not in _KNOWN_PCBDRAFT_KEYS:
+            skipped.append(f"{key} (unknown PCBDraft key)")
 
     return out, skipped
 
@@ -261,7 +267,7 @@ def render_codex_toml_section(
     """
     out = [MIGRATION_MARKER]
     if not servers and not plugins and not default_permission_profile:
-        out.append("# (no MCP servers, plugins, or permissions configured by Hermes)")
+        out.append("# (no MCP servers, plugins, or permissions configured by PCBDraft)")
         out.append(MIGRATION_END_MARKER)
         return "\n".join(out) + "\n"
 
@@ -305,7 +311,7 @@ def render_codex_toml_section(
 
 
 def _insert_managed_block_at_top_level(user_text: str, managed_block: str) -> str:
-    """Insert Hermes' managed Codex TOML block while keeping root keys root-scoped.
+    """Insert PCBDraft' managed Codex TOML block while keeping root keys root-scoped.
 
     TOML has no syntax to return to the document root after a table header.
     Therefore appending a root key like `default_permissions = ...` after a
@@ -335,72 +341,6 @@ def _insert_managed_block_at_top_level(user_text: str, managed_block: str) -> st
     return f"{managed_block}\n{suffix}"
 
 
-def _strip_unmanaged_plugin_tables(toml_text: str) -> str:
-    """Remove ``[plugins."<name>@<marketplace>"]`` tables that live OUTSIDE the
-    managed block.
-
-    Codex itself writes these tables when the user runs ``codex plugins enable``
-    directly (i.e. before Hermes' migrate has ever touched the file). When we
-    later run migrate, ``_query_codex_plugins()`` reports the same plugins via
-    the live ``plugin/list`` RPC and we re-emit them inside the managed block.
-    The result without this strip is duplicate ``[plugins."X@Y"]`` table
-    headers — codex's strict TOML parser then refuses to load the file.
-
-    We own the ``[plugins.*]`` namespace once migrate has run, so dropping any
-    pre-existing ``[plugins.*]`` tables is safe: ``plugin/list`` is the source
-    of truth for what's actually installed. The caller is expected to only
-    invoke this strip when ``plugin/list`` succeeded — otherwise we'd lose
-    plugins the user installed via ``codex`` without a way to re-emit them.
-
-    Behavior:
-      * Lines beginning with ``[plugins.`` start a swallow region that ends at
-        the next non-``[plugins.`` table header or end-of-file.
-      * Content inside the managed block is untouched (callers should run
-        ``_strip_existing_managed_block`` first so the managed block has
-        already been removed when this runs).
-    """
-    lines = toml_text.splitlines(keepends=True)
-    out: list[str] = []
-    in_plugin_table = False
-    for line in lines:
-        stripped = line.lstrip()
-        # Only treat a line as a table header when it has the shape
-        # ``[...]`` (optionally followed by a comment). Multi-line array
-        # continuations like ``["nested"],`` also start with ``[`` after
-        # lstrip but are not headers — without this guard they would
-        # falsely flip ``in_plugin_table`` to False mid-table and leak
-        # array fragments into the output.
-        if _looks_like_table_header(stripped):
-            in_plugin_table = stripped.startswith("[plugins.")
-            if in_plugin_table:
-                continue
-        if in_plugin_table:
-            # Swallow keys/comments/blanks until the next table header.
-            continue
-        out.append(line)
-    return "".join(out)
-
-
-def _looks_like_table_header(stripped_line: str) -> bool:
-    """Return True if ``stripped_line`` is a TOML table header.
-
-    A header has the shape ``[name]`` or ``[[name]]`` (array-of-tables),
-    optionally followed by a comment. The closing ``]`` (or ``]]``) must
-    appear on the same line, and no key-assignment ``=`` can precede it.
-    This distinguishes real headers from multi-line array continuation
-    lines that also start with ``[`` after ``lstrip()``.
-    """
-    if not stripped_line.startswith("["):
-        return False
-    # Drop trailing comment so e.g. ``[features]  # note`` still matches.
-    head = stripped_line.split("#", 1)[0].rstrip()
-    if not head.endswith("]"):
-        return False
-    # ``key = [x]`` would have an ``=`` before the bracket; a header doesn't.
-    bracket_idx = head.index("]")
-    return "=" not in head[: bracket_idx + 1]
-
-
 def _strip_existing_managed_block(toml_text: str) -> str:
     """Remove any prior managed section so re-runs idempotently replace it.
 
@@ -408,46 +348,36 @@ def _strip_existing_managed_block(toml_text: str) -> str:
     MIGRATION_END_MARKER (end), inclusive of both markers. User-edited
     sections above or below are preserved verbatim.
 
-    Backward compatibility: if the start marker is found but no end marker
-    follows, we fall back to the heuristic that swallows lines until we
-    hit a section that's not [mcp_servers.*]/[plugins.*]/[permissions]/
-    a `default_permissions =` key. This matches what older versions of
-    this code wrote so re-runs don't break configs from prior Hermes
-    versions."""
+    Recognize complete legacy marker pairs too. An incomplete block is
+    ambiguous: stop the migration without writing rather than swallowing
+    user tables based on a namespace heuristic.
+    """
     lines = toml_text.splitlines(keepends=True)
+    marker_pairs = {
+        MIGRATION_MARKER: MIGRATION_END_MARKER,
+        LEGACY_MIGRATION_MARKER: LEGACY_MIGRATION_END_MARKER,
+    }
     out: list[str] = []
-    in_managed = False
-    saw_end_marker = False
-    for line in lines:
-        line_stripped_nl = line.rstrip("\n")
-        if line_stripped_nl == MIGRATION_MARKER:
-            in_managed = True
-            saw_end_marker = False
+    index = 0
+    while index < len(lines):
+        end_marker = marker_pairs.get(lines[index].rstrip("\r\n"))
+        if end_marker is None:
+            out.append(lines[index])
+            index += 1
             continue
-        if in_managed:
-            if line_stripped_nl == MIGRATION_END_MARKER:
-                in_managed = False
-                saw_end_marker = True
-                continue
-            stripped = line.lstrip()
-            if (
-                not saw_end_marker
-                and stripped.startswith("[")
-                and not (
-                    stripped.startswith("[mcp_servers")
-                    or stripped.startswith("[plugins")
-                    or stripped.startswith("[permissions]")
-                    or stripped.startswith("[permissions.")
-                )
-            ):
-                # Old-format managed block without end marker: bail back
-                # to user content as soon as we see a non-managed section.
-                in_managed = False
-                out.append(line)
-                continue
-            # Otherwise swallow the line.
-            continue
-        out.append(line)
+        end = next(
+            (
+                i
+                for i in range(index + 1, len(lines))
+                if lines[i].rstrip("\r\n") == end_marker
+            ),
+            None,
+        )
+        if end is None:
+            raise ValueError(
+                "Incomplete managed Codex section; repair its end marker before migration."
+            )
+        index = end + 1
     return "".join(out)
 
 
@@ -475,7 +405,7 @@ def _query_codex_plugins(
         with CodexAppServerClient(
             codex_home=str(codex_home) if codex_home else None
         ) as client:
-            client.initialize(client_name="hermes-migration")
+            client.initialize(client_name="pcbdraft-migration")
             resp = client.request("plugin/list", {}, timeout=timeout)
     except Exception as exc:
         return [], f"plugin/list query failed: {exc}"
@@ -543,10 +473,10 @@ def _looks_like_test_tempdir(path: str) -> bool:
     macOS routes ``/tmp`` through ``/private/var/folders/<…>/T`` which is
     what pytest's tempdir factory uses by default. If a PCBDRAFT_RUNTIME_HOME pointing
     at one of those paths is burned into ``~/.codex/config.toml``, every
-    codex-routed hermes-tools call fails silently once the directory is GC'd.
+    codex-routed pcbdraft-tools call fails silently once the directory is GC'd.
 
     We err on the side of refusing — losing a (very unlikely) real
-    ``~/.hermes`` symlink that happens to live under ``/private/var/folders``
+    ``~/.pcbdraft`` symlink that happens to live under ``/private/var/folders``
     is much less harmful than silently bricking codex's tool surface.
     """
     if not path:
@@ -561,13 +491,13 @@ def _looks_like_test_tempdir(path: str) -> bool:
     return any(needle in normalized for needle in needles)
 
 
-def _build_hermes_tools_mcp_entry() -> dict:
-    """Build the codex stdio-transport entry that launches Hermes' own
+def _build_pcbdraft_tools_mcp_entry() -> dict:
+    """Build the codex stdio-transport entry that launches PCBDraft' own
     tool surface as an MCP server. Codex's subprocess will call back into
     this for browser/web/delegate_task/vision/memory/skills tools.
 
     The command runs the worktree's Python via the current sys.executable
-    so a hermes installed under /opt/, /usr/local/, or a venv all work.
+    so a pcbdraft installed under /opt/, /usr/local/, or a venv all work.
     PCBDRAFT_RUNTIME_HOME and PYTHONPATH are passed through so the spawned process
     sees the same config + module layout the user is running."""
     import sys
@@ -591,7 +521,7 @@ def _build_hermes_tools_mcp_entry() -> dict:
         runtime_home = ""
     if runtime_home:
         env["PCBDRAFT_RUNTIME_HOME"] = runtime_home
-    # PYTHONPATH passes through so a worktree-launched hermes finds the
+    # PYTHONPATH passes through so a worktree-launched pcbdraft finds the
     # branch's modules instead of the installed package.
     pythonpath = os.environ.get("PYTHONPATH")
     if pythonpath:
@@ -604,7 +534,7 @@ def _build_hermes_tools_mcp_entry() -> dict:
 
     out: dict[str, Any] = {
         "command": sys.executable,
-        "args": ["-m", "agent.transports.tools_mcp_server"],
+        "args": ["-m", "pcbdraft.model.transports.tools_mcp_server"],
     }
     if env:
         out["env"] = env
@@ -616,19 +546,19 @@ def _build_hermes_tools_mcp_entry() -> dict:
 
 
 def migrate(
-    hermes_config: dict,
+    pcbdraft_config: dict,
     *,
     codex_home: Path | None = None,
     dry_run: bool = False,
     discover_plugins: bool = True,
     default_permission_profile: str | None = ":workspace",
-    expose_hermes_tools: bool = True,
+    expose_pcbdraft_tools: bool = True,
 ) -> MigrationReport:
-    """Translate Hermes mcp_servers config + Codex curated plugins into
+    """Translate PCBDraft mcp_servers config + Codex curated plugins into
     ~/.codex/config.toml.
 
     Args:
-        hermes_config: full ~/.hermes/config.yaml dict
+        pcbdraft_config: full ~/.pcbdraft/config.yaml dict
         codex_home: override CODEX_HOME (defaults to ~/.codex)
         dry_run: skip the actual write; report what would happen
         discover_plugins: when True (default), query `plugin/list` against
@@ -644,10 +574,10 @@ def migrate(
             configured in their own [permissions.<name>] table. Set None
             to leave permissions unset and let codex use its compiled-in
             default (which is read-only).
-        expose_hermes_tools: when True (default), register Hermes' own
+        expose_pcbdraft_tools: when True (default), register PCBDraft' own
             tool surface (web_search, browser_*, delegate_task, vision,
             memory, skills, etc.) as an MCP server in ~/.codex/config.toml
-            so the codex subprocess can call back into Hermes for tools
+            so the codex subprocess can call back into PCBDraft for tools
             codex doesn't have built in. Set False to opt out.
     """
     report = MigrationReport(dry_run=dry_run)
@@ -655,15 +585,15 @@ def migrate(
     target = codex_home / "config.toml"
     report.target_path = target
 
-    hermes_servers = (hermes_config or {}).get("mcp_servers") or {}
-    if not isinstance(hermes_servers, dict):
+    pcbdraft_servers = (pcbdraft_config or {}).get("mcp_servers") or {}
+    if not isinstance(pcbdraft_servers, dict):
         report.errors.append(
-            "mcp_servers in Hermes config is not a dict; cannot migrate."
+            "mcp_servers in PCBDraft config is not a dict; cannot migrate."
         )
         return report
 
     translated: dict[str, dict] = {}
-    for name, cfg in hermes_servers.items():
+    for name, cfg in pcbdraft_servers.items():
         out, skipped = _translate_one_server(str(name), cfg or {})
         if out is None:
             report.errors.append(
@@ -678,16 +608,10 @@ def migrate(
     # Discover installed Codex curated plugins. Best-effort — never blocks
     # the migration if codex is unreachable or the RPC fails.
     plugins: list[dict] = []
-    plugin_query_succeeded = False
     if discover_plugins and not dry_run:
         plugins, plugin_err = _query_codex_plugins(codex_home=codex_home)
         if plugin_err:
             report.plugin_query_error = plugin_err
-        else:
-            # plugin/list returned authoritatively (even if the list is empty).
-            # That means we own [plugins.*] for this re-render and can safely
-            # strip any pre-existing tables outside the managed block.
-            plugin_query_succeeded = True
         for p in plugins:
             report.migrated_plugins.append(f"{p['name']}@{p['marketplace']}")
 
@@ -696,44 +620,54 @@ def migrate(
     if default_permission_profile:
         report.wrote_permissions_default = default_permission_profile
 
-    # Inject Hermes' own tool surface as an MCP server so the spawned
-    # codex subprocess can call back into Hermes for the tools codex
+    # Inject PCBDraft' own tool surface as an MCP server so the spawned
+    # codex subprocess can call back into PCBDraft for the tools codex
     # doesn't ship with — web_search, browser_*, delegate_task, vision,
     # memory, skills, session_search, image_generate, text_to_speech.
     # The server itself is agent/transports/tools_mcp_server.py
     # and is launched on demand by codex (stdio MCP).
-    if expose_hermes_tools:
-        translated["hermes-tools"] = _build_hermes_tools_mcp_entry()
-        if "hermes-tools" not in report.migrated:
-            report.migrated.append("hermes-tools")
+    if expose_pcbdraft_tools:
+        translated["pcbdraft-tools"] = _build_pcbdraft_tools_mcp_entry()
+        if "pcbdraft-tools" not in report.migrated:
+            report.migrated.append("pcbdraft-tools")
 
-    # Build the new managed block
-    managed_block = render_codex_toml_section(
-        translated,
-        plugins=plugins,
-        default_permission_profile=default_permission_profile,
-    )
+    # Parse the unowned config first. Its tables and root keys always win.
+    # This also detects malformed TOML before any write occurs.
+    import tomllib
 
-    # Read existing codex config if any, strip the prior managed block,
-    # append the new one.
+    without_managed = ""
     if target.exists():
         try:
             existing = target.read_text(encoding="utf-8")
-        except Exception as exc:
+            without_managed = _strip_existing_managed_block(existing)
+        except (OSError, ValueError) as exc:
             report.errors.append(f"could not read {target}: {exc}")
             return report
-        without_managed = _strip_existing_managed_block(existing)
-        # Bug B: when plugin/list ran authoritatively, codex's own
-        # [plugins."<name>@<marketplace>"] tables outside our managed block
-        # would survive _strip_existing_managed_block and then collide with
-        # the entries we re-emit inside the managed block — producing
-        # duplicate-table-header parse errors on codex's next startup. Drop
-        # those pre-existing tables since plugin/list is the source of truth.
-        if plugin_query_succeeded:
-            without_managed = _strip_unmanaged_plugin_tables(without_managed)
+    try:
+        user_config = tomllib.loads(without_managed)
+        user_servers = user_config.get("mcp_servers", {})
+        user_plugins = user_config.get("plugins", {})
+        translated = {
+            name: cfg for name, cfg in translated.items() if name not in user_servers
+        }
+        plugins = [
+            p for p in plugins if f"{p['name']}@{p['marketplace']}" not in user_plugins
+        ]
+        if "default_permissions" in user_config:
+            default_permission_profile = None
+        report.migrated = [name for name in report.migrated if name in translated]
+        report.migrated_plugins = [f"{p['name']}@{p['marketplace']}" for p in plugins]
+        report.wrote_permissions_default = default_permission_profile
+        managed_block = render_codex_toml_section(
+            translated,
+            plugins=plugins,
+            default_permission_profile=default_permission_profile,
+        )
         new_text = _insert_managed_block_at_top_level(without_managed, managed_block)
-    else:
-        new_text = managed_block
+        tomllib.loads(new_text)
+    except (ValueError, TypeError) as exc:
+        report.errors.append(f"could not merge {target}: {exc}")
+        return report
 
     if dry_run:
         return report

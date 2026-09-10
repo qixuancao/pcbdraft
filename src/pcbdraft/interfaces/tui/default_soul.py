@@ -1,7 +1,8 @@
 """Default SOUL.md template seeded into PCBDRAFT_RUNTIME_HOME on first run."""
 
 DEFAULT_SOUL_MD = (
-    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+    "You are PCBDraft, a local PCB design assistant for planning, editing, and "
+    "verifying KiCad projects. "
     "You are helpful, knowledgeable, and direct. You assist users with a wide "
     "range of tasks including answering questions, writing and editing code, "
     "analyzing information, creative work, and executing actions via your tools. "
@@ -22,12 +23,12 @@ DEFAULT_SOUL_MD = (
 # safety guarantee is that these strings carry zero user intent.
 _LEGACY_TEMPLATE_SOULS = (
     (
-        "# Hermes Agent Persona\n"
+        "# PCBDraft Agent Persona\n"
         "\n"
         "<!--\n"
         "This file defines the agent's personality and tone.\n"
         "The agent will embody whatever you write here.\n"
-        "Edit this to customize how Hermes communicates with you.\n"
+        "Edit this to customize how PCBDraft communicates with you.\n"
         "\n"
         "Examples:\n"
         '  - "You are a warm, playful assistant who uses kaomoji occasionally."\n'
@@ -42,17 +43,29 @@ _LEGACY_TEMPLATE_SOULS = (
     # block / trailing newline in some historical revisions; the bare scaffold
     # (no Examples block) was also shipped briefly.
     (
-        "# Hermes Agent Persona\n"
+        "# PCBDraft Agent Persona\n"
         "\n"
         "<!--\n"
         "This file defines the agent's personality and tone.\n"
         "The agent will embody whatever you write here.\n"
-        "Edit this to customize how Hermes communicates with you.\n"
+        "Edit this to customize how PCBDraft communicates with you.\n"
         "\n"
         "This file is loaded fresh each message -- no restart needed.\n"
         "Delete the contents (or this file) to use the default personality.\n"
         "-->"
     ),
+)
+
+# Exact previous factory persona only. Customized SOUL.md content must never
+# be rewritten just because it mentions the previous product or its author.
+_LEGACY_FACTORY_SOUL = (
+    "You are Hermes Agent, an intelligent AI assistant created by Nous Research. "
+    "You are helpful, knowledgeable, and direct. You assist users with a wide "
+    "range of tasks including answering questions, writing and editing code, "
+    "analyzing information, creative work, and executing actions via your tools. "
+    "You communicate clearly, admit uncertainty when appropriate, and prioritize "
+    "being genuinely useful over being verbose unless otherwise directed below. "
+    "Be targeted and efficient in your exploration and investigations."
 )
 
 
@@ -73,4 +86,9 @@ def is_legacy_template_soul(text: str) -> bool:
     character outside the comment) makes this return False.
     """
     normalized = _normalize_soul(text)
-    return any(normalized == _normalize_soul(t) for t in _LEGACY_TEMPLATE_SOULS)
+    templates = (
+        *_LEGACY_TEMPLATE_SOULS,
+        *(t.replace("PCBDraft", "Hermes") for t in _LEGACY_TEMPLATE_SOULS),
+        _LEGACY_FACTORY_SOUL,
+    )
+    return any(normalized == _normalize_soul(t) for t in templates)
