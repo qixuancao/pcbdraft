@@ -4,12 +4,37 @@ Import-safe module with no dependencies — can be imported from anywhere
 without risk of circular imports.
 """
 
+import logging
 import os
 import shutil
 import stat
 import sys
+import tempfile
 from contextvars import ContextVar, Token
 from pathlib import Path
+from types import TracebackType
+
+logger = logging.getLogger(__name__)
+
+
+def _exception_info_without_values() -> (
+    tuple[type[RuntimeError], RuntimeError, TracebackType | None] | None
+):
+    """Keep the failing stack and exception type, excluding exception payloads.
+
+    Config parsers and process inspectors may embed credentials or complete
+    source lines in exception text. Startup can precede redacting log handlers,
+    so these diagnostics must be safe even with a plain logging formatter.
+    Do not chain the original exception: its message would reintroduce values.
+    """
+    exc_type, _, traceback = sys.exc_info()
+    if exc_type is None:
+        return None
+    diagnostic = RuntimeError(
+        f"{exc_type.__module__}.{exc_type.__qualname__} (exception values withheld)"
+    )
+    return RuntimeError, diagnostic, traceback
+
 
 _profile_fallback_warned: bool = False
 _UNSET = object()
@@ -389,6 +414,7 @@ def node_tool_runnable(path: str | None) -> bool:
             timeout=10,
             env=with_hermes_node_path(),
             creationflags=windows_hide_flags(),
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return False
@@ -448,6 +474,10 @@ def managed_node_tree_in_use(home: Path | None = None) -> bool:
     try:
         import psutil
     except Exception:
+        logger.debug(
+            "Node process inspection unavailable",
+            exc_info=_exception_info_without_values(),
+        )
         return False
     dirs: list[str] = []
     for directory in iter_hermes_node_dirs(home):
@@ -460,11 +490,19 @@ def managed_node_tree_in_use(home: Path | None = None) -> bool:
     try:
         procs = psutil.process_iter(["exe", "cmdline"])
     except Exception:
+        logger.debug(
+            "Could not enumerate Node processes",
+            exc_info=_exception_info_without_values(),
+        )
         return False
     for proc in procs:
         try:
             info = proc.info
         except Exception:
+            logger.debug(
+                "Could not inspect a Node process",
+                exc_info=_exception_info_without_values(),
+            )
             continue
         exe = info.get("exe")
         if exe:
@@ -663,12 +701,17 @@ def _bootstrap_managed_node_posix() -> bool:
 
     import subprocess
 
+    bash = shutil.which("bash")
+    if bash is None:
+        return False
     try:
         result = subprocess.run(
             [
-                "bash",
+                bash,
                 "-c",
-                f'source "{_NODE_BOOTSTRAP_SCRIPT}" && _nb_install_bundled_node',
+                'source "$1" && _nb_install_bundled_node',
+                "hermes-node-bootstrap",
+                str(_NODE_BOOTSTRAP_SCRIPT),
             ],
             env={
                 **os.environ,
@@ -755,12 +798,17 @@ def heal_hermes_managed_node() -> bool:
 
     import subprocess
 
+    bash = shutil.which("bash")
+    if bash is None:
+        return False
     try:
         result = subprocess.run(
             [
-                "bash",
+                bash,
                 "-c",
-                f'source "{_NODE_BOOTSTRAP_SCRIPT}" && heal_managed_node',
+                'source "$1" && heal_managed_node',
+                "hermes-node-heal",
+                str(_NODE_BOOTSTRAP_SCRIPT),
             ],
             env={**os.environ, "PCBDRAFT_RUNTIME_HOME": str(get_runtime_home())},
             capture_output=True,
@@ -801,6 +849,7 @@ def _managed_node_tree_outdated(home: Path | None = None) -> bool:
                     capture_output=True,
                     timeout=10,
                     creationflags=windows_hide_flags(),
+                    check=False,
                 )
                 major = int(result.stdout.decode().strip().lstrip("v").split(".")[0])
             except (OSError, subprocess.TimeoutExpired, ValueError, IndexError):
@@ -944,6 +993,7 @@ def agent_browser_runnable(path: str | None) -> bool:
             timeout=10,
             env=with_hermes_node_path(),
             creationflags=windows_hide_flags(),
+            check=False,
         )
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return False
@@ -1047,6 +1097,9 @@ def _norm_home_path(path: str | None) -> str:
     try:
         return os.path.normcase(os.path.abspath(os.path.expanduser(raw)))
     except Exception:
+        logger.debug(
+            "Home path normalization failed", exc_info=_exception_info_without_values()
+        )
         return os.path.normcase(raw)
 
 
@@ -1095,7 +1148,9 @@ def _iter_real_home_candidates(env: dict[str, str] | None = None) -> list[str]:
         if pw_home:
             candidates.append(pw_home)
     except Exception:
-        pass
+        logger.debug(
+            "Account home lookup unavailable", exc_info=_exception_info_without_values()
+        )
     userprofile = str(env.get("USERPROFILE") or os.getenv("USERPROFILE", "")).strip()
     if userprofile:
         candidates.append(userprofile)
@@ -1130,7 +1185,7 @@ def get_real_home(env: dict[str, str] | None = None) -> str:
         seen.add(key)
         if not _is_profile_home(candidate, profile_home):
             return candidate
-    return "/tmp"
+    return tempfile.gettempdir()
 
 
 def get_subprocess_home(env: dict[str, str] | None = None) -> str | None:
@@ -1456,6 +1511,7 @@ def is_wsl() -> bool:
         with open("/proc/version", "r", encoding="utf-8") as f:
             _wsl_detected = "microsoft" in f.read().lower()
     except Exception:
+        logger.debug("WSL detection unavailable", exc_info=True)
         _wsl_detected = False
     return _wsl_detected
 
@@ -1749,8 +1805,10 @@ def partial_update_hint(exc: BaseException) -> list[str]:
         return []
     return [
         "",
-        "This looks like a partially-updated install: one module was refreshed "
-        "and a related one was not.",
+        (
+            "This looks like a partially-updated install: one module was refreshed "
+            "and a related one was not."
+        ),
         "Re-run the update to bring the whole tree to the same version:",
         "    hermes update",
         "If that also fails, reinstall: https://hermes-agent.nousresearch.com",

@@ -123,6 +123,16 @@ def _legacy_reset_child_sql(alias: str, reasons_sql: str) -> str:
     marker-stamping UPDATE so the two sites cannot drift; ``reasons_sql`` is
     either the literal ``_RESET_END_REASONS_SQL`` or a bound-placeholder list.
     """
+    # Only internal aliases and the canonical reason list (literal or bound)
+    # are accepted. Neither SQL identifiers nor SQL fragments are user data.
+    if alias not in {"{a}", "child"}:
+        raise ValueError("Unsupported reset-child SQL alias")
+    if reasons_sql not in {
+        _RESET_END_REASONS_SQL,
+        ",".join("?" for _ in _RESET_END_REASONS),
+        ", ".join("?" for _ in _RESET_END_REASONS),
+    }:
+        raise ValueError("Unsupported reset-child SQL reasons")
     return (
         f"EXISTS (SELECT 1 FROM sessions p"
         f"            WHERE p.id = {alias}.parent_session_id"
@@ -154,6 +164,8 @@ _LISTABLE_CHILD_SQL = (
 
 def _ephemeral_child_sql(alias: str = "s") -> str:
     """Subagent runs, not branch, reset, or compression children."""
+    if alias not in {"s", "sessions"}:
+        raise ValueError("Unsupported ephemeral-child SQL alias")
     branch = _BRANCH_CHILD_SQL.format(a=alias)
     compression = _COMPRESSION_CHILD_SQL.format(a=alias)
     reset = _RESET_CHILD_SQL.format(a=alias)
@@ -175,6 +187,8 @@ def _sql_session_last_active(alias: str = "s") -> str:
     heartbeats are rate-limited (~60s), so after a turn writes messages
     ``last_activity_at`` can lag ``MAX(messages.timestamp)``.
     """
+    if alias not in {"s", "sessions", "o", "d", "child"}:
+        raise ValueError("Unsupported session activity SQL alias")
     msg_max = (
         f"(SELECT MAX(_act_m.timestamp) FROM messages _act_m "
         f"WHERE _act_m.session_id = {alias}.id)"
@@ -192,6 +206,8 @@ def _sql_session_last_active(alias: str = "s") -> str:
 
 def _sql_session_last_active_by_id(session_id_expr: str) -> str:
     """Same freshest-of expression keyed by a session-id SQL expression."""
+    if session_id_expr != "cur_id":
+        raise ValueError("Unsupported session activity SQL id expression")
     msg_max = (
         f"(SELECT MAX(_act_m.timestamp) FROM messages _act_m "
         f"WHERE _act_m.session_id = {session_id_expr})"

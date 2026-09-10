@@ -38,7 +38,6 @@ import threading
 from collections.abc import Sequence
 from logging.handlers import QueueHandler, QueueListener
 from pathlib import Path
-from typing import Optional
 
 # On Windows, stdlib ``RotatingFileHandler`` calls ``os.rename()`` in
 # ``doRollover()`` and fails with ``PermissionError [WinError 32]`` whenever
@@ -63,14 +62,20 @@ from typing import Optional
 # module (class declaration, ``isinstance`` checks, docstring) working
 # unchanged. See #44873.
 if sys.platform == "win32":
-    from concurrent_log_handler import (  # noqa: E402
+    from concurrent_log_handler import (
         ConcurrentRotatingFileHandler as RotatingFileHandler,
     )
 else:
-    from logging.handlers import RotatingFileHandler  # noqa: E402
+    from logging.handlers import RotatingFileHandler
 
 
-from pcbdraft.core.runtime_environment import get_config_path, get_runtime_home
+from pcbdraft.core.runtime_environment import (
+    _exception_info_without_values,
+    get_config_path,
+    get_runtime_home,
+)
+
+logger = logging.getLogger(__name__)
 
 # Sentinel to track whether setup_logging() has already run.  The function
 # is idempotent — calling it twice is safe but the second call is a no-op
@@ -394,11 +399,12 @@ def setup_verbose_logging() -> None:
 
     # Avoid adding duplicate stream handlers.
     for h in root.handlers:
-        if isinstance(h, logging.StreamHandler) and not isinstance(
-            h, RotatingFileHandler
+        if (
+            isinstance(h, logging.StreamHandler)
+            and not isinstance(h, RotatingFileHandler)
+            and getattr(h, "_hermes_verbose", False)
         ):
-            if getattr(h, "_hermes_verbose", False):
-                return
+            return
 
     handler = logging.StreamHandler(_safe_stderr())
     handler.setLevel(logging.DEBUG)
@@ -788,6 +794,10 @@ def _read_logging_config():
 
             cfg = _rrc() or {}
         except Exception:
+            logger.debug(
+                "Cached logging config unavailable; reading YAML",
+                exc_info=_exception_info_without_values(),
+            )
             from pcbdraft.core.runtime_utils import fast_safe_load
 
             config_path = get_config_path()
@@ -803,7 +813,10 @@ def _read_logging_config():
 
                 cfg = managed_scope.apply_managed_overlay(cfg)
             except Exception:
-                pass
+                logger.debug(
+                    "Managed logging overlay unavailable",
+                    exc_info=_exception_info_without_values(),
+                )
             log_cfg = cfg.get("logging", {})
             if isinstance(log_cfg, dict):
                 return (
@@ -812,5 +825,8 @@ def _read_logging_config():
                     log_cfg.get("backup_count"),
                 )
     except Exception:
-        pass
+        logger.debug(
+            "Logging config unavailable; using defaults",
+            exc_info=_exception_info_without_values(),
+        )
     return (None, None, None)

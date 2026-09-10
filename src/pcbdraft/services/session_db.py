@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 SQLite State Store for Hermes Agent.
 
@@ -34,46 +33,30 @@ from collections import deque
 from collections.abc import Callable
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple, TypeVar
+from typing import Any, ClassVar, Self, TypeVar
 
+from pcbdraft.agent import skill_commands as _skill_commands
 from pcbdraft.agent.memory_manager import sanitize_context
 from pcbdraft.agent.message_sanitization import _sanitize_surrogates
 from pcbdraft.agent.session_activity import ActivityProvenance
-from pcbdraft.agent.skill_commands import (
-    SKILL_EXCERPT_JOINT,
-    SKILL_SCAFFOLD_SQL_LIKE,
-    describe_skill_invocation,
+from pcbdraft.core.runtime_environment import (
+    _exception_info_without_values,
+    get_runtime_home,
 )
-from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.interfaces.tui.sqlite_runtime import (
     is_sqlite_wal_reset_vulnerable as _is_sqlite_wal_reset_vulnerable,
 )
+from pcbdraft.services import session_db_common as _session_db_common
 from pcbdraft.services.session_db_common import (
-    _BRANCH_CHILD_SQL,
     _COMPRESSION_CHILD_SQL,
     _FTS_CJK_TRIGGERS,
     _FTS_TRIGGERS,
     _LISTABLE_CHILD_SQL,
-    _PREVIEW_CONTENT_SQL,
-    _PREVIEW_HEAD_CHARS,
-    _PREVIEW_MAX_CHARS,
     _PREVIEW_RAW_SELECT,
-    _PREVIEW_SCAFFOLD_WINDOW,
-    _PREVIEW_SCAFFOLDED_SQL,
     _RESET_END_REASONS,
     _RESET_END_REASONS_SQL,
-    DEFERRED_INDEX_SQL,
     FTS_CJK_STALE_KEY,
-    FTS_SQL,
     FTS_STALE_KEY,
-    FTS_STORAGE_VERSION,
-    FTS_TRIGRAM_SQL,
-    LEGACY_FTS_SQL,
-    LEGACY_FTS_TRIGRAM_SQL,
-    MAX_FTS5_QUERY_CHARS,
-    SCHEMA_SQL,
-    SCHEMA_VERSION,
-    _ephemeral_child_sql,
     _legacy_reset_child_sql,
     _shape_preview,
     _sql_session_last_active,
@@ -83,6 +66,28 @@ from pcbdraft.services.session_db_common import escape_like as _escape_like
 from pcbdraft.services.session_db_portability import SessionPortabilityMixin
 from pcbdraft.services.session_db_schema import SessionSchemaMixin
 from pcbdraft.services.session_db_search import SessionSearchMixin
+
+# Compatibility exports from before the SessionDB module split. Keep these
+# bindings available to callers even though the implementation uses the mixins.
+SKILL_EXCERPT_JOINT = _skill_commands.SKILL_EXCERPT_JOINT
+SKILL_SCAFFOLD_SQL_LIKE = _skill_commands.SKILL_SCAFFOLD_SQL_LIKE
+describe_skill_invocation = _skill_commands.describe_skill_invocation
+_BRANCH_CHILD_SQL = _session_db_common._BRANCH_CHILD_SQL
+_PREVIEW_CONTENT_SQL = _session_db_common._PREVIEW_CONTENT_SQL
+_PREVIEW_HEAD_CHARS = _session_db_common._PREVIEW_HEAD_CHARS
+_PREVIEW_MAX_CHARS = _session_db_common._PREVIEW_MAX_CHARS
+_PREVIEW_SCAFFOLD_WINDOW = _session_db_common._PREVIEW_SCAFFOLD_WINDOW
+_PREVIEW_SCAFFOLDED_SQL = _session_db_common._PREVIEW_SCAFFOLDED_SQL
+DEFERRED_INDEX_SQL = _session_db_common.DEFERRED_INDEX_SQL
+FTS_SQL = _session_db_common.FTS_SQL
+FTS_STORAGE_VERSION = _session_db_common.FTS_STORAGE_VERSION
+FTS_TRIGRAM_SQL = _session_db_common.FTS_TRIGRAM_SQL
+LEGACY_FTS_SQL = _session_db_common.LEGACY_FTS_SQL
+LEGACY_FTS_TRIGRAM_SQL = _session_db_common.LEGACY_FTS_TRIGRAM_SQL
+MAX_FTS5_QUERY_CHARS = _session_db_common.MAX_FTS5_QUERY_CHARS
+SCHEMA_SQL = _session_db_common.SCHEMA_SQL
+SCHEMA_VERSION = _session_db_common.SCHEMA_VERSION
+_ephemeral_child_sql = _session_db_common._ephemeral_child_sql
 
 try:  # Hard dependency, but tolerate scaffold-phase imports before pip install.
     import psutil
@@ -115,6 +120,10 @@ def _configured_transcript_limit(key: str, fallback: int) -> int:
         limit = int(value)
         return limit if limit >= 0 else fallback
     except Exception:
+        logger.debug(
+            "Transcript limit config unavailable; using default",
+            exc_info=_exception_info_without_values(),
+        )
         return fallback
 
 
@@ -199,6 +208,7 @@ def _compression_lock_holder_process_is_dead(holder: str) -> bool:
             # recycled PIDs as alive — conservative, the TTL still applies.
             return not psutil.pid_exists(pid)
         except Exception:
+            logger.debug("Compression lease holder probe failed", exc_info=True)
             return False  # any doubt → keep the lease until TTL expiry
     # Scaffold-phase fallback only (psutil missing), and POSIX-only: stdlib
     # os.kill(pid, 0) is NOT a no-op probe on Windows (bpo-14484 — sig=0 maps
@@ -456,6 +466,7 @@ def _real_platform_state_root() -> Path | None:
             root = Path(os.path.expanduser("~")) / ".hermes"
         return root.resolve()
     except Exception:
+        logger.debug("Production state root resolution failed", exc_info=True)
         return None
 
 
@@ -501,6 +512,10 @@ def _process_looks_like_pytest(proc: Any) -> bool:
     try:
         cmdline = proc.cmdline() or []
     except Exception:
+        logger.debug(
+            "Test ancestry command-line inspection failed",
+            exc_info=_exception_info_without_values(),
+        )
         return False
     for arg in cmdline:
         try:
@@ -510,6 +525,10 @@ def _process_looks_like_pytest(proc: Any) -> bool:
             # intact, making the matcher's answer depend on the platform.
             name = token.replace("\\", "/").rsplit("/", 1)[-1].lower()
         except Exception:
+            logger.debug(
+                "Test ancestry command token inspection failed",
+                exc_info=_exception_info_without_values(),
+            )
             continue
         if name in _PYTEST_LAUNCHER_NAMES:
             return True
@@ -540,6 +559,7 @@ def _has_pytest_ancestor() -> bool:
                     found = True
                     break
         except Exception:
+            logger.debug("Test process ancestry lookup failed", exc_info=True)
             found = False
     _PYTEST_ANCESTOR = found
     return found
@@ -567,6 +587,9 @@ def _production_state_roots() -> list[Path]:
         try:
             roots.append(Path(extra).expanduser().resolve())
         except Exception:
+            logger.debug(
+                "Additional production state root resolution failed", exc_info=True
+            )
             continue
     return roots
 
@@ -609,6 +632,7 @@ def _ensure_test_isolation(db_path: Path) -> None:
     try:
         resolved = Path(db_path).expanduser().resolve()
     except Exception:
+        logger.debug("Test isolation database path resolution failed", exc_info=True)
         return
     for root in _production_state_roots():
         if _is_production_state_db(resolved, root):
@@ -1038,6 +1062,10 @@ def resolve_journal_mode() -> str:
             return "wal"
         raw = database.get("journal_mode", "wal")
     except Exception:
+        logger.debug(
+            "Journal mode config unavailable; using WAL",
+            exc_info=_exception_info_without_values(),
+        )
         return "wal"
 
     if not isinstance(raw, str):
@@ -1364,7 +1392,7 @@ def _wal_reset_repair_hint() -> str:
         # nix/nixos
         return cmd
     except Exception:
-        pass
+        logger.debug("SQLite upgrade guidance lookup failed", exc_info=True)
     return (
         "install a Python build bundled with SQLite 3.51.3+ "
         "(or backports 3.50.7 / 3.44.6) and restart Hermes"
@@ -1474,6 +1502,10 @@ def apply_database_pragmas(
 
         cfg = load_config_readonly()
     except Exception:
+        logger.debug(
+            "Database pragma config unavailable; using defaults",
+            exc_info=_exception_info_without_values(),
+        )
         return
 
     # Performance PRAGMAs (applied to ALL connection types: writer, read_only,
@@ -1928,15 +1960,15 @@ def _record_repair_outcome(
                 {
                     "fingerprint": fp,
                     "failed_attempts": attempts,
-                    "last_attempt": datetime.datetime.now().isoformat(
-                        timespec="seconds"
-                    ),
+                    "last_attempt": datetime.datetime.now()
+                    .astimezone()
+                    .isoformat(timespec="seconds"),
                 }
             ),
             encoding="utf-8",
         )
-    except Exception as exc:  # pragma: no cover - best effort
-        logger.warning("Could not update state.db repair ledger: %s", exc)
+    except Exception:  # pragma: no cover - best effort
+        logger.warning("Could not update state.db repair ledger", exc_info=True)
 
 
 def _existing_malformed_backups(db_path: Path) -> "list[Path]":
@@ -2000,7 +2032,7 @@ def _backup_db_file(db_path: Path) -> "tuple[Path | None, str | None]":
         logger.error("Refusing to raw-copy %s for backup: %s", db_path, reason)
         return None, reason
 
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
     backup_path = db_path.with_name(f"{db_path.name}.malformed-backup-{stamp}")
     # Same-second collision (two distinct damaged states within one second)
     # must not silently overwrite the earlier forensic copy.
@@ -2040,7 +2072,7 @@ def _backup_db_file(db_path: Path) -> "tuple[Path | None, str | None]":
         _prune_malformed_backups(db_path)
         return backup_path, None
     except Exception as exc:  # pragma: no cover - best effort
-        logger.warning("Could not back up malformed DB %s: %s", db_path, exc)
+        logger.warning("Could not back up malformed DB", exc_info=True)
         return None, f"backup copy failed: {exc}"
 
 
@@ -2079,6 +2111,7 @@ def preflight_db_writability(
     try:
         home: Path | None = Path(get_runtime_home()).resolve()
     except Exception:  # pragma: no cover - defensive
+        logger.debug("Database permission repair scope unavailable", exc_info=True)
         home = None
 
     def _in_repair_scope(p: Path) -> bool:
@@ -2744,7 +2777,9 @@ def is_zeroed_state_db(
 
         return is_zeroed_sqlite_file(path, probe_bytes=probe_bytes, force=force)
     except Exception:
-        pass
+        logger.debug(
+            "Shared zeroed-database probe unavailable; using fallback", exc_info=True
+        )
     try:
         size = path.stat().st_size
     except OSError:
@@ -2832,6 +2867,7 @@ def quarantine_zeroed_state_db(path: Path) -> Path | None:
         try:
             ts = time.strftime("%Y%m%d-%H%M%S")
         except Exception:
+            logger.debug("Zeroed-database backup timestamp unavailable", exc_info=True)
             ts = "unknown"
         # Unique destination with PID suffix to avoid collision across
         # concurrent startups that somehow both enter the lock.
@@ -2940,9 +2976,9 @@ def collect_state_db_stats(db_path: Path) -> dict[str, Any]:
             uri=True,
             timeout=2.0,
         )
-    except Exception as exc:
+    except Exception:
         logger.debug(
-            "collect_state_db_stats: cannot open %s read-only: %s", db_path, exc
+            "collect_state_db_stats: cannot open database read-only", exc_info=True
         )
         return stats
 
@@ -2951,6 +2987,7 @@ def collect_state_db_stats(db_path: Path) -> dict[str, Any]:
             row = conn.execute(sql).fetchone()
             return row[0] if row else None
         except Exception:
+            logger.debug("Database statistics scalar probe failed", exc_info=True)
             return None
 
     try:
@@ -2988,7 +3025,7 @@ def collect_state_db_stats(db_path: Path) -> dict[str, Any]:
                 for t in ("messages_fts", "messages_fts_trigram", "messages_fts_cjk")
             }
         except Exception:
-            pass
+            logger.debug("Database statistics FTS table probe failed", exc_info=True)
 
         # Raw state_meta reads — cheap, and independent of SessionDB.
         def _meta_int(key: str) -> int | None:
@@ -2998,6 +3035,7 @@ def collect_state_db_stats(db_path: Path) -> dict[str, Any]:
                 ).fetchone()
                 return int(row[0]) if row and row[0] is not None else None
             except Exception:
+                logger.debug("Database statistics metadata probe failed", exc_info=True)
                 return None
 
         stats["fts_storage_version"] = _meta_int("fts_storage_version")
@@ -3013,7 +3051,7 @@ def collect_state_db_stats(db_path: Path) -> dict[str, Any]:
         try:
             conn.close()
         except Exception:
-            pass
+            logger.debug("Database statistics connection close failed", exc_info=True)
 
     return stats
 
@@ -3049,6 +3087,7 @@ def count_db_holders(db_path: Path) -> int | None:
                     continue
         return holders
     except Exception:
+        logger.debug("Database holder count unavailable", exc_info=True)
         return None
 
 
@@ -3223,7 +3262,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         except Exception:
             logger.debug("Could not close a SessionDB connection", exc_info=True)
 
-    def __init__(self, db_path: Path = None, read_only: bool = False):
+    def __init__(self, db_path: Path | None = None, read_only: bool = False):
         self.db_path = db_path or _default_db_path()
         # Fail hard (before any connection/pragma/mkdir) if a pytest-context
         # process resolved the developer's production state.db — see the
@@ -3370,7 +3409,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     try:
                         conn.close()
                     except Exception:
-                        pass
+                        logger.debug(
+                            "Read-only init connection cleanup failed", exc_info=True
+                        )
                     raise
                 initialization_complete = True
                 return
@@ -3463,13 +3504,15 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                             if self._conn is not None:
                                 self._conn.close()
                         except Exception:
-                            pass
+                            logger.debug(
+                                "Locked database init cleanup failed", exc_info=True
+                            )
                         now = time.monotonic()
                         if now >= deadline:
                             raise
                         time.sleep(
                             min(
-                                random.uniform(
+                                random.SystemRandom().uniform(
                                     self._WRITE_RETRY_SLOW_MIN_S,
                                     self._WRITE_RETRY_SLOW_MAX_S,
                                 ),
@@ -3500,7 +3543,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     if self._conn is not None:
                         self._conn.close()
                 except Exception:
-                    pass
+                    logger.debug(
+                        "Database connection cleanup before repair failed",
+                        exc_info=True,
+                    )
                 report = repair_state_db_schema(self.db_path)
                 if not report.get("repaired"):
                     raise
@@ -3641,9 +3687,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             return
         try:
             conn.close()
-        except Exception as exc:
+        except Exception:
             logger.warning(
-                "partially-opened read conn close failed for %s: %s", self.db_path, exc
+                "Partially-opened read connection close failed", exc_info=True
             )
 
     def _close_read_conn(self, conn) -> None:
@@ -3666,8 +3712,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         """
         try:
             conn.close()
-        except Exception as exc:
-            logger.warning("read-conn close failed for %s: %s", self.db_path, exc)
+        except Exception:
+            logger.warning("Read connection close failed", exc_info=True)
         finally:
             self._read_permits.release()
 
@@ -3752,9 +3798,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             return True
         # The cjk_unicode61 tokenizer is a loadable extension — a process
         # that couldn't load it sees the same capability-error shape.
-        if "no such tokenizer: cjk_unicode61" in err:
-            return True
-        return False
+        return "no such tokenizer: cjk_unicode61" in err
 
     @staticmethod
     def _is_trigram_unavailable_error(exc: sqlite3.OperationalError) -> bool:
@@ -4037,7 +4081,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                         try:
                             self._conn.rollback()
                         except Exception:
-                            pass
+                            logger.debug("Failed write rollback failed", exc_info=True)
                         raise
                 # Success — periodic best-effort checkpoint + FTS merge.
                 self._write_count += 1
@@ -4144,12 +4188,12 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             return False
         elapsed = now - (deadline - patience_s)
         if elapsed >= self._WRITE_RETRY_SLOW_AFTER_S:
-            jitter = random.uniform(
+            jitter = random.SystemRandom().uniform(
                 self._WRITE_RETRY_SLOW_MIN_S,
                 self._WRITE_RETRY_SLOW_MAX_S,
             )
         else:
-            jitter = random.uniform(
+            jitter = random.SystemRandom().uniform(
                 self._WRITE_RETRY_MIN_S,
                 self._WRITE_RETRY_MAX_S,
             )
@@ -4181,7 +4225,9 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     try:
                         self._conn.close()
                     except Exception:
-                        pass
+                        logger.debug(
+                            "Corrupt database connection close failed", exc_info=True
+                        )
                     self._conn = None
                 new_conn = _connect_tracked_db(
                     str(self.db_path),
@@ -4201,11 +4247,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 new_conn.execute("PRAGMA foreign_keys=ON")
                 self._fts_cjk_loaded = load_fts5_cjk_extension(new_conn)
                 self._init_schema()
-        except Exception as exc:
-            logger.error(
-                "state.db reconnect after 'file is not a database' failed (%s); "
+        except Exception:
+            logger.exception(
+                "state.db reconnect after 'file is not a database' failed; "
                 "the database may need the full offline repair path.",
-                exc,
             )
             return False
         logger.warning(
@@ -4260,11 +4305,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         )
         try:
             rebuilt = self.rebuild_fts()
-        except Exception as rebuild_exc:
-            logger.error(
-                "In-place FTS rebuild failed (%s); the database needs the "
+        except Exception:
+            logger.exception(
+                "In-place FTS rebuild failed; the database needs the "
                 "full offline repair path (repair_state_db_schema).",
-                rebuild_exc,
             )
             return False
         if not rebuilt:
@@ -4363,10 +4407,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                         result[2],
                         result[1],
                     )
-        except Exception as exc:
-            logger.warning("WAL checkpoint (PASSIVE) failed: %s", exc)
+        except Exception:
+            logger.warning("WAL checkpoint (PASSIVE) failed", exc_info=True)
 
-    def __enter__(self) -> "SessionDB":
+    def __enter__(self) -> Self:
         """Enter a scope that closes this handle on the way out.
 
         Ownership of a SessionDB should be released explicitly.
@@ -4441,10 +4485,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     # belongs only on a sole-opener/quiescent connection.
                     try:
                         self._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-                    except Exception as exc:
+                    except Exception:
                         logger.debug(
-                            "WAL checkpoint (PASSIVE) at close failed: %s",
-                            exc,
+                            "WAL checkpoint (PASSIVE) at close failed",
+                            exc_info=True,
                         )
                 conn, self._conn = self._conn, None
                 self._close_connection_quietly(conn)
@@ -4465,7 +4509,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         try:
             self.close()
         except Exception:
-            pass
+            logger.debug("SessionDB finalizer close failed", exc_info=True)
 
     # ── Chunked FTS rebuild engine (v23 opt-in optimize) ──
     #
@@ -4544,20 +4588,20 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         self,
         session_id: str,
         source: str,
-        model: str = None,
-        model_config: dict[str, Any] = None,
-        system_prompt: str = None,
-        user_id: str = None,
+        model: str | None = None,
+        model_config: dict[str, Any] | None = None,
+        system_prompt: str | None = None,
+        user_id: str | None = None,
         session_key: str | None = None,
-        chat_id: str = None,
-        chat_type: str = None,
-        thread_id: str = None,
-        parent_session_id: str = None,
-        cwd: str = None,
-        profile_name: str = None,
-        git_repo_root: str = None,
-        origin_json: str = None,
-        display_name: str = None,
+        chat_id: str | None = None,
+        chat_type: str | None = None,
+        thread_id: str | None = None,
+        parent_session_id: str | None = None,
+        cwd: str | None = None,
+        profile_name: str | None = None,
+        git_repo_root: str | None = None,
+        origin_json: str | None = None,
+        display_name: str | None = None,
     ) -> None:
         """Insert a session row, enriching NULL metadata on conflict.
 
@@ -4744,13 +4788,13 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         session_id: str,
         *,
         source: str,
-        user_id: str = None,
-        session_key: str = None,
-        chat_id: str = None,
-        chat_type: str = None,
-        thread_id: str = None,
-        display_name: str = None,
-        origin_json: str = None,
+        user_id: str | None = None,
+        session_key: str | None = None,
+        chat_id: str | None = None,
+        chat_type: str | None = None,
+        thread_id: str | None = None,
+        display_name: str | None = None,
+        origin_json: str | None = None,
         include_compression_ancestors: bool = False,
     ) -> None:
         """Persist the gateway routing peer for an existing session row.
@@ -5033,6 +5077,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             try:
                 entry = json.loads(row["entry_json"] or "{}")
             except Exception:
+                logger.debug(
+                    "Gateway routing entry decode failed",
+                    exc_info=_exception_info_without_values(),
+                )
                 continue
             if isinstance(entry, dict) and entry.get("session_id") in session_ids:
                 doomed.append((row["scope"], row["session_key"]))
@@ -5656,12 +5704,12 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         child_session_id: str,
         source: str,
         messages: list[dict[str, Any]],
-        model: str = None,
-        model_config: dict[str, Any] = None,
-        system_prompt: str = None,
-        cwd: str = None,
-        profile_name: str = None,
-        compression_lock_holder: str = None,
+        model: str | None = None,
+        model_config: dict[str, Any] | None = None,
+        system_prompt: str | None = None,
+        cwd: str | None = None,
+        profile_name: str | None = None,
+        compression_lock_holder: str | None = None,
         require_compression_lease: bool = True,
         watermark: int | None = None,
         watermark_ceiling: int | None = None,
@@ -5913,6 +5961,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             rows = self._execute_write(_do)
             return bool(rows)
         except Exception:
+            logger.debug("Session reset-boundary promotion failed", exc_info=True)
             return False
 
     def update_session_cwd(
@@ -7140,6 +7189,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             try:
                 raw = json.loads(raw)
             except Exception:
+                logger.debug(
+                    "Session yolo-mode config decode failed",
+                    exc_info=_exception_info_without_values(),
+                )
                 return False
         if not isinstance(raw, dict):
             return False
@@ -7166,6 +7219,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             try:
                 raw = json.loads(raw)
             except Exception:
+                logger.debug(
+                    "Session gateway runtime config decode failed",
+                    exc_info=_exception_info_without_values(),
+                )
                 raw = {}
         if not isinstance(raw, dict):
             raw = {}
@@ -7408,25 +7465,24 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         """Apply queued deltas in order, coalescing where safe. Never raises."""
         try:
             coalesced = self._coalesce_token_deltas(batch)
-        except Exception as exc:
+        except Exception:
             # Coalescing must never kill the writer thread (a dead writer
             # can't be observed by callers). Fall back to applying the raw
             # batch delta-by-delta — the merge is an optimization only.
             logger.warning(
-                "async token accounting: coalesce failed, applying raw batch: %s",
-                exc,
+                "async token accounting: coalesce failed, applying raw batch",
+                exc_info=True,
             )
             coalesced = batch
         for session_id, kwargs in coalesced:
             try:
                 self.update_token_counts(session_id, **kwargs)
-            except Exception as exc:
+            except Exception:
                 # Same contract as the old inline call sites: accounting
                 # loss is logged, never raised into a turn.
                 logger.warning(
-                    "async token accounting: apply failed (session=%s): %s",
-                    session_id,
-                    exc,
+                    "async token accounting: apply failed",
+                    exc_info=True,
                 )
 
     def _coalesce_token_deltas(
@@ -7519,14 +7575,14 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         try:
             self._stop_token_writer()
         except Exception:
-            pass  # Best effort — never fatal at interpreter shutdown.
+            logger.debug("Token writer shutdown failed", exc_info=True)
 
     def update_token_counts(
         self,
         session_id: str,
         input_tokens: int = 0,
         output_tokens: int = 0,
-        model: str = None,
+        model: str | None = None,
         cache_read_tokens: int = 0,
         cache_write_tokens: int = 0,
         reasoning_tokens: int = 0,
@@ -7814,7 +7870,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         self,
         session_id: str,
         source: str = "unknown",
-        model: str = None,
+        model: str | None = None,
         **kwargs,
     ) -> str:
         """Ensure a session row exists (INSERT OR IGNORE). Accepts optional kwargs."""
@@ -8036,7 +8092,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
     TITLE_SOURCE_DERIVED = "derived"
     TITLE_SOURCE_LLM = "llm"
     TITLE_SOURCE_USER = "user"
-    _TITLE_SOURCE_RANK = {
+    _TITLE_SOURCE_RANK: ClassVar[dict[str, int]] = {
         TITLE_SOURCE_DERIVED: 0,
         TITLE_SOURCE_LLM: 1,
         TITLE_SOURCE_USER: 2,
@@ -8174,9 +8230,12 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             ).fetchone()
             if current is None:
                 return 0
-            if not is_user and current["title"] is not None:
-                if self._title_rank(current["title_source"]) >= new_rank:
-                    return 0
+            if (
+                not is_user
+                and current["title"] is not None
+                and self._title_rank(current["title_source"]) >= new_rank
+            ):
+                return 0
 
             if title:
                 # Check uniqueness (allow the same session to keep its own title)
@@ -8721,10 +8780,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
 
     def list_sessions_rich(
         self,
-        source: str = None,
-        sources: list[str] = None,
-        exclude_sources: list[str] = None,
-        cwd_prefix: str = None,
+        source: str | None = None,
+        sources: list[str] | None = None,
+        exclude_sources: list[str] | None = None,
+        cwd_prefix: str | None = None,
         limit: int = 20,
         offset: int = 0,
         include_children: bool = False,
@@ -8733,11 +8792,11 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         order_by_last_active: bool = False,
         include_archived: bool = False,
         archived_only: bool = False,
-        id_query: str = None,
-        search_query: str = None,
+        id_query: str | None = None,
+        search_query: str | None = None,
         compact_rows: bool = False,
         include_pinned: bool = False,
-        session_key: str = None,
+        session_key: str | None = None,
         include_hidden: bool = False,
     ) -> list[dict[str, Any]]:
         """List sessions with preview (first user message) and last active timestamp.
@@ -9354,18 +9413,18 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         self,
         session_id: str,
         role: str,
-        content: str = None,
-        tool_name: str = None,
+        content: str | None = None,
+        tool_name: str | None = None,
         tool_calls: Any = None,
-        tool_call_id: str = None,
-        token_count: int = None,
-        finish_reason: str = None,
-        reasoning: str = None,
-        reasoning_content: str = None,
+        tool_call_id: str | None = None,
+        token_count: int | None = None,
+        finish_reason: str | None = None,
+        reasoning: str | None = None,
+        reasoning_content: str | None = None,
         reasoning_details: Any = None,
         codex_reasoning_items: Any = None,
         codex_message_items: Any = None,
-        platform_message_id: str = None,
+        platform_message_id: str | None = None,
         observed: bool = False,
         effect_disposition: str | None = None,
         timestamp: Any = None,
@@ -10449,8 +10508,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         Returns an empty window when ``around_message_id`` is not a real id in
         ``session_id`` — callers decide how to surface that.
         """
-        if window < 0:
-            window = 0
+        window = max(window, 0)
         with self._read_ctx() as conn:
             # Confirm the anchor exists in this session.
             anchor_exists = conn.execute(
@@ -10546,6 +10604,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         try:
             tip = self.get_compression_tip(session_id)
         except Exception:
+            logger.debug("Resume compression tip lookup failed", exc_info=True)
             tip = session_id
         if tip and tip != session_id:
             session_id = tip
@@ -10563,6 +10622,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                         (current,),
                     ).fetchone()
                 except Exception:
+                    logger.debug("Resume message existence probe failed", exc_info=True)
                     return session_id
                 if row is not None:
                     best = current
@@ -10589,6 +10649,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                         (current,),
                     ).fetchone()
                 except Exception:
+                    logger.debug("Resume child lookup failed", exc_info=True)
                     return session_id
                 if child_row is None:
                     break
@@ -11205,10 +11266,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
 
     def search_sessions(
         self,
-        source: str = None,
+        source: str | None = None,
         limit: int = 20,
         offset: int = 0,
-        workspace_key: str = None,
+        workspace_key: str | None = None,
     ) -> list[dict[str, Any]]:
         """List sessions, optionally filtered by source.
 
@@ -11254,14 +11315,14 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
 
     def session_count(
         self,
-        source: str = None,
-        sources: list[str] = None,
-        cwd_prefix: str = None,
+        source: str | None = None,
+        sources: list[str] | None = None,
+        cwd_prefix: str | None = None,
         min_message_count: int = 0,
         include_archived: bool = False,
         archived_only: bool = False,
         exclude_children: bool = False,
-        exclude_sources: list[str] = None,
+        exclude_sources: list[str] | None = None,
     ) -> int:
         """Count sessions, optionally filtered by source.
 
@@ -11376,7 +11437,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             ).fetchall()
         return {str(row["source"]): int(row["count"] or 0) for row in rows}
 
-    def message_count(self, session_id: str = None) -> int:
+    def message_count(self, session_id: str | None = None) -> int:
         """Count messages, optionally for a specific session."""
         with self._lock:
             if session_id:
@@ -11977,7 +12038,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
     def list_prune_candidates(
         self,
         older_than_days: float | None = None,
-        source: str = None,
+        source: str | None = None,
         **filters,
     ) -> list[dict[str, Any]]:
         """Return the sessions a matching :meth:`prune_sessions` /
@@ -12011,7 +12072,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
     def count_open_prune_matches(
         self,
         older_than_days: float | None = None,
-        source: str = None,
+        source: str | None = None,
         **filters,
     ) -> int:
         """Count open sessions excluded from a matching bulk prune.
@@ -12036,7 +12097,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
     def archive_sessions(
         self,
         older_than_days: float | None = None,
-        source: str = None,
+        source: str | None = None,
         **filters,
     ) -> int:
         """Bulk-archive (soft-hide) every session matching the filters.
@@ -12108,7 +12169,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
     def prune_sessions(
         self,
         older_than_days: float | None = 90,
-        source: str = None,
+        source: str | None = None,
         sessions_dir: Path | None = None,
         **filters,
     ) -> int:
@@ -12254,7 +12315,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         if backup:
             import datetime
 
-            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            stamp = datetime.datetime.now().astimezone().strftime("%Y%m%d_%H%M%S")
             dest = self.db_path.with_name(
                 f"{self.db_path.name}.pre-clean-markers-backup-{stamp}"
             )
@@ -12942,8 +13003,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 page_count = self._conn.execute("PRAGMA page_count").fetchone()[0]
                 page_size = self._conn.execute("PRAGMA page_size").fetchone()[0]
             return int(page_count) * int(page_size)
-        except Exception as exc:
-            logger.debug("Could not read logical DB size: %s", exc)
+        except Exception:
+            logger.debug("Could not read logical DB size", exc_info=True)
             return None
 
     def vacuum(self) -> int:
@@ -12972,8 +13033,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
         optimized = 0
         try:
             optimized = self.optimize_fts()
-        except Exception as exc:
-            logger.warning("FTS optimize before VACUUM failed: %s", exc)
+        except Exception:
+            logger.warning("FTS optimize before VACUUM failed", exc_info=True)
         # VACUUM cannot be executed inside a transaction.
         with self._lock:
             # Best-effort WAL checkpoint first, then VACUUM. PASSIVE, not
@@ -12983,8 +13044,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             # itself; journal_size_limit bounds the file.
             try:
                 self._conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-            except Exception as exc:
-                logger.debug("WAL checkpoint (PASSIVE) before VACUUM failed: %s", exc)
+            except Exception:
+                logger.debug(
+                    "WAL checkpoint (PASSIVE) before VACUUM failed", exc_info=True
+                )
             self._conn.execute("VACUUM")
             # ...and again afterwards. VACUUM rewrites every page THROUGH the
             # WAL, so the pre-VACUUM checkpoint above does nothing for the
@@ -12995,8 +13058,10 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             # command a net win instead of a net loss on large databases.
             try:
                 self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            except Exception as exc:
-                logger.debug("WAL checkpoint (TRUNCATE) after VACUUM failed: %s", exc)
+            except Exception:
+                logger.debug(
+                    "WAL checkpoint (TRUNCATE) after VACUUM failed", exc_info=True
+                )
         return optimized
 
     def maybe_auto_prune_and_vacuum(
@@ -13070,8 +13135,8 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     self.vacuum()
                     result["vacuumed"] = True
                     self.set_meta("last_vacuum", str(now))
-                except Exception as exc:
-                    logger.warning("state.db VACUUM failed: %s", exc)
+                except Exception:
+                    logger.warning("state.db VACUUM failed", exc_info=True)
 
             # Record the attempt even if pruned == 0, so we don't retry
             # every startup within the min_interval_hours window.
@@ -13086,7 +13151,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 )
         except Exception as exc:
             # Maintenance must never block startup. Log and return error marker.
-            logger.warning("state.db auto-maintenance failed: %s", exc)
+            logger.warning("state.db auto-maintenance failed", exc_info=True)
             result["error"] = str(exc)
 
         return result
@@ -13139,7 +13204,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                     idle_days,
                 )
         except Exception as exc:
-            logger.warning("state.db auto-archive failed: %s", exc)
+            logger.warning("state.db auto-archive failed", exc_info=True)
             result["error"] = str(exc)
 
         return result
@@ -13198,6 +13263,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
                 "error": row["handoff_error"],
             }
         except Exception:
+            logger.debug("Session handoff lookup failed", exc_info=True)
             return None
 
     def list_pending_handoffs(self) -> list[dict[str, Any]]:
@@ -13216,6 +13282,7 @@ class SessionDB(SessionSearchMixin, SessionSchemaMixin, SessionPortabilityMixin)
             )
             return [self._session_row_dict(r) for r in cur.fetchall()]
         except Exception:
+            logger.debug("Pending handoff listing failed", exc_info=True)
             return []
 
     def claim_handoff(self, session_id: str) -> bool:

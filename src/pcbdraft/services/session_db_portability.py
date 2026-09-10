@@ -11,7 +11,7 @@ module-level constants live in hermes_state_common.
 import json
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.skill_commands import SKILL_SCAFFOLD_SQL_LIKE
 from pcbdraft.services.session_db_common import (
@@ -53,14 +53,13 @@ class SessionPortabilityMixin:
         that happen to be in the currently-loaded recents. Children/branches
         count: a worktree session is still a real workspace signal.
         """
-        where = "cwd IS NOT NULL AND TRIM(cwd) != ''"
-        if not include_archived:
-            where += " AND archived = 0"
         with self._lock:
             rows = self._conn.execute(
                 "SELECT cwd AS cwd, COUNT(*) AS sessions, "
                 "MAX(COALESCE(ended_at, started_at, 0)) AS last_active "
-                f"FROM sessions WHERE {where} GROUP BY cwd"
+                "FROM sessions WHERE cwd IS NOT NULL AND TRIM(cwd) != '' "
+                "AND (? OR archived = 0) GROUP BY cwd",
+                (bool(include_archived),),
             ).fetchall()
         return [
             {
@@ -302,7 +301,7 @@ class SessionPortabilityMixin:
         ]
         return base
 
-    def export_all(self, source: str = None) -> list[dict[str, Any]]:
+    def export_all(self, source: str | None = None) -> list[dict[str, Any]]:
         """
         Export all sessions (with messages) as a list of dicts.
         Suitable for writing to a JSONL file for backup/analysis.

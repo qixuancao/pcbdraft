@@ -9,7 +9,7 @@ import stat
 import tempfile
 import time
 from pathlib import Path
-from typing import Any, Union
+from typing import Any
 from urllib.parse import urlparse
 
 import yaml
@@ -191,7 +191,7 @@ def _copy_fallback(tmp_str: str, real_path: str) -> None:
     os.unlink(tmp_str)
 
 
-def atomic_replace(tmp_path: Union[str, Path], target: Union[str, Path]) -> str:
+def atomic_replace(tmp_path: str | Path, target: str | Path) -> str:
     """Atomically move *tmp_path* onto *target*, preserving symlinks.
 
     ``os.replace(tmp, target)`` atomically swaps ``tmp`` into place at
@@ -279,7 +279,7 @@ def atomic_replace(tmp_path: Union[str, Path], target: Union[str, Path]) -> str:
 
 
 def atomic_write_text(
-    path: Union[str, Path],
+    path: str | Path,
     content: str,
     *,
     encoding: str = "utf-8",
@@ -346,7 +346,7 @@ def atomic_write_text(
 
 
 def atomic_json_write(
-    path: Union[str, Path],
+    path: str | Path,
     data: Any,
     *,
     indent: int = 2,
@@ -418,7 +418,7 @@ def atomic_json_write(
 
 
 def warn_if_credential_file_broadly_readable(
-    path: Union[str, Path],
+    path: str | Path,
     *,
     label: str = "",
     log: logging.Logger | None = None,
@@ -470,12 +470,12 @@ class IndentDumper(yaml.SafeDumper):
     serializers so all write paths emit byte-identical layouts (#31999).
     """
 
-    def increase_indent(self, flow=False, indentless=False):  # noqa: ARG002
+    def increase_indent(self, flow=False, indentless=False):
         return super().increase_indent(flow, False)
 
 
 def atomic_yaml_write(
-    path: Union[str, Path],
+    path: str | Path,
     data: Any,
     *,
     default_flow_style: bool = False,
@@ -556,7 +556,7 @@ def atomic_yaml_write(
 
 
 def atomic_roundtrip_yaml_update(
-    path: Union[str, Path],
+    path: str | Path,
     key_path: str,
     value: Any,
 ) -> None:
@@ -623,7 +623,7 @@ def atomic_roundtrip_yaml_update(
 
 
 def atomic_roundtrip_yaml_save(
-    path: Union[str, Path],
+    path: str | Path,
     new_state: dict,
 ) -> None:
     """Persist a full config-state dict while preserving comments and ordering.
@@ -720,7 +720,7 @@ def atomic_roundtrip_yaml_save(
         # Delete keys missing from src — preserves "explicit absence" semantics
         # of the old _save_cfg(cfg) pattern (e.g. cfg.pop("custom_prompt", None)
         # then _save_cfg must actually remove the key from disk).
-        for key in [k for k in dst.keys() if k not in src]:
+        for key in [k for k in dst if k not in src]:
             del dst[key]
 
     _merge(existing, new_state)
@@ -790,7 +790,11 @@ def fast_safe_load(stream: Any) -> Any:
     back to PyYAML's pure-Python ``SafeLoader`` when ``CSafeLoader`` isn't
     available, so behavior is identical everywhere — only the speed differs.
     """
-    return yaml.load(stream, Loader=_get_fast_yaml_loader())
+    # Spell out the safe loader at the load site so its trust boundary is
+    # auditable; retain the cached resolver for compatibility with callers.
+    if _get_fast_yaml_loader() is getattr(yaml, "CSafeLoader", None):
+        return yaml.load(stream, Loader=yaml.CSafeLoader)
+    return yaml.safe_load(stream)
 
 
 # ─── Environment Variable Helpers ─────────────────────────────────────────────
@@ -908,14 +912,7 @@ def model_forces_max_completion_tokens(model: str) -> bool:
         return False
     if "/" in m:
         m = m.rsplit("/", 1)[-1]
-    return (
-        m.startswith("gpt-4o")
-        or m.startswith("gpt-4.1")
-        or m.startswith("gpt-5")
-        or m.startswith("o1")
-        or m.startswith("o3")
-        or m.startswith("o4")
-    )
+    return m.startswith(("gpt-4o", "gpt-4.1", "gpt-5", "o1", "o3", "o4"))
 
 
 def base_url_host_matches(base_url: str, domain: str) -> bool:

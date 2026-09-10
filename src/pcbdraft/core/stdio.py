@@ -49,11 +49,13 @@ against double-reconfigure.
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 
 _IS_WINDOWS = sys.platform == "win32"
 _bootstrap_applied = False
+logger = logging.getLogger(__name__)
 
 
 def apply_windows_utf8_bootstrap() -> bool:
@@ -167,7 +169,7 @@ def suppress_platform_ver_console() -> None:
             platform._syscmd_ver = _quiet_syscmd_ver
     except Exception:
         # Hardening only — never let it break an entry point.
-        pass
+        logger.debug("Windows version-probe hardening unavailable", exc_info=True)
 
 
 def activate_durable_lazy_target() -> None:
@@ -193,7 +195,7 @@ def activate_durable_lazy_target() -> None:
     except Exception:
         # Bootstrap must never crash an entry point. If activation fails the
         # backend simply reports itself unavailable, exactly as before.
-        pass
+        logger.debug("Durable lazy-install target activation failed", exc_info=True)
 
 
 # Apply on import — entry points just need ``import hermes_bootstrap``

@@ -11,7 +11,6 @@ module-level constants live in hermes_state_common.
 import json
 import logging
 import sqlite3
-from typing import Dict, Optional
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.services.session_db_common import (
@@ -144,13 +143,12 @@ class SessionSchemaMixin:
 
     @staticmethod
     def _fts_trigger_count(cursor: sqlite3.Cursor) -> int:
-        placeholders = ",".join("?" for _ in _FTS_TRIGGERS)
         row = cursor.execute(
-            f"SELECT COUNT(*) FROM sqlite_master "
-            f"WHERE type = 'trigger' AND name IN ({placeholders})",
-            _FTS_TRIGGERS,
+            "SELECT COUNT(*) FROM sqlite_master "
+            "WHERE type = 'trigger' AND name IN (SELECT value FROM json_each(?))",
+            (json.dumps(_FTS_TRIGGERS),),
         ).fetchone()
-        return int(row[0] if not isinstance(row, sqlite3.Row) else row[0])
+        return int(row[0])
 
     @staticmethod
     def _fts_update_trigger_needs_narrowing(sql: str | None) -> bool:
@@ -189,11 +187,10 @@ class SessionSchemaMixin:
         )
         if not legacy_layout and hasattr(self, "_ensure_fts_cjk_schema"):
             update_names += ("messages_fts_cjk_update",)
-        placeholders = ", ".join("?" for _ in update_names)
         rows = cursor.execute(
             "SELECT name, sql FROM sqlite_master "
-            f"WHERE type = 'trigger' AND name IN ({placeholders})",
-            update_names,
+            "WHERE type = 'trigger' AND name IN (SELECT value FROM json_each(?))",
+            (json.dumps(update_names),),
         ).fetchall()
         to_drop = []
         for row in rows:
@@ -340,8 +337,16 @@ class SessionSchemaMixin:
         )
 
     def _fts_table_probe(self, cursor: sqlite3.Cursor, table_name: str) -> bool | None:
+        # Identifiers cannot be bound. Keep probes literal and reject any table
+        # outside the two indexes this migration is allowed to inspect.
+        probes = {
+            "messages_fts": "SELECT * FROM messages_fts LIMIT 0",
+            "messages_fts_trigram": "SELECT * FROM messages_fts_trigram LIMIT 0",
+        }
+        if table_name not in probes:
+            raise ValueError("Unsupported FTS table probe")
         try:
-            cursor.execute(f"SELECT * FROM {table_name} LIMIT 0")
+            cursor.execute(probes[table_name])
             return True
         except sqlite3.OperationalError as exc:
             if self._is_fts5_unavailable_error(exc):
@@ -496,7 +501,7 @@ class SessionSchemaMixin:
                 ):
                     return tables
         except Exception:
-            pass  # missing/corrupt cache → recompute below
+            logger.debug("Schema column cache unavailable; recomputing", exc_info=True)
 
         ref = sqlite3.connect(":memory:")
         try:
@@ -540,7 +545,7 @@ class SessionSchemaMixin:
                     )
                 _os.replace(tmp, cache_path)
             except Exception:
-                pass  # cache write is best-effort
+                logger.debug("Could not persist schema column cache", exc_info=True)
         return table_columns
 
     def _reconcile_columns(self, cursor: sqlite3.Cursor) -> None:
@@ -977,12 +982,12 @@ class SessionSchemaMixin:
                 # discoverable from state.db without the JSON index.
                 try:
                     self._backfill_gateway_metadata_from_sessions_json(cursor)
-                except Exception as exc:
+                except Exception:
                     # Backfill is best-effort: sessions.json may be absent,
                     # corrupted, or partially stale. Missing metadata simply
                     # means consumers fall back to sessions.json for those
                     # rows until the gateway rewrites them.
-                    logger.debug("v18 gateway metadata backfill skipped: %s", exc)
+                    logger.debug("v18 gateway metadata backfill skipped", exc_info=True)
             if current_version < 20:
                 # v20: per-model usage attribution (issue #51607). Going
                 # forward update_token_counts() records each API call into
@@ -1095,7 +1100,11 @@ class SessionSchemaMixin:
                         )
                 except sqlite3.OperationalError as exc:
                     logger.debug("v22 session_model_usage rebuild skipped: %s", exc)
-            if current_version < 23:
+            if (
+                current_version < 23
+                and fts5_available
+                and self._db_has_legacy_inline_fts(cursor)
+            ):
                 # v23: FTS storage redesign (issues #22478, #43690, #55233).
                 # The v11 inline-mode FTS tables each store a full private
                 # copy of every message (content || tool_name || tool_calls),
@@ -1124,8 +1133,7 @@ class SessionSchemaMixin:
                 # advances to SCHEMA_VERSION here like every other migration —
                 # future v24+ migrations land automatically for legacy-FTS
                 # users too. Only the FTS *layout* waits for opt-in.
-                if fts5_available and self._db_has_legacy_inline_fts(cursor):
-                    self.set_meta("fts_optimize_available", "1", cursor=cursor)
+                self.set_meta("fts_optimize_available", "1", cursor=cursor)
 
             if current_version < 25:
                 # v25: de-duplicate per-session system prompt snapshots into

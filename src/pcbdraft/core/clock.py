@@ -16,9 +16,11 @@ crashes due to a bad timezone string.
 import logging
 import os
 from datetime import datetime
-from typing import Optional
 
-from pcbdraft.core.runtime_environment import get_config_path
+from pcbdraft.core.runtime_environment import (
+    _exception_info_without_values,
+    get_config_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +59,10 @@ def _resolve_timezone_name() -> str:
 
             cfg = read_raw_config() or {}
         except Exception:
+            logger.debug(
+                "Cached timezone config unavailable; reading YAML",
+                exc_info=_exception_info_without_values(),
+            )
             import yaml
 
             config_path = get_config_path()
@@ -73,12 +79,18 @@ def _resolve_timezone_name() -> str:
 
                 cfg = managed_scope.apply_managed_overlay(cfg)
             except Exception:
-                pass
+                logger.debug(
+                    "Managed timezone overlay unavailable",
+                    exc_info=_exception_info_without_values(),
+                )
             tz_cfg = cfg.get("timezone", "")
             if isinstance(tz_cfg, str) and tz_cfg.strip():
                 return tz_cfg.strip()
     except Exception:
-        pass
+        logger.debug(
+            "Timezone config unavailable; using local time",
+            exc_info=_exception_info_without_values(),
+        )
 
     return ""
 
@@ -89,11 +101,10 @@ def _get_zoneinfo(name: str) -> ZoneInfo | None:
         return None
     try:
         return ZoneInfo(name)
-    except (KeyError, Exception) as exc:
+    except Exception:
         logger.warning(
-            "Invalid timezone '%s': %s. Falling back to server local time.",
-            name,
-            exc,
+            "Invalid timezone. Falling back to server local time.",
+            exc_info=_exception_info_without_values(),
         )
         return None
 
