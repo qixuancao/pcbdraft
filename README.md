@@ -83,6 +83,17 @@ pcbdraft
 这只是**示例需求**，不是已验证成功率或硬件实测结果。生成后请人工检查器件型号、
 引脚、封装、极性、额定值、网络、板框、间距以及 ERC/DRC 结果。
 
+## 真实示例预览
+
+[查看 LED、RC、I2C 的原生工程、真实结果与预览图库](examples/README.md#真实预览图库)。
+打开 KiCad 文件无需模型账户；复现生成会消耗模型用量。
+
+![LED 案例的原始 KiCad 顶视渲染](examples/results/2026-09-09-single-attempts/cases/led-3v3-330r/previews/board-top.png)
+
+LED、RC 的当前 ERC/DRC 收据通过；I2C 的唯一尝试在 600 秒超时，DRC 未完成且无预览。
+图中 LED 使用库内红色 3D 模型，设计值为绿色；图片未经改色，也不是硬件实拍。
+这些案例不代表成功率、人工工程审核或生产就绪。
+
 ## 找回项目
 
 在 TUI 中输入 `/resume`，继续输入可筛选项目，使用 `↑` / `↓`、`Enter` 和 `Esc`

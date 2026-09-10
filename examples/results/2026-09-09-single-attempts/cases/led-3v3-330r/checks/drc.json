@@ -1,0 +1,24 @@
+{
+  "category_counts": {
+    "schematic_parity": 0,
+    "unconnected_items": 0,
+    "violations": 0
+  },
+  "check": "run_drc",
+  "check_report_sha256": "df9329fe08771afe96efba5c8620693817163cd5495b17e11988b64b56eb51dd",
+  "design_content_hash": "7f2356dc3e6cf75e5780878d7e45fcc0540ab2ff1fab54eb2c039a4eb7ba3785",
+  "ignored_check_keys": [
+    "tuning_profile_track_geometries",
+    "footprint_filters_mismatch"
+  ],
+  "normalized_report_sha256": "b6c0290cec61644f7ba8d483638ecd8087b4de17467f914f283a423abd3d9fdc",
+  "outcome": "pass",
+  "passed": true,
+  "raw_report_sha256": "2da0bde35b78fae2996748baac5efc1da8b7c78a785f6bd712b1a2df825677e5",
+  "receipt_sha256": "c8df49730981416240f863a8233367d4a15c6b295fad143217868b32a783574f",
+  "receipt_source_revision": 20,
+  "report_sha256": "df9329fe08771afe96efba5c8620693817163cd5495b17e11988b64b56eb51dd",
+  "reported_item_count": 0,
+  "source_design_revision": 16,
+  "status": "complete"
+}

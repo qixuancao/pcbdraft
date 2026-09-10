@@ -1,0 +1,85 @@
+{
+  "cases": [
+    {
+      "case_id": "led-3v3-330r",
+      "check_status": {
+        "drc": "complete",
+        "erc": "complete"
+      },
+      "collection_root": "application/projects",
+      "corrected_native_artifact_count": 3,
+      "corrected_project_count": 1,
+      "correction_applied": true,
+      "correction_reason": "runner_inventory_missed_application_project",
+      "correction_status": "applied",
+      "current_preview_bound": true,
+      "project_id": "led-3v3-330r-308123ef",
+      "runner_reported_native_artifact_count": 0,
+      "runner_reported_project_count": 0,
+      "source_result_sha256": "64fdcd897cb5dbed49d5812672ab0fe391d020184da140f5c9ad22f92dee8c3d"
+    },
+    {
+      "case_id": "rc-1k-100nf",
+      "check_status": {
+        "drc": "complete",
+        "erc": "complete"
+      },
+      "collection_root": "application/projects",
+      "corrected_native_artifact_count": 3,
+      "corrected_project_count": 1,
+      "correction_applied": true,
+      "correction_reason": "runner_inventory_missed_application_project",
+      "correction_status": "applied",
+      "current_preview_bound": true,
+      "project_id": "rc-1k-100nf-9e558fd9",
+      "runner_reported_native_artifact_count": 0,
+      "runner_reported_project_count": 0,
+      "source_result_sha256": "b5ff2e15ea9df904e8565afbff9acd0f3d74d6ec148f4d245126c794d0b8879d"
+    },
+    {
+      "case_id": "i2c-3v3-pullups",
+      "check_status": {
+        "drc": "incomplete",
+        "erc": "complete"
+      },
+      "collection_root": "application/projects",
+      "corrected_native_artifact_count": 3,
+      "corrected_project_count": 1,
+      "correction_applied": true,
+      "correction_reason": "runner_inventory_missed_application_project",
+      "correction_status": "applied",
+      "current_preview_bound": false,
+      "project_id": "i2c-3v3-pullups-a844fc2a",
+      "runner_reported_native_artifact_count": 0,
+      "runner_reported_project_count": 0,
+      "source_result_sha256": "1d3384df737ca432c0210a75b2c19de4e153a9abe462af7bb7e1d09597a80211"
+    }
+  ],
+  "discrepancy": {
+    "application_home_project_collection_corrected": true,
+    "cases_corrected": [
+      "led-3v3-330r",
+      "rc-1k-100nf",
+      "i2c-3v3-pullups"
+    ],
+    "cases_not_determined": [],
+    "correction_applied": true,
+    "description": "The preserved runner inventory disagreed with the selected managed project counts; the correction is recorded per case without mutating the source evidence.",
+    "raw_runner_inventory_preserved": true
+  },
+  "schema": "pcbdraft-public-examples-collection",
+  "source_commit": "4cde65c8ae8a58c8ef070b3913626933e9d4f251",
+  "source_layout": {
+    "corrected_collection_roots": [
+      "application/projects"
+    ],
+    "raw_attempt_evidence_mutated": false,
+    "runner_inventory_authoritative": false,
+    "runner_inventory_root": "repository/projects",
+    "selected_collection_roots": [
+      "application/projects"
+    ]
+  },
+  "source_run_manifest_sha256": "852aa414ab26d832cc4e3d9b2a96d321eaab07d7d1d009bbe74f684715e0dca2",
+  "version": 1
+}

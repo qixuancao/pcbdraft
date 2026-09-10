@@ -1,0 +1,17 @@
+{
+  "category_counts": null,
+  "check": "run_drc",
+  "check_report_sha256": null,
+  "design_content_hash": "7911a5e7d751cef9eec23447df90730e3fc58f210247c5ce5d53e04a1bd84902",
+  "ignored_check_keys": [],
+  "normalized_report_sha256": null,
+  "outcome": null,
+  "passed": null,
+  "raw_report_sha256": null,
+  "reason": "no_receipt_bound_to_current_design",
+  "receipt_sha256": null,
+  "report_sha256": null,
+  "reported_item_count": null,
+  "source_design_revision": 25,
+  "status": "incomplete"
+}

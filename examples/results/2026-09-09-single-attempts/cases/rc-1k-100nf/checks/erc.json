@@ -1,0 +1,22 @@
+{
+  "category_counts": {
+    "violations": 0
+  },
+  "check": "run_erc",
+  "check_report_sha256": "17e9a9ea91918125733ffe56214c60006bf3f49bfd89300fed879d9f05561776",
+  "design_content_hash": "38188c650242a94e94e55e25cc9e48a15bba5e4a284218b7627f812f1020f71b",
+  "ignored_check_keys": [
+    "simulation_model_issue",
+    "footprint_filter"
+  ],
+  "normalized_report_sha256": "b5b1a7d1e7f37a42a090d23ea8c16a90ad06d929f32c8698eaf4377771107dfd",
+  "outcome": "pass",
+  "passed": true,
+  "raw_report_sha256": "e24f8dd63ce61cbed15a22df6edaa10bfa1c071d495992ef616f8f623a82b5f5",
+  "receipt_sha256": "c7d1dd6c210889f47a598d87481cee1b7f263b228a8b1d86ace9e3ed3b7e6e27",
+  "receipt_source_revision": 19,
+  "report_sha256": "17e9a9ea91918125733ffe56214c60006bf3f49bfd89300fed879d9f05561776",
+  "reported_item_count": 0,
+  "source_design_revision": 16,
+  "status": "complete"
+}

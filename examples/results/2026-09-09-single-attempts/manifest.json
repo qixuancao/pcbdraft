@@ -1,0 +1,461 @@
+{
+  "cases": [
+    {
+      "case_id": "led-3v3-330r",
+      "checks": {
+        "drc": {
+          "category_counts": {
+            "schematic_parity": 0,
+            "unconnected_items": 0,
+            "violations": 0
+          },
+          "check": "run_drc",
+          "check_report_sha256": "df9329fe08771afe96efba5c8620693817163cd5495b17e11988b64b56eb51dd",
+          "design_content_hash": "7f2356dc3e6cf75e5780878d7e45fcc0540ab2ff1fab54eb2c039a4eb7ba3785",
+          "ignored_check_keys": [
+            "tuning_profile_track_geometries",
+            "footprint_filters_mismatch"
+          ],
+          "normalized_report_sha256": "b6c0290cec61644f7ba8d483638ecd8087b4de17467f914f283a423abd3d9fdc",
+          "outcome": "pass",
+          "passed": true,
+          "raw_report_sha256": "2da0bde35b78fae2996748baac5efc1da8b7c78a785f6bd712b1a2df825677e5",
+          "receipt_sha256": "c8df49730981416240f863a8233367d4a15c6b295fad143217868b32a783574f",
+          "receipt_source_revision": 20,
+          "report_sha256": "df9329fe08771afe96efba5c8620693817163cd5495b17e11988b64b56eb51dd",
+          "reported_item_count": 0,
+          "source_design_revision": 16,
+          "status": "complete"
+        },
+        "electrical_status": "passed",
+        "erc": {
+          "category_counts": {
+            "violations": 0
+          },
+          "check": "run_erc",
+          "check_report_sha256": "a8a9849827a10c2c9b952613d9ed177d547ea9150c710baecc6d787a41894aa1",
+          "design_content_hash": "7f2356dc3e6cf75e5780878d7e45fcc0540ab2ff1fab54eb2c039a4eb7ba3785",
+          "ignored_check_keys": [
+            "simulation_model_issue",
+            "footprint_filter"
+          ],
+          "normalized_report_sha256": "d28eb1b78bc269c870a1086aafad164e19915c511f158f60bd3a096ff10b064b",
+          "outcome": "pass",
+          "passed": true,
+          "raw_report_sha256": "9952b476fb72d90ef80bd7202f8d0dea32ce8641a797862974c410ffc9115f6e",
+          "receipt_sha256": "e1d4aafe1cddfb1cb533575f6aab3e727910be8357f2baa035dd0474cd92e735",
+          "receipt_source_revision": 19,
+          "report_sha256": "a8a9849827a10c2c9b952613d9ed177d547ea9150c710baecc6d787a41894aa1",
+          "reported_item_count": 0,
+          "source_design_revision": 16,
+          "status": "complete"
+        }
+      },
+      "design": {
+        "design_content_hash": "7f2356dc3e6cf75e5780878d7e45fcc0540ab2ff1fab54eb2c039a4eb7ba3785",
+        "design_revision": 16,
+        "hardware_tested": false,
+        "native_artifacts": [
+          {
+            "bytes": 9854,
+            "kind": "kicad_project",
+            "path": "native/led-3v3-330r-308123ef.kicad_pro",
+            "sha256": "2b0ca226a8157667d47a914423cd8776d027f80023a3ad9e2f4903d53f88470e",
+            "source_bytes": 9854,
+            "source_sha256": "2b0ca226a8157667d47a914423cd8776d027f80023a3ad9e2f4903d53f88470e"
+          },
+          {
+            "bytes": 15146,
+            "kind": "schematic",
+            "path": "native/led-3v3-330r-308123ef.kicad_sch",
+            "sha256": "c35dfdc2882d8c15f8bb98414ec8a649d8f24b4cbabdfb2513ccc50544f3690d",
+            "source_bytes": 15146,
+            "source_sha256": "c35dfdc2882d8c15f8bb98414ec8a649d8f24b4cbabdfb2513ccc50544f3690d"
+          },
+          {
+            "bytes": 25035,
+            "kind": "board",
+            "path": "native/led-3v3-330r-308123ef.kicad_pcb",
+            "sha256": "0ae27a46e4d2e3a46bb458b9952e54f7d1587f2170708acfab84633849987cd4",
+            "source_bytes": 25035,
+            "source_sha256": "0ae27a46e4d2e3a46bb458b9952e54f7d1587f2170708acfab84633849987cd4"
+          }
+        ],
+        "production_ready": false,
+        "project_id": "led-3v3-330r-308123ef",
+        "status": "native_artifacts_collected"
+      },
+      "design_assessment": "not_asserted_by_exporter",
+      "failure_evidence": {
+        "raw_trace_published": false,
+        "worker_failed": false,
+        "worker_timeout": false
+      },
+      "limitations": [
+        "The exporter does not assert design correctness, fabrication readiness, or production readiness.",
+        "Hardware power-on and human engineering sign-off were not established by this bundle."
+      ],
+      "preview": {
+        "design_content_hash": "7f2356dc3e6cf75e5780878d7e45fcc0540ab2ff1fab54eb2c039a4eb7ba3785",
+        "files": [
+          {
+            "bytes": 5408,
+            "kind": "board_svg",
+            "path": "previews/board.svg",
+            "sha256": "5a772d8a58d8e8c2bf25f3531502621fa55eb489c9e45a8e054fde21f6a1058b"
+          },
+          {
+            "bytes": 23730,
+            "kind": "board_render",
+            "metadata": {
+              "bit_depth": 8,
+              "bytes": 23730,
+              "color_type": 6,
+              "height": 784,
+              "interlace": 0,
+              "width": 1176
+            },
+            "path": "previews/board-top.png",
+            "sha256": "001325908a7f65f2296da7300191ca6040d1da271120f427ce16481dbe91bdb9"
+          }
+        ],
+        "png_status": "included",
+        "receipt_sha256": "1bca69ef19b5d5b8875defd1eb3cb363eeeaa8c47cac5e2df6b25b639b129b1c",
+        "run_id": "20260909T060612Z-060a1595",
+        "source_design_revision": 16,
+        "status": "included"
+      },
+      "prompt": "Create a minimal 3.3 V indicator PCB using only stock KiCad libraries: one green 5 mm through-hole LED, one 330 ohm 0805 series resistor, and a simple power connector. Use clear 3V3 and GND nets, place and route the board, run native KiCad ERC and DRC, and render a real board.svg preview. Keep this a small low-voltage, non-safety-critical tutorial board. Preserve the editable native KiCad project and the actual check and preview receipts; do not claim that the result is ready for fabrication or production.",
+      "prompt_sha256": "f5323bed705ff93cc2318623f6d096b8b2d1af8a49c4da66f5ee86361f2ba1bd",
+      "worker": {
+        "completed_at": "2026-09-09T06:07:05.435664+00:00",
+        "elapsed_seconds": 491.874634,
+        "model": "gpt-5.6-sol",
+        "package_version": "0.1.0",
+        "provider": "openai-codex",
+        "returncode": 0,
+        "source_result_sha256": "64fdcd897cb5dbed49d5812672ab0fe391d020184da140f5c9ad22f92dee8c3d",
+        "started_at": "2026-09-09T05:58:53.559933+00:00",
+        "status": "completed",
+        "timed_out": false,
+        "usage": {
+          "cost_status": "included",
+          "estimated_cost_usd": 0.0,
+          "input_tokens": 133501,
+          "output_tokens": 4595,
+          "present": true,
+          "total_tokens": 693360
+        }
+      }
+    },
+    {
+      "case_id": "rc-1k-100nf",
+      "checks": {
+        "drc": {
+          "category_counts": {
+            "schematic_parity": 0,
+            "unconnected_items": 0,
+            "violations": 0
+          },
+          "check": "run_drc",
+          "check_report_sha256": "875d5d09eafb11f35e7c3da409ad624deeefb95aeb5f4ed57610032d3913701e",
+          "design_content_hash": "38188c650242a94e94e55e25cc9e48a15bba5e4a284218b7627f812f1020f71b",
+          "ignored_check_keys": [
+            "tuning_profile_track_geometries",
+            "footprint_filters_mismatch"
+          ],
+          "normalized_report_sha256": "ed90910920681ff7dae1dc0ccf8de2039bdf739c4febb281f0a4c301fce5fbba",
+          "outcome": "pass",
+          "passed": true,
+          "raw_report_sha256": "3b5eb2797ba6d2148b16a79f9bca28591d5912bd03a1d02476d14eddd27e969e",
+          "receipt_sha256": "614945fce172a8f4022390bbdd4e6bacdf4ac35ad98d8d271b5413d454bbcc17",
+          "receipt_source_revision": 20,
+          "report_sha256": "875d5d09eafb11f35e7c3da409ad624deeefb95aeb5f4ed57610032d3913701e",
+          "reported_item_count": 0,
+          "source_design_revision": 16,
+          "status": "complete"
+        },
+        "electrical_status": "passed",
+        "erc": {
+          "category_counts": {
+            "violations": 0
+          },
+          "check": "run_erc",
+          "check_report_sha256": "17e9a9ea91918125733ffe56214c60006bf3f49bfd89300fed879d9f05561776",
+          "design_content_hash": "38188c650242a94e94e55e25cc9e48a15bba5e4a284218b7627f812f1020f71b",
+          "ignored_check_keys": [
+            "simulation_model_issue",
+            "footprint_filter"
+          ],
+          "normalized_report_sha256": "b5b1a7d1e7f37a42a090d23ea8c16a90ad06d929f32c8698eaf4377771107dfd",
+          "outcome": "pass",
+          "passed": true,
+          "raw_report_sha256": "e24f8dd63ce61cbed15a22df6edaa10bfa1c071d495992ef616f8f623a82b5f5",
+          "receipt_sha256": "c7d1dd6c210889f47a598d87481cee1b7f263b228a8b1d86ace9e3ed3b7e6e27",
+          "receipt_source_revision": 19,
+          "report_sha256": "17e9a9ea91918125733ffe56214c60006bf3f49bfd89300fed879d9f05561776",
+          "reported_item_count": 0,
+          "source_design_revision": 16,
+          "status": "complete"
+        }
+      },
+      "design": {
+        "design_content_hash": "38188c650242a94e94e55e25cc9e48a15bba5e4a284218b7627f812f1020f71b",
+        "design_revision": 16,
+        "hardware_tested": false,
+        "native_artifacts": [
+          {
+            "bytes": 9853,
+            "kind": "kicad_project",
+            "path": "native/rc-1k-100nf-9e558fd9.kicad_pro",
+            "sha256": "d34f1b34e72201b326af10e821d94d43fd5de9d46a678ac235fba3a3c7fcb86e",
+            "source_bytes": 9853,
+            "source_sha256": "d34f1b34e72201b326af10e821d94d43fd5de9d46a678ac235fba3a3c7fcb86e"
+          },
+          {
+            "bytes": 16614,
+            "kind": "schematic",
+            "path": "native/rc-1k-100nf-9e558fd9.kicad_sch",
+            "sha256": "d2353a0580ea51c7d1e390e9a0dec243bf6784b3d398a0af6983425e63e778b3",
+            "source_bytes": 16614,
+            "source_sha256": "d2353a0580ea51c7d1e390e9a0dec243bf6784b3d398a0af6983425e63e778b3"
+          },
+          {
+            "bytes": 30525,
+            "check_evidence_applies_to": "original_source_bytes_not_rechecked_public_copy",
+            "kind": "board",
+            "path": "native/rc-1k-100nf-9e558fd9.kicad_pcb",
+            "sanitization": "removed_stock_footprint_description_display_query",
+            "sha256": "2ac877f9ffa889deaa16be1ad4b7b223db58625b0c0542580a7b01eaa1e77621",
+            "source_bytes": 30537,
+            "source_sha256": "b33302efeb8950f4b68aa7a08024b8540791b20c64ebf997c1368a94857a1e7f"
+          }
+        ],
+        "production_ready": false,
+        "project_id": "rc-1k-100nf-9e558fd9",
+        "status": "native_artifacts_collected"
+      },
+      "design_assessment": "not_asserted_by_exporter",
+      "failure_evidence": {
+        "raw_trace_published": false,
+        "worker_failed": false,
+        "worker_timeout": false
+      },
+      "limitations": [
+        "The exporter does not assert design correctness, fabrication readiness, or production readiness.",
+        "Hardware power-on and human engineering sign-off were not established by this bundle.",
+        "A stock footprint description URL query was removed from the public PCB copy. Checks apply to the original source bytes; both hashes are recorded. The public copy was not rechecked."
+      ],
+      "preview": {
+        "design_content_hash": "38188c650242a94e94e55e25cc9e48a15bba5e4a284218b7627f812f1020f71b",
+        "files": [
+          {
+            "bytes": 7242,
+            "kind": "board_svg",
+            "path": "previews/board.svg",
+            "sha256": "20e5b3c80ba524aabd184fc79f12eff4df47afb5463bf953adde3784f65e1b69"
+          },
+          {
+            "bytes": 8288,
+            "kind": "board_render",
+            "metadata": {
+              "bit_depth": 8,
+              "bytes": 8288,
+              "color_type": 6,
+              "height": 784,
+              "interlace": 0,
+              "width": 1176
+            },
+            "path": "previews/board-top.png",
+            "sha256": "10b96804dca94a889d94ec4c6fdfc52b8eb80c3fe5c6a2f05614c356643b9a9d"
+          }
+        ],
+        "png_status": "included",
+        "receipt_sha256": "3d2bd78d10cffc8c38dc374021ad2a3d439715e60b08aa0c10c962fea4425884",
+        "run_id": "20260909T061456Z-4442f6ba",
+        "source_design_revision": 16,
+        "status": "included"
+      },
+      "prompt": "Create a small passive RC interface PCB using only stock KiCad libraries. Provide an input connector, a 1 kohm 0805 series resistor, a node with a 100 nF 0805 capacitor to GND, and an output connector. Label the input, filtered output, and GND clearly, place and route the board, run native KiCad ERC and DRC, and render a real board.svg preview. This is a low-voltage, non-safety-critical tutorial, so preserve the editable native KiCad project and actual receipts without claiming fabrication or production readiness.",
+      "prompt_sha256": "0d78ba60d6c4d21d99b7b0dfd034c28ba4efd2454ae024898d21a67015598d90",
+      "worker": {
+        "completed_at": "2026-09-09T06:16:16.052963+00:00",
+        "elapsed_seconds": 550.240892,
+        "model": "gpt-5.6-sol",
+        "package_version": "0.1.0",
+        "provider": "openai-codex",
+        "returncode": 0,
+        "source_result_sha256": "b5ff2e15ea9df904e8565afbff9acd0f3d74d6ec148f4d245126c794d0b8879d",
+        "started_at": "2026-09-09T06:07:05.811126+00:00",
+        "status": "completed",
+        "timed_out": false,
+        "usage": {
+          "cost_status": "included",
+          "estimated_cost_usd": 0.0,
+          "input_tokens": 136999,
+          "output_tokens": 7567,
+          "present": true,
+          "total_tokens": 606134
+        }
+      }
+    },
+    {
+      "case_id": "i2c-3v3-pullups",
+      "checks": {
+        "drc": {
+          "category_counts": null,
+          "check": "run_drc",
+          "check_report_sha256": null,
+          "design_content_hash": "7911a5e7d751cef9eec23447df90730e3fc58f210247c5ce5d53e04a1bd84902",
+          "ignored_check_keys": [],
+          "normalized_report_sha256": null,
+          "outcome": null,
+          "passed": null,
+          "raw_report_sha256": null,
+          "reason": "no_receipt_bound_to_current_design",
+          "receipt_sha256": null,
+          "report_sha256": null,
+          "reported_item_count": null,
+          "source_design_revision": 25,
+          "status": "incomplete"
+        },
+        "electrical_status": "incomplete",
+        "erc": {
+          "category_counts": {
+            "violations": 0
+          },
+          "check": "run_erc",
+          "check_report_sha256": "2036d46bab6b36c7a60b5a3accca026e1b24db1c8f656d4a5afb3c44323e6056",
+          "design_content_hash": "7911a5e7d751cef9eec23447df90730e3fc58f210247c5ce5d53e04a1bd84902",
+          "ignored_check_keys": [
+            "simulation_model_issue",
+            "footprint_filter"
+          ],
+          "normalized_report_sha256": "85a4e8920516ce0fffc5db2cc53b10aed8a04d5d7d926161ab8dd4c2d6b727fa",
+          "outcome": "pass",
+          "passed": true,
+          "raw_report_sha256": "a0fb12207e248b62b068358fca969bc1ef9835d28f2b802bae8f9f06e2f3ae54",
+          "receipt_sha256": "6308abe0d4d105f98fc38f616b6052a404cd51bed5f5ba8967bf00bbf9bb43fe",
+          "receipt_source_revision": 28,
+          "report_sha256": "2036d46bab6b36c7a60b5a3accca026e1b24db1c8f656d4a5afb3c44323e6056",
+          "reported_item_count": 0,
+          "source_design_revision": 25,
+          "status": "complete"
+        }
+      },
+      "design": {
+        "design_content_hash": "7911a5e7d751cef9eec23447df90730e3fc58f210247c5ce5d53e04a1bd84902",
+        "design_revision": 25,
+        "hardware_tested": false,
+        "native_artifacts": [
+          {
+            "bytes": 9857,
+            "kind": "kicad_project",
+            "path": "native/i2c-3v3-pullups-a844fc2a.kicad_pro",
+            "sha256": "e8928e66823088df9f14dd5f2221dc94bb0b57a95a14b7fce3889996a8ff61bb",
+            "source_bytes": 9857,
+            "source_sha256": "e8928e66823088df9f14dd5f2221dc94bb0b57a95a14b7fce3889996a8ff61bb"
+          },
+          {
+            "bytes": 15881,
+            "kind": "schematic",
+            "path": "native/i2c-3v3-pullups-a844fc2a.kicad_sch",
+            "sha256": "e82b749aff02023ebfb9da0ba64fbdbabe156b10989f325a2476f682318d4789",
+            "source_bytes": 15881,
+            "source_sha256": "e82b749aff02023ebfb9da0ba64fbdbabe156b10989f325a2476f682318d4789"
+          },
+          {
+            "bytes": 39053,
+            "kind": "board",
+            "path": "native/i2c-3v3-pullups-a844fc2a.kicad_pcb",
+            "sha256": "1b8f7f107b818a8b25f55a68408ed9575b5a4d6ae9d84f491ee0e01ddf667795",
+            "source_bytes": 39053,
+            "source_sha256": "1b8f7f107b818a8b25f55a68408ed9575b5a4d6ae9d84f491ee0e01ddf667795"
+          }
+        ],
+        "production_ready": false,
+        "project_id": "i2c-3v3-pullups-a844fc2a",
+        "status": "native_artifacts_collected"
+      },
+      "design_assessment": "not_asserted_by_exporter",
+      "failure_evidence": {
+        "raw_trace_published": false,
+        "worker_failed": false,
+        "worker_timeout": true
+      },
+      "limitations": [
+        "The worker attempt did not complete successfully; native files are retained as partial attempt evidence.",
+        "Current ERC/DRC evidence is incomplete or failed; no electrical pass is asserted.",
+        "The exporter does not assert design correctness, fabrication readiness, or production readiness.",
+        "Hardware power-on and human engineering sign-off were not established by this bundle.",
+        "No current receipt-bound board preview was published."
+      ],
+      "preview": {
+        "files": [],
+        "reason": "no_current_preview",
+        "status": "unavailable"
+      },
+      "prompt": "Create a compact 3.3 V I2C adapter PCB using only stock KiCad libraries. Use separate input and output connectors carrying 3V3, GND, SDA, and SCL, with one 4.7 kohm 0805 pull-up from SDA to 3V3 and one 4.7 kohm 0805 pull-up from SCL to 3V3. Label all signals, place and route the board, run native KiCad ERC and DRC, and render a real board.svg preview. Keep it a low-voltage, non-safety-critical tutorial and preserve the editable native KiCad project and actual receipts; do not claim fabrication or production readiness.",
+      "prompt_sha256": "dc5d1bf28f25806104f48873c8b71475c4ac00fe1636396f554ce8b19d453320",
+      "worker": {
+        "completed_at": "2026-09-09T06:26:16.570494+00:00",
+        "elapsed_seconds": 600.166599,
+        "model": "gpt-5.6-sol",
+        "package_version": "0.1.0",
+        "provider": "openai-codex",
+        "returncode": -15,
+        "source_result_sha256": "1d3384df737ca432c0210a75b2c19de4e153a9abe462af7bb7e1d09597a80211",
+        "started_at": "2026-09-09T06:16:16.403132+00:00",
+        "status": "timed_out",
+        "timed_out": true,
+        "usage": {
+          "cost_status": "unknown",
+          "estimated_cost_usd": null,
+          "input_tokens": null,
+          "output_tokens": null,
+          "present": false,
+          "total_tokens": null
+        }
+      }
+    }
+  ],
+  "claims": {
+    "benchmark": false,
+    "hardware_tested": false,
+    "human_engineering_review": false,
+    "production_ready": false
+  },
+  "collection_receipt": "collection.json",
+  "evidence_boundary": {
+    "arbitrary_project_metadata_published": false,
+    "credentials_published": false,
+    "raw_run_manifest_published": false,
+    "raw_terminal_output_published": false,
+    "raw_trace_published": false,
+    "runtime_published": false,
+    "terminal_capture_is_interactive_recording": false
+  },
+  "publication_status": "reviewed_allowlisted_bundle",
+  "review": {
+    "content_reviewed": true,
+    "human_engineering_review": false,
+    "reviewer_kind": "automated_assistant"
+  },
+  "schema": "pcbdraft-public-examples-bundle",
+  "source": {
+    "commit": "4cde65c8ae8a58c8ef070b3913626933e9d4f251",
+    "dirty": false,
+    "environment": {
+      "kicad": "10.0.6",
+      "os": "Linux-7.0.0-31-generic-x86_64-with-glibc2.43",
+      "python": "3.13.14"
+    },
+    "limits": {
+      "attempts_per_case": 1,
+      "pcb_tool_calls_per_case": 80,
+      "wall_timeout_seconds_per_case": 600
+    },
+    "run_manifest_sha256": "852aa414ab26d832cc4e3d9b2a96d321eaab07d7d1d009bbe74f684715e0dca2"
+  },
+  "version": 1
+}
