@@ -18,7 +18,53 @@ import tempfile
 import uuid
 from pathlib import Path
 
-import pcbnew
+WORKER_PHASE_PREFIX = "pcbdraft-worker-phase:"
+WORKER_PHASE_PCBNEW_IMPORT_BEGIN = "pcbnew_import_begin"
+WORKER_PHASE_PCBNEW_IMPORT_END = "pcbnew_import_end"
+WORKER_PHASE_INSPECT_BOARD_LOAD_BEGIN = "inspect_board_load_begin"
+WORKER_PHASE_INSPECT_BOARD_LOAD_END = "inspect_board_load_end"
+WORKER_PHASE_INSPECT_BOARD_CONNECTIVITY = "inspect_board_connectivity"
+WORKER_PHASE_INSPECT_BOARD_COMPONENTS = "inspect_board_components"
+WORKER_PHASE_INSPECT_BOARD_TRACKS = "inspect_board_tracks"
+WORKER_PHASE_INSPECT_BOARD_ZONES = "inspect_board_zones"
+WORKER_PHASE_INSPECT_BOARD_OUTLINE = "inspect_board_outline"
+WORKER_PHASE_INSPECT_BOARD_SETTINGS_NETS = "inspect_board_settings_nets"
+WORKER_PHASE_INSPECT_BOARD_RETURN = "inspect_board_return"
+WORKER_PHASE_MAIN_RECEIPT_WRITE_BEGIN = "main_receipt_write_begin"
+WORKER_PHASE_MAIN_RECEIPT_WRITE_END = "main_receipt_write_end"
+WORKER_PHASE_MAIN_NORMAL_EXIT = "main_normal_exit"
+WORKER_PHASE_MARKERS = frozenset(
+    {
+        WORKER_PHASE_PCBNEW_IMPORT_BEGIN,
+        WORKER_PHASE_PCBNEW_IMPORT_END,
+        WORKER_PHASE_INSPECT_BOARD_LOAD_BEGIN,
+        WORKER_PHASE_INSPECT_BOARD_LOAD_END,
+        WORKER_PHASE_INSPECT_BOARD_CONNECTIVITY,
+        WORKER_PHASE_INSPECT_BOARD_COMPONENTS,
+        WORKER_PHASE_INSPECT_BOARD_TRACKS,
+        WORKER_PHASE_INSPECT_BOARD_ZONES,
+        WORKER_PHASE_INSPECT_BOARD_OUTLINE,
+        WORKER_PHASE_INSPECT_BOARD_SETTINGS_NETS,
+        WORKER_PHASE_INSPECT_BOARD_RETURN,
+        WORKER_PHASE_MAIN_RECEIPT_WRITE_BEGIN,
+        WORKER_PHASE_MAIN_RECEIPT_WRITE_END,
+        WORKER_PHASE_MAIN_NORMAL_EXIT,
+    }
+)
+
+
+def _emit_phase(marker):
+    if marker not in WORKER_PHASE_MARKERS:
+        raise ValueError("unknown worker phase marker")
+    print(f"{WORKER_PHASE_PREFIX}{marker}", file=sys.stderr, flush=True)
+
+
+_emit_phase(WORKER_PHASE_PCBNEW_IMPORT_BEGIN)
+# The marker must be emitted immediately before the native import.
+pcbnew = __import__("pcbnew")
+
+_emit_phase(WORKER_PHASE_PCBNEW_IMPORT_END)
+
 
 JOB_LIMIT = 32 * 1024 * 1024
 MAX_COMPONENTS = 500
@@ -436,13 +482,16 @@ def inspect_board_job(job):
     info = path.stat()
     if not path.is_file() or info.st_size > 128 * 1024 * 1024:
         raise ValueError("inspect_board input is missing or oversized")
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_LOAD_BEGIN)
     board = pcbnew.LoadBoard(str(path))
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_LOAD_END)
     if board is None:
         raise ValueError("pcbnew could not load the board")
     actual_layers = _actual_layers(board.GetCopperLayerCount())
     logical_layer = {layer: index for index, layer in enumerate(actual_layers)}
     include_connectivity = bool(job.get("include_connectivity", False))
     include_spatial = bool(job.get("include_spatial", False))
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_CONNECTIVITY)
     connectivity = _inspect_board_connectivity(board) if include_connectivity else None
     connectivity_by_pad = (
         {
@@ -453,6 +502,7 @@ def inspect_board_job(job):
         if connectivity is not None
         else {}
     )
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_COMPONENTS)
     components = []
     for footprint in board.GetFootprints():
         properties = {
@@ -530,6 +580,7 @@ def inspect_board_job(job):
                 }
             )
         components.append(component)
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_TRACKS)
     tracks = []
     for item in board.Tracks():
         if isinstance(item, pcbnew.PCB_VIA):
@@ -565,6 +616,7 @@ def inspect_board_job(job):
             tracks.append(track)
         else:
             raise TypeError("board contains an unsupported track object")
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_ZONES)
     zones = []
     for zone in board.Zones():
         layer = zone.GetLayer()
@@ -585,6 +637,7 @@ def inspect_board_job(job):
                 ),
             }
         )
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_OUTLINE)
     outline = []
     for drawing in board.GetDrawings():
         if drawing.GetLayer() != pcbnew.Edge_Cuts:
@@ -603,6 +656,7 @@ def inspect_board_job(job):
         if include_spatial:
             outline_row["uuid"] = drawing.m_Uuid.AsStdString()
         outline.append(outline_row)
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_SETTINGS_NETS)
     settings = board.GetDesignSettings()
     nets = sorted(
         name
@@ -630,6 +684,7 @@ def inspect_board_job(job):
     }
     if connectivity is not None:
         result["connectivity"] = connectivity
+    _emit_phase(WORKER_PHASE_INSPECT_BOARD_RETURN)
     return result
 
 
@@ -1268,6 +1323,12 @@ def _atomic_json(path, value):
             pass
 
 
+def _write_main_receipt(path, value):
+    _emit_phase(WORKER_PHASE_MAIN_RECEIPT_WRITE_BEGIN)
+    _atomic_json(path, value)
+    _emit_phase(WORKER_PHASE_MAIN_RECEIPT_WRITE_END)
+
+
 def main():
     if len(sys.argv) != 4 or sys.argv[1] not in {"inspect", "inspect_board", "build"}:
         raise ValueError(
@@ -1278,17 +1339,18 @@ def main():
     if job["mode"] != mode:
         raise ValueError("worker argv mode disagrees with job mode")
     if mode == "inspect":
-        _atomic_json(output_path, inspect_job(job))
+        _write_main_receipt(output_path, inspect_job(job))
     elif mode == "inspect_board":
-        _atomic_json(output_path, inspect_board_job(job))
+        _write_main_receipt(output_path, inspect_board_job(job))
     else:
         result_path = str(Path(output_path).with_suffix(".worker-result.json"))
-        _atomic_json(result_path, build_job(job, output_path))
+        _write_main_receipt(result_path, build_job(job, output_path))
 
 
 if __name__ == "__main__":
     try:
         main()
+        _emit_phase(WORKER_PHASE_MAIN_NORMAL_EXIT)
     except Exception as error:  # noqa: BLE001 - isolated worker failure boundary
         print(f"pcbnew worker failed: {type(error).__name__}: {error}", file=sys.stderr)
         raise SystemExit(2) from None

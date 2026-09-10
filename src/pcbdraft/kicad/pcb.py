@@ -46,6 +46,28 @@ from pcbdraft.kicad.support import assert_supported_kicad_version
 
 WORKER_RESULT_LIMIT = 32 * 1024 * 1024
 WORKER_OUTPUT_LIMIT = 512 * 1024
+WORKER_PHASE_PREFIX = "pcbdraft-worker-phase:"
+WORKER_PHASE_ALLOWLIST = frozenset(
+    {
+        "pcbnew_import_begin",
+        "pcbnew_import_end",
+        "inspect_board_load_begin",
+        "inspect_board_load_end",
+        "inspect_board_connectivity",
+        "inspect_board_components",
+        "inspect_board_tracks",
+        "inspect_board_zones",
+        "inspect_board_outline",
+        "inspect_board_settings_nets",
+        "inspect_board_return",
+        "main_receipt_write_begin",
+        "main_receipt_write_end",
+        "main_normal_exit",
+    }
+)
+WORKER_PHASE_LINES = frozenset(
+    f"{WORKER_PHASE_PREFIX}{marker}" for marker in WORKER_PHASE_ALLOWLIST
+)
 PLACEMENT_COURTYARD_MARGIN_MM = 0.25
 ROUTING_GEOMETRY_MARGIN_MM = 0.03
 ROUTING_GRID_MM = 0.1
@@ -1801,6 +1823,15 @@ def _placement(component: Component):
     return component.placement
 
 
+def _last_worker_phase(stderr: bytes) -> str | None:
+    """Return the last exact, allowlisted phase marker from worker stderr."""
+    last = None
+    for line in stderr.decode("utf-8", errors="replace").splitlines():
+        if line in WORKER_PHASE_LINES:
+            last = line[len(WORKER_PHASE_PREFIX) :]
+    return last
+
+
 def _run_worker(
     mode: str,
     job: dict[str, Any],
@@ -1828,8 +1859,11 @@ def _run_worker(
             max_output_bytes=WORKER_OUTPUT_LIMIT,
         )
         if result.timed_out:
+            phase = _last_worker_phase(result.stderr)
+            phase_detail = f", last_phase={phase}" if phase is not None else ""
             raise PCBDraftError(
-                f"isolated pcbnew worker timed out (mode={mode}, timeout={timeout:.1f}s)"
+                "isolated pcbnew worker timed out "
+                f"(mode={mode}, timeout={timeout:.1f}s{phase_detail})"
             )
         if result.output_limited:
             raise PCBDraftError("isolated pcbnew worker exceeded its output bound")
