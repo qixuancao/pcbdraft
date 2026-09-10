@@ -647,7 +647,9 @@ def inspect_board_job(job):
             emit_track_marker(WORKER_PHASE_INSPECT_BOARD_TRACKS_NUMERIC_GEOMETRY)
             x_mm = _mm(item.GetPosition().x)
             y_mm = _mm(item.GetPosition().y)
-            width_mm = _mm(item.GetWidth())
+            # PCB_VIA::GetWidth() without a layer is an asserted KiCad API
+            # misuse; select the already-resolved top copper layer explicitly.
+            width_mm = _mm(item.GetWidth(start_layer))
             drill_mm = _mm(item.GetDrillValue())
             track: dict[str, object] = {
                 "kind": "via",

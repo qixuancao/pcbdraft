@@ -46,6 +46,9 @@ class _FakeSegment:
 
 
 class _FakeVia:
+    def __init__(self):
+        self.width_layers = []
+
     def TopLayer(self):
         return 0
 
@@ -58,7 +61,10 @@ class _FakeVia:
     def GetPosition(self):
         return _FakePosition()
 
-    def GetWidth(self):
+    def GetWidth(self, layer):
+        self.width_layers.append(layer)
+        if layer != self.TopLayer():
+            raise AssertionError("via width must use the top layer")
         return 60
 
     def GetDrillValue(self):
@@ -329,9 +335,9 @@ class WorkerPhaseDiagnosticsTests(unittest.TestCase):
         self,
     ) -> None:
         worker = self._load_worker()
-        result, emitted = self._inspect_fake_tracks(
-            worker, [_FakeVia(), _FakeSegment()]
-        )
+        via = _FakeVia()
+        segment = _FakeSegment()
+        result, emitted = self._inspect_fake_tracks(worker, [via, segment])
         lines = emitted.splitlines()
         expected = (
             worker.WORKER_PHASE_INSPECT_BOARD_TRACKS_CONTAINER_BEGIN,
@@ -349,6 +355,13 @@ class WorkerPhaseDiagnosticsTests(unittest.TestCase):
         self.assertEqual(
             sorted(track["kind"] for track in result["tracks"]), ["segment", "via"]
         )
+        via_result = next(track for track in result["tracks"] if track["kind"] == "via")
+        segment_result = next(
+            track for track in result["tracks"] if track["kind"] == "segment"
+        )
+        self.assertEqual(via_result["width_mm"], 0.06)
+        self.assertEqual(segment_result["width_mm"], 0.05)
+        self.assertEqual(via.width_layers, [0])
         self.assertTrue(
             all(f"{WORKER_PHASE_PREFIX}{marker}" in lines for marker in expected)
         )
