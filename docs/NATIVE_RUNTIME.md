@@ -1,12 +1,12 @@
 # 原生运行时的代码来源与维护方式
 
-PCBDraft 直接维护复用的 Hermes 实现。核心会话循环、TUI、工具执行、认证、
-模型适配与会话存储保留原有实现，再调整包路径及应用边界。没有另写一套同名
-功能来替代这些代码。
+PCBDraft 直接维护吸收自 Hermes 的实现。核心会话循环、TUI、工具执行、认证、
+模型适配与会话存储在本项目内按职责演进；运行时路径、内部标识和资源所有权
+使用 PCBDraft 原生命名。上游来源与现行运行身份分别记录。
 
 迁移基线核对了 **696 个原有 Python 模块**，当时的落位记录见
 [逐文件来源映射](native-runtime-source-map.json)。这份映射是历史来源台账，
-不等同于当前文件清单；后续移除项记录在其中的 `retired` 段。迁移前的完整
+不等同于当前文件清单；后续移除项及运行功能退役记录在其中的 `retired` 段。迁移前的完整
 版本可在 `9d7f1558af992e7c30f59a5198191bce63e00239:vendor/hermes/` 查阅。
 
 | 原有实现 | 当前维护位置 |
@@ -31,9 +31,74 @@ Hermes dashboard/Web 服务、路由、PTY 桥接及其旧命令注册；PCBDraf
 仍由 `pcbdraft.interfaces.gui` 和 `src/pcbdraft/web/` 提供。终端和 Web 使用同一个
 `AIAgent`；Web 的持久化调度负责记录工具、绑定工程和权限、处理审批与取消。
 
-现有 PCBDraft 专用配置目录仍可读取；独立安装的 Hermes 配置不参与解析。
-配置兼容字段、模型资源名和版权归属保留必要的历史名称，不表示另有一层
-Hermes 应用在运行。
+## 原生身份与迁移操作（2026-09-10）
+
+core 正常路径解析是纯路径计算，仅以 `PCBDRAFT_RUNTIME_HOME` 覆盖平台默认的
+PCBDraft 配置目录下 `runtime` 子目录，不探测或迁移旧目录。原生 helper 使用
+`runtime_home()`、`get_runtime_home()`、`get_pcbdraft_dir()` 等名称；进程内任务
+隔离继续使用 context-local runtime override。
+
+启动层显式调用集中迁移模块，只处理 **PCBDraft 自有配置目录**下的旧 `hermes`
+子目录。独立安装的 Hermes home 不参与发现、解析或接管：
+
+- 只有旧目录存在且预检通过时，原子 rename 为同级 `runtime`，写入
+  `runtime-migration.json`；记录写入失败时尝试回滚并报告错误。
+- 旧、新目录同时存在时保留两者，写入 `runtime-migration-conflict.json`。
+  低层 resolution 返回 native 路径及 `conflict` 状态；启动层明确报错并停止绑定，
+  不会使用 native 继续启动，也不合并或覆盖。核对两份数据后，可显式设置
+  `PCBDRAFT_RUNTIME_HOME` 选择要使用的目录。
+- 允许可信父路径 canonicalization（如 macOS 的 `/var` 别名），但拒绝选定配置
+  根及 `hermes`、`runtime` 迁移根本身为 symlink；不通过解析根链接绕过检查。
+- 可能被 rename 破坏的内部绝对符号链接、已知配置路径字段指向旧根时拒绝迁移，
+  保留原目录。修复引用后重试，或显式设置 `PCBDRAFT_RUNTIME_HOME` 指向现有目录。
+  runtime 中的外部链接原样保留，不跟随目标。预检不扫描凭据和数据库内容，
+  也不做全文替换。
+- `PCBDRAFT_HERMES_HOME` 已停止支持；启动会明确提示升级。把原值改设为
+  `PCBDRAFT_RUNTIME_HOME` 并移除旧变量后重启。新变量的显式覆盖跳过目录迁移。
+
+项目元数据必须单独指定项目执行（将 `PATH` 替换为项目目录）：
+
+```sh
+python -m pcbdraft.core.legacy_migration --project PATH
+```
+
+该命令仅将项目 `.hermes` 中的 `environment.json`、`skills/`、`plugins/`
+复制到 `.pcbdraft`，始终保留源。相同文件可重复运行；任一内容或类型冲突阻止
+本次复制，不覆盖目标。允许可信父路径 canonicalization；拒绝选定项目根、
+元数据根及所选源、目标树内被迁移节点的 symlink，不跟随这些链接。
+JSON 结果提供 `copied`、`unchanged`、`conflicts` 和 `source_retained`；冲突或
+错误退出 1，否则退出 0。先核对冲突内容、人工处理后再运行。`plans/` 不在迁移
+范围内；本仓库旧计划的公开历史仅见[归档摘要](archive/plans/2026-08-30/README.md)。
+
+| 运行边界 | 现行约定 |
+| --- | --- |
+| 模型工具 MCP 身份 | `pcbdraft-tools` |
+| 插件 entry-point groups | `pcbdraft.plugins`、`pcbdraft.memory_providers` |
+| 插件 Python namespace | `pcbdraft_plugins.<slug>` |
+| root sandbox / 远端 runtime | `/root/.pcbdraft/runtime` / `<remote_home>/.pcbdraft/runtime` |
+| Docker 所有权 | 只复用、清理 native owner；不认可旧 Hermes owner |
+| 默认 skills/catalog | 离线本地内容；外部索引、来源和同步需显式配置 |
+| Tirith | 可离线使用已安装 binary；下载另需显式 opt-in |
+
+Tirith 下载可由 `security.tirith_allow_download: true`、
+`TIRITH_ALLOW_DOWNLOAD=1` 或内部显式 `allow_download=True` 开启；
+仅设置 `tirith_enabled` 不授权下载。更多工具边界见
+[工具迁移说明](../src/pcbdraft/tools/MIGRATION.md)。
+
+没有公共入口的旧 gateway、源码 updater、uninstaller、desktop backend service
+和 profile 管理写操作已退役，内部调用明确返回不支持，公共 CLI 命令面不变。
+已有 profiles 的读取和连接向导继续保留；profile 内部描述元数据编辑仍是有限的
+保留能力，不代表恢复 profile 管理入口。安装维护使用原安装工具，支持的命令
+以 `pcbdraft --help` 为准，模型连接使用 `pcbdraft connect`。
+
+保留例外包括版权与历史 source map、真实第三方模型 ID、未默认启用的原始唤醒词
+binary、已注册 OAuth 服务标识和旧加密格式，以及集中 legacy 数据读取和保护其他
+应用的安全扫描规则。旧 namespace ID 数据保留 effective IDs，即使再次保存也
+不改写其身份；新写入的 source/provenance 使用 native 标识，并非所有持久化值
+都改名。这些兼容数据不构成旧运行身份的别名。变更范围和最终主审验证证据见
+[原生身份迁移审计](audits/2026-09-10-native-identity-migration.md)。
+
+## 历史验证与质量边界
 
 这次吸收也使原有复用代码进入统一静态检查范围。全库 Ruff 尚未通过，
 不能把路径迁移和定向运行测试当作这些代码的完整质量认证。详细缺陷、

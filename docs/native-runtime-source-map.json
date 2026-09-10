@@ -776,6 +776,13 @@
           "current_path": "src/pcbdraft/interfaces/tui/subcommands/dashboard.py"
         }
       ]
+    },
+    {
+      "date": "2026-09-10",
+      "reason": "Retired inherited lifecycle operations with no PCBDraft public entry point: messaging gateway management, source-checkout update, uninstall, desktop backend service, and profile administration mutations. Import-safe unsupported boundaries and profile readers remain; limited internal profile-description metadata editing and the connection wizard remain supported. Public CLI commands and historical sources mappings are unchanged.",
+      "scope": "runtime functionality; not file deletion",
+      "audit": "audits/2026-09-10-native-identity-migration.md",
+      "files": []
     }
   ]
 }
