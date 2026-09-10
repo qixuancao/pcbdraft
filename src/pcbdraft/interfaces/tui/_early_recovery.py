@@ -282,6 +282,7 @@ def _run_repair_install(specs: list[str], project_root: Path) -> bool:
             try:
                 result = subprocess.run(
                     [uv, "pip", "install", "--force-reinstall", *specs],
+                    check=False,
                     cwd=project_root,
                     capture_output=True,
                     text=True,
@@ -309,6 +310,7 @@ def _run_repair_install(specs: list[str], project_root: Path) -> bool:
     try:
         subprocess.run(
             [sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"],
+            check=False,
             cwd=project_root,
             capture_output=True,
         )
@@ -321,6 +323,7 @@ def _run_repair_install(specs: list[str], project_root: Path) -> bool:
     try:
         result = subprocess.run(
             pip_cmd,
+            check=False,
             cwd=project_root,
             capture_output=True,
             text=True,

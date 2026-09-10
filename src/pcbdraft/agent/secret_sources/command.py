@@ -39,7 +39,6 @@ import signal as _signal
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Optional
 
 # Reuse the exact result shape the bitwarden source returns so
 # hermes_cli.env_loader can consume both providers identically.

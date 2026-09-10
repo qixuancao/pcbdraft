@@ -27,7 +27,7 @@ import asyncio
 import logging
 from collections.abc import Coroutine
 from concurrent.futures import Future
-from typing import Any, Optional
+from typing import Any
 
 _DEFAULT_LOGGER = logging.getLogger(__name__)
 

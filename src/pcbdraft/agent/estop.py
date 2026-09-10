@@ -32,7 +32,6 @@ import os
 import threading
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Optional
 
 SENTINEL_NAME = "ESTOP"
 

@@ -69,6 +69,7 @@ def _get_git_commit(project_root: Path) -> str:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short=8", "HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -109,6 +110,7 @@ def _get_git_commit_date(project_root: Path) -> str:
     try:
         result = subprocess.run(
             ["git", "log", "-1", "--format=%cd", "--date=short", "HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

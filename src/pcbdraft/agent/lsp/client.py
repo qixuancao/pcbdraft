@@ -55,7 +55,7 @@ import sys
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 from urllib.parse import quote, unquote
 
 from pcbdraft.agent.lsp.protocol import (

@@ -195,6 +195,7 @@ def ensure_dependency(
     run_env["IS_INTERACTIVE"] = "false"
     result = subprocess.run(
         cmd,
+        check=False,
         env=run_env,
     )
     if result.returncode != 0:

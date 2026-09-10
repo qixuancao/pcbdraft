@@ -4004,6 +4004,7 @@ def check_terminal_requirements() -> bool:
                 return False
             result = subprocess.run(
                 [docker, "version"],
+                check=False,
                 capture_output=True,
                 timeout=5,
                 stdin=subprocess.DEVNULL,
@@ -4015,6 +4016,7 @@ def check_terminal_requirements() -> bool:
             if executable:
                 result = subprocess.run(
                     [executable, "--version"],
+                    check=False,
                     capture_output=True,
                     timeout=5,
                     stdin=subprocess.DEVNULL,

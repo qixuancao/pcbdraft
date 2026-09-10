@@ -32,7 +32,6 @@ from __future__ import annotations
 import atexit
 import logging
 import threading
-from typing import Optional
 
 from pcbdraft.agent.lsp.manager import LSPService
 

@@ -30,7 +30,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.message_metadata import stamp_message_timestamp
 from pcbdraft.agent.tool_result_classification import (

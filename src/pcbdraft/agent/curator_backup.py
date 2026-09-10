@@ -46,7 +46,7 @@ import shutil
 import tarfile
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from pcbdraft.agent.skill_utils import is_excluded_skill_path
 from pcbdraft.core.runtime_environment import get_runtime_home

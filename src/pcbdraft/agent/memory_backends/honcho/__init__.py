@@ -21,7 +21,7 @@ import re
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.memory_backends.honcho.client import spawn_context_thread
 from pcbdraft.agent.memory_manager import sanitize_context

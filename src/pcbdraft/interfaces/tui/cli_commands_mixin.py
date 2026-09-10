@@ -1338,6 +1338,7 @@ class CLICommandsMixin:
             try:
                 result = subprocess.run(
                     ["git", "worktree", "list"],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

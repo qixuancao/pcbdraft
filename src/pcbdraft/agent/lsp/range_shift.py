@@ -29,7 +29,7 @@ from __future__ import annotations
 
 import difflib
 from collections.abc import Callable
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 def build_line_shift(pre_text: str, post_text: str) -> Callable[[int], int | None]:

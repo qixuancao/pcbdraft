@@ -22,7 +22,7 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.model.usage_pricing import (
     CanonicalUsage,
@@ -133,7 +133,7 @@ class InsightsEngine:
             ):
                 setattr(self, _attr, getattr(self, _attr).replace(_strip, ""))
 
-    def generate(self, days: int = 30, source: str = None) -> dict[str, Any]:
+    def generate(self, days: int = 30, source: str | None = None) -> dict[str, Any]:
         """
         Generate a complete insights report.
 
@@ -204,7 +204,9 @@ class InsightsEngine:
             "top_sessions": top_sessions,
         }
 
-    def get_usage_breakdown(self, days: int = 30, source: str = None) -> dict[str, Any]:
+    def get_usage_breakdown(
+        self, days: int = 30, source: str | None = None
+    ) -> dict[str, Any]:
         """Return the analytics-usage payload without running a full generate().
 
         Uses the instr()-prefiltered _get_skill_usage query so only messages
@@ -292,7 +294,7 @@ class InsightsEngine:
         " OR instr(m.tool_calls, 'skill_manage') > 0)"
     )
 
-    def _get_sessions(self, cutoff: float, source: str = None) -> list[dict]:
+    def _get_sessions(self, cutoff: float, source: str | None = None) -> list[dict]:
         """Fetch sessions within the time window."""
         if source:
             cursor = self._conn.execute(
@@ -302,7 +304,7 @@ class InsightsEngine:
             cursor = self._conn.execute(self._GET_SESSIONS_ALL, (cutoff,))
         return [dict(row) for row in cursor.fetchall()]
 
-    def _get_tool_usage(self, cutoff: float, source: str = None) -> list[dict]:
+    def _get_tool_usage(self, cutoff: float, source: str | None = None) -> list[dict]:
         """Get tool call counts from messages.
 
         Uses two sources:
@@ -386,7 +388,7 @@ class InsightsEngine:
             for name, count in tool_counts.most_common()
         ]
 
-    def _get_skill_usage(self, cutoff: float, source: str = None) -> list[dict]:
+    def _get_skill_usage(self, cutoff: float, source: str | None = None) -> list[dict]:
         """Extract per-skill usage from assistant tool calls."""
         skill_counts: dict[str, dict[str, Any]] = {}
 
@@ -450,7 +452,7 @@ class InsightsEngine:
 
         return list(skill_counts.values())
 
-    def _get_message_stats(self, cutoff: float, source: str = None) -> dict:
+    def _get_message_stats(self, cutoff: float, source: str | None = None) -> dict:
         """Get aggregate message statistics."""
         if source:
             cursor = self._conn.execute(
@@ -615,7 +617,7 @@ class InsightsEngine:
         " WHERE s.started_at >= ?"
     )
 
-    def _get_model_usage(self, cutoff: float, source: str = None) -> list[dict]:
+    def _get_model_usage(self, cutoff: float, source: str | None = None) -> list[dict]:
         """Fetch per-model usage rows within the window (issue #51607).
 
         Returns an empty list when the table is missing (e.g. a DB opened by
@@ -634,7 +636,7 @@ class InsightsEngine:
             return []
 
     def _compute_model_breakdown(
-        self, sessions: list[dict], cutoff: float, source: str = None
+        self, sessions: list[dict], cutoff: float, source: str | None = None
     ) -> list[dict]:
         """Break down token usage and cost by model.
 

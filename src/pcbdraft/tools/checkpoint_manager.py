@@ -394,6 +394,7 @@ def _run_git(
     try:
         result = subprocess.run(
             cmd,
+            check=False,  # Preserve output for expected nonzero Git statuses too.
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -540,6 +541,7 @@ def _init_store(store: Path, working_dir: str) -> str | None:
     try:
         result = subprocess.run(
             ["git", "init", "--bare", str(store)],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

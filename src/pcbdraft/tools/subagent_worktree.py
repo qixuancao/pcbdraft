@@ -55,6 +55,7 @@ def _run_git(args, cwd: str, timeout: int = _GIT_TIMEOUT):
     """Run a git command, capturing output. Never raises on non-zero exit."""
     return subprocess.run(
         ["git", *args],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,

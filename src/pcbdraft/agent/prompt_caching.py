@@ -12,7 +12,7 @@ Pure functions -- no class state, no AIAgent dependency.
 
 import copy
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any
 
 from pcbdraft.agent.prompt_cache_boundary import find_stable_prefix
 

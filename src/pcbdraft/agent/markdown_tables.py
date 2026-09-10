@@ -30,7 +30,6 @@ that contains one.
 from __future__ import annotations
 
 import re
-from typing import List
 
 from wcwidth import wcswidth
 

@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, TimeoutError
 from contextlib import contextmanager
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.agent.interrupt_compat import request_hard_interrupt
 

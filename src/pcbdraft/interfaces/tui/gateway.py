@@ -125,6 +125,7 @@ def _get_service_pids() -> set:
                         "--no-legend",
                         "--no-pager",
                     ],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -139,6 +140,7 @@ def _get_service_pids() -> set:
                     try:
                         show = subprocess.run(
                             scope_args + ["show", svc, "--property=MainPID", "--value"],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -159,6 +161,7 @@ def _get_service_pids() -> set:
             label = get_launchd_label()
             result = subprocess.run(
                 ["launchctl", "list", label],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -217,6 +220,7 @@ def _get_parent_pid(pid: int) -> int | None:
     try:
         result = subprocess.run(
             ["ps", "-o", "ppid=", "-p", str(pid)],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -648,6 +652,7 @@ def _scan_gateway_pids(
             if not _found_via_proc:
                 result = subprocess.run(
                     ["ps", "-A", "eww", "-o", "pid=,command="],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -1450,6 +1455,7 @@ def _probe_launchd_service_running() -> bool:
     try:
         result = subprocess.run(
             ["launchctl", "list", get_launchd_label()],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2038,6 +2044,7 @@ def _windows_scheduled_task_state(task_name: str) -> str | None:
         )
         result = subprocess.run(
             [powershell, "-NoProfile", "-Command", ps_cmd],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -4291,7 +4298,7 @@ def systemd_status(deep: bool = False, system: bool = False, full: bool = False)
         ]
         if full:
             log_cmd.append("-l")
-        subprocess.run(log_cmd, timeout=10)
+        subprocess.run(log_cmd, check=False, timeout=10)
 
 
 # =============================================================================
@@ -4372,6 +4379,7 @@ def _launchd_domain() -> str:
     try:
         result = subprocess.run(
             ["launchctl", "managername"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -5366,6 +5374,7 @@ def launchd_status(deep: bool = False):
     try:
         result = subprocess.run(
             ["launchctl", "list", label],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -5448,7 +5457,7 @@ def launchd_status(deep: bool = False):
         if log_file.exists():
             print()
             print("Recent logs:")
-            subprocess.run(["tail", "-20", str(log_file)], timeout=10)
+            subprocess.run(["tail", "-20", str(log_file)], check=False, timeout=10)
 
 
 # =============================================================================
@@ -6641,6 +6650,7 @@ def _is_service_running() -> bool:
         try:
             result = subprocess.run(
                 ["launchctl", "list", get_launchd_label()],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

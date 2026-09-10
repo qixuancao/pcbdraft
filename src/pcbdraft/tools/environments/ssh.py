@@ -119,6 +119,7 @@ class SSHEnvironment(BaseEnvironment):
         try:
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -152,6 +153,7 @@ class SSHEnvironment(BaseEnvironment):
             cmd.append("echo $HOME")
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -181,6 +183,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd.append(quoted_mkdir_command(dirs))
         subprocess.run(
             cmd,
+            check=False,  # Best-effort setup; subsequent sync reports failures.
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -198,6 +201,7 @@ class SSHEnvironment(BaseEnvironment):
         mkdir_cmd.append(f"mkdir -p {shlex.quote(parent)}")
         subprocess.run(
             mkdir_cmd,
+            check=False,  # The scp result below determines upload success.
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -216,6 +220,7 @@ class SSHEnvironment(BaseEnvironment):
         scp_cmd.extend([host_path, f"{self.user}@{self.host}:{remote_path}"])
         result = subprocess.run(
             scp_cmd,
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -253,6 +258,7 @@ class SSHEnvironment(BaseEnvironment):
             cmd.append(quoted_mkdir_command(parents))
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -377,6 +383,7 @@ class SSHEnvironment(BaseEnvironment):
         with open(dest, "wb") as f:
             result = subprocess.run(
                 ssh_cmd,
+                check=False,
                 stdin=subprocess.DEVNULL,
                 stdout=f,
                 stderr=subprocess.PIPE,
@@ -397,6 +404,7 @@ class SSHEnvironment(BaseEnvironment):
         cmd.append(quoted_rm_command(remote_paths))
         result = subprocess.run(
             cmd,
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -455,6 +463,7 @@ class SSHEnvironment(BaseEnvironment):
                 ]
                 subprocess.run(
                     cmd,
+                    check=False,  # Best effort; still unlink the control socket.
                     capture_output=True,
                     timeout=5,
                     stdin=subprocess.DEVNULL,

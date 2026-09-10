@@ -25,7 +25,7 @@ import os
 import shutil
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.agent.lsp.workspace import nearest_root
 

@@ -65,7 +65,7 @@ import uuid
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from pcbdraft.agent.context_engine import (
     automatic_compaction_status_message,

@@ -33,7 +33,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import find_node_executable
 from pcbdraft.interfaces.tui._subprocess_compat import windows_hide_flags

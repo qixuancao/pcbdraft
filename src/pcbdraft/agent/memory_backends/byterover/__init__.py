@@ -29,7 +29,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider
 from pcbdraft.tools.registry import tool_error
@@ -123,7 +123,9 @@ def _resolve_brv_path() -> str | None:
     return found
 
 
-def _run_brv(args: list[str], timeout: int = _QUERY_TIMEOUT, cwd: str = None) -> dict:
+def _run_brv(
+    args: list[str], timeout: int = _QUERY_TIMEOUT, cwd: str | None = None
+) -> dict:
     """Run a brv CLI command. Returns {success, output, error}."""
     brv_path = _resolve_brv_path()
     if not brv_path:

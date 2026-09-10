@@ -1617,6 +1617,7 @@ class SlashCommandCompleter(Completer):
             try:
                 proc = subprocess.run(
                     cmd,
+                    check=False,
                     capture_output=True,
                     text=True,
                     timeout=2,

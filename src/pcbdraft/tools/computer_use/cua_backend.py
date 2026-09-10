@@ -420,6 +420,7 @@ def _linux_session_locked() -> bool | None:
     try:
         proc = subprocess.run(
             ["loginctl", "list-sessions", "--no-legend"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=2.0,
@@ -434,6 +435,7 @@ def _linux_session_locked() -> bool | None:
             any_seat = True
             probe = subprocess.run(
                 ["loginctl", "show-session", parts[0], "-p", "LockedHint"],
+                check=False,  # Retain output-based LockedHint detection.
                 capture_output=True,
                 text=True,
                 timeout=2.0,
@@ -743,6 +745,7 @@ class _EmbeddedCuaDaemon:
             try:
                 probe = subprocess.run(
                     [self._command, "status", "--socket", self.socket_path],
+                    check=False,
                     stdin=subprocess.DEVNULL,
                     capture_output=True,
                     text=True,
@@ -778,6 +781,7 @@ class _EmbeddedCuaDaemon:
             try:
                 subprocess.run(
                     [self._command, "stop", "--socket", self.socket_path],
+                    check=False,  # Best effort; still wait/terminate below.
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -832,6 +836,7 @@ def _resolve_mcp_invocation(
 
         proc = subprocess.run(
             [driver_cmd, "manifest"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -921,6 +926,7 @@ def _cua_driver_supports_no_overlay(driver_cmd: str) -> bool:
 
         proc = subprocess.run(
             [driver_cmd, "--help"],
+            check=False,  # Usable help may accompany a nonzero exit status.
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1090,6 +1096,7 @@ def cua_driver_runtime_contract_status(binary: str | None = None) -> dict[str, A
 
         result = subprocess.run(
             [resolved, "manifest"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1218,6 +1225,7 @@ def cua_driver_update_check(*, timeout: float | None = None) -> dict[str, Any] |
 
         proc = subprocess.run(
             [driver_cmd, "check-update", "--json"],
+            check=False,  # The JSON payload carries check/update errors.
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1890,6 +1898,7 @@ class _CuaDriverSession:
             try:
                 subprocess.run(
                     [driver_command, "stop", "--socket", socket_path],
+                    check=False,  # Best effort; continue socket cleanup below.
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -2188,6 +2197,7 @@ class _CuaDriverSession:
                 try:
                     proc = _subprocess.run(
                         cmd,
+                        check=False,  # Parse CLI JSON, including in-band errors.
                         capture_output=True,
                         text=True,
                         encoding="utf-8",

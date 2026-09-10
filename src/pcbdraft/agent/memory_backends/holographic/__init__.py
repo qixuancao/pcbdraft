@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Dict, List
+from typing import Any
 
 from pcbdraft.agent.memory_backends.holographic.retrieval import FactRetriever
 from pcbdraft.agent.memory_backends.holographic.store import MemoryStore

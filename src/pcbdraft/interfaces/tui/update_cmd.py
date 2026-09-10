@@ -302,6 +302,7 @@ def _validate_critical_modules_import(root) -> tuple[bool, str | None, str | Non
             pass  # fall back to the running interpreter
         result = subprocess.run(
             [interpreter, "-c", probe],
+            check=False,
             cwd=str(root),
             capture_output=True,
             text=True,
@@ -862,6 +863,7 @@ def _branch_head_label(git_cmd=None, cwd=None) -> str | None:
         root = cwd if cwd is not None else _m().PROJECT_ROOT
         branch = subprocess.run(
             cmd + ["rev-parse", "--abbrev-ref", "HEAD"],
+            check=False,
             cwd=root,
             capture_output=True,
             text=True,
@@ -870,6 +872,7 @@ def _branch_head_label(git_cmd=None, cwd=None) -> str | None:
         )
         sha = subprocess.run(
             cmd + ["rev-parse", "--short", "HEAD"],
+            check=False,
             cwd=root,
             capture_output=True,
             text=True,
@@ -929,6 +932,7 @@ def _assess_parked_branch_switch(
 
     status = subprocess.run(
         git_cmd + ["status", "--porcelain"],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -942,6 +946,7 @@ def _assess_parked_branch_switch(
 
     cherry = subprocess.run(
         git_cmd + ["cherry", f"origin/{target_branch}"],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -969,6 +974,7 @@ def _print_parked_branch_skip_warning(
     try:
         behind_result = subprocess.run(
             git_cmd + ["rev-list", f"HEAD..origin/{target_branch}", "--count"],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1466,6 +1472,7 @@ def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> str | None:
     # changes are preserved; only the index conflict markers are dropped.
     unmerged = subprocess.run(
         git_cmd + ["ls-files", "--unmerged"],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1474,7 +1481,7 @@ def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> str | None:
     )
     if unmerged.stdout.strip():
         print("→ Clearing unmerged index entries from a previous conflict...")
-        subprocess.run(git_cmd + ["reset"], cwd=cwd, capture_output=True)
+        subprocess.run(git_cmd + ["reset"], check=False, cwd=cwd, capture_output=True)
 
     from datetime import datetime, timezone
 
@@ -1482,6 +1489,7 @@ def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> str | None:
     print("→ Local changes detected — stashing before update...")
     prev_stash = subprocess.run(
         git_cmd + ["rev-parse", "--verify", "refs/stash"],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1490,6 +1498,7 @@ def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> str | None:
     ).stdout.strip()
     push = subprocess.run(
         git_cmd + ["stash", "push", "--include-untracked", "-m", stash_name],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1500,6 +1509,7 @@ def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> str | None:
         print(push.stdout.strip())
     stash_probe = subprocess.run(
         git_cmd + ["rev-parse", "--verify", "refs/stash"],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1535,6 +1545,7 @@ def _stash_local_changes_if_needed(git_cmd: list[str], cwd: Path) -> str | None:
             # that follows. Safe to reset: everything is in the stash entry.
             subprocess.run(
                 git_cmd + ["reset", "--hard", "HEAD"],
+                check=False,
                 cwd=cwd,
                 capture_output=True,
             )
@@ -1655,6 +1666,7 @@ def _restore_stashed_changes(
     print("→ Restoring local changes...")
     restore = subprocess.run(
         git_cmd + ["stash", "apply", stash_ref],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1665,6 +1677,7 @@ def _restore_stashed_changes(
     # Check for unmerged (conflicted) files — can happen even when returncode is 0
     unmerged = subprocess.run(
         git_cmd + ["diff", "--name-only", "--diff-filter=U"],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1709,6 +1722,7 @@ def _restore_stashed_changes(
         # The user's changes are safe in the stash for manual recovery.
         subprocess.run(
             git_cmd + ["reset", "--hard", "HEAD"],
+            check=False,
             cwd=cwd,
             capture_output=True,
         )
@@ -1731,6 +1745,7 @@ def _restore_stashed_changes(
     else:
         drop = subprocess.run(
             git_cmd + ["stash", "drop", stash_selector],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1785,6 +1800,7 @@ def _discard_stashed_changes(
 
     drop = subprocess.run(
         git_cmd + ["stash", "drop", stash_selector],
+        check=False,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -1824,6 +1840,7 @@ def _get_origin_url(git_cmd: list[str], cwd: Path) -> str | None:
     try:
         result = subprocess.run(
             git_cmd + ["remote", "get-url", "origin"],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1857,6 +1874,7 @@ def _has_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
     try:
         result = subprocess.run(
             git_cmd + ["remote", "get-url", "upstream"],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1873,6 +1891,7 @@ def _add_upstream_remote(git_cmd: list[str], cwd: Path) -> bool:
     try:
         result = subprocess.run(
             git_cmd + ["remote", "add", "upstream", OFFICIAL_REPO_URL],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1889,6 +1908,7 @@ def _count_commits_between(git_cmd: list[str], cwd: Path, base: str, head: str) 
     try:
         result = subprocess.run(
             git_cmd + ["rev-list", "--count", f"{base}..{head}"],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -1927,6 +1947,7 @@ def _sync_fork_with_upstream(git_cmd: list[str], cwd: Path) -> bool:
     try:
         result = subprocess.run(
             git_cmd + ["push", "origin", "main", "--force-with-lease"],
+            check=False,
             cwd=cwd,
             capture_output=True,
             text=True,
@@ -2848,6 +2869,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
     is_shallow = (
         subprocess.run(
             git_cmd + ["rev-parse", "--is-shallow-repository"],
+            check=False,
             cwd=_m().PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -2866,6 +2888,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         has_upstream_remote = (
             subprocess.run(
                 git_cmd + ["remote", "get-url", "upstream"],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -2879,6 +2902,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
             print("→ Fetching from upstream...")
             fetch_result = subprocess.run(
                 git_cmd + ["fetch"] + depth_args + ["upstream", branch],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -2893,6 +2917,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
             print("→ Fetching from origin...")
             fetch_result = subprocess.run(
                 git_cmd + ["fetch"] + depth_args + ["origin", branch],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -2906,6 +2931,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         print("→ Fetching from origin...")
         fetch_result = subprocess.run(
             git_cmd + ["fetch"] + depth_args + ["origin", branch],
+            check=False,
             cwd=_m().PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -2933,6 +2959,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
     # traceback. Friendlier to detect-and-report.
     verify_result = subprocess.run(
         git_cmd + ["rev-parse", "--verify", "--quiet", compare_branch],
+        check=False,
         cwd=_m().PROJECT_ROOT,
         capture_output=True,
         text=True,
@@ -2950,6 +2977,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         # even when the local one is truncated.
         head_sha = subprocess.run(
             git_cmd + ["rev-parse", "HEAD"],
+            check=False,
             cwd=_m().PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -2958,6 +2986,7 @@ def _cmd_update_check(branch: str = "main", *, branch_explicit: bool = False):
         ).stdout.strip()
         target_sha = subprocess.run(
             git_cmd + ["rev-parse", compare_branch],
+            check=False,
             cwd=_m().PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -3053,6 +3082,7 @@ def _ensure_fhs_path_guard() -> None:
                 "-c",
                 "command -v hermes",
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -3477,6 +3507,7 @@ def _venv_core_imports_healthy() -> tuple[bool, str]:
     try:
         result = subprocess.run(
             [str(venv_python), "-c", check],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -4539,6 +4570,7 @@ def _discard_lockfile_churn(git_cmd, repo_root):
     try:
         diff = subprocess.run(
             git_cmd + ["diff", "--name-only"],
+            check=False,
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -4601,6 +4633,7 @@ def _normalize_managed_eol(git_cmd, repo_root):
     def _dirty(*extra):
         out = subprocess.run(
             probe + ["diff", "-z", "--name-only", *extra],
+            check=False,
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -4622,6 +4655,7 @@ def _normalize_managed_eol(git_cmd, repo_root):
         out = subprocess.run(
             probe
             + ["-c", "core.quotepath=false", "diff", "--numstat", "--ignore-cr-at-eol"],
+            check=False,
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -4650,6 +4684,7 @@ def _normalize_managed_eol(git_cmd, repo_root):
     try:
         effective = subprocess.run(
             git_cmd + ["config", "--get", "core.autocrlf"],
+            check=False,
             cwd=repo_root,
             capture_output=True,
             text=True,
@@ -5022,6 +5057,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         print("→ Fetching updates...")
         fetch_result = subprocess.run(
             git_cmd + ["fetch", "origin", branch],
+            check=False,
             cwd=_m().PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -5107,6 +5143,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             )
             checkout_result = subprocess.run(
                 git_cmd + ["checkout", branch],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -5120,6 +5157,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 # but was never checked out locally.
                 track_result = subprocess.run(
                     git_cmd + ["checkout", "-B", branch, f"origin/{branch}"],
+                    check=False,
                     cwd=_m().PROJECT_ROOT,
                     capture_output=True,
                     text=True,
@@ -5172,6 +5210,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         apply_is_shallow = (
             subprocess.run(
                 git_cmd + ["rev-parse", "--is-shallow-repository"],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -5185,6 +5224,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
 
             head_sha = subprocess.run(
                 git_cmd + ["rev-parse", "HEAD"],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -5193,6 +5233,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             ).stdout.strip()
             target_sha = subprocess.run(
                 git_cmd + ["rev-parse", f"origin/{branch}"],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -5364,6 +5405,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
             # the divergence fallback below is unchanged.
             pull_result = subprocess.run(
                 git_cmd + ["merge", "--ff-only", f"origin/{branch}"],
+                check=False,
                 cwd=_m().PROJECT_ROOT,
                 capture_output=True,
                 text=True,
@@ -5379,6 +5421,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                 )
                 reset_result = subprocess.run(
                     git_cmd + ["reset", "--hard", f"origin/{branch}"],
+                    check=False,
                     cwd=_m().PROJECT_ROOT,
                     capture_output=True,
                     text=True,
@@ -5417,6 +5460,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     print(f"→ Rolling back to {pre_pull_sha[:10]}...")
                     rollback_result = subprocess.run(
                         git_cmd + ["reset", "--hard", pre_pull_sha],
+                        check=False,
                         cwd=_m().PROJECT_ROOT,
                         capture_output=True,
                         text=True,
@@ -5504,6 +5548,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
         # a lie — refuse to claim success (2026-08-17 incident class).
         post_pull_branch = subprocess.run(
             git_cmd + ["rev-parse", "--abbrev-ref", "HEAD"],
+            check=False,
             cwd=_m().PROJECT_ROOT,
             capture_output=True,
             text=True,
@@ -6242,6 +6287,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     try:
                         _verify = subprocess.run(
                             scope_cmd_ + ["is-active", svc_name_],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -6278,6 +6324,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                             "--property=RestartUSec",
                             "--value",
                         ],
+                        check=False,
                         capture_output=True,
                         text=True,
                         encoding="utf-8",
@@ -6350,6 +6397,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     try:
                         _probe = subprocess.run(
                             ["sudo", "-n", "true"],
+                            check=False,
                             capture_output=True,
                             timeout=5,
                         )
@@ -6360,6 +6408,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                             # may still allow the exact commands we need.
                             _probe = subprocess.run(
                                 sudo_cmd + ["reset-failed", svc_name_],
+                                check=False,
                                 capture_output=True,
                                 timeout=5,
                             )
@@ -6427,6 +6476,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                                 "--no-legend",
                                 "--no-pager",
                             ],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -6448,6 +6498,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                         # Check if active
                         check = subprocess.run(
                             scope_cmd + ["is-active", svc_name],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -6487,6 +6538,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                                         "--property=MainPID",
                                         "--value",
                                     ],
+                                    check=False,
                                     capture_output=True,
                                     text=True,
                                     encoding="utf-8",
@@ -6569,6 +6621,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                             if _manage_cmd is not None:
                                 subprocess.run(
                                     _manage_cmd + ["reset-failed", svc_name],
+                                    check=False,
                                     capture_output=True,
                                     text=True,
                                     encoding="utf-8",
@@ -6577,6 +6630,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                                 )
                                 subprocess.run(
                                     _manage_cmd + ["start", svc_name],
+                                    check=False,
                                     capture_output=True,
                                     text=True,
                                     encoding="utf-8",
@@ -6663,6 +6717,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                         # (`systemd_restart()`) as of PR #20949.
                         subprocess.run(
                             _manage_cmd + ["reset-failed", svc_name],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -6671,6 +6726,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                         )
                         restart = subprocess.run(
                             _manage_cmd + ["restart", svc_name],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -6697,6 +6753,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                                 print(f"  ⚠ {svc_name} died after restart, retrying...")
                                 subprocess.run(
                                     _manage_cmd + ["reset-failed", svc_name],
+                                    check=False,
                                     capture_output=True,
                                     text=True,
                                     encoding="utf-8",
@@ -6705,6 +6762,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                                 )
                                 subprocess.run(
                                     _manage_cmd + ["restart", svc_name],
+                                    check=False,
                                     capture_output=True,
                                     text=True,
                                     encoding="utf-8",
@@ -6767,6 +6825,7 @@ def _cmd_update_impl(args, gateway_mode: bool):
                     if plist_path.exists():
                         check = subprocess.run(
                             ["launchctl", "list", get_launchd_label()],
+                            check=False,
                             capture_output=True,
                             text=True,
                             encoding="utf-8",
@@ -7116,6 +7175,7 @@ def _wait_for_service_active(
         try:
             _verify = subprocess.run(
                 scope_cmd_ + ["is-active", svc_name_],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -7153,6 +7213,7 @@ def _service_restart_sec(
                 "--property=RestartUSec",
                 "--value",
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

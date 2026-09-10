@@ -30,7 +30,7 @@ import threading
 import time
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 from urllib.parse import quote
 
 from pcbdraft.agent.file_safety import raise_if_read_blocked

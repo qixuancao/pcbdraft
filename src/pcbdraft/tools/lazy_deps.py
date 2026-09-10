@@ -755,6 +755,7 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
             try:
                 r = subprocess.run(
                     [uv_bin, "pip", "install", *target_args, *constraint_args, *specs],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -787,6 +788,7 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
         try:
             probe = subprocess.run(
                 pip_cmd + ["--version"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -818,6 +820,7 @@ def _venv_pip_install(specs: tuple[str, ...], *, timeout: int = 300) -> _Install
         try:
             r = subprocess.run(
                 pip_cmd + ["install", *target_args, *constraint_args, *specs],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

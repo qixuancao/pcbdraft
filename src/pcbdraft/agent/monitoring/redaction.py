@@ -18,7 +18,6 @@ remains available for a future, explicitly gated redacted-message detail mode.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 # ── secret shapes (belt-and-suspenders on top of agent/redact.py) ───────────
 _BEARER_RE = re.compile(r"\bBearer\s+[A-Za-z0-9._~+\-/]+=*", re.IGNORECASE)

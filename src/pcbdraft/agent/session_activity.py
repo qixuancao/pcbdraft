@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 ACTIVITY_DESCRIPTION_MAX = 120
 

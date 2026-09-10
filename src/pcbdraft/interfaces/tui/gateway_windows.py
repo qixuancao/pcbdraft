@@ -169,6 +169,7 @@ def _exec_schtasks(args: list[str]) -> tuple[int, str, str]:
     try:
         proc = subprocess.run(
             [schtasks, *args],
+            check=False,
             capture_output=True,
             text=True,
             # Localized Windows emits schtasks output in the console code page,

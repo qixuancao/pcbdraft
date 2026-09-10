@@ -19,7 +19,6 @@ under the ``vertex:`` section; env vars take precedence over config.yaml.
 import logging
 import os
 import time
-from typing import Optional, Tuple
 
 from pcbdraft.agent.secret_scope import get_secret as _get_secret
 from pcbdraft.agent.secret_scope import is_multiplex_active

@@ -43,7 +43,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider, RecallStatus
 from pcbdraft.agent.secret_scope import get_secret

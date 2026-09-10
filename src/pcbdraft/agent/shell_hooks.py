@@ -150,7 +150,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from pcbdraft.interfaces.tui._subprocess_compat import (
     IS_WINDOWS,

@@ -29,7 +29,7 @@ import threading
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, NamedTuple, Optional, Set
+from typing import Any, NamedTuple
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.core.runtime_utils import atomic_json_write

@@ -475,6 +475,7 @@ def check_alias_collision(name: str) -> str | None:
     try:
         result = subprocess.run(
             ["where" if is_windows else "which", canon],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1353,6 +1354,7 @@ def seed_profile_skills(profile_dir: Path, quiet: bool = False) -> dict | None:
                 "import json; from tools.skills_sync import sync_skills; "
                 "r = sync_skills(quiet=True); print(json.dumps(r))",
             ],
+            check=False,
             env={**os.environ, "PCBDRAFT_RUNTIME_HOME": str(profile_dir)},
             cwd=str(project_root),
             capture_output=True,

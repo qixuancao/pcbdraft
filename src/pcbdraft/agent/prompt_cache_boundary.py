@@ -33,7 +33,6 @@ per-invocation full rewrite this removes.
 
 import threading
 from collections import OrderedDict
-from typing import Optional
 
 # A couple dozen distinct active scaffolds (webhook routes x skills x cron
 # jobs) is generous for one gateway process; beyond that, oldest entries

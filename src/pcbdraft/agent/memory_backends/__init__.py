@@ -38,7 +38,7 @@ import importlib.util
 import logging
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from pcbdraft.model.configuration import cfg_get
 

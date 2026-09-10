@@ -117,6 +117,7 @@ def _scan_dashboard_processes(
             # both words (e.g. a chat session discussing "dashboard").
             result = subprocess.run(
                 ["ps", "-A", "-o", "pid=,command="],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -404,6 +405,7 @@ def _kill_stale_dashboard_processes(
             try:
                 result = subprocess.run(
                     ["taskkill", "/PID", str(pid), "/F"],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -682,6 +684,7 @@ def _process_ppid(pid: int) -> int | None:
             return None  # Windows orphan reap is handled by desktop tree-kill.
         result = subprocess.run(
             ["ps", "-o", "ppid=", "-p", str(pid)],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

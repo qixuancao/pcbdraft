@@ -22,7 +22,6 @@ import logging
 import os
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional, Tuple
 
 logger = logging.getLogger("agent.lsp.workspace")
 

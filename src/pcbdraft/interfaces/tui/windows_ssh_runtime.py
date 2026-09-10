@@ -470,6 +470,7 @@ def _resolve_direct_interpreter(python_entry: str) -> tuple[str, list[str]]:
     )
     out = subprocess.run(
         [python_entry, "-c", query],
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -582,6 +583,7 @@ def inspect_hermes(hermes_path: str) -> dict[str, Any]:
         raise ValueError("Hermes path is not an executable file")
     version = subprocess.run(
         [path, "--version"],
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -590,6 +592,7 @@ def inspect_hermes(hermes_path: str) -> dict[str, Any]:
     )
     help_result = subprocess.run(
         [path, "serve", "--help"],
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",

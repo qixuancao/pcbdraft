@@ -26,7 +26,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict, List, Optional
 
 from pcbdraft.agent.video_gen_provider import VideoGenProvider
 from pcbdraft.core.runtime_environment import runtime_home_key

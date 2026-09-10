@@ -1756,12 +1756,14 @@ def setup_terminal_backend(config: dict):
             if uv_bin:
                 result = subprocess.run(
                     [uv_bin, "pip", "install", "--python", sys.executable, "vercel"],
+                    check=False,
                     capture_output=True,
                     text=True,
                 )
             else:
                 result = subprocess.run(
                     [sys.executable, "-m", "pip", "install", "vercel"],
+                    check=False,
                     capture_output=True,
                     text=True,
                 )
@@ -1819,6 +1821,7 @@ def setup_terminal_backend(config: dict):
             ssh_cmd.append("echo ok")
             result = subprocess.run(
                 ssh_cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

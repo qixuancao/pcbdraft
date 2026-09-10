@@ -754,6 +754,7 @@ def check_certificates(should_fix: bool = False, issues: "list | None" = None) -
     try:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "--force-reinstall", "certifi"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=300,
@@ -2279,7 +2280,7 @@ def run_doctor(args):
             # Check if docker daemon is running
             try:
                 result = subprocess.run(
-                    ["docker", "info"], capture_output=True, timeout=10
+                    ["docker", "info"], check=False, capture_output=True, timeout=10
                 )
             except subprocess.TimeoutExpired:
                 result = None
@@ -2325,6 +2326,7 @@ def run_doctor(args):
             try:
                 result = subprocess.run(
                     cmd,
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -2602,6 +2604,7 @@ def run_doctor(args):
                 # npm.cmd (CreateProcessW can't run bare .cmd names).
                 audit_result = subprocess.run(
                     [_npm_bin, "audit", "--json", *audit_extra],
+                    check=False,
                     cwd=str(npm_dir),
                     capture_output=True,
                     text=True,
@@ -3285,6 +3288,7 @@ def run_doctor(args):
         try:
             result = subprocess.run(
                 ["gh", "auth", "status", "--json", "authenticated"],
+                check=False,
                 capture_output=True,
                 timeout=10,
             )

@@ -55,6 +55,7 @@ def _git_proc_running() -> bool:
         if os.name == "nt":
             out = subprocess.run(
                 ["tasklist", "/FI", "IMAGENAME eq git.exe", "/FO", "CSV"],
+                check=False,
                 capture_output=True,
                 text=True,
                 timeout=10,
@@ -62,6 +63,7 @@ def _git_proc_running() -> bool:
             return "git.exe" in out
         out = subprocess.run(
             ["pgrep", "-x", "git"],
+            check=False,
             capture_output=True,
             text=True,
             timeout=10,
@@ -126,6 +128,7 @@ def is_ancestor_of_head(repo_root: Path, rev: str) -> bool:
     try:
         result = subprocess.run(
             ["git", "merge-base", "--is-ancestor", rev, "HEAD"],
+            check=False,
             cwd=str(repo_root),
             capture_output=True,
             text=True,

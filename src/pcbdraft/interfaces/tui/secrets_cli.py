@@ -603,6 +603,7 @@ def _bws_version(binary: Path) -> str:
     try:
         res = subprocess.run(
             [str(binary), "--version"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -664,6 +665,7 @@ def _list_projects(
     try:
         res = subprocess.run(
             [str(binary), "project", "list", "--output", "json"],
+            check=False,
             env=env,
             capture_output=True,
             text=True,

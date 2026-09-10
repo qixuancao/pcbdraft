@@ -45,6 +45,7 @@ def _ensure_singularity_available() -> str:
     try:
         result = subprocess.run(
             [exe, "version"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -147,6 +148,7 @@ def _get_or_build_sif(image: str, executable: str = "apptainer") -> str:
         try:
             result = subprocess.run(
                 [executable, "build", str(sif_path), image],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -252,6 +254,7 @@ class SingularityEnvironment(BaseEnvironment):
         try:
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -296,6 +299,7 @@ class SingularityEnvironment(BaseEnvironment):
             try:
                 subprocess.run(
                     [self.executable, "instance", "stop", self.instance_id],
+                    check=False,  # Best effort; continue snapshot bookkeeping.
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

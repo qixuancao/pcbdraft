@@ -10,7 +10,7 @@ import threading
 import time
 from datetime import UTC, datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Optional
+from typing import Any
 
 # Monotonic counter for jitter seed uniqueness within the same process.
 # Protected by a lock to avoid race conditions in concurrent retry paths

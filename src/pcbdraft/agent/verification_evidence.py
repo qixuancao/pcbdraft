@@ -17,7 +17,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 

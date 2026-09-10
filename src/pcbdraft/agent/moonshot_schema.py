@@ -27,7 +27,7 @@ applies at MCP registration time for all providers.
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List
+from typing import Any
 
 # Keys whose values are maps of name → schema (not schemas themselves).
 # When we recurse, we walk the values of these maps as schemas, but we do

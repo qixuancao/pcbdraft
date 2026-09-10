@@ -15,7 +15,7 @@ import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider
 from pcbdraft.agent.secret_scope import get_secret, is_multiplex_active

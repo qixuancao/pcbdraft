@@ -237,6 +237,7 @@ def _pdf_page_texts(path: str) -> list[str] | None:
     try:
         proc = subprocess.run(
             ["pdftotext", path, "-"],
+            check=False,
             capture_output=True,
             timeout=PDF_PAGE_SCAN_TIMEOUT,
         )

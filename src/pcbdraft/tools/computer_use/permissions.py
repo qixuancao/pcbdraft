@@ -67,6 +67,7 @@ def _child_env() -> dict[str, str]:
 def _run(binary: str, *args: str, timeout: float) -> subprocess.CompletedProcess:
     return subprocess.run(
         [binary, *args],
+        check=False,  # Callers parse diagnostic JSON even on nonzero exits.
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -193,6 +194,7 @@ def request_permissions_grant(driver_cmd: str | None = None) -> int:
         return int(
             subprocess.run(
                 [binary, "permissions", "grant"],
+                check=False,
                 env=_child_env(),
                 stdin=subprocess.DEVNULL,
             ).returncode

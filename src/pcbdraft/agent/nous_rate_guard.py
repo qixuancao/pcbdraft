@@ -18,7 +18,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_utils import atomic_replace
 

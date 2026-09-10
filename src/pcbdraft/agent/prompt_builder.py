@@ -13,7 +13,6 @@ import threading
 from collections import OrderedDict
 from collections.abc import Collection
 from pathlib import Path
-from typing import List, Optional
 
 from pcbdraft.agent.runtime_cwd import resolve_agent_cwd
 from pcbdraft.agent.skill_utils import (

@@ -27,7 +27,7 @@ import logging
 import os
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_runtime_home
 

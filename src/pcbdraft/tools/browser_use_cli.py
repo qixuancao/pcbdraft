@@ -352,6 +352,7 @@ def install_cli(timeout_s: int = 600) -> tuple[bool, str]:
     try:
         result = subprocess.run(
             [uv_bin, "tool", "install", "browser-use"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -644,6 +645,7 @@ def browser_exec(
     try:
         proc = subprocess.run(
             cmd,
+            check=False,
             input=code,
             capture_output=True,
             text=True,

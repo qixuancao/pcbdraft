@@ -338,6 +338,7 @@ def _verify_cosign(checksums_path: str, sig_path: str, cert_path: str) -> bool |
                 _COSIGN_ISSUER,
                 checksums_path,
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -838,6 +839,7 @@ def check_command_security(command: str) -> dict:
                 "--",
                 command,
             ],
+            check=False,  # Exit codes 1/2 are block/warn verdicts, not spawn errors.
             capture_output=True,
             text=True,
             encoding="utf-8",

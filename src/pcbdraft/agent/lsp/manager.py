@@ -41,7 +41,7 @@ import os
 import threading
 import time
 from collections.abc import Callable
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import pcbdraft.agent.lsp.eventlog as eventlog
 from pcbdraft.agent.lsp.client import DIAGNOSTICS_DOCUMENT_WAIT, LSPClient

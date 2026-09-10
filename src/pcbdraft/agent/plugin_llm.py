@@ -74,7 +74,7 @@ import logging
 import re
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -109,7 +109,7 @@ class PluginLlmImageInput:
     type: str = "image"
 
 
-PluginLlmInput = Union[PluginLlmTextInput, PluginLlmImageInput, dict[str, Any]]
+PluginLlmInput = PluginLlmTextInput | PluginLlmImageInput | dict[str, Any]
 """A single structured input block.
 
 Plugins may pass either the dataclasses above or plain dicts with the

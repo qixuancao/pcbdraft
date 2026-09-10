@@ -38,7 +38,7 @@ conversation loop can share the gate without import cycles.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.parse import urlsplit
 
 # Native compaction fires this many tokens below the local compressor's

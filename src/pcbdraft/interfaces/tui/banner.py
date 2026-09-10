@@ -167,6 +167,7 @@ def _git_stdout(args: list[str], *, cwd: Path, timeout: int = 5) -> str | None:
     try:
         result = subprocess.run(
             ["git", *args],
+            check=False,
             capture_output=True,
             text=True,
             # git output is UTF-8; on Windows text=True defaults to the ANSI
@@ -235,6 +236,7 @@ def _upstream_main_sha() -> str | None:
     try:
         result = subprocess.run(
             ["git", "ls-remote", _UPSTREAM_REPO_URL, "refs/heads/main"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -291,6 +293,7 @@ def _check_via_local_git(repo_dir: Path) -> int | None:
         # ref) so a stale ref can't fake an up-to-date report.
         ancestor = subprocess.run(
             ["git", "merge-base", "--is-ancestor", upstream_rev, "HEAD"],
+            check=False,
             capture_output=True,
             timeout=5,
             cwd=str(repo_dir),
@@ -338,6 +341,7 @@ def _check_via_local_git(repo_dir: Path) -> int | None:
         fetch_args.append("--quiet")
         subprocess.run(
             fetch_args,
+            check=False,
             capture_output=True,
             timeout=10,
             cwd=str(repo_dir),
@@ -367,6 +371,7 @@ def _check_via_local_git(repo_dir: Path) -> int | None:
     try:
         result = subprocess.run(
             ["git", "rev-list", "--count", "HEAD..origin/main"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -405,6 +410,7 @@ def _git_short_hash(repo_dir: Path, rev: str) -> str | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--short=8", rev],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -484,6 +490,7 @@ def _compute_git_banner_state(repo_dir: Path | None = None) -> dict | None:
     try:
         result = subprocess.run(
             ["git", "rev-list", "--count", "origin/main..HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -522,6 +529,7 @@ def get_latest_release_tag(repo_dir: Path | None = None) -> tuple | None:
     try:
         result = subprocess.run(
             ["git", "describe", "--tags", "--abbrev=0"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

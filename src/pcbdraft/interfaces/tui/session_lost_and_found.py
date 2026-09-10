@@ -123,6 +123,7 @@ def _cli_supports_recover(binary: str) -> bool:
             conn.close()
         probe = subprocess.run(
             [binary, "-readonly", str(scratch), ".recover"],
+            check=False,
             capture_output=True,
             timeout=30,
         )

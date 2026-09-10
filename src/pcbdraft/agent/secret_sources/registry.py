@@ -34,7 +34,6 @@ import threading
 from collections.abc import MutableMapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from pcbdraft.agent.secret_sources.base import (
     SECRET_SOURCE_API_VERSION,

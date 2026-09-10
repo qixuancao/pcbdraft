@@ -22,7 +22,7 @@ import logging
 import os
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.model.billing_view import parse_money
 

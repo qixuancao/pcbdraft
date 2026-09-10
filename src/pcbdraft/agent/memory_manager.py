@@ -32,7 +32,7 @@ import re
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, wait
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider
 from pcbdraft.agent.skill_commands import extract_user_instruction_from_skill_message

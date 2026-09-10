@@ -1634,6 +1634,7 @@ def _git_repo_root() -> str | None:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1798,6 +1799,7 @@ def _resolve_worktree_base(
     def _git(args, timeout: float = 20):
         return subprocess.run(
             ["git", *args],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1996,6 +1998,7 @@ def _setup_worktree(
                 branch_name,
                 base_ref,
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2025,6 +2028,7 @@ def _setup_worktree(
                         branch_name,
                         base_ref,
                     ],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -2143,6 +2147,7 @@ def _setup_worktree(
                 f"hermes pid={os.getpid()}",
                 str(wt_path),
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2189,6 +2194,7 @@ def _worktree_has_unpushed_commits(worktree_path: str, timeout: int = 10) -> boo
     try:
         remote_refs = subprocess.run(
             ["git", "for-each-ref", "--format=%(refname)", "refs/remotes"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2203,6 +2209,7 @@ def _worktree_has_unpushed_commits(worktree_path: str, timeout: int = 10) -> boo
 
         result = subprocess.run(
             ["git", "log", "--oneline", "HEAD", "--not", "--remotes"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2229,6 +2236,7 @@ def _worktree_is_dirty(worktree_path: str, timeout: int = 10) -> bool:
     try:
         result = subprocess.run(
             ["git", "status", "--porcelain"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2262,6 +2270,7 @@ def _repo_is_shallow(repo_path: str, timeout: int = 5) -> bool:
     try:
         result = subprocess.run(
             ["git", "rev-parse", "--is-shallow-repository"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2295,6 +2304,7 @@ def _deepen_shallow_repo(repo_root: str, timeout: int = 600) -> bool:
     try:
         remotes = subprocess.run(
             ["git", "remote"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2311,6 +2321,7 @@ def _deepen_shallow_repo(repo_root: str, timeout: int = 600) -> bool:
             try:
                 result = subprocess.run(
                     ["git", "fetch", remote, "--unshallow", *extra],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -2431,6 +2442,7 @@ def _worktree_commits_all_merged_upstream(
         try:
             probe = subprocess.run(
                 ["git", "rev-parse", "--verify", "--quiet", candidate],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -2454,6 +2466,7 @@ def _worktree_commits_all_merged_upstream(
         if cache is not None:
             revs = subprocess.run(
                 ["git", "rev-parse", f"{base}^{{commit}}", "HEAD^{commit}"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -2475,6 +2488,7 @@ def _worktree_commits_all_merged_upstream(
 
         ahead = subprocess.run(
             ["git", "rev-list", "--count", f"{base}..HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2492,6 +2506,7 @@ def _worktree_commits_all_merged_upstream(
 
         cherry = subprocess.run(
             ["git", "cherry", base, "HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2532,6 +2547,7 @@ def _worktree_lock_is_live(repo_root: str, worktree_path: str, timeout: int = 10
     try:
         result = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2628,6 +2644,7 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
     try:
         subprocess.run(
             ["git", "worktree", "unlock", wt_path],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2641,6 +2658,7 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
     try:
         subprocess.run(
             ["git", "worktree", "remove", wt_path, "--force"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2655,6 +2673,7 @@ def _cleanup_worktree(info: dict[str, str] | None = None) -> None:
     try:
         subprocess.run(
             ["git", "branch", "-D", branch],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2950,6 +2969,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
             try:
                 subprocess.run(
                     ["git", "worktree", "unlock", str(entry)],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -2964,6 +2984,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
         try:
             branch_result = subprocess.run(
                 ["git", "branch", "--show-current"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -2975,6 +2996,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
 
             remove_result = subprocess.run(
                 ["git", "worktree", "remove", str(entry), "--force"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -2994,6 +3016,7 @@ def _prune_stale_worktrees(repo_root: str, max_age_hours: int = 24) -> None:
             if branch:
                 subprocess.run(
                     ["git", "branch", "-D", branch],
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -3028,6 +3051,7 @@ def _prune_orphaned_branches(repo_root: str) -> None:
     try:
         result = subprocess.run(
             ["git", "branch", "--format=%(refname:short)"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -3048,6 +3072,7 @@ def _prune_orphaned_branches(repo_root: str) -> None:
     try:
         wt_result = subprocess.run(
             ["git", "worktree", "list", "--porcelain"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -3065,6 +3090,7 @@ def _prune_orphaned_branches(repo_root: str) -> None:
     try:
         head_result = subprocess.run(
             ["git", "branch", "--show-current"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -3095,6 +3121,7 @@ def _prune_orphaned_branches(repo_root: str) -> None:
         try:
             subprocess.run(
                 ["git", "branch", "-D"] + batch,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -12999,6 +13026,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
                             result = subprocess.run(
                                 exec_cmd,
+                                check=False,
                                 shell=True,
                                 capture_output=True,
                                 text=True,

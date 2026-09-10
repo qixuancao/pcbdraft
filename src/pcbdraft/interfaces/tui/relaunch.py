@@ -190,7 +190,7 @@ def relaunch(
         import subprocess
 
         try:
-            result = subprocess.run(new_argv)
+            result = subprocess.run(new_argv, check=False)
             sys.exit(result.returncode)
         except KeyboardInterrupt:
             sys.exit(130)

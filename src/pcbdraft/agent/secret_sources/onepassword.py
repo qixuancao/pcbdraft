@@ -46,7 +46,6 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from pcbdraft.agent.secret_sources._cache import (
     CachedFetch,

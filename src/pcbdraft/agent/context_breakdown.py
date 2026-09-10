@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 _SKILLS_BLOCK_RE = re.compile(r"<available_skills>.*?</available_skills>", re.DOTALL)
 

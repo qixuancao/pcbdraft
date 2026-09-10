@@ -46,7 +46,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 from urllib.parse import quote, unquote, urlparse
 from urllib.request import url2pathname
 
@@ -426,7 +426,7 @@ class _VikingClient:
             )
         )
 
-    def post(self, path: str, payload: dict = None, **kwargs) -> dict:
+    def post(self, path: str, payload: dict | None = None, **kwargs) -> dict:
         timeout = kwargs.pop("timeout", _TIMEOUT)
         return self._send_with_trusted_identity_retry(
             lambda headers: self._httpx.post(

@@ -32,7 +32,6 @@ version can change at runtime (editable installs, hot-reload tooling), and
 from __future__ import annotations
 
 from contextvars import ContextVar
-from typing import List, Optional
 
 # ── Ambient conversation context ─────────────────────────────────────────────
 #

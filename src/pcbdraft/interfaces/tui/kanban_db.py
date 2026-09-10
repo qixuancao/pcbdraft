@@ -6230,6 +6230,7 @@ def _cleanup_worker_tmux(conn: sqlite3.Connection, task_id: str) -> None:
         # Check if session exists and pane is dead before killing
         out = subprocess.run(
             ["tmux", "list-panes", "-t", session, "-F", "#{pane_dead}"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -6239,6 +6240,7 @@ def _cleanup_worker_tmux(conn: sqlite3.Connection, task_id: str) -> None:
         if out.stdout.strip() == "1":
             subprocess.run(
                 ["tmux", "kill-session", "-t", session],
+                check=False,
                 capture_output=True,
                 timeout=5,
             )

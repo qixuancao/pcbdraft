@@ -1160,6 +1160,7 @@ def _terminate_command_tts_process_tree(proc: subprocess.Popen) -> None:
         try:
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                check=False,  # Best-effort termination of a possibly exited tree.
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=5,
@@ -1494,6 +1495,7 @@ def _ffmpeg_transcode_to_opus(input_path: str, ogg_path: str) -> str | None:
                 work_path,
                 "-y",
             ],
+            check=False,
             capture_output=True,
             timeout=30,
             stdin=subprocess.DEVNULL,
@@ -1673,6 +1675,7 @@ def _concat_audio_files(
 
         result = subprocess.run(
             command,
+            check=False,
             capture_output=True,
             timeout=120,
             stdin=subprocess.DEVNULL,
@@ -2911,6 +2914,7 @@ def _generate_gemini_tts(
                 cmd = [ffmpeg, "-i", wav_path, "-y", "-loglevel", "error", output_path]
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 timeout=30,
                 stdin=subprocess.DEVNULL,
@@ -3010,6 +3014,7 @@ def _generate_neutts(text: str, output_path: str, tts_config: dict[str, Any]) ->
 
     result = subprocess.run(
         cmd,
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -3143,6 +3148,7 @@ def _resolve_piper_voice_path(voice: str, download_dir: Path) -> str:
                 "--download-dir",
                 str(download_dir),
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

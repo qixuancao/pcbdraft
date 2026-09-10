@@ -208,6 +208,7 @@ def run_tier1_scan(skill_dir: Path, timeout: int = SCAN_TIMEOUT_SECONDS) -> Tier
                     "-o",
                     outdir,
                 ],
+                check=False,  # The JSON report, not exit status, is the advisory.
                 capture_output=True,
                 text=True,
                 timeout=timeout,

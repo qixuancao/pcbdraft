@@ -233,6 +233,7 @@ def reap_orphan_containers(
         try:
             result = subprocess.run(
                 [docker, "rm", "-f", cid],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -719,6 +720,7 @@ def _image_uses_init_entrypoint(docker_exe: str, image: str) -> bool:
                 "--format",
                 "{{json .Config.Entrypoint}}",
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -817,6 +819,7 @@ def _cgroup_limits_available(image: str) -> bool:
                 "sleep",
                 "0",
             ],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -866,6 +869,7 @@ def _ensure_docker_available() -> None:
     try:
         result = subprocess.run(
             [docker_exe, "version"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1674,6 +1678,7 @@ class DockerEnvironment(BaseEnvironment):
                 )
                 subprocess.run(
                     [self._docker_exe, "rm", "-f", container_name],
+                    check=False,  # Nonzero cleanup must preserve the run error.
                     capture_output=True,
                     timeout=10,
                     stdin=subprocess.DEVNULL,
@@ -1971,6 +1976,7 @@ class DockerEnvironment(BaseEnvironment):
             docker = find_docker() or "docker"
             result = subprocess.run(
                 [docker, "info", "--format", "{{.Driver}}"],
+                check=False,  # Keep output-based storage-driver detection.
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -1986,6 +1992,7 @@ class DockerEnvironment(BaseEnvironment):
             # Probe by attempting a dry-ish run — the fastest reliable check.
             probe = subprocess.run(
                 [docker, "create", "--storage-opt", "size=1m", "hello-world"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -1999,6 +2006,7 @@ class DockerEnvironment(BaseEnvironment):
                 if container_id:
                     subprocess.run(
                         [docker, "rm", container_id],
+                        check=False,  # Best-effort removal of the probe container.
                         capture_output=True,
                         timeout=5,
                         stdin=subprocess.DEVNULL,
@@ -2239,6 +2247,7 @@ class DockerEnvironment(BaseEnvironment):
                 try:
                     subprocess.run(
                         [docker_exe, "stop", "-t", "10", container_id],
+                        check=False,  # Best effort; removal can still proceed.
                         capture_output=True,
                         timeout=30,
                         stdin=subprocess.DEVNULL,
@@ -2249,6 +2258,7 @@ class DockerEnvironment(BaseEnvironment):
                 try:
                     subprocess.run(
                         [docker_exe, "rm", "-f", container_id],
+                        check=False,  # Best effort; it may already be removed.
                         capture_output=True,
                         timeout=30,
                         stdin=subprocess.DEVNULL,

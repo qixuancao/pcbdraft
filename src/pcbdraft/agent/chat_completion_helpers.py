@@ -25,7 +25,7 @@ import threading
 import time
 import uuid
 from types import SimpleNamespace
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pcbdraft.agent.error_classifier import (
     PROVIDER_STREAM_NON_JSON_ERROR_CODE,

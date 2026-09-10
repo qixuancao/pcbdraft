@@ -242,6 +242,7 @@ def run_core_install(root: Path) -> None:
         try:
             subprocess.run(
                 [sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"],
+                check=False,
                 cwd=root,
                 capture_output=True,
             )

@@ -242,6 +242,7 @@ def _systemd_run_user_scope_available() -> bool:
                             "--",
                             "/bin/true",
                         ],
+                        check=False,
                         capture_output=True,
                         timeout=3,
                     )
@@ -344,6 +345,7 @@ def _stop_systemd_unit(unit_name: str) -> bool:
     try:
         result = subprocess.run(
             [binary, "--user", "stop", unit_name],
+            check=False,
             capture_output=True,
             timeout=15,
         )
@@ -947,6 +949,7 @@ class ProcessRegistry:
             try:
                 subprocess.run(
                     ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    check=False,  # Best effort; the target may already be gone.
                     capture_output=True,
                     text=True,
                     encoding="utf-8",

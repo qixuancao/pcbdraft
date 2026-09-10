@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import MutableMapping
 from time import time as wall_time
-from typing import Any, Optional, TypeVar
+from typing import Any, TypeVar
 
 # These fields describe Hermes' durable record, not provider-visible message
 # content. They must not influence context-pressure decisions.

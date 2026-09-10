@@ -53,7 +53,6 @@ Fixes #52217.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 # (slug, floor_seconds).  Each slug is matched as a discrete
 # word-boundary component via the wrapper regex in ``_match_any``

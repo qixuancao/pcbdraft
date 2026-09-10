@@ -18,7 +18,7 @@ import logging
 import os
 import shlex
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any
 
 from pcbdraft.agent.prompt_builder import _scan_context_content
 

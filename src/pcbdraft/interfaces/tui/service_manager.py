@@ -909,6 +909,7 @@ class S6ServiceManager:
         try:
             result = subprocess.run(
                 [f"{_S6_BIN_DIR}/s6-svstat", str(self.scandir / name)],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -967,6 +968,7 @@ class S6ServiceManager:
 
         result = subprocess.run(
             [f"{_S6_BIN_DIR}/s6-svstat", str(self.scandir / name)],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1074,6 +1076,7 @@ class S6ServiceManager:
         # Trigger rescan so s6-svscan picks up the new service.
         result = subprocess.run(
             [f"{_S6_BIN_DIR}/s6-svscanctl", "-a", str(self.scandir)],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

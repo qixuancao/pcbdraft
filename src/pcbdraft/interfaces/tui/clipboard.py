@@ -110,6 +110,7 @@ def write_clipboard_text(text: str) -> bool:
             if use_stdin:
                 proc = subprocess.run(
                     argv,
+                    check=False,
                     input=text.encode("utf-8"),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -119,6 +120,7 @@ def write_clipboard_text(text: str) -> bool:
                 b64 = base64.b64encode(text.encode("utf-8")).decode("ascii")
                 proc = subprocess.run(
                     argv + ["-Command", _powershell_write_script(b64)],
+                    check=False,
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
@@ -144,6 +146,7 @@ def _macos_has_image() -> bool:
     try:
         info = subprocess.run(
             ["osascript", "-e", "clipboard info"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -160,6 +163,7 @@ def _macos_pngpaste(dest: Path) -> bool:
     try:
         r = subprocess.run(
             ["pngpaste", str(dest)],
+            check=False,
             capture_output=True,
             timeout=3,
         )
@@ -191,6 +195,7 @@ def _macos_osascript(dest: Path) -> bool:
     try:
         r = subprocess.run(
             ["osascript", "-e", script],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -291,6 +296,7 @@ _POWERSHELL_EXTRACT_IMAGE_SCRIPTS = (
 def _run_powershell(exe: str, script: str, timeout: int) -> subprocess.CompletedProcess:
     return subprocess.run(
         [exe, "-NoProfile", "-NonInteractive", "-Command", script],
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -353,6 +359,7 @@ def _find_powershell() -> str | None:
         try:
             r = subprocess.run(
                 [name, "-NoProfile", "-NonInteractive", "-Command", "echo ok"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -435,6 +442,7 @@ def _wayland_has_image() -> bool:
     try:
         r = subprocess.run(
             ["wl-paste", "--list-types"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -457,6 +465,7 @@ def _wayland_save(dest: Path) -> bool:
         # Check available MIME types
         types_r = subprocess.run(
             ["wl-paste", "--list-types"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -535,6 +544,7 @@ def _convert_to_png(path: Path) -> bool:
         path.rename(tmp)
         r = subprocess.run(
             ["convert", str(tmp), "png:" + str(path)],
+            check=False,
             capture_output=True,
             timeout=5,
         )
@@ -574,6 +584,7 @@ def _xclip_has_image() -> bool:
     try:
         r = subprocess.run(
             ["xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -594,6 +605,7 @@ def _xclip_save(dest: Path) -> bool:
     try:
         targets = subprocess.run(
             ["xclip", "-selection", "clipboard", "-t", "TARGETS", "-o"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",

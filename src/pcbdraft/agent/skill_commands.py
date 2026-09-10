@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pcbdraft.agent.prompt_cache_boundary import register_stable_prefix
 from pcbdraft.agent.skill_preprocessing import (

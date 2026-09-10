@@ -36,7 +36,7 @@ rotate, so they hit the memo forever and behave byte-identically to before.
 """
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

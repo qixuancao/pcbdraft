@@ -434,6 +434,7 @@ class GitHubAuth:
         try:
             result = subprocess.run(
                 ["gh", "auth", "token"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

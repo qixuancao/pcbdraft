@@ -18,7 +18,7 @@ of the WebUI path silently skipping it.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List
+from typing import Any
 
 from pcbdraft.agent.tool_dispatch_helpers import make_tool_result_message
 from pcbdraft.agent.tool_result_classification import tool_may_have_side_effect

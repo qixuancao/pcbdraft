@@ -1609,6 +1609,7 @@ def _resolve_workspace_key() -> str | None:
 
         result = subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1666,6 +1667,7 @@ def _probe_container(cmd: list, backend: str, via_sudo: bool = False):
     try:
         return subprocess.run(
             cmd,
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -2489,6 +2491,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
             # resolve that node, not the mismatched system one.
             return subprocess.run(
                 npm_install_cmd,
+                check=False,
                 cwd=str(npm_cwd),
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -2531,6 +2534,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         ink_dir = tui_dir / "packages" / "hermes-ink"
         result = subprocess.run(
             [npm, "run", "build"],
+            check=False,
             cwd=str(ink_dir),
             capture_output=True,
             text=True,
@@ -2562,6 +2566,7 @@ def _make_tui_argv(tui_dir: Path, tui_dev: bool) -> tuple[list[str], Path]:
         npm = _node_bin("npm")
         result = subprocess.run(
             [npm, "run", "build"],
+            check=False,
             cwd=str(tui_dir),
             capture_output=True,
             text=True,
@@ -3424,6 +3429,7 @@ def cmd_whatsapp(args):
         try:
             result = subprocess.run(
                 [npm, "install", "--no-fund", "--no-audit", "--progress=false"],
+                check=False,
                 cwd=str(bridge_dir),
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
@@ -3494,6 +3500,7 @@ def cmd_whatsapp(args):
                 "--session",
                 str(session_dir),
             ],
+            check=False,
             cwd=str(bridge_dir),
             env=with_hermes_node_path(),
         )
@@ -7784,6 +7791,7 @@ def _detect_linux_password_store() -> str | None:
                 "/org/freedesktop/secrets",
                 "org.freedesktop.DBus.Peer.Ping",
             ],
+            check=False,
             capture_output=True,
             timeout=5,
         )
@@ -8293,6 +8301,7 @@ def _restart_managed_dashboard_service(
     def _systemctl(*args: str, timeout: int = 10) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["systemctl", *args],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -8359,6 +8368,7 @@ def _restart_managed_dashboard_service(
         try:
             result = subprocess.run(
                 list(command),
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -8472,6 +8482,7 @@ def _try_restart_systemd_service(svc_name: str, cgroup_path: str | None = None) 
             try:
                 r = subprocess.run(
                     candidate,
+                    check=False,
                     capture_output=True,
                     text=True,
                     encoding="utf-8",
@@ -8487,6 +8498,7 @@ def _try_restart_systemd_service(svc_name: str, cgroup_path: str | None = None) 
     try:
         r = subprocess.run(
             cmd,
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -8523,6 +8535,7 @@ def _dashboard_cmdline_for_pid(pid: int) -> list[str] | None:
         # macOS (no /proc): best-effort via ps.
         result = subprocess.run(
             ["ps", "-p", str(pid), "-o", "command="],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -12606,6 +12619,7 @@ def main():
 
                     version = subprocess.run(
                         [path, "--version"],
+                        check=False,
                         capture_output=True,
                         text=True,
                         encoding="utf-8",

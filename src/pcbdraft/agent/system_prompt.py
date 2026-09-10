@@ -30,7 +30,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.prompt_builder import (
     DEFAULT_AGENT_IDENTITY,

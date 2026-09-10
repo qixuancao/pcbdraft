@@ -38,7 +38,7 @@ import logging
 import os
 import threading
 import time
-from typing import Any, Dict, List
+from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider
 from pcbdraft.agent.secret_scope import get_secret

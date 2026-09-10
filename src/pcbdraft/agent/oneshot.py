@@ -23,7 +23,7 @@ the live session's provider/model, otherwise the configured ``task`` (default
 
 import logging
 from collections.abc import Callable
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from pcbdraft.model.auxiliary_client import call_llm, extract_content_or_reasoning
 

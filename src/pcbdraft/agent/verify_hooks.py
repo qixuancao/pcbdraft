@@ -14,7 +14,7 @@ decision while preserving ``pre_verify`` for user/plugin policy.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.core.runtime_utils import is_truthy_value
 

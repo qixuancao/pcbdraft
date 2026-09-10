@@ -45,7 +45,6 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
 
 from pcbdraft.agent.secret_sources._cache import CachedFetch as _CachedFetch
 from pcbdraft.agent.secret_sources._cache import DiskCache, FetchResult

@@ -12,7 +12,7 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.monitoring.events import GatewayDiagnosticEvent, GatewayHealthEvent
 

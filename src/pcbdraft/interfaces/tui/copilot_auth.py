@@ -162,6 +162,7 @@ def _try_gh_cli_token() -> str | None:
         try:
             result = subprocess.run(
                 cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

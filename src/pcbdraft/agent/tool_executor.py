@@ -21,7 +21,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.agent.display import KawaiiSpinner, _detect_tool_failure
 from pcbdraft.agent.display import build_tool_label as _build_tool_label

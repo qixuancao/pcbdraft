@@ -628,6 +628,7 @@ def _safe_git_error(result: subprocess.CompletedProcess, source_url: str = "") -
 def _git_head_revision(repo: Path, git_exe: str) -> str:
     result = subprocess.run(
         [git_exe, "rev-parse", "HEAD"],
+        check=False,
         cwd=str(repo),
         capture_output=True,
         text=True,
@@ -650,6 +651,7 @@ def _checkout_exact_revision(repo: Path, git_exe: str, revision: str) -> None:
     try:
         fetched = subprocess.run(
             [git_exe, "fetch", "--depth", "1", "origin", revision],
+            check=False,
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -671,6 +673,7 @@ def _checkout_exact_revision(repo: Path, git_exe: str, revision: str) -> None:
     try:
         checked_out = subprocess.run(
             [git_exe, "checkout", "--detach", revision],
+            check=False,
             cwd=str(repo),
             capture_output=True,
             text=True,
@@ -719,6 +722,7 @@ def _scrub_cloned_origin(repo: Path, git_exe: str, git_url: str) -> None:
         return
     result = subprocess.run(
         [git_exe, "remote", "set-url", "origin", scrubbed],
+        check=False,
         cwd=str(repo),
         capture_output=True,
         text=True,
@@ -777,6 +781,7 @@ def _install_plugin_core(
         try:
             result = subprocess.run(
                 clone_args,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -3005,6 +3010,7 @@ def _run_plugin_git(
     """Run one git command inside a plugin checkout (non-interactive)."""
     return subprocess.run(
         [git_exe, *args],
+        check=False,
         capture_output=True,
         text=True,
         encoding="utf-8",

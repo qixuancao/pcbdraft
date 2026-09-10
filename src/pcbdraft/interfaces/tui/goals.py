@@ -489,6 +489,7 @@ def workspace_fingerprint(cwd: str | None = None) -> str:
     try:
         head = subprocess.run(
             ["git", "rev-parse", "HEAD"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -500,6 +501,7 @@ def workspace_fingerprint(cwd: str | None = None) -> str:
             return ""
         status = subprocess.run(
             ["git", "status", "--porcelain"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -526,6 +528,7 @@ def run_gate(gate: GoalGate, *, cwd: str | None = None) -> tuple[bool, int, str]
     try:
         proc = subprocess.run(
             gate.command,
+            check=False,
             shell=True,
             capture_output=True,
             text=True,

@@ -33,6 +33,7 @@ def _run(args: list[str], cwd: str, timeout: int = _GIT_TIMEOUT):
     """Run git, returning (returncode, stdout). Never raises on git failure."""
     proc = subprocess.run(
         ["git", "-c", "core.quotePath=false", *args],
+        check=False,  # git diff --no-index returns 1 when it produces a diff.
         cwd=cwd,
         capture_output=True,
         text=True,

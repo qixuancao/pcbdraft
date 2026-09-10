@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Dict, List, Optional
 
 from pcbdraft.agent.transcription_provider import TranscriptionProvider
 from pcbdraft.core.runtime_environment import runtime_home_key

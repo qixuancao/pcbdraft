@@ -2042,6 +2042,7 @@ def _probe_python(python_path: str, code: str, *, text: bool = False):
 
         return subprocess.run(
             [python_path, "-c", code],
+            check=False,  # Callers distinguish failed probes from spawn failures.
             timeout=5,
             capture_output=True,
             text=text,

@@ -27,7 +27,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 __all__ = [
     "FetchResult",

@@ -11,7 +11,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 from pcbdraft.core.runtime_environment import get_config_path, get_skills_dir, is_termux
 

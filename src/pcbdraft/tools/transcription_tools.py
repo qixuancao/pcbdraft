@@ -696,6 +696,7 @@ def _terminate_command_stt_process_tree(proc: subprocess.Popen) -> None:
         try:
             subprocess.run(
                 ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                check=False,  # Best-effort termination of a possibly exited tree.
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 timeout=5,

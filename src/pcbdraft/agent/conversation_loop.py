@@ -26,7 +26,7 @@ import random
 import re
 import ssl
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pcbdraft.agent.context_engine import automatic_compaction_status_message
 from pcbdraft.agent.conversation_compression import (
@@ -1748,9 +1748,9 @@ def _notify_context_engine_turn_complete(
 def run_conversation(
     agent,
     user_message: Any,
-    system_message: str = None,
-    conversation_history: list[dict[str, Any]] = None,
-    task_id: str = None,
+    system_message: str | None = None,
+    conversation_history: list[dict[str, Any]] | None = None,
+    task_id: str | None = None,
     stream_callback: Callable[..., Any] | None = None,
     persist_user_message: Any | None = None,
     persist_user_timestamp: float | None = None,

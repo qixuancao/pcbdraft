@@ -111,6 +111,7 @@ def _read_cli_version(binary: str, *, timeout: float = 5.0) -> str | None:
     try:
         completed = subprocess.run(
             [binary, "--version"],
+            check=False,  # Preserve a version banner even on a nonzero exit.
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -319,6 +320,7 @@ def _cli_driver_version(binary: str, timeout: float = 5.0) -> tuple[str, str | N
     try:
         completed = subprocess.run(
             [binary, "--version"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -346,6 +348,7 @@ def _cli_doctor_snippet(binary: str, timeout: float = 8.0) -> str | None:
     try:
         completed = subprocess.run(
             [binary, "doctor"],
+            check=False,  # Failed doctor checks still provide useful diagnostics.
             capture_output=True,
             text=True,
             encoding="utf-8",

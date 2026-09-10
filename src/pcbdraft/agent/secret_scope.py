@@ -28,7 +28,6 @@ import re
 from collections.abc import Mapping
 from contextvars import ContextVar, Token
 from pathlib import Path
-from typing import Dict, Optional
 
 # ── multiplex-active flag ────────────────────────────────────────────────
 # Process-global: set once at gateway startup when gateway.multiplex_profiles

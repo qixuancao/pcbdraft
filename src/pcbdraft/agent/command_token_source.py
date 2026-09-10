@@ -40,7 +40,6 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

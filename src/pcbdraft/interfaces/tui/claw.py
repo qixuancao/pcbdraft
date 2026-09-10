@@ -73,6 +73,7 @@ def _detect_openclaw_processes() -> list[str]:
         try:
             result = subprocess.run(
                 ["systemctl", "--user", "is-active", "openclaw-gateway.service"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -122,6 +123,7 @@ def _detect_openclaw_processes() -> list[str]:
         try:
             result = subprocess.run(
                 ["pgrep", "-f", "openclaw"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

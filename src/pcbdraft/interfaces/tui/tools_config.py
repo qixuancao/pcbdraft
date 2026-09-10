@@ -1014,6 +1014,7 @@ def _pip_install(
         try:
             result = subprocess.run(
                 [uv_bin, "pip", "install", *args],
+                check=False,
                 capture_output=capture_output,
                 text=True,
                 encoding="utf-8",
@@ -1036,6 +1037,7 @@ def _pip_install(
         # Probe for pip; bootstrap via ensurepip if missing (uv venv lacks it).
         probe = subprocess.run(
             pip_cmd + ["--version"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1068,6 +1070,7 @@ def _pip_install(
 
     return subprocess.run(
         pip_cmd + ["install", *args],
+        check=False,
         capture_output=capture_output,
         text=True,
         encoding="utf-8",
@@ -1232,6 +1235,7 @@ def install_cua_driver(
         try:
             version = subprocess.run(
                 [binary, "--version"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -1347,6 +1351,7 @@ def install_cua_driver(
         try:
             before = subprocess.run(
                 [binary, "--version"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -1379,6 +1384,7 @@ def install_cua_driver(
         try:
             after = subprocess.run(
                 [binary, "--version"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -1582,6 +1588,7 @@ def _cua_driver_autostart_registered_windows() -> bool:
     try:
         result = subprocess.run(
             ["schtasks.exe", "/Query", "/TN", "cua-driver-serve"],
+            check=False,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=10,
@@ -1630,6 +1637,7 @@ def _repair_cua_driver_autostart_windows(driver_cmd: str, *, verbose: bool) -> b
     try:
         result = subprocess.run(
             [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -1722,6 +1730,7 @@ def _run_cua_driver_installer(
         try:
             dl = subprocess.run(
                 ["curl", "-fsSL", "-o", script_path, install_url],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -2088,6 +2097,7 @@ def _run_post_setup(post_setup_key: str):
         try:
             result = subprocess.run(
                 install_cmd,
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -2132,6 +2142,7 @@ def _run_post_setup(post_setup_key: str):
             result = subprocess.run(
                 # --workspaces=false avoids resolving apps/desktop. See #38772.
                 [_npm_bin, "install", "--silent", "--workspaces=false"],
+                check=False,
                 capture_output=True,
                 text=True,
                 encoding="utf-8",

@@ -29,8 +29,6 @@ Part 2 of Fixes #52310.
 
 from __future__ import annotations
 
-from typing import Optional
-
 # Substring set that identifies a transport-layer failure on the
 # response stream.  Same shape as the existing
 # ``_SERVER_DISCONNECT_PATTERNS`` in ``agent/error_classifier.py:394``

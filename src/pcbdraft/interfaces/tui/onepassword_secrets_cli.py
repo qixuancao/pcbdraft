@@ -494,6 +494,7 @@ def _op_version(binary: Path) -> str:
     try:
         res = subprocess.run(
             [str(binary), "--version"],
+            check=False,
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -528,6 +529,7 @@ def _op_whoami(binary: Path, account: str, *, token_value: str = "") -> str | No
     try:
         res = subprocess.run(
             cmd,
+            check=False,
             env=env,
             capture_output=True,
             text=True,

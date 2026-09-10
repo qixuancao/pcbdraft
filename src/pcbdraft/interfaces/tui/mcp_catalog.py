@@ -450,7 +450,7 @@ def _run_bootstrap(cwd: Path, commands: list[str]) -> None:
     """
     for cmd in commands:
         print(color(f"  $ {cmd}", Colors.DIM))
-        proc = subprocess.run(cmd, cwd=str(cwd), shell=True)
+        proc = subprocess.run(cmd, check=False, cwd=str(cwd), shell=True)
         if proc.returncode != 0:
             raise CatalogError(f"bootstrap step failed (exit {proc.returncode}): {cmd}")
 
@@ -499,6 +499,7 @@ def _do_git_install(entry: CatalogEntry) -> Path:
                 install.url,
                 str(dest),
             ],
+            check=False,
             stdin=subprocess.DEVNULL,
             env=_git_env,
         )
@@ -514,6 +515,7 @@ def _do_git_install(entry: CatalogEntry) -> Path:
     if is_sha_ref:
         proc = subprocess.run(
             [git, "clone", install.url, str(dest)],
+            check=False,
             stdin=subprocess.DEVNULL,
             env=_git_env,
         )
@@ -521,6 +523,7 @@ def _do_git_install(entry: CatalogEntry) -> Path:
             raise CatalogError(f"git clone failed for {install.url}")
         proc = subprocess.run(
             [git, "-C", str(dest), "checkout", install.ref],
+            check=False,
             stdin=subprocess.DEVNULL,
             env=_git_env,
         )

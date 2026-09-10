@@ -58,7 +58,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.interfaces.tui._subprocess_compat import bounded_git_probe
 

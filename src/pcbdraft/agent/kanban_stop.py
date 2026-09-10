@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable
-from typing import Any, Optional
+from typing import Any
 
 _TERMINAL_KANBAN_TOOLS = frozenset({"kanban_complete", "kanban_block"})
 
