@@ -399,12 +399,10 @@ class GitHubAuth:
 
     def _resolve_token(self) -> str | None:
         # Return cached token if still valid
-        if self._cached_token:
-            if (
-                self._cached_method != "github-app"
-                or time.time() < self._app_token_expiry
-            ):
-                return self._cached_token
+        if self._cached_token and (
+            self._cached_method != "github-app" or time.time() < self._app_token_expiry
+        ):
+            return self._cached_token
 
         # 1. Environment variable (profile-scoped under a multiplexed gateway)
         from pcbdraft.agent.secret_scope import get_secret
@@ -647,11 +645,9 @@ class GitHubSource(SkillSource):
         _trust_rank = {"builtin": 2, "trusted": 1, "community": 0}
         seen = {}
         for r in results:
-            if r.identifier not in seen:
-                seen[r.identifier] = r
-            elif _trust_rank.get(r.trust_level, 0) > _trust_rank.get(
-                seen[r.identifier].trust_level, 0
-            ):
+            if r.identifier not in seen or _trust_rank.get(
+                r.trust_level, 0
+            ) > _trust_rank.get(seen[r.identifier].trust_level, 0):
                 seen[r.identifier] = r
         results = list(seen.values())
 
@@ -4901,11 +4897,9 @@ def unified_search(
     _TRUST_RANK = {"builtin": 2, "trusted": 1, "community": 0}
     seen: dict[str, SkillMeta] = {}
     for r in all_results:
-        if r.identifier not in seen:
-            seen[r.identifier] = r
-        elif _TRUST_RANK.get(r.trust_level, 0) > _TRUST_RANK.get(
-            seen[r.identifier].trust_level, 0
-        ):
+        if r.identifier not in seen or _TRUST_RANK.get(
+            r.trust_level, 0
+        ) > _TRUST_RANK.get(seen[r.identifier].trust_level, 0):
             seen[r.identifier] = r
     deduped = list(seen.values())
 

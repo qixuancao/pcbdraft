@@ -1558,9 +1558,7 @@ def _is_unusable_container_cwd(cwd: str) -> bool:
     # Relative paths (".", "src/") can't be a container workdir either. Windows
     # drive paths are absolute on Windows but os.path.isabs() is False on a
     # POSIX host, so they're already caught by the prefix check above.
-    if not os.path.isabs(cwd):
-        return True
-    return False
+    return not os.path.isabs(cwd)
 
 
 # One-shot guard for the config-fallback bridge below.  Purely an

@@ -403,9 +403,10 @@ def _make_callback(event: str, target: WebhookTarget):
     """Build the notify-only closure ``invoke_hook()`` calls per firing."""
 
     def _callback(**kwargs: Any) -> None:
-        if event in _TOOL_SCOPED_EVENTS:
-            if not target.matches_tool(kwargs.get("tool_name")):
-                return None
+        if event in _TOOL_SCOPED_EVENTS and not target.matches_tool(
+            kwargs.get("tool_name")
+        ):
+            return None
         delivery_id = uuid.uuid4().hex
         try:
             body = _serialize_payload(event, kwargs, delivery_id)

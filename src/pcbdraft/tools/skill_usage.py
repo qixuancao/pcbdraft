@@ -223,7 +223,7 @@ def _read_hub_installed_names() -> set[str]:
         if isinstance(data, dict):
             installed = data.get("installed") or {}
             if isinstance(installed, dict):
-                names = {str(k) for k in installed.keys()}
+                names = {str(k) for k in installed}
                 skills_dir = _skills_dir()
                 for entry in installed.values():
                     if not isinstance(entry, dict):
@@ -480,9 +480,7 @@ def is_curation_eligible(skill_name: str, skill_path: Path | None = None) -> boo
     local_dir = _find_skill_dir(skill_name)
     if local_dir is not None:
         return not is_external_skill_path(local_dir)
-    if _find_external_skill_dir(skill_name) is not None:
-        return False
-    return True
+    return _find_external_skill_dir(skill_name) is None
 
 
 def _is_curator_managed_record(record: Any) -> bool:

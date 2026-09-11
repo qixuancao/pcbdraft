@@ -98,9 +98,7 @@ def _is_destructive_command(cmd: str) -> bool:
         return False
     if _DESTRUCTIVE_PATTERNS.search(cmd):
         return True
-    if _REDIRECT_OVERWRITE.search(cmd):
-        return True
-    return False
+    return bool(_REDIRECT_OVERWRITE.search(cmd))
 
 
 def _is_mcp_tool_parallel_safe(tool_name: str) -> bool:

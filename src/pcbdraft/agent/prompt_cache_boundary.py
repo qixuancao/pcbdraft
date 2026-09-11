@@ -78,9 +78,12 @@ def find_stable_prefix(content: str) -> str | None:
     with _lock:
         best: str | None = None
         for prefix in _prefixes:
-            if len(content) > len(prefix) and content.startswith(prefix):
-                if best is None or len(prefix) > len(best):
-                    best = prefix
+            if (
+                len(content) > len(prefix)
+                and content.startswith(prefix)
+                and (best is None or len(prefix) > len(best))
+            ):
+                best = prefix
         if best is not None:
             # After the scan so the OrderedDict is never mutated mid-iteration.
             _prefixes.move_to_end(best)

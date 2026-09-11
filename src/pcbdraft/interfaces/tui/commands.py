@@ -1849,11 +1849,10 @@ class SlashCommandAutoSuggest(AutoSuggest):
             return None
 
         # Static subcommands
-        if base_cmd in SUBCOMMANDS and SUBCOMMANDS[base_cmd]:
-            if " " not in sub_text:
-                for sub in SUBCOMMANDS[base_cmd]:
-                    if sub.startswith(sub_lower) and sub != sub_lower:
-                        return Suggestion(sub[len(sub_text) :])
+        if base_cmd in SUBCOMMANDS and SUBCOMMANDS[base_cmd] and " " not in sub_text:
+            for sub in SUBCOMMANDS[base_cmd]:
+                if sub.startswith(sub_lower) and sub != sub_lower:
+                    return Suggestion(sub[len(sub_text) :])
 
         # Fall back to history
         if self._history:

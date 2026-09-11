@@ -135,9 +135,10 @@ def _sanitize_messages_surrogates(messages: list) -> bool:
                 if _SURROGATE_RE.search(value):
                     msg[key] = _SURROGATE_RE.sub("\ufffd", value)
                     found = True
-            elif isinstance(value, (dict, list)):
-                if _sanitize_structure_surrogates(value):
-                    found = True
+            elif isinstance(value, (dict, list)) and _sanitize_structure_surrogates(
+                value
+            ):
+                found = True
     return found
 
 
@@ -247,9 +248,12 @@ def _repair_tool_call_arguments(raw_args: str, tool_name: str = "?") -> str:
             json.loads(fixed)
             break
         except json.JSONDecodeError:
-            if fixed.endswith("}") and fixed.count("}") > fixed.count("{"):
-                fixed = fixed[:-1]
-            elif fixed.endswith("]") and fixed.count("]") > fixed.count("["):
+            if (
+                fixed.endswith("}")
+                and fixed.count("}") > fixed.count("{")
+                or fixed.endswith("]")
+                and fixed.count("]") > fixed.count("[")
+            ):
                 fixed = fixed[:-1]
             else:
                 break

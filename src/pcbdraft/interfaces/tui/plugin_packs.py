@@ -589,9 +589,11 @@ def _sanitized_entry_config(plugin_id: str) -> dict[str, Any]:
             continue
         if _SECRET_KEY_RE.search(key):
             continue
-        if isinstance(value, (str, int, float, bool)) or value is None:
-            out[key] = value
-        elif isinstance(value, (list, dict)):
+        if (
+            isinstance(value, (str, int, float, bool))
+            or value is None
+            or isinstance(value, (list, dict))
+        ):
             out[key] = value
     return out
 

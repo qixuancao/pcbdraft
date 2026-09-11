@@ -169,20 +169,17 @@ def same_deployment(a: BackendIdentity, b: BackendIdentity) -> bool:
         # Same-host different-label shims: same URL + same model IS the same
         # deployment even when the alias labels differ (#22548) — unless both
         # labels are first-class registry providers (#70893).
-        if (
+        return bool(
             a.base_url
             and a.base_url == b.base_url
             and a.model
             and a.model == b.model
             and not _both_first_class(a, b)
-        ):
-            return True
-        return False
+        )
     if not (a.model and b.model and a.model == b.model):
         return False
-    if a.base_url and b.base_url and a.base_url != b.base_url:
-        return False  # distinct explicit endpoints — a pool, not a dup
-    return True
+    # distinct explicit endpoints — a pool, not a dup
+    return not (a.base_url and b.base_url and a.base_url != b.base_url)
 
 
 def should_skip_candidate(

@@ -955,9 +955,12 @@ def coerce_tool_args(tool_name: str, args: dict[str, Any]) -> dict[str, Any]:
             # or ``tasks: [{"goal": "..."}]`` where an element was emitted as
             # a JSON string. The top-level coercion above only repairs the
             # outermost value.
-            if expected == "array" and isinstance(value, (list, tuple)):
-                args[key] = _normalize_json_strings_for_schema(value, prop_schema)
-            elif expected == "object" and isinstance(value, dict):
+            if (
+                expected == "array"
+                and isinstance(value, (list, tuple))
+                or expected == "object"
+                and isinstance(value, dict)
+            ):
                 args[key] = _normalize_json_strings_for_schema(value, prop_schema)
             continue
         if not expected and not _schema_allows_null(prop_schema):
@@ -1030,9 +1033,12 @@ def _normalize_json_strings_for_schema(value: Any, schema: Any) -> Any:
                 parsed = json.loads(trimmed)
             except (ValueError, TypeError):
                 return value
-            if isinstance(parsed, list) and expects_array:
-                value = parsed
-            elif isinstance(parsed, dict) and expects_object:
+            if (
+                isinstance(parsed, list)
+                and expects_array
+                or isinstance(parsed, dict)
+                and expects_object
+            ):
                 value = parsed
             else:
                 return value

@@ -75,9 +75,7 @@ def _explicit_aux_vision_override(cfg: dict[str, Any] | None) -> bool:
     model = str(vision.get("model") or "").strip()
     base_url = str(vision.get("base_url") or "").strip()
 
-    if provider in ("", "auto") and not model and not base_url:
-        return False
-    return True
+    return not (provider in ("", "auto") and not model and not base_url)
 
 
 def _lookup_user_declared_supports_vision(
@@ -201,9 +199,7 @@ def should_route_capture_to_aux_vision(
         return True
 
     supports_vision = _lookup_supports_vision(provider, model, cfg)
-    if supports_vision is True:
-        return False
-    return True
+    return supports_vision is not True
 
 
 __all__ = [

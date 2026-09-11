@@ -32,9 +32,7 @@ def is_sqlite_wal_reset_vulnerable(
         return False
     if (3, 50, 7) <= info < (3, 51, 0):
         return False
-    if (3, 44, 6) <= info < (3, 45, 0):
-        return False
-    return True
+    return not (3, 44, 6) <= info < (3, 45, 0)
 
 
 @dataclass(frozen=True)

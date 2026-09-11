@@ -985,10 +985,9 @@ def check_wake_word_requirements(cfg: dict[str, Any] | None = None) -> dict[str,
     # Client capture needs deps (engine) but not a server-side PortAudio device.
     if capture_mode == "client":
         mic_ok = deps_ok or (not deps_ok and lazy_ok)
-        if deps_ok and not hint:
+        if deps_ok and not hint and hint.startswith("Microphone capture needs"):
             # No server mic required; clear the local-device hint if that was set.
-            if hint.startswith("Microphone capture needs"):
-                hint = ""
+            hint = ""
     else:
         mic_ok = (deps_ok and audio_ok) or (not deps_ok and lazy_ok)
         if deps_ok and not audio_ok and not hint:

@@ -187,9 +187,7 @@ def _split_shell_segments(command: str, *, posix: bool = True) -> list[_ShellSeg
             operator = command[index : index + 2]
         elif char == "\n":
             operator = ";"
-        elif char in ";|":
-            operator = char
-        elif (
+        elif char in ";|" or (
             char == "&"
             and (index == 0 or command[index - 1] not in "<>")
             and not command.startswith(("&>", "&>>"), index)
@@ -631,34 +629,33 @@ def record_verify_run(
 def _insert_evidence(evidence: VerificationEvidence) -> dict[str, Any]:
     """Insert a classified evidence row and repoint the workspace state."""
     created_at = _utc_now()
-    with _DB_LOCK:
-        with _transaction() as conn:
-            cur = conn.execute(
-                """
+    with _DB_LOCK, _transaction() as conn:
+        cur = conn.execute(
+            """
                 INSERT INTO verification_events(
                     created_at, session_id, cwd, root, command, canonical_command,
                     kind, scope, status, exit_code, output_summary
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (
-                    created_at,
-                    evidence.session_id,
-                    evidence.cwd,
-                    evidence.root,
-                    evidence.command,
-                    evidence.canonical_command,
-                    evidence.kind,
-                    evidence.scope,
-                    evidence.status,
-                    evidence.exit_code,
-                    evidence.output_summary,
-                ),
-            )
-            if cur.lastrowid is None:
-                raise RuntimeError("verification event insert did not return an id")
-            event_id = int(cur.lastrowid)
-            conn.execute(
-                """
+            (
+                created_at,
+                evidence.session_id,
+                evidence.cwd,
+                evidence.root,
+                evidence.command,
+                evidence.canonical_command,
+                evidence.kind,
+                evidence.scope,
+                evidence.status,
+                evidence.exit_code,
+                evidence.output_summary,
+            ),
+        )
+        if cur.lastrowid is None:
+            raise RuntimeError("verification event insert did not return an id")
+        event_id = int(cur.lastrowid)
+        conn.execute(
+            """
                 INSERT INTO verification_state(
                     session_id, root, last_event_id, last_edit_at, changed_paths_json
                 ) VALUES (?, ?, ?, NULL, '[]')
@@ -667,10 +664,10 @@ def _insert_evidence(evidence: VerificationEvidence) -> dict[str, Any]:
                     last_edit_at = NULL,
                     changed_paths_json = '[]'
                 """,
-                (evidence.session_id, evidence.root, event_id),
-            )
-            _prune_old_events(conn, session_id=evidence.session_id, root=evidence.root)
-            conn.commit()
+            (evidence.session_id, evidence.root, event_id),
+        )
+        _prune_old_events(conn, session_id=evidence.session_id, root=evidence.root)
+        conn.commit()
 
     return {"id": event_id, **evidence.__dict__, "created_at": created_at}
 
@@ -697,24 +694,23 @@ def mark_workspace_edited(
     changed_paths = sorted({str(p) for p in (paths or []) if p})
     edited_at = _utc_now()
 
-    with _DB_LOCK:
-        with _transaction() as conn:
-            row = conn.execute(
-                """
+    with _DB_LOCK, _transaction() as conn:
+        row = conn.execute(
+            """
                 SELECT changed_paths_json FROM verification_state
                 WHERE session_id = ? AND root = ?
                 """,
-                (sid, root),
-            ).fetchone()
-            existing: set[str] = set()
-            if row is not None:
-                try:
-                    existing = set(json.loads(row["changed_paths_json"] or "[]"))
-                except (TypeError, ValueError):
-                    existing = set()
-            merged = sorted((existing | set(changed_paths)))[-200:]
-            conn.execute(
-                """
+            (sid, root),
+        ).fetchone()
+        existing: set[str] = set()
+        if row is not None:
+            try:
+                existing = set(json.loads(row["changed_paths_json"] or "[]"))
+            except (TypeError, ValueError):
+                existing = set()
+        merged = sorted((existing | set(changed_paths)))[-200:]
+        conn.execute(
+            """
                 INSERT INTO verification_state(
                     session_id, root, last_event_id, last_edit_at, changed_paths_json
                 ) VALUES (?, ?, NULL, ?, ?)
@@ -722,9 +718,9 @@ def mark_workspace_edited(
                     last_edit_at = excluded.last_edit_at,
                     changed_paths_json = excluded.changed_paths_json
                 """,
-                (sid, root, edited_at, json.dumps(merged)),
-            )
-            conn.commit()
+            (sid, root, edited_at, json.dumps(merged)),
+        )
+        conn.commit()
 
     return {
         "session_id": sid,
@@ -752,30 +748,29 @@ def verification_status(
 
     sid = str(session_id or "default")
     root = str(facts.get("root") or Path(cwd or ".").resolve())
-    with _DB_LOCK:
-        with _transaction() as conn:
-            state = conn.execute(
-                """
+    with _DB_LOCK, _transaction() as conn:
+        state = conn.execute(
+            """
                 SELECT last_event_id, last_edit_at, changed_paths_json
                 FROM verification_state
                 WHERE session_id = ? AND root = ?
                 """,
-                (sid, root),
+            (sid, root),
+        ).fetchone()
+        if state is None:
+            return {
+                "status": "unverified",
+                "evidence": None,
+                "root": root,
+                "session_id": sid,
+                "changed_paths": [],
+            }
+        event = None
+        if state["last_event_id"] is not None:
+            event = conn.execute(
+                "SELECT * FROM verification_events WHERE id = ?",
+                (state["last_event_id"],),
             ).fetchone()
-            if state is None:
-                return {
-                    "status": "unverified",
-                    "evidence": None,
-                    "root": root,
-                    "session_id": sid,
-                    "changed_paths": [],
-                }
-            event = None
-            if state["last_event_id"] is not None:
-                event = conn.execute(
-                    "SELECT * FROM verification_events WHERE id = ?",
-                    (state["last_event_id"],),
-                ).fetchone()
 
     changed_paths: list[str] = []
     try:

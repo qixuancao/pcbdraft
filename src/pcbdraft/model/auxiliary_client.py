@@ -2419,9 +2419,7 @@ def _endpoint_speaks_anthropic_messages(base_url: str) -> bool:
     hostname = base_url_hostname(normalized)
     if hostname == "api.anthropic.com":
         return True
-    if hostname == "api.kimi.com" and "/coding" in normalized:
-        return True
-    return False
+    return hostname == "api.kimi.com" and "/coding" in normalized
 
 
 def _maybe_wrap_anthropic(
@@ -4336,39 +4334,36 @@ def _is_payment_error(exc: Exception) -> bool:
     # but sometimes wrap them in 429 or other codes.
     # Daily quota exhaustion from Bedrock, Vertex AI, and similar providers
     # uses different language but is semantically identical to credit exhaustion.
-    if status in {402, 403, 404, 429, None}:
-        if any(
-            kw in err_lower
-            for kw in (
-                "credits",
-                "insufficient funds",
-                "can only afford",
-                "billing",
-                "payment required",
-                "out of funds",
-                "run out of funds",
-                "balance_depleted",
-                "no usable credits",
-                "model_not_supported_on_free_tier",
-                "not available on the free tier",
-                "requires a subscription",
-                "upgrade for access",
-                "upgrade for higher limits",
-                "reached your session usage limit",
-                # Daily / monthly / weekly quota exhaustion keywords
-                "quota exceeded",
-                "quota_exceeded",
-                "too many tokens per day",
-                "daily limit",
-                "tokens per day",
-                "daily quota",
-                "resource exhausted",  # Vertex AI / gRPC quota errors
-                "weekly usage limit",
-                "weekly limit",  # OpenCode Go weekly subscription cap
-            )
-        ):
-            return True
-    return False
+    return status in {402, 403, 404, 429, None} and any(
+        kw in err_lower
+        for kw in (
+            "credits",
+            "insufficient funds",
+            "can only afford",
+            "billing",
+            "payment required",
+            "out of funds",
+            "run out of funds",
+            "balance_depleted",
+            "no usable credits",
+            "model_not_supported_on_free_tier",
+            "not available on the free tier",
+            "requires a subscription",
+            "upgrade for access",
+            "upgrade for higher limits",
+            "reached your session usage limit",
+            # Daily / monthly / weekly quota exhaustion keywords
+            "quota exceeded",
+            "quota_exceeded",
+            "too many tokens per day",
+            "daily limit",
+            "tokens per day",
+            "daily quota",
+            "resource exhausted",  # Vertex AI / gRPC quota errors
+            "weekly usage limit",
+            "weekly limit",  # OpenCode Go weekly subscription cap
+        )
+    )
 
 
 def _nous_portal_account_has_fresh_paid_access() -> bool:
@@ -4477,7 +4472,7 @@ def _is_connection_error(exc: Exception) -> bool:
     if any(kw in err_type for kw in ("Connection", "Timeout", "DNS", "SSL")):
         return True
     err_lower = str(exc).lower()
-    if any(
+    return any(
         kw in err_lower
         for kw in (
             "connection refused",
@@ -4497,9 +4492,7 @@ def _is_connection_error(exc: Exception) -> bool:
             "remoteprotocolerror",
             "localprotocolerror",
         )
-    ):
-        return True
-    return False
+    )
 
 
 def _is_transient_transport_error(exc: Exception) -> bool:
@@ -4565,9 +4558,7 @@ def _is_auth_error(exc: Exception) -> bool:
     # even though the status code is 403 (PermissionDenied).
     if status == 403 and "bad-credentials" in err_lower:
         return True
-    if "unauthenticated" in err_lower and "bad-credentials" in err_lower:
-        return True
-    return False
+    return "unauthenticated" in err_lower and "bad-credentials" in err_lower
 
 
 def _is_unsupported_parameter_error(exc: Exception, param: str) -> bool:
@@ -10441,35 +10432,35 @@ def _call_llm_impl(
             _is_auth_error(first_err)
             and auth_refresh_provider not in {"auto", "", None}
             and not client_is_nous
+            and _refresh_provider_credentials(auth_refresh_provider)
         ):
-            if _refresh_provider_credentials(auth_refresh_provider):
-                if auth_refresh_provider != _normalize_aux_provider(resolved_provider):
-                    # The stale client is cached under the route label
-                    # (e.g. "auto"), not the concrete backend we refreshed.
-                    _evict_cached_clients(resolved_provider)
-                logger.info(
-                    "Auxiliary %s: refreshed %s credentials after auth error, retrying",
-                    task or "call",
-                    auth_refresh_provider,
-                )
-                return _retry_same_provider_sync(
-                    task=task,
-                    resolved_provider=auth_refresh_provider,
-                    resolved_model=resolved_model or final_model,
-                    resolved_base_url=resolved_base_url,
-                    resolved_api_key=resolved_api_key,
-                    resolved_api_mode=resolved_api_mode,
-                    main_runtime=main_runtime,
-                    final_model=final_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                    effective_timeout=effective_timeout,
-                    effective_extra_body=effective_extra_body,
-                    reasoning_config=reasoning_config,
-                    extra_headers=extra_headers,
-                )
+            if auth_refresh_provider != _normalize_aux_provider(resolved_provider):
+                # The stale client is cached under the route label
+                # (e.g. "auto"), not the concrete backend we refreshed.
+                _evict_cached_clients(resolved_provider)
+            logger.info(
+                "Auxiliary %s: refreshed %s credentials after auth error, retrying",
+                task or "call",
+                auth_refresh_provider,
+            )
+            return _retry_same_provider_sync(
+                task=task,
+                resolved_provider=auth_refresh_provider,
+                resolved_model=resolved_model or final_model,
+                resolved_base_url=resolved_base_url,
+                resolved_api_key=resolved_api_key,
+                resolved_api_mode=resolved_api_mode,
+                main_runtime=main_runtime,
+                final_model=final_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                effective_timeout=effective_timeout,
+                effective_extra_body=effective_extra_body,
+                reasoning_config=reasoning_config,
+                extra_headers=extra_headers,
+            )
 
         # ── Same-provider credential-pool recovery ─────────────────────
         pool_provider = _recoverable_pool_provider(
@@ -11253,33 +11244,33 @@ async def _async_call_llm_impl(
             _is_auth_error(first_err)
             and auth_refresh_provider not in {"auto", "", None}
             and not client_is_nous
+            and _refresh_provider_credentials(auth_refresh_provider)
         ):
-            if _refresh_provider_credentials(auth_refresh_provider):
-                if auth_refresh_provider != _normalize_aux_provider(resolved_provider):
-                    # The stale client is cached under the route label
-                    # (e.g. "auto"), not the concrete backend we refreshed.
-                    _evict_cached_clients(resolved_provider)
-                logger.info(
-                    "Auxiliary %s (async): refreshed %s credentials after auth error, retrying",
-                    task or "call",
-                    auth_refresh_provider,
-                )
-                return await _retry_same_provider_async(
-                    task=task,
-                    resolved_provider=auth_refresh_provider,
-                    resolved_model=resolved_model or final_model,
-                    resolved_base_url=resolved_base_url,
-                    resolved_api_key=resolved_api_key,
-                    resolved_api_mode=resolved_api_mode,
-                    final_model=final_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                    effective_timeout=effective_timeout,
-                    effective_extra_body=effective_extra_body,
-                    reasoning_config=reasoning_config,
-                )
+            if auth_refresh_provider != _normalize_aux_provider(resolved_provider):
+                # The stale client is cached under the route label
+                # (e.g. "auto"), not the concrete backend we refreshed.
+                _evict_cached_clients(resolved_provider)
+            logger.info(
+                "Auxiliary %s (async): refreshed %s credentials after auth error, retrying",
+                task or "call",
+                auth_refresh_provider,
+            )
+            return await _retry_same_provider_async(
+                task=task,
+                resolved_provider=auth_refresh_provider,
+                resolved_model=resolved_model or final_model,
+                resolved_base_url=resolved_base_url,
+                resolved_api_key=resolved_api_key,
+                resolved_api_mode=resolved_api_mode,
+                final_model=final_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                effective_timeout=effective_timeout,
+                effective_extra_body=effective_extra_body,
+                reasoning_config=reasoning_config,
+            )
 
         # ── Same-provider credential-pool recovery (mirrors sync) ─────
         pool_provider = _recoverable_pool_provider(

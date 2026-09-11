@@ -408,14 +408,12 @@ def _windows_save(dest: Path) -> bool:
 
 def _linux_save(dest: Path) -> bool:
     """Try clipboard backends in priority order: WSL → Wayland → X11."""
-    if _is_wsl():
-        if _wsl_save(dest):
-            return True
-        # Fall through — WSLg might have wl-paste or xclip working
+    if _is_wsl() and _wsl_save(dest):
+        return True
+    # Fall through — WSLg might have wl-paste or xclip working
 
-    if os.environ.get("WAYLAND_DISPLAY"):
-        if _wayland_save(dest):
-            return True
+    if os.environ.get("WAYLAND_DISPLAY") and _wayland_save(dest):
+        return True
 
     return _xclip_save(dest)
 
@@ -509,10 +507,11 @@ def _wayland_save(dest: Path) -> bool:
         # save_clipboard_image() promises a PNG output path. Wayland can offer
         # JPEG/GIF/WebP/BMP payloads, so normalize every non-PNG result before
         # returning success.
-        if mime != "image/png":
-            if not _convert_to_png(dest) or not _is_png_file(dest):
-                dest.unlink(missing_ok=True)
-                return False
+        if mime != "image/png" and (
+            not _convert_to_png(dest) or not _is_png_file(dest)
+        ):
+            dest.unlink(missing_ok=True)
+            return False
 
         return True
 

@@ -282,9 +282,9 @@ def _is_word_start(s: str, i: int) -> bool:
         return True  # camelCase: clientSecret
     # Acronym run ending: APIToken — the 'T' begins a new word when it is
     # followed by lowercase while the preceding run is uppercase.
-    if cur.isupper() and prev.isupper() and i + 1 < len(s) and s[i + 1].islower():
-        return True
-    return False
+    return bool(
+        cur.isupper() and prev.isupper() and i + 1 < len(s) and s[i + 1].islower()
+    )
 
 
 def _is_word_end(s: str, j: int, *, allow_plural: bool = True) -> bool:

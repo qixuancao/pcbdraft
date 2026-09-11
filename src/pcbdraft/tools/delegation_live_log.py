@@ -174,11 +174,10 @@ class LiveTranscriptWriter:
         # and a helper added later can't bypass it.
         line = f"{time.strftime('%H:%M:%S')} {role:<9}| {_redact(text)}\n"
         try:
-            with self._lock:
-                # Append mode per write: no held handle, survives child crash,
-                # and the close() acts as the flush.
-                with open(self.path, "a", encoding="utf-8") as fh:
-                    fh.write(line)
+            # Append mode per write: no held handle, survives child crash,
+            # and the close() acts as the flush.
+            with self._lock, open(self.path, "a", encoding="utf-8") as fh:
+                fh.write(line)
         except Exception as exc:
             self._ok = False
             logger.debug("Live transcript write failed (%s): %s", self.path, exc)

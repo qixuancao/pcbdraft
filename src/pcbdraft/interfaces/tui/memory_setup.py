@@ -383,9 +383,12 @@ def cmd_setup(args) -> None:
 
             # Skip fields whose "when" condition doesn't match
             when = field.get("when")
-            if when and isinstance(when, dict):
-                if not all(provider_config.get(k) == v for k, v in when.items()):
-                    continue
+            if (
+                when
+                and isinstance(when, dict)
+                and not all(provider_config.get(k) == v for k, v in when.items())
+            ):
+                continue
 
             if choices and not is_secret:
                 # Use curses picker for choice fields

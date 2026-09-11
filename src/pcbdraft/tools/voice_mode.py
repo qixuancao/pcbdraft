@@ -1342,9 +1342,7 @@ def is_whisper_hallucination(transcript: str) -> bool:
     ):
         return True
     # Repetitive patterns (e.g. "Thank you. Thank you. Thank you. you")
-    if _HALLUCINATION_REPEAT_RE.match(cleaned):
-        return True
-    return False
+    return bool(_HALLUCINATION_REPEAT_RE.match(cleaned))
 
 
 # ============================================================================
@@ -1821,81 +1819,87 @@ def _play_audio_file_impl(file_path: str) -> bool:
     # unconditionally (success or failure), and the ORIGINAL ffmpeg/
     # powershell exit status is preserved past that cleanup so the player
     # loop below can correctly fall through to ffplay/aplay on failure.
-    if system == "Linux" and shutil.which("powershell.exe") and shutil.which("ffmpeg"):
-        if _is_wsl2_env():
-            try:
-                import uuid
+    if (
+        system == "Linux"
+        and shutil.which("powershell.exe")
+        and shutil.which("ffmpeg")
+        and _is_wsl2_env()
+    ):
+        try:
+            import uuid
 
-                _win_tmp_raw = (
+            _win_tmp_raw = (
+                subprocess.check_output(
+                    ["cmd.exe", "/c", "echo %TEMP%"],
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                )
+                .decode(errors="replace")
+                .strip()
+            )
+            _win_tmp_wsl = (
+                subprocess.check_output(
+                    ["wslpath", "-u", _win_tmp_raw],
+                    stderr=subprocess.DEVNULL,
+                    timeout=3,
+                )
+                .decode(errors="replace")
+                .strip()
+            )
+            if _win_tmp_wsl:
+                # Unique suffix prevents concurrent TTS playback collision.
+                _unique = uuid.uuid4().hex[:8]
+                _wsl_wav = os.path.join(_win_tmp_wsl, f"pcbdraft-tts-{_unique}.wav")
+                _win_wav = (
                     subprocess.check_output(
-                        ["cmd.exe", "/c", "echo %TEMP%"],
+                        ["wslpath", "-w", _wsl_wav],
                         stderr=subprocess.DEVNULL,
                         timeout=3,
                     )
                     .decode(errors="replace")
                     .strip()
                 )
-                _win_tmp_wsl = (
-                    subprocess.check_output(
-                        ["wslpath", "-u", _win_tmp_raw],
-                        stderr=subprocess.DEVNULL,
-                        timeout=3,
+                if _win_wav:
+                    _win_wav_safe = _win_wav.replace("'", "''")
+                    _ps_script = (
+                        f"(New-Object Media.SoundPlayer '{_win_wav_safe}').PlaySync()"
                     )
-                    .decode(errors="replace")
-                    .strip()
-                )
-                if _win_tmp_wsl:
-                    # Unique suffix prevents concurrent TTS playback collision.
-                    _unique = uuid.uuid4().hex[:8]
-                    _wsl_wav = os.path.join(_win_tmp_wsl, f"pcbdraft-tts-{_unique}.wav")
-                    _win_wav = (
-                        subprocess.check_output(
-                            ["wslpath", "-w", _wsl_wav],
-                            stderr=subprocess.DEVNULL,
-                            timeout=3,
-                        )
-                        .decode(errors="replace")
-                        .strip()
+                    _ps_cmd = " && ".join(
+                        [
+                            shlex.join(
+                                [
+                                    "ffmpeg",
+                                    "-i",
+                                    file_path,
+                                    "-f",
+                                    "wav",
+                                    _wsl_wav,
+                                    "-loglevel",
+                                    "quiet",
+                                    "-y",
+                                ]
+                            ),
+                            shlex.join(
+                                [
+                                    "powershell.exe",
+                                    "-NoProfile",
+                                    "-Command",
+                                    _ps_script,
+                                ]
+                            ),
+                        ]
                     )
-                    if _win_wav:
-                        _win_wav_safe = _win_wav.replace("'", "''")
-                        _ps_script = f"(New-Object Media.SoundPlayer '{_win_wav_safe}').PlaySync()"
-                        _ps_cmd = " && ".join(
-                            [
-                                shlex.join(
-                                    [
-                                        "ffmpeg",
-                                        "-i",
-                                        file_path,
-                                        "-f",
-                                        "wav",
-                                        _wsl_wav,
-                                        "-loglevel",
-                                        "quiet",
-                                        "-y",
-                                    ]
-                                ),
-                                shlex.join(
-                                    [
-                                        "powershell.exe",
-                                        "-NoProfile",
-                                        "-Command",
-                                        _ps_script,
-                                    ]
-                                ),
-                            ]
-                        )
-                        _cleanup = shlex.join(["rm", "-f", _wsl_wav])
-                        # Capture the (ffmpeg && powershell) exit status into
-                        # $rc BEFORE cleanup runs, then exit with that status
-                        # instead of rm -f's (rm -f always exits 0, which
-                        # would otherwise mask a conversion/playback failure
-                        # and prevent falling through to the next player).
-                        _full_cmd = f"( {_ps_cmd} ); rc=$?; {_cleanup}; exit $rc"
-                        # Use full path so the which(cmd[0]) check in the player loop passes.
-                        players.insert(0, ["/bin/sh", "-c", _full_cmd])
-            except Exception:
-                pass  # WSL path resolution failed; fall through to ffplay/aplay
+                    _cleanup = shlex.join(["rm", "-f", _wsl_wav])
+                    # Capture the (ffmpeg && powershell) exit status into
+                    # $rc BEFORE cleanup runs, then exit with that status
+                    # instead of rm -f's (rm -f always exits 0, which
+                    # would otherwise mask a conversion/playback failure
+                    # and prevent falling through to the next player).
+                    _full_cmd = f"( {_ps_cmd} ); rc=$?; {_cleanup}; exit $rc"
+                    # Use full path so the which(cmd[0]) check in the player loop passes.
+                    players.insert(0, ["/bin/sh", "-c", _full_cmd])
+        except Exception:
+            pass  # WSL path resolution failed; fall through to ffplay/aplay
 
     players.append(["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", file_path])
     if system == "Linux":

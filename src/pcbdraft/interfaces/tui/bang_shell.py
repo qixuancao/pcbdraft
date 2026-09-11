@@ -78,9 +78,7 @@ def bang_shell_enabled() -> bool:
         return False
     if env_var_enabled("PCBDRAFT_RUNTIME_CRON_SESSION"):
         return False
-    if (os.getenv("PCBDRAFT_RUNTIME_SESSION_PLATFORM") or "").strip():
-        return False
-    return True
+    return not (os.getenv("PCBDRAFT_RUNTIME_SESSION_PLATFORM") or "").strip()
 
 
 def resolve_bang_cwd(session_key: str | None = None) -> str | None:

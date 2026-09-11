@@ -62,9 +62,7 @@ def _is_non_code_path(raw: str) -> bool:
     suffix = p.suffix.lower()
     if suffix in _NON_CODE_VERIFY_EXTENSIONS:
         return True
-    if not suffix and p.name.lower() in _NON_CODE_VERIFY_FILENAMES:
-        return True
-    return False
+    return bool(not suffix and p.name.lower() in _NON_CODE_VERIFY_FILENAMES)
 
 
 def _filter_verifiable_paths(paths: Iterable[str]) -> list[str]:

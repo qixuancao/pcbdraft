@@ -274,13 +274,11 @@ def _parse_manifest(path: Path) -> CatalogEntry:
     if not isinstance(tools_raw, dict):
         raise CatalogError(f"{path}: 'tools' must be a mapping")
     default_enabled = tools_raw.get("default_enabled")
-    if default_enabled is not None:
-        if not isinstance(default_enabled, list) or not all(
-            isinstance(t, str) for t in default_enabled
-        ):
-            raise CatalogError(
-                f"{path}: tools.default_enabled must be a list of strings"
-            )
+    if default_enabled is not None and (
+        not isinstance(default_enabled, list)
+        or not all(isinstance(t, str) for t in default_enabled)
+    ):
+        raise CatalogError(f"{path}: tools.default_enabled must be a list of strings")
     tools_spec = ToolsSpec(default_enabled=default_enabled)
 
     suggest: SuggestSpec | None = None

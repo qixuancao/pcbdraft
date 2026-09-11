@@ -761,9 +761,8 @@ class HonchoMemoryProvider(MemoryProvider):
         """
         if self._cron_skipped:
             return ""
-        if not self._manager or not self._session_key:
-            if not self._config:
-                return ""
+        if (not self._manager or not self._session_key) and not self._config:
+            return ""
 
         if self._recall_mode == "context":
             header = (

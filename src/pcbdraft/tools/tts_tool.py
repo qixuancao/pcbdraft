@@ -1025,9 +1025,12 @@ def _iter_command_providers(tts_config: dict[str, Any]):
         return
     providers = _get_provider_section(tts_config, "providers")
     for name, cfg in (providers or {}).items():
-        if isinstance(name, str) and name.lower() not in BUILTIN_TTS_PROVIDERS:
-            if _is_command_provider_config(cfg):
-                yield name, cfg
+        if (
+            isinstance(name, str)
+            and name.lower() not in BUILTIN_TTS_PROVIDERS
+            and _is_command_provider_config(cfg)
+        ):
+            yield name, cfg
 
 
 def _get_command_tts_timeout(config: dict[str, Any]) -> float:

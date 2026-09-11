@@ -1784,9 +1784,7 @@ class AIAgent:
         if last in ".!?:)\"']}。！？：）】」』》^":
             return True
         # Emoji ranges (Misc Symbols, Dingbats, Emoticons, Supplemental, etc.)
-        if ord(last) >= 0x1F300:
-            return True
-        return False
+        return ord(last) >= 127744
 
     def _is_ollama_glm_backend(self) -> bool:
         """Detect Ollama-hosted GLM models affected by stop misreports.
@@ -2643,9 +2641,7 @@ class AIAgent:
             return True
         if "out of available resources" in haystack and "grok" in haystack:
             return True
-        if "does not have permission" in haystack and "grok" in haystack:
-            return True
-        return False
+        return bool("does not have permission" in haystack and "grok" in haystack)
 
     @staticmethod
     def _decorate_xai_entitlement_error(detail: str) -> str:
@@ -6008,12 +6004,9 @@ class AIAgent:
         self._client_kwargs["api_key"] = self.api_key
         self._client_kwargs["base_url"] = self.base_url
 
-        if not self._replace_primary_openai_client(
+        return self._replace_primary_openai_client(
             reason=f"{self.provider}_credential_refresh"
-        ):
-            return False
-
-        return True
+        )
 
     def _try_refresh_nous_client_credentials(
         self,
@@ -6060,10 +6053,7 @@ class AIAgent:
         # Nous requests should not inherit OpenRouter-only attribution headers.
         self._client_kwargs.pop("default_headers", None)
 
-        if not self._replace_primary_openai_client(reason="nous_credential_refresh"):
-            return False
-
-        return True
+        return self._replace_primary_openai_client(reason="nous_credential_refresh")
 
     def _try_refresh_env_client_credentials(self) -> bool:
         """Adopt runtime .env credential/base-url edits at the turn boundary.

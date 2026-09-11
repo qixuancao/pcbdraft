@@ -302,10 +302,8 @@ def _anthropic_base_url_override_ok(base_url: str) -> bool:
     # Anthropic-compatible proxies conventionally expose the native Messages
     # protocol under a ``/anthropic`` suffix, and Kimi under ``/coding`` — same
     # signal _detect_api_mode_for_url() uses to pick anthropic_messages.
-    if _detect_api_mode_for_url(candidate) == "anthropic_messages":
-        return True
     # Bare api.kimi.com without the /coding path is not an Anthropic endpoint.
-    return False
+    return _detect_api_mode_for_url(candidate) == "anthropic_messages"
 
 
 def _auto_detect_local_model(base_url: str) -> str:
@@ -1762,9 +1760,7 @@ def _resolve_explicit_runtime(
                 api_key,
                 target_model=target_model,
             )
-        elif provider == "xai":
-            api_mode = "codex_responses"
-        elif provider == "actual":
+        elif provider in ("xai", "actual"):
             api_mode = "codex_responses"
         else:
             configured_provider = str(model_cfg.get("provider") or "").strip().lower()
@@ -2402,9 +2398,7 @@ def resolve_runtime_provider(
                 creds.get("api_key", ""),
                 target_model=target_model,
             )
-        elif provider == "xai":
-            api_mode = "codex_responses"
-        elif provider == "actual":
+        elif provider in ("xai", "actual"):
             api_mode = "codex_responses"
         else:
             configured_provider = str(model_cfg.get("provider") or "").strip().lower()

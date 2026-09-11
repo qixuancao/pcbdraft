@@ -714,9 +714,7 @@ def has_usable_secret(value: Any, *, min_length: int = 4) -> bool:
     cleaned = value.strip()
     if len(cleaned) < min_length:
         return False
-    if cleaned.lower() in _PLACEHOLDER_SECRET_VALUES:
-        return False
-    return True
+    return cleaned.lower() not in _PLACEHOLDER_SECRET_VALUES
 
 
 def _resolve_api_key_provider_secret(
@@ -1069,14 +1067,17 @@ def format_auth_error(error: Exception) -> str:
             return _format_nous_entitlement_auth_error(error)
         return "Subscription credits are exhausted. Top up/renew credits, then retry."
 
-    if error.code in {
-        "subscription_expired",
-        "no_usable_credits",
-        "account_missing",
-        "member_spend_cap_exceeded",
-    }:
-        if error.provider == "nous":
-            return _format_nous_entitlement_auth_error(error)
+    if (
+        error.code
+        in {
+            "subscription_expired",
+            "no_usable_credits",
+            "account_missing",
+            "member_spend_cap_exceeded",
+        }
+        and error.provider == "nous"
+    ):
+        return _format_nous_entitlement_auth_error(error)
 
     if error.code == "temporarily_unavailable":
         return f"{error} Please retry in a few seconds."
@@ -3881,10 +3882,7 @@ def _can_open_graphical_browser() -> bool:
     candidate = (
         getattr(controller, "name", "") or getattr(controller, "basename", "") or ""
     )
-    if candidate and _names_console_browser(candidate):
-        return False
-
-    return True
+    return not (candidate and _names_console_browser(candidate))
 
 
 def _ssh_user_at_host() -> str:
@@ -4747,9 +4745,7 @@ def _pool_codex_access_token() -> str:
                 return False
             # Skip entries currently in an exhaustion cooldown window.
             reset_at = entry.get("last_error_reset_at")
-            if isinstance(reset_at, (int, float)) and reset_at > time.time():
-                return False
-            return True
+            return not (isinstance(reset_at, (int, float)) and reset_at > time.time())
 
         for entry in entries:
             if _entry_usable(entry):
@@ -7301,12 +7297,15 @@ def get_nous_session_validity() -> str:
         return NOUS_SESSION_UNKNOWN
 
     last_err = state.get("last_auth_error")
-    if isinstance(last_err, dict) and last_err.get("relogin_required"):
+    if (
+        isinstance(last_err, dict)
+        and last_err.get("relogin_required")
+        and not (state.get("access_token") or state.get("refresh_token"))
+    ):
         # Only terminal while there is no usable credential left. If a later
         # successful login repopulated tokens, the stale marker must not
         # keep reporting terminal.
-        if not (state.get("access_token") or state.get("refresh_token")):
-            return NOUS_SESSION_TERMINAL
+        return NOUS_SESSION_TERMINAL
 
     if (
         _nous_invoke_jwt_status(

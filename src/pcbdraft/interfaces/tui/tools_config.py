@@ -5185,11 +5185,11 @@ def _reconfigure_tool(
     for ts_key, ts_label, _ in _get_effective_configurable_toolsets():
         cat = TOOL_CATEGORIES.get(ts_key)
         reqs = TOOLSET_ENV_REQUIREMENTS.get(ts_key)
-        if cat or reqs:
-            if _toolset_has_keys(
-                ts_key, config, force_fresh=force_fresh
-            ) or _toolset_enabled_for_reconfigure(ts_key, config):
-                configurable.append((ts_key, ts_label))
+        if (cat or reqs) and (
+            _toolset_has_keys(ts_key, config, force_fresh=force_fresh)
+            or _toolset_enabled_for_reconfigure(ts_key, config)
+        ):
+            configurable.append((ts_key, ts_label))
 
     if not configurable:
         _print_info("No configured tools to reconfigure.")
@@ -5850,15 +5850,15 @@ def tools_command(args=None, first_install: bool = False, config: dict | None = 
                     # was already enabled globally and only lacked provider
                     # configuration.
                     for ts_key in sorted(added - selected_to_configure_set):
-                        if TOOL_CATEGORIES.get(ts_key) or TOOLSET_ENV_REQUIREMENTS.get(
-                            ts_key
+                        if (
+                            TOOL_CATEGORIES.get(ts_key)
+                            or TOOLSET_ENV_REQUIREMENTS.get(ts_key)
+                        ) and _toolset_needs_configuration_prompt(
+                            ts_key,
+                            config,
+                            force_fresh=True,
                         ):
-                            if _toolset_needs_configuration_prompt(
-                                ts_key,
-                                config,
-                                force_fresh=True,
-                            ):
-                                _configure_toolset(ts_key, config)
+                            _configure_toolset(ts_key, config)
                     _save_platform_tools(config, pk, new_enabled)
                 save_config(config)
                 print(color("  ✓ Saved configuration for all platforms", Colors.GREEN))
@@ -5969,13 +5969,14 @@ def tools_command(args=None, first_install: bool = False, config: dict | None = 
             # Configure newly enabled toolsets that need API keys, skipping
             # any already handled by the selected-tool pass above.
             for ts_key in sorted(added - selected_to_configure_set):
-                if TOOL_CATEGORIES.get(ts_key) or TOOLSET_ENV_REQUIREMENTS.get(ts_key):
-                    if _toolset_needs_configuration_prompt(
-                        ts_key,
-                        config,
-                        force_fresh=True,
-                    ):
-                        _configure_toolset(ts_key, config)
+                if (
+                    TOOL_CATEGORIES.get(ts_key) or TOOLSET_ENV_REQUIREMENTS.get(ts_key)
+                ) and _toolset_needs_configuration_prompt(
+                    ts_key,
+                    config,
+                    force_fresh=True,
+                ):
+                    _configure_toolset(ts_key, config)
 
             _save_platform_tools(config, pkey, new_enabled)
             save_config(config)

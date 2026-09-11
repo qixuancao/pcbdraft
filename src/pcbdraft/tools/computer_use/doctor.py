@@ -94,9 +94,7 @@ def _is_valid_health_report(payload: Any) -> bool:
         return False
     if "overall" not in payload:
         return False
-    if not isinstance(payload.get("checks"), list):
-        return False
-    return True
+    return isinstance(payload.get("checks"), list)
 
 
 def _read_cli_version(binary: str, *, timeout: float = 5.0) -> str | None:

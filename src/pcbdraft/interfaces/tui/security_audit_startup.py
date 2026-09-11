@@ -156,11 +156,12 @@ def _path_is_mounted(path: Path) -> bool:
             mp = Path(mountpoint)
         except Exception:
             continue
-        if mp == target or mp in target.parents:
+        if (mp == target or mp in target.parents) and (
+            best is None or len(str(mp)) > len(str(best))
+        ):
             # Longest matching mountpoint wins (most specific).
-            if best is None or len(str(mp)) > len(str(best)):
-                best = mp
-                best_fstype = fstype
+            best = mp
+            best_fstype = fstype
     if best is None:
         return True
     # overlay / tmpfs over the data dir = ephemeral container storage.

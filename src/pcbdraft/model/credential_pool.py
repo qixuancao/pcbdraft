@@ -1268,17 +1268,7 @@ class CredentialPool:
                     if entry.inference_base_url:
                         state["inference_base_url"] = entry.inference_base_url
 
-                elif self.provider == "openai-codex":
-                    tokens = state.get("tokens")
-                    if not isinstance(tokens, dict):
-                        return
-                    tokens["access_token"] = entry.access_token
-                    if entry.refresh_token:
-                        tokens["refresh_token"] = entry.refresh_token
-                    if entry.last_refresh:
-                        state["last_refresh"] = entry.last_refresh
-
-                elif self.provider == "xai-oauth":
+                elif self.provider in ("openai-codex", "xai-oauth"):
                     tokens = state.get("tokens")
                     if not isinstance(tokens, dict):
                         return
@@ -1926,7 +1916,13 @@ class CredentialPool:
                 exhausted_until = _exhausted_until(
                     entry, sole_credential=sole_credential
                 )
-                if exhausted_until is not None and now < exhausted_until:
+                if (
+                    exhausted_until is not None
+                    and now < exhausted_until
+                    and not (
+                        clear_expired and self._codex_quota_restored_upstream(entry)
+                    )
+                ):
                     # Codex quota windows can reopen EARLY: the user redeems a
                     # banked rate-limit reset (Codex CLI / ChatGPT UI), upgrades
                     # their plan, or OpenAI resets the window.  The persisted
@@ -1934,10 +1930,7 @@ class CredentialPool:
                     # while the account is already usable again — a throttled
                     # live probe of the Codex usage endpoint detects that and
                     # lifts the stale cooldown (issue #43747).
-                    if not (
-                        clear_expired and self._codex_quota_restored_upstream(entry)
-                    ):
-                        continue
+                    continue
                 if clear_expired:
                     cleared = replace(
                         entry,
@@ -2470,9 +2463,8 @@ def _upsert_entry(
         if key in _field_names:
             if getattr(existing, key) != value:
                 field_updates[key] = value
-        elif key in _EXTRA_KEYS:
-            if existing.extra.get(key) != value:
-                extra_updates[key] = value
+        elif key in _EXTRA_KEYS and existing.extra.get(key) != value:
+            extra_updates[key] = value
     # When the credential token itself changes (key rotation), clear any
     # exhaustion/error state — the old status is stale for the new key.
     if token_changed and existing.last_status is not None:

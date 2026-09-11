@@ -55,9 +55,9 @@ def has_oss_flags() -> bool:
     flags = parse_flags(sys.argv[1:])
     if flags["mode"] == "oss":
         return True
-    if any(flags.get(k) for k in ("oss_llm_key", "oss_vector_path", "oss_vector_url")):
-        return True
-    return False
+    return bool(
+        any(flags.get(k) for k in ("oss_llm_key", "oss_vector_path", "oss_vector_url"))
+    )
 
 
 def parse_flags(argv: list[str] | None = None) -> dict[str, str]:

@@ -2105,9 +2105,7 @@ def honcho_command(args) -> None:
 
         cmd_setup_provider("honcho")
         return
-    elif sub is None:
-        cmd_status(args)
-    elif sub == "status":
+    elif sub is None or sub == "status":
         cmd_status(args)
     elif sub == "peers":
         cmd_peers(args)

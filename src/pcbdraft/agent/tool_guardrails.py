@@ -277,11 +277,12 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
 
     if tool_name == "memory":
         data = safe_json_loads(result)
-        if isinstance(data, dict):
-            if data.get("success") is False and "exceed the limit" in data.get(
-                "error", ""
-            ):
-                return True, " [full]"
+        if (
+            isinstance(data, dict)
+            and data.get("success") is False
+            and "exceed the limit" in data.get("error", "")
+        ):
+            return True, " [full]"
 
     data = safe_json_loads(result)
     if isinstance(data, dict):

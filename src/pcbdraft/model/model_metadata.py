@@ -1907,9 +1907,7 @@ def _model_id_matches(candidate_id: str, lookup_model: str) -> bool:
     if candidate_id == lookup_model:
         return True
     # Slug match: basename of candidate equals the lookup name
-    if "/" in candidate_id and candidate_id.rsplit("/", 1)[1] == lookup_model:
-        return True
-    return False
+    return "/" in candidate_id and candidate_id.rsplit("/", 1)[1] == lookup_model
 
 
 def query_ollama_num_ctx(model: str, base_url: str, api_key: str = "") -> int | None:
@@ -3179,11 +3177,12 @@ def get_model_context_length(
     # (e.g. claude-opus-4.6 is 1M on Anthropic but 128K on GitHub Copilot).
     # If provider is generic (openrouter/custom/empty), try to infer from URL.
     effective_provider = provider
-    if not effective_provider or effective_provider in {"openrouter", "custom"}:
-        if base_url:
-            inferred = _infer_provider_from_url(base_url)
-            if inferred:
-                effective_provider = inferred
+    if (
+        not effective_provider or effective_provider in {"openrouter", "custom"}
+    ) and base_url:
+        inferred = _infer_provider_from_url(base_url)
+        if inferred:
+            effective_provider = inferred
 
     # 5a. Copilot live /models API — max_prompt_tokens from the user's account.
     # This catches account-specific models (e.g. claude-opus-4.6-1m) that

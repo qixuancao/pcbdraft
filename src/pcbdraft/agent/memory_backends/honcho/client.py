@@ -305,12 +305,12 @@ def _is_local_base_url(base_url: str | None) -> bool:
         return True
 
     # Tailscale/other VPN setups often sit in carrier-grade NAT space.
-    if ip.version == 4 and ipaddress.ip_address(
-        "100.64.0.0"
-    ) <= ip <= ipaddress.ip_address("100.127.255.255"):
-        return True
-
-    return False
+    return bool(
+        ip.version == 4
+        and ipaddress.ip_address("100.64.0.0")
+        <= ip
+        <= ipaddress.ip_address("100.127.255.255")
+    )
 
 
 def _resolve_optional_float(*values: Any) -> float | None:
@@ -1232,9 +1232,13 @@ def _refresh_cached_oauth(
             host = resolve_active_host()
             path = resolve_config_path()
         token, refreshed = oauth.ensure_fresh_token(path, host)
-        if refreshed and token and not oauth.apply_token_to_client(client, token):
-            if slot is not None:
-                slot.reset()
+        if (
+            refreshed
+            and token
+            and not oauth.apply_token_to_client(client, token)
+            and slot is not None
+        ):
+            slot.reset()
     except Exception:
         logger.warning("Honcho OAuth cached refresh failed", exc_info=True)
 

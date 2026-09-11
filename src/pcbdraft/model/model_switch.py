@@ -1817,10 +1817,11 @@ def switch_model(
             for slug, cfg in user_providers.items():
                 if not is_provider_enabled(cfg):
                     continue
-                if slug == target_provider:
-                    if new_model in _declared_model_ids(cfg.get("models", {})):
-                        override = True
-                        break
+                if slug == target_provider and new_model in _declared_model_ids(
+                    cfg.get("models", {})
+                ):
+                    override = True
+                    break
         # Also check custom_providers list — models declared there should be accepted
         # even if the remote /v1/models endpoint doesn't list them.
         if not override and custom_providers and isinstance(custom_providers, list):
@@ -2255,10 +2256,11 @@ def _collect_authed_provider_slugs(
         if not has_creds and overlay.auth_type == "api_key":
             for _key in (pid, pcbdraft_slug):
                 pcfg = PROVIDER_REGISTRY.get(_key)
-                if pcfg and pcfg.api_key_env_vars:
-                    if any(_scoped_key_env(ev) for ev in pcfg.api_key_env_vars):
-                        has_creds = True
-                        break
+                if (pcfg and pcfg.api_key_env_vars) and any(
+                    _scoped_key_env(ev) for ev in pcfg.api_key_env_vars
+                ):
+                    has_creds = True
+                    break
         if not has_creds:
             try:
                 store = _load_auth_store()
@@ -2735,10 +2737,11 @@ def list_authenticated_providers(
         if not has_creds and overlay.auth_type == "api_key":
             for _key in (pid, pcbdraft_slug):
                 pcfg = _auth_registry.get(_key)
-                if pcfg and pcfg.api_key_env_vars:
-                    if any(os.environ.get(ev) for ev in pcfg.api_key_env_vars):
-                        has_creds = True
-                        break
+                if (pcfg and pcfg.api_key_env_vars) and any(
+                    os.environ.get(ev) for ev in pcfg.api_key_env_vars
+                ):
+                    has_creds = True
+                    break
         # Check auth store and credential pool for non-env-var credentials.
         # This applies to OAuth providers AND api_key providers that also
         # support OAuth (e.g. anthropic supports both API key and Claude Code

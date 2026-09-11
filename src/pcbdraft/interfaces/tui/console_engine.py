@@ -1385,9 +1385,12 @@ def _apply_confirmed_defaults(args: argparse.Namespace) -> None:
     # _confirm() for its orphan preview, and the console never redirects stdin.
     if getattr(args, "checkpoints_command", None) in {"prune", "clear", "clear-legacy"}:
         setattr(args, "force", True)
-    if getattr(args, "plugins_action", None) == "install":
-        if not getattr(args, "enable", False) and not getattr(args, "no_enable", False):
-            setattr(args, "no_enable", True)
+    if (
+        getattr(args, "plugins_action", None) == "install"
+        and not getattr(args, "enable", False)
+        and not getattr(args, "no_enable", False)
+    ):
+        setattr(args, "no_enable", True)
     if getattr(args, "auth_action", None) == "add":
         auth_type = getattr(args, "auth_type", None)
         if auth_type in {"api-key", "api_key"} and not getattr(args, "api_key", None):

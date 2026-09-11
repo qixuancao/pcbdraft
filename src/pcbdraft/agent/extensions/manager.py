@@ -1563,17 +1563,19 @@ class PluginContext:
         # threads. Other Hermes config writers still retain their existing
         # atomic-replace semantics; this lock specifically prevents two
         # plugin read/merge/write transactions from dropping siblings.
-        with _locked_plugin_state(config_mod.get_config_path()):
-            with config_mod._CONFIG_LOCK:
-                # Fail closed on malformed YAML. save_config's raw-cache reader
-                # intentionally degrades parse failures to {}, which is safe for
-                # reads but destructive for read-modify-write.
-                config_mod.read_user_config_raw()
-                config_mod.save_config(
-                    partial,
-                    preserve_keys={full_path},
-                    merge_existing=True,
-                )
+        with (
+            _locked_plugin_state(config_mod.get_config_path()),
+            config_mod._CONFIG_LOCK,
+        ):
+            # Fail closed on malformed YAML. save_config's raw-cache reader
+            # intentionally degrades parse failures to {}, which is safe for
+            # reads but destructive for read-modify-write.
+            config_mod.read_user_config_raw()
+            config_mod.save_config(
+                partial,
+                preserve_keys={full_path},
+                merge_existing=True,
+            )
 
     @property
     def state(self) -> PluginState:

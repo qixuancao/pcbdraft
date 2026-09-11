@@ -244,12 +244,10 @@ def is_genuine_nous_rate_limit(
     # Signal 2: last-known-good state from a recent successful response.
     # Accepts either a RateLimitState (dataclass from rate_limit_tracker)
     # or a dict of bucket snapshots.
-    if last_known_state is not None and _has_exhausted_bucket_in_object(
-        last_known_state
-    ):
-        return True
-
-    return False
+    return bool(
+        last_known_state is not None
+        and _has_exhausted_bucket_in_object(last_known_state)
+    )
 
 
 def _parse_buckets_from_headers(

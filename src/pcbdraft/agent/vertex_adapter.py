@@ -232,6 +232,4 @@ def has_vertex_credentials() -> bool:
     """
     if _resolve_credentials_path(None):
         return True
-    if _resolve_project_override():
-        return True
-    return False
+    return bool(_resolve_project_override())

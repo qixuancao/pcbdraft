@@ -559,11 +559,15 @@ def apply_all(
             if not applied or not profile:
                 continue
             alias = _profile_alias_target(var, profile)
-            if alias and alias not in supplied_directly and alias not in claimed:
-                if _try_apply(alias, value, is_alias=True):
-                    result.warnings.append(
-                        f"applied profile-scoped {var} as {alias} "
-                        f"(active profile {profile!r})"
-                    )
+            if (
+                alias
+                and alias not in supplied_directly
+                and alias not in claimed
+                and _try_apply(alias, value, is_alias=True)
+            ):
+                result.warnings.append(
+                    f"applied profile-scoped {var} as {alias} "
+                    f"(active profile {profile!r})"
+                )
 
     return report

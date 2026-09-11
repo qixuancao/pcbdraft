@@ -979,9 +979,10 @@ def speak_text(text: str, stop_event: threading.Event | None = None) -> None:
             from pcbdraft.tools.tts_streaming import resolve_streaming_provider
             from pcbdraft.tools.tts_tool import _load_tts_config
 
-            if resolve_streaming_provider(_load_tts_config()) is not None:
-                if _speak_text_streaming(text, stop_event):
-                    return
+            if resolve_streaming_provider(
+                _load_tts_config()
+            ) is not None and _speak_text_streaming(text, stop_event):
+                return
         except Exception as e:
             _debug(f"speak_text: streaming dispatch unavailable ({e}); using sync path")
 

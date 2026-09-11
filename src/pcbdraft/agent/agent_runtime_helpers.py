@@ -1876,13 +1876,13 @@ def extract_reasoning(agent, assistant_message) -> str | None:
         reasoning_parts.append(assistant_message.reasoning)
 
     # Check reasoning_content field (alternative name used by some providers)
+    # Don't duplicate if same as reasoning
     if (
         hasattr(assistant_message, "reasoning_content")
         and assistant_message.reasoning_content
+        and assistant_message.reasoning_content not in reasoning_parts
     ):
-        # Don't duplicate if same as reasoning
-        if assistant_message.reasoning_content not in reasoning_parts:
-            reasoning_parts.append(assistant_message.reasoning_content)
+        reasoning_parts.append(assistant_message.reasoning_content)
 
     # Check reasoning_details array (OpenRouter unified format)
     # Format: [{"type": "reasoning.summary", "summary": "...", ...}, ...]
@@ -3650,9 +3650,7 @@ def _msg_has_payload(msg: dict[str, Any]) -> bool:
     # pass has already run.  Treat them as payload so the repair never
     # rewrites a designed-empty codex turn (July 2026: a write-time pad that
     # ignored this broke codex commentary replay in CI).
-    if msg.get("codex_message_items") or msg.get("codex_reasoning_items"):
-        return True
-    return False
+    return bool(msg.get("codex_message_items") or msg.get("codex_reasoning_items"))
 
 
 def repair_empty_non_final_messages(

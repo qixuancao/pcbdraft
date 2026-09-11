@@ -121,9 +121,7 @@ def would_display_tool_line(
     normalized = normalize_tool_progress_mode(mode)
     if normalized not in TOOL_PROGRESS_VISIBLE_MODES:
         return False
-    if normalized == "new" and function_name == last_tool_name:
-        return False
-    return True
+    return not (normalized == "new" and function_name == last_tool_name)
 
 
 def format_hidden_line(count: int) -> str | None:

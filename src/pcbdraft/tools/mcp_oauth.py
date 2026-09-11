@@ -368,9 +368,7 @@ def _can_open_browser() -> bool:
     except AttributeError:
         pass
     # Linux/other posix: need DISPLAY or WAYLAND_DISPLAY
-    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
-        return True
-    return False
+    return bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
 
 
 def _read_json(path: Path) -> dict | None:
@@ -1343,9 +1341,7 @@ def _is_figma_remote_mcp(
     ):
         return True
     # Name-only match only when the URL isn't some other host called figma-*.
-    if "figma" in name and (not url or "figma" in base_url_hostname(url)):
-        return True
-    return False
+    return "figma" in name and (not url or "figma" in base_url_hostname(url))
 
 
 def apply_oauth_provider_defaults(

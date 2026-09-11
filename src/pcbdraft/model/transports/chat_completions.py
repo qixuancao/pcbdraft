@@ -635,9 +635,12 @@ class ChatCompletionsTransport(ProviderTransport):
         # Kimi extra_body.thinking
         if is_kimi:
             _kimi_thinking_enabled = True
-            if reasoning_config and isinstance(reasoning_config, dict):
-                if reasoning_config.get("enabled") is False:
-                    _kimi_thinking_enabled = False
+            if (
+                reasoning_config
+                and isinstance(reasoning_config, dict)
+                and reasoning_config.get("enabled") is False
+            ):
+                _kimi_thinking_enabled = False
             extra_body["thinking"] = {
                 "type": "enabled" if _kimi_thinking_enabled else "disabled",
             }
@@ -1000,9 +1003,7 @@ class ChatCompletionsTransport(ProviderTransport):
             return False
         if not hasattr(response, "choices") or response.choices is None:
             return False
-        if not response.choices:
-            return False
-        return True
+        return bool(response.choices)
 
     def extract_cache_stats(self, response: Any) -> dict[str, int] | None:
         """Extract cache stats from prompt_tokens_details (OpenRouter/OpenAI)

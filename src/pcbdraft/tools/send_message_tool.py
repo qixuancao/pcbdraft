@@ -630,12 +630,11 @@ def _parse_target_ref(platform_name: str, target_ref: str):
         match = _EMAIL_TARGET_RE.fullmatch(target_ref)
         if match:
             return target_ref.strip(), None, True
-    if platform_name == "whatsapp":
+    if platform_name == "whatsapp" and _WHATSAPP_JID_RE.fullmatch(target_ref):
         # Native WhatsApp JIDs (group @g.us, user @s.whatsapp.net, @lid, etc.)
         # are explicit targets — pass through verbatim. E.164 '+' numbers fall
         # through to the _PHONE_PLATFORMS handler below.
-        if _WHATSAPP_JID_RE.fullmatch(target_ref):
-            return target_ref.strip(), None, True
+        return target_ref.strip(), None, True
     stripped_target = target_ref.strip()
     if platform_name == "signal" and stripped_target.startswith("group:"):
         group_id = stripped_target[len("group:") :].strip()
@@ -648,12 +647,11 @@ def _parse_target_ref(platform_name: str, target_ref: str):
             # Preserve the leading '+' — signal-cli and sms/whatsapp adapters
             # expect E.164 format for direct recipients.
             return target_ref.strip(), None, True
-    if platform_name == "photon":
+    if platform_name == "photon" and _PHOTON_DM_GUID_RE.fullmatch(target_ref.strip()):
         # Photon DM chat GUIDs ('any;-;+1555...') are platform-native ids the
         # adapter resolves itself — pass through verbatim instead of bouncing
         # them off the channel directory (mirrors the react handler).
-        if _PHOTON_DM_GUID_RE.fullmatch(target_ref.strip()):
-            return target_ref.strip(), None, True
+        return target_ref.strip(), None, True
     if target_ref.lstrip("-").isdigit():
         return target_ref, None, True
     # Matrix room IDs (start with !) and user IDs (start with @) are explicit
@@ -2296,11 +2294,7 @@ async def _matrix_send_core(adapter, chat_id, message, media_files, metadata):
             last_result = await adapter.send_video(
                 chat_id, media_path, metadata=metadata
             )
-        elif ext in _VOICE_EXTS and is_voice:
-            last_result = await adapter.send_voice(
-                chat_id, media_path, metadata=metadata
-            )
-        elif ext in _AUDIO_EXTS:
+        elif ext in _VOICE_EXTS and is_voice or ext in _AUDIO_EXTS:
             last_result = await adapter.send_voice(
                 chat_id, media_path, metadata=metadata
             )

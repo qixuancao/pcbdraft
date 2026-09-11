@@ -122,14 +122,16 @@ async def _async_list_entities(
 
     hass_url, hass_token = _get_config()
     url = f"{hass_url}/api/states"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(
             url,
             headers=_get_headers(hass_token),
             timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            resp.raise_for_status()
-            states = await resp.json()
+        ) as resp,
+    ):
+        resp.raise_for_status()
+        states = await resp.json()
 
     return _filter_and_summarize(states, domain, area)
 
@@ -140,14 +142,16 @@ async def _async_get_state(entity_id: str) -> dict[str, Any]:
 
     hass_url, hass_token = _get_config()
     url = f"{hass_url}/api/states/{entity_id}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(
             url,
             headers=_get_headers(hass_token),
             timeout=aiohttp.ClientTimeout(total=10),
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
+        ) as resp,
+    ):
+        resp.raise_for_status()
+        data = await resp.json()
 
     return {
         "entity_id": data["entity_id"],
@@ -208,15 +212,17 @@ async def _async_call_service(
     url = f"{hass_url}/api/services/{domain}/{service}"
     payload = _build_service_payload(entity_id, data)
 
-    async with aiohttp.ClientSession() as session:
-        async with session.post(
+    async with (
+        aiohttp.ClientSession() as session,
+        session.post(
             url,
             headers=_get_headers(hass_token),
             json=payload,
             timeout=aiohttp.ClientTimeout(total=15),
-        ) as resp:
-            resp.raise_for_status()
-            result = await resp.json()
+        ) as resp,
+    ):
+        resp.raise_for_status()
+        result = await resp.json()
 
     return _parse_service_response(domain, service, result)
 
@@ -326,12 +332,14 @@ async def _async_list_services(domain: str | None = None) -> dict[str, Any]:
         "Authorization": f"Bearer {hass_token}",
         "Content-Type": "application/json",
     }
-    async with aiohttp.ClientSession() as session:
-        async with session.get(
+    async with (
+        aiohttp.ClientSession() as session,
+        session.get(
             url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)
-        ) as resp:
-            resp.raise_for_status()
-            services = await resp.json()
+        ) as resp,
+    ):
+        resp.raise_for_status()
+        services = await resp.json()
 
     if domain:
         services = [s for s in services if s.get("domain") == domain]

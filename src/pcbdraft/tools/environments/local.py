@@ -85,9 +85,12 @@ def _resolve_local_initial_cwd(cwd: str) -> str:
     if not os.path.isdir(candidate):
         wanted_parts = Path(expanded).parts
         current_parts = Path(current).parts
-        if wanted_parts and len(wanted_parts) <= len(current_parts):
-            if current_parts[-len(wanted_parts) :] == wanted_parts:
-                return current
+        if (
+            wanted_parts
+            and len(wanted_parts) <= len(current_parts)
+            and current_parts[-len(wanted_parts) :] == wanted_parts
+        ):
+            return current
 
     return candidate
 
@@ -248,9 +251,11 @@ def _build_provider_env_blocklist() -> frozenset:
 
         for name, metadata in OPTIONAL_ENV_VARS.items():
             category = metadata.get("category")
-            if category in {"tool", "messaging"}:
-                blocked.add(name)
-            elif category == "setting" and metadata.get("password"):
+            if (
+                category in {"tool", "messaging"}
+                or category == "setting"
+                and metadata.get("password")
+            ):
                 blocked.add(name)
     except ImportError:
         pass
@@ -409,11 +414,9 @@ def _is_pcbdraft_internal_secret(key: str) -> bool:
         upper.endswith("_API_KEY") or upper.endswith("_BASE_URL")
     ):
         return True
-    if upper.startswith("GATEWAY_RELAY_") and (
+    return upper.startswith("GATEWAY_RELAY_") and (
         upper.endswith("_SECRET") or upper.endswith("_KEY") or upper.endswith("_TOKEN")
-    ):
-        return True
-    return False
+    )
 
 
 def _inject_context_runtime_home(env: dict) -> None:
@@ -644,9 +647,9 @@ def pcbdraft_subprocess_env(*, inherit_credentials: bool = False) -> dict[str, s
     # regardless of ``inherit_credentials`` — a model-driving CLI has no
     # legitimate use for them. See :func:`_is_hermes_internal_secret`.
     for key in list(env):
-        if key.startswith(_PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX):
-            env.pop(key, None)
-        elif _is_pcbdraft_internal_secret(key):
+        if key.startswith(
+            _PCBDRAFT_PROVIDER_ENV_FORCE_PREFIX
+        ) or _is_pcbdraft_internal_secret(key):
             env.pop(key, None)
 
     if not inherit_credentials:

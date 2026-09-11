@@ -321,15 +321,14 @@ def steer_subagent(
         record = _active_subagents.get(subagent_id)
         if not record or not record.get("accepting_steer", False):
             return False
-        if owner_session_id is not None:
-            if (
-                record.get("owner_session_id") != owner_session_id
-                or owner_transport is None
-                or record.get("owner_transport") is not owner_transport
-                or owner_session_record is None
-                or record.get("owner_session_record") is not owner_session_record
-            ):
-                return False
+        if owner_session_id is not None and (
+            record.get("owner_session_id") != owner_session_id
+            or owner_transport is None
+            or record.get("owner_transport") is not owner_transport
+            or owner_session_record is None
+            or record.get("owner_session_record") is not owner_session_record
+        ):
+            return False
         agent = record.get("agent")
         if agent is None:
             return False

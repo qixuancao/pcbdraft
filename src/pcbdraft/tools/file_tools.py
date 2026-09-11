@@ -558,7 +558,7 @@ def _is_blocked_device_path(path: str) -> bool:
     # load addresses — an ASLR oracle on par with maps. /proc/*/pagemap exposes
     # virtual->physical translation. Both are blocked alongside the maps family.
     # endswith matches both /proc/<pid>/X and /proc/<pid>/task/<tid>/X.
-    if normalized.startswith("/proc/") and normalized.endswith(
+    return normalized.startswith("/proc/") and normalized.endswith(
         (
             "/environ",
             "/cmdline",
@@ -570,9 +570,7 @@ def _is_blocked_device_path(path: str) -> bool:
             "/auxv",
             "/pagemap",
         )
-    ):
-        return True
-    return False
+    )
 
 
 def _is_blocked_device(filepath: str, base_dir: str | Path | None = None) -> bool:
@@ -610,9 +608,7 @@ def _is_blocked_device(filepath: str, base_dir: str | Path | None = None) -> boo
         resolved = os.path.normpath(os.path.realpath(normalized))
     except (OSError, ValueError):
         return False
-    if _is_blocked_device_path(resolved):
-        return True
-    return False
+    return _is_blocked_device_path(resolved)
 
 
 def _search_result_read_block_error(path: str, task_id: str = "default") -> str | None:
@@ -1180,9 +1176,7 @@ def _is_expected_write_exception(exc: Exception) -> bool:
     """Return True for expected write denials that should not hit error logs."""
     if isinstance(exc, PermissionError):
         return True
-    if isinstance(exc, OSError) and exc.errno in _EXPECTED_WRITE_ERRNOS:
-        return True
-    return False
+    return isinstance(exc, OSError) and exc.errno in _EXPECTED_WRITE_ERRNOS
 
 
 _file_ops_lock = threading.Lock()
@@ -1423,11 +1417,9 @@ def _is_internal_file_status_text(content: str) -> bool:
         return False
     if stripped == _READ_DEDUP_STATUS_MESSAGE:
         return True
-    if _READ_DEDUP_STATUS_MESSAGE in stripped and len(stripped) <= 2 * len(
+    return _READ_DEDUP_STATUS_MESSAGE in stripped and len(stripped) <= 2 * len(
         _READ_DEDUP_STATUS_MESSAGE
-    ):
-        return True
-    return False
+    )
 
 
 def _looks_like_read_file_line_numbered_content(content: str) -> bool:

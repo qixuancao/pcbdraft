@@ -4357,7 +4357,7 @@ def list_events(conn: sqlite3.Connection, task_id: str) -> list[Event]:
                 created_at=r["created_at"],
                 run_id=(
                     int(r["run_id"])
-                    if "run_id" in r.keys() and r["run_id"] is not None
+                    if "run_id" in r and r["run_id"] is not None
                     else None
                 ),
             )
@@ -5385,11 +5385,11 @@ def _verify_created_cards(
             phantom.append(cid)
             continue
         # Accept if any of the three trust conditions holds.
-        if completing_assignee and created_by == completing_assignee:
-            verified.append(cid)
-        elif created_by == completing_task_id:
-            verified.append(cid)
-        elif cid in linked_children:
+        if (
+            (completing_assignee and created_by == completing_assignee)
+            or created_by == completing_task_id
+            or cid in linked_children
+        ):
             verified.append(cid)
         else:
             phantom.append(cid)
@@ -6459,10 +6459,10 @@ def block_task(
             if cur_row["status"] == "running"
             else "ready"
         )
-        prev_kind = cur_row["block_kind"] if "block_kind" in cur_row.keys() else None
+        prev_kind = cur_row["block_kind"] if "block_kind" in cur_row else None
         prev_recurrences = (
             int(cur_row["block_recurrences"])
-            if "block_recurrences" in cur_row.keys()
+            if "block_recurrences" in cur_row
             and cur_row["block_recurrences"] is not None
             else 0
         )
@@ -9188,7 +9188,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
             # Skip liveness check inside the launch-window grace period
             # so a freshly-spawned worker isn't reclaimed before its PID
             # is visible on /proc.
-            started_at = row["started_at"] if "started_at" in row.keys() else None
+            started_at = row["started_at"] if "started_at" in row else None
             if started_at is not None:
                 grace = _resolve_crash_grace_seconds()
                 if time.time() - started_at < grace:
@@ -9366,9 +9366,7 @@ def detect_crashed_workers(conn: sqlite3.Connection) -> list[str]:
                 ).fetchone()
                 if trow is None:
                     continue  # task deleted mid-loop
-                task_override = (
-                    trow["max_retries"] if "max_retries" in trow.keys() else None
-                )
+                task_override = trow["max_retries"] if "max_retries" in trow else None
                 violation_limit = (
                     int(task_override)
                     if task_override is not None
@@ -9520,7 +9518,7 @@ def _record_task_failure(
 
         # Per-task override wins over both caller-supplied and default
         # thresholds. None (the common case) falls through.
-        task_override = row["max_retries"] if "max_retries" in row.keys() else None
+        task_override = row["max_retries"] if "max_retries" in row else None
         if task_override is not None:
             effective_limit = int(task_override)
             limit_source = "task"
@@ -12143,7 +12141,7 @@ def unseen_events_for_sub(
                 created_at=r["created_at"],
                 run_id=(
                     int(r["run_id"])
-                    if "run_id" in r.keys() and r["run_id"] is not None
+                    if "run_id" in r and r["run_id"] is not None
                     else None
                 ),
             )
@@ -12459,9 +12457,8 @@ def list_runs(
     """
     if (state_type is None) ^ (state_name is None):
         raise ValueError("state_type and state_name must both be set or both omitted")
-    if state_type is not None:
-        if state_type not in ("status", "outcome"):
-            raise ValueError("state_type must be 'status' or 'outcome'")
+    if state_type is not None and state_type not in ("status", "outcome"):
+        raise ValueError("state_type must be 'status' or 'outcome'")
     q = "SELECT * FROM task_runs WHERE task_id = ?"
     params: list[Any] = [task_id]
     if not include_active:

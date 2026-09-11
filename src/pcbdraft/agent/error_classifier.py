@@ -2038,11 +2038,10 @@ def _is_openrouter_upstream_error(body: Any, provider: str) -> bool:
     if provider_lower == "openrouter":
         return True
     metadata = err.get("metadata")
-    if isinstance(metadata, dict) and (
-        "raw" in metadata or "provider_name" in metadata
-    ):
-        return True
-    return False
+    return bool(
+        isinstance(metadata, dict)
+        and ("raw" in metadata or "provider_name" in metadata)
+    )
 
 
 def _extract_upstream_provider_name(body: Any) -> str | None:

@@ -249,9 +249,7 @@ class SubdirectoryHintTracker:
             # check as a best-effort safeguard.
             if not _is_ancestor_or_same(self.working_dir, path):
                 return False
-        if self._is_excluded(path):
-            return False
-        return True
+        return not self._is_excluded(path)
 
     def _is_excluded(self, path: Path) -> bool:
         """True when the path sits inside a directory that holds copies, not context.

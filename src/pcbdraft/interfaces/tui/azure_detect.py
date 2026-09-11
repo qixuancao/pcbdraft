@@ -293,9 +293,9 @@ def _probe_anthropic_messages(
             # Pre-Azure-v1 Azure Foundry returns a plain 404 for
             # Anthropic-style calls on non-Anthropic deployments.  A
             # 400 "model not found" IS Anthropic though.
-            if exc.code == 400 and ("messages" in lowered or "model" in lowered):
-                return True
-            return False
+            return bool(
+                exc.code == 400 and ("messages" in lowered or "model" in lowered)
+            )
         except Exception:
             return False
     except (URLError, TimeoutError, OSError):

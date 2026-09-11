@@ -1723,10 +1723,11 @@ class ProcessRegistry:
         # Watch-pattern process: the trigger is a pattern match, not exit.
         # Once any match has been delivered, the wait is satisfied even though
         # the process keeps running (server/daemon/watcher case).
-        if session.watch_patterns and not session._watch_disabled:
-            if session._watch_hits > 0:
-                return False
-        return True
+        return not (
+            session.watch_patterns
+            and not session._watch_disabled
+            and session._watch_hits > 0
+        )
 
     def _drain_should_skip(
         self, session_id: str, *, skip_poll_observed: bool = True

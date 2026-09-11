@@ -729,11 +729,14 @@ def _title_match_result(
         return None
 
     lineage_root = _resolve_lineage(db, session_id)
-    if current_lineage_root and lineage_root == current_lineage_root:
+    if (
+        current_lineage_root
+        and lineage_root == current_lineage_root
+        and not _session_left_live_context(db, session_id)
+    ):
         # Same-lineage title hits are in-context only when the session is
         # still live. /new-reset and compression-ended parents are not.
-        if not _session_left_live_context(db, session_id):
-            return None
+        return None
 
     try:
         session_meta = db.get_session(lineage_root) or db.get_session(session_id) or {}
@@ -886,15 +889,21 @@ def _discover(
         # so that content is no longer in context — let it through.
         is_compacted_hit = _is_compacted_message(db, r.get("id"))
         is_ended_session = _session_left_live_context(db, raw_sid)
-        if current_lineage_root and resolved_sid == current_lineage_root:
-            if not (is_ended_session or is_compacted_hit):
-                continue
-        if current_session_id and raw_sid == current_session_id:
+        if (
+            current_lineage_root
+            and resolved_sid == current_lineage_root
+            and not (is_ended_session or is_compacted_hit)
+        ):
+            continue
+        if (
+            current_session_id
+            and raw_sid == current_session_id
+            and not is_compacted_hit
+        ):
             # Same-session hit: only skip if the matched message is still live
             # (active=1). Archived/compacted rows are pre-compaction content
             # that's been summarised away — let them through.
-            if not is_compacted_hit:
-                continue
+            continue
         if resolved_sid not in seen_sessions:
             row = dict(r)
             row["_lineage_root"] = resolved_sid

@@ -1477,26 +1477,32 @@ def run_doctor(args):
                 if catalog_provider is not None:
                     provider_ids_to_accept.add(catalog_provider)
 
-            if provider and provider != "auto":
-                if catalog_provider is None or (
-                    known_providers
-                    and not (provider_ids_to_accept & valid_provider_ids)
-                ):
-                    known_list = (
-                        ", ".join(sorted(known_providers))
-                        if known_providers
-                        else "(unavailable)"
+            if (
+                provider
+                and provider != "auto"
+                and (
+                    catalog_provider is None
+                    or (
+                        known_providers
+                        and not (provider_ids_to_accept & valid_provider_ids)
                     )
-                    _fail_and_issue(
-                        f"model.provider '{provider_raw}' is not a recognised provider",
-                        f"(known: {known_list})",
-                        (
-                            f"model.provider '{provider_raw}' is unknown. "
-                            f"Valid providers: {known_list}. "
-                            "Choose a provider with 'pcbdraft connect'"
-                        ),
-                        issues,
-                    )
+                )
+            ):
+                known_list = (
+                    ", ".join(sorted(known_providers))
+                    if known_providers
+                    else "(unavailable)"
+                )
+                _fail_and_issue(
+                    f"model.provider '{provider_raw}' is not a recognised provider",
+                    f"(known: {known_list})",
+                    (
+                        f"model.provider '{provider_raw}' is unknown. "
+                        f"Valid providers: {known_list}. "
+                        "Choose a provider with 'pcbdraft connect'"
+                    ),
+                    issues,
+                )
 
             # Warn if model is set to a provider-prefixed name on a provider that doesn't use them.
             # Vendor/model slugs are valid on aggregator-style providers and on any custom
@@ -2260,20 +2266,19 @@ def run_doctor(args):
     except Exception:
         running_in_container = False
 
-    if running_in_container:
+    if running_in_container and terminal_env != "docker":
         # Inside our container the Docker terminal backend is not
         # configured by default (Docker-in-Docker isn't set up); the
         # local backend is the intended one. Skip the noisy "docker
         # not found" warning. If the user has explicitly chosen
         # TERMINAL_ENV=docker inside the container they likely mounted
         # /var/run/docker.sock, so fall through to the normal check.
-        if terminal_env != "docker":
-            check_info(
-                "Running inside a container — using local terminal backend "
-                "(docker-in-docker is not configured by default)"
-            )
-            # Skip to next section; Docker isn't relevant here.
-            terminal_env = "local"
+        check_info(
+            "Running inside a container — using local terminal backend "
+            "(docker-in-docker is not configured by default)"
+        )
+        # Skip to next section; Docker isn't relevant here.
+        terminal_env = "local"
     if terminal_env == "docker":
         if _safe_which("docker"):
             # Check if docker daemon is running

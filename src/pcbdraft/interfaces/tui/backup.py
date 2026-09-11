@@ -336,10 +336,7 @@ def _should_exclude(rel_path: Path) -> bool:
     if name in _EXCLUDED_NAMES:
         return True
 
-    if name.endswith(_EXCLUDED_SUFFIXES):
-        return True
-
-    return False
+    return bool(name.endswith(_EXCLUDED_SUFFIXES))
 
 
 def _should_skip_backup_file(abs_path: Path, rel_path: Path, out_path: Path) -> bool:

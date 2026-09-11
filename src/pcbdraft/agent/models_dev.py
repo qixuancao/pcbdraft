@@ -1287,9 +1287,7 @@ def list_provider_models(provider: str, *, allow_network: bool = True) -> list[s
     if models is None:
         return []
     return [
-        mid
-        for mid in models.keys()
-        if not _should_hide_from_provider_catalog(provider, mid)
+        mid for mid in models if not _should_hide_from_provider_catalog(provider, mid)
     ]
 
 
@@ -1338,9 +1336,9 @@ _GOOGLE_HIDDEN_MODELS = frozenset(
 def _should_hide_from_provider_catalog(provider: str, model_id: str) -> bool:
     provider_lower = (provider or "").strip().lower()
     model_lower = (model_id or "").strip().lower()
-    if provider_lower in {"gemini", "google"} and model_lower in _GOOGLE_HIDDEN_MODELS:
-        return True
-    return False
+    return bool(
+        provider_lower in {"gemini", "google"} and model_lower in _GOOGLE_HIDDEN_MODELS
+    )
 
 
 def list_agentic_models(provider: str, *, allow_network: bool = True) -> list[str]:

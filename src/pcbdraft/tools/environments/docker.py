@@ -1958,9 +1958,8 @@ class DockerEnvironment(BaseEnvironment):
             result.get("returncode", 0) != 0
             and self._is_container_gone(result.get("output", ""))
             and self._persist_across_processes
-        ):
-            if self._recreate_container():
-                result = super().execute(command, cwd, **kwargs)
+        ) and self._recreate_container():
+            result = super().execute(command, cwd, **kwargs)
         return result
 
     @staticmethod

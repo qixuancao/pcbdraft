@@ -2619,9 +2619,10 @@ def _model_section_has_credentials(config: dict) -> bool:
     model_cfg = config.get("model") if isinstance(config, dict) else None
     if isinstance(model_cfg, dict):
         provider_id = (model_cfg.get("provider") or "").strip().lower()
-        if provider_id in PROVIDER_REGISTRY:
-            if _has_key(PROVIDER_REGISTRY[provider_id]):
-                return True
+        if provider_id in PROVIDER_REGISTRY and _has_key(
+            PROVIDER_REGISTRY[provider_id]
+        ):
+            return True
         if provider_id == "openrouter":
             for env_var in ("OPENROUTER_API_KEY", "OPENAI_API_KEY"):
                 if get_env_value(env_var):

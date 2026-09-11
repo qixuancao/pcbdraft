@@ -1382,9 +1382,7 @@ def _should_emit_cleanup_session_finalize(session_id: str | None) -> bool:
         return True
     if session_id is None:
         return False
-    if session_id in _single_query_finalize_attempted_session_ids:
-        return False
-    return True
+    return session_id not in _single_query_finalize_attempted_session_ids
 
 
 def _notify_session_finalize(
@@ -4350,9 +4348,12 @@ def _pcbdraft_call_output_screen_diff(
        the event loop with ``'cell' object has no attribute 'char'``.
     """
     try:
-        if previous_screen is not None and hasattr(previous_screen, "height"):
-            if previous_screen.height < screen.height:
-                previous_screen.height = screen.height
+        if (
+            previous_screen is not None
+            and hasattr(previous_screen, "height")
+            and previous_screen.height < screen.height
+        ):
+            previous_screen.height = screen.height
     except Exception:
         pass
 
@@ -4529,9 +4530,7 @@ def _terminal_supports_extended_enter_keys(
         return True
     if term == "xterm-ghostty":
         return True
-    if term.startswith("tmux") or term_program.lower() == "tmux":
-        return True
-    return False
+    return bool(term.startswith("tmux") or term_program.lower() == "tmux")
 
 
 def _enable_extended_enter_keys(
@@ -7027,9 +7026,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         agent = getattr(self, "agent", None)
         if agent is not None and getattr(agent, "quiet_mode", False):
             return False
-        if not getattr(self, "_interactive_turn", False):
-            return False
-        return True
+        return getattr(self, "_interactive_turn", False)
 
     def _turn_summary_begin(self) -> None:
         """Start per-turn accounting for the turn that is about to run."""
@@ -18304,9 +18301,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # If resuming a session, load history and display it immediately
         # so the user has context before typing their first message.
-        if self._resumed:
-            if self._preload_resumed_session():
-                self._display_resumed_history()
+        if self._resumed and self._preload_resumed_session():
+            self._display_resumed_history()
 
         try:
             from pcbdraft.interfaces.tui.skin_engine import get_active_skin

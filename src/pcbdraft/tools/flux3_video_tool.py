@@ -92,9 +92,7 @@ def _looks_like_local_path(value: str) -> bool:
         return True
     if value.startswith(("/", "./", "../", ".\\", "..\\")):
         return True
-    if _WINDOWS_DRIVE_PATH.match(value) or value.startswith("\\\\"):
-        return True
-    return False
+    return bool(_WINDOWS_DRIVE_PATH.match(value) or value.startswith("\\\\"))
 
 
 def _display_path(path: str) -> str:
@@ -554,14 +552,16 @@ async def _download_video(url: str, save_to, started: float) -> tuple:
     )
 
     try:
-        async with create_ssrf_safe_async_client(
-            timeout=timeout, follow_redirects=True
-        ) as client:
-            async with client.stream("GET", url) as response:
-                response.raise_for_status()
-                with partial.open("wb") as handle:
-                    async for chunk in response.aiter_bytes():
-                        handle.write(chunk)
+        async with (
+            create_ssrf_safe_async_client(
+                timeout=timeout, follow_redirects=True
+            ) as client,
+            client.stream("GET", url) as response,
+        ):
+            response.raise_for_status()
+            with partial.open("wb") as handle:
+                async for chunk in response.aiter_bytes():
+                    handle.write(chunk)
 
         size = partial.stat().st_size
         if size < _MIN_PLAUSIBLE_VIDEO_BYTES:

@@ -227,9 +227,7 @@ def _image_url_shape_ok(url: str) -> bool:
     # Parse to ensure we at least have a network location; still allow URLs
     # without file extensions (e.g. CDN endpoints that redirect to images).
     parsed = urlparse(url)
-    if not parsed.netloc:
-        return False
-    return True
+    return bool(parsed.netloc)
 
 
 def _validate_image_url(url: str) -> bool:
@@ -416,9 +414,7 @@ def _is_retryable_download_error(error: Exception) -> bool:
         return False
     if isinstance(error, httpx.HTTPStatusError):
         status = error.response.status_code
-        if 400 <= status < 500 and status != 429:
-            return False
-        return True
+        return not (400 <= status < 500 and status != 429)
     return True
 
 
@@ -1092,9 +1088,7 @@ def _supports_media_in_tool_results(provider: str, model: str) -> bool:
         if not isinstance(model, str):
             return False
         m = model.strip().lower()
-        if "gemini-3" in m or "gemini-pro-3" in m or "gemini-flash-3" in m:
-            return True
-        return False
+        return "gemini-3" in m or "gemini-pro-3" in m or "gemini-flash-3" in m
 
     # Check the provider's registered profile for the supports_vision flag.
     # This covers vision-capable providers like xiaomi, minimax, etc. that

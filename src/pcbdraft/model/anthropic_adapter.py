@@ -451,9 +451,7 @@ def _is_oauth_token(key: str) -> bool:
     if key.startswith("eyJ"):
         return True
     # Claude Code OAuth access tokens (opaque, from CLAUDE_CODE_OAUTH_TOKEN)
-    if key.startswith("cc-"):
-        return True
-    return False
+    return bool(key.startswith("cc-"))
 
 
 def _normalize_base_url_text(base_url) -> str:
@@ -478,9 +476,8 @@ def _is_third_party_anthropic_endpoint(base_url: str | None) -> bool:
     if not normalized:
         return False  # No base_url = direct Anthropic API
     normalized = normalized.rstrip("/").lower()
-    if "anthropic.com" in normalized:
-        return False  # Direct Anthropic API — OAuth applies
-    return True  # Any other endpoint is a third-party proxy
+    # Direct Anthropic API — OAuth applies; any other endpoint is a third-party proxy
+    return "anthropic.com" not in normalized
 
 
 def _is_kimi_coding_endpoint(base_url: str | None) -> bool:
@@ -561,9 +558,7 @@ def _is_kimi_family_endpoint(base_url: str | None, model: str | None = None) -> 
     for _domain in ("api.kimi.com", "moonshot.ai", "moonshot.cn"):
         if base_url_host_matches(base_url or "", _domain):
             return True
-    if _model_name_is_kimi_family(model):
-        return True
-    return False
+    return bool(_model_name_is_kimi_family(model))
 
 
 def _is_deepseek_anthropic_endpoint(base_url: str | None) -> bool:
@@ -1531,9 +1526,7 @@ def _is_bedrock_model_id(model: str) -> bool:
     ):
         return True
     # Bare Bedrock model IDs: provider.model-family
-    if lower.startswith("anthropic."):
-        return True
-    return False
+    return bool(lower.startswith("anthropic."))
 
 
 def normalize_model_name(model: str, preserve_dots: bool = False) -> str:
@@ -2933,31 +2926,32 @@ def build_anthropic_kwargs(
     # silently hides reasoning text that Hermes surfaces in its CLI. We
     # request "summarized" so the reasoning blocks stay populated — matching
     # 4.6 behavior and preserving the activity-feed UX during long tool runs.
-    if reasoning_config and isinstance(reasoning_config, dict):
-        if (
-            reasoning_config.get("enabled") is not False
-            and "haiku" not in model.lower()
-        ):
-            effort = str(reasoning_config.get("effort", "medium")).lower()
-            budget = THINKING_BUDGET.get(effort, 8000)
-            if _supports_adaptive_thinking(model):
-                kwargs["thinking"] = {
-                    "type": "adaptive",
-                    "display": "summarized",
-                }
-                adaptive_effort = ADAPTIVE_EFFORT_MAP.get(effort, "medium")
-                # Downgrade xhigh→max on models that don't list xhigh as a
-                # supported level (Opus/Sonnet 4.6). Opus 4.7+ keeps xhigh.
-                if adaptive_effort == "xhigh" and not _supports_xhigh_effort(model):
-                    adaptive_effort = "max"
-                kwargs["output_config"] = {
-                    "effort": adaptive_effort,
-                }
-            else:
-                kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
-                # Anthropic requires temperature=1 when thinking is enabled on older models
-                kwargs["temperature"] = 1
-                kwargs["max_tokens"] = max(effective_max_tokens, budget + 4096)
+    if (
+        reasoning_config
+        and isinstance(reasoning_config, dict)
+        and reasoning_config.get("enabled") is not False
+        and "haiku" not in model.lower()
+    ):
+        effort = str(reasoning_config.get("effort", "medium")).lower()
+        budget = THINKING_BUDGET.get(effort, 8000)
+        if _supports_adaptive_thinking(model):
+            kwargs["thinking"] = {
+                "type": "adaptive",
+                "display": "summarized",
+            }
+            adaptive_effort = ADAPTIVE_EFFORT_MAP.get(effort, "medium")
+            # Downgrade xhigh→max on models that don't list xhigh as a
+            # supported level (Opus/Sonnet 4.6). Opus 4.7+ keeps xhigh.
+            if adaptive_effort == "xhigh" and not _supports_xhigh_effort(model):
+                adaptive_effort = "max"
+            kwargs["output_config"] = {
+                "effort": adaptive_effort,
+            }
+        else:
+            kwargs["thinking"] = {"type": "enabled", "budget_tokens": budget}
+            # Anthropic requires temperature=1 when thinking is enabled on older models
+            kwargs["temperature"] = 1
+            kwargs["max_tokens"] = max(effective_max_tokens, budget + 4096)
 
     # ── Strip sampling params on 4.7+ ─────────────────────────────────
     # Opus 4.7 rejects any non-default temperature/top_p/top_k with a 400.

@@ -792,10 +792,9 @@ def project_for_path(
             target == folder
             or target.startswith(folder.rstrip("/\\") + os.sep)
             or target.startswith(folder.rstrip("/\\") + "/")
-        ):
-            if len(folder) > best_len:
-                best_len = len(folder)
-                best_pid = row["pid"]
+        ) and len(folder) > best_len:
+            best_len = len(folder)
+            best_pid = row["pid"]
     if best_pid is None:
         return None
     return get_project(conn, best_pid)

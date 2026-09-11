@@ -500,10 +500,11 @@ def cmd_mcp_add(args):
 
     # Check if server already exists
     existing = _get_mcp_servers()
-    if name in existing:
-        if not _confirm(f"Server '{name}' already exists. Overwrite?", default=False):
-            _info("Cancelled.")
-            return
+    if name in existing and not _confirm(
+        f"Server '{name}' already exists. Overwrite?", default=False
+    ):
+        _info("Cancelled.")
+        return
 
     # Build initial config
     if url:
@@ -561,23 +562,20 @@ def cmd_mcp_add(args):
         print()
         _info(f"Connecting to {url}")
         needs_auth = _confirm("Does this server require authentication?", default=True)
-        if needs_auth:
-            if auth_type == "header" or not auth_type:
-                env_key = _env_key_for_server(name)
-                existing_key = get_env_value(env_key)
-                if existing_key:
-                    _success(f"{env_key}: already configured")
-                else:
-                    api_key = _prompt("API key / Bearer token", password=True)
-                    if api_key:
-                        server_config["headers"] = _save_bearer_auth_token(
-                            name, api_key
-                        )
-                        _success(f"Saved to {display_runtime_home()}/.env as {env_key}")
+        if needs_auth and (auth_type == "header" or not auth_type):
+            env_key = _env_key_for_server(name)
+            existing_key = get_env_value(env_key)
+            if existing_key:
+                _success(f"{env_key}: already configured")
+            else:
+                api_key = _prompt("API key / Bearer token", password=True)
+                if api_key:
+                    server_config["headers"] = _save_bearer_auth_token(name, api_key)
+                    _success(f"Saved to {display_runtime_home()}/.env as {env_key}")
 
-                # Set header with env var interpolation
-                if existing_key:
-                    server_config["headers"] = _bearer_auth_headers(name)
+            # Set header with env var interpolation
+            if existing_key:
+                server_config["headers"] = _bearer_auth_headers(name)
 
     # ── Discovery: connect and list tools ─────────────────────────────
 
@@ -597,9 +595,10 @@ def cmd_mcp_add(args):
 
     if not tools:
         _warning("Server connected but reported no tools.")
-        if _confirm("Save config anyway?", default=True):
-            if _save_mcp_server(name, server_config):
-                _success(f"Saved '{name}' to config")
+        if _confirm("Save config anyway?", default=True) and _save_mcp_server(
+            name, server_config
+        ):
+            _success(f"Saved '{name}' to config")
         return
 
     # ── Tool selection ────────────────────────────────────────────────

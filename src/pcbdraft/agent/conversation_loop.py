@@ -154,11 +154,9 @@ def _should_skip_model_call_for_reference_handoff(
 
     if not reference_handoff_would_drive_next_model_call(messages):
         return False
-    if _restore_user_after_reference_handoff(messages, user_message):
-        # The restored ask is an actionable non-synthetic user row appended
-        # after the handoff — by construction the handoff no longer drives.
-        return False
-    return True
+    # The restored ask is an actionable non-synthetic user row appended
+    # after the handoff — by construction the handoff no longer drives.
+    return not _restore_user_after_reference_handoff(messages, user_message)
 
 
 # Fallback final_response for a turn ended by the sole-handoff skip (#80622).
@@ -1045,19 +1043,17 @@ def _stored_prompt_matches_runtime(agent, prompt: str) -> bool:
     # prompt — so gateway/TUI sessions that set TERMINAL_CWD are not falsely
     # rejected (they would always differ from the launch dir's os.getcwd()).
     stored_cwd = host_info_value("Current working directory")
-    if stored_cwd:
-        if stored_cwd != str(resolve_agent_cwd()):
-            return False
+    if stored_cwd and stored_cwd != str(resolve_agent_cwd()):
+        return False
 
     # Detect runtime-surface drift: the stored prompt records which platform it
     # was built for (e.g. "desktop" vs "cli"). Reusing a desktop-built prompt on
     # a terminal session (or vice versa) would inject the wrong runtime hints.
     stored_platform = line_value("Platform")
     current_platform = str(getattr(agent, "platform", "") or "").strip()
-    if stored_platform and current_platform and stored_platform != current_platform:
-        return False
-
-    return True
+    return not (
+        stored_platform and current_platform and stored_platform != current_platform
+    )
 
 
 # The three _get_continuation_prompt variants below, in named-constant form
@@ -3069,28 +3065,23 @@ def run_conversation(
                 # Provider signaled "stream not supported" on a previous
                 # attempt — switch to non-streaming for the rest of this
                 # session instead of re-failing every retry.
-                if getattr(agent, "_disable_streaming", False):
-                    _use_streaming = False
                 # CopilotACPClient communicates via subprocess stdio and
                 # returns a plain SimpleNamespace — not an iterable
                 # stream.  Mirror the ACP exclusion used for Responses
                 # API upgrade (lines ~1083-1085).
-                elif (
-                    agent.provider in {"copilot-acp"}
-                    or str(agent.base_url or "").lower().startswith("acp://copilot")
-                    or str(agent.base_url or "").lower().startswith("acp+tcp://")
-                ):
-                    _use_streaming = False
                 # MoA streams only when a display/TTS consumer is present to
-                # receive the deltas. MoAChatCompletions.create() honors
-                # stream=True (runs the references, then returns the aggregator's
-                # raw token stream) and is reached here because, for provider
-                # "moa", _create_request_openai_client returns the MoA facade
-                # itself. Without consumers (quiet mode, subagents, health-check
-                # probes) we keep the complete-response path: the facade returns a
-                # whole response when stream is not requested, preserving the
-                # prior behavior for those callers.
-                elif agent.provider == "moa" and not agent._has_stream_consumers():
+                # receive the deltas. Without consumers (quiet mode, subagents,
+                # health-check probes) we keep the complete-response path.
+                if (
+                    getattr(agent, "_disable_streaming", False)
+                    or (
+                        agent.provider in {"copilot-acp"}
+                        or str(agent.base_url or "").lower().startswith("acp://copilot")
+                        or str(agent.base_url or "").lower().startswith("acp+tcp://")
+                    )
+                    or agent.provider == "moa"
+                    and not agent._has_stream_consumers()
+                ):
                     _use_streaming = False
                 elif not agent._has_stream_consumers():
                     # No display/TTS consumer. Still prefer streaming for
@@ -4531,15 +4522,16 @@ def run_conversation(
                     thinking_spinner = None
                 if agent.thinking_callback:
                     agent.thinking_callback("")
-                if agent._has_pending_redirect():
+                if agent._has_pending_redirect() and agent.clear_interrupt(
+                    preserve_redirect=True
+                ):
                     # redirect() deliberately used the interrupt machinery to
                     # cancel only this provider request. Keep its correction
                     # queued, clear the cancellation bit, and let the outer
                     # loop rebuild a clean request tail. Never materialize
                     # incomplete signed/encrypted reasoning items.
-                    if agent.clear_interrupt(preserve_redirect=True):
-                        _retry.restart_with_redirected_messages = True
-                        break
+                    _retry.restart_with_redirected_messages = True
+                    break
                 api_elapsed = time.time() - api_start_time
                 agent._vprint(
                     f"{agent.log_prefix}⚡ Interrupted during API call.", force=True
@@ -4602,15 +4594,18 @@ def run_conversation(
                     # `prefill_messages` if present.  Mirrors the ASCII
                     # codec recovery below.
                     _surrogates_found = _sanitize_messages_surrogates(messages)
-                    if isinstance(api_messages, list):
-                        if _sanitize_messages_surrogates(api_messages):
-                            _surrogates_found = True
-                    if isinstance(api_kwargs, dict):
-                        if _sanitize_structure_surrogates(api_kwargs):
-                            _surrogates_found = True
-                    if isinstance(getattr(agent, "prefill_messages", None), list):
-                        if _sanitize_messages_surrogates(agent.prefill_messages):
-                            _surrogates_found = True
+                    if isinstance(api_messages, list) and _sanitize_messages_surrogates(
+                        api_messages
+                    ):
+                        _surrogates_found = True
+                    if isinstance(api_kwargs, dict) and _sanitize_structure_surrogates(
+                        api_kwargs
+                    ):
+                        _surrogates_found = True
+                    if isinstance(
+                        getattr(agent, "prefill_messages", None), list
+                    ) and _sanitize_messages_surrogates(agent.prefill_messages):
+                        _surrogates_found = True
                     # Gate the retry on the error type, not on whether we
                     # found anything — _force_ascii_payload / the extended
                     # surrogate walker above cover all known paths, but a
@@ -6517,20 +6512,22 @@ def run_conversation(
                         or classified.reason == FailoverReason.billing
                     ):
                         if (
-                            classified.reason == FailoverReason.billing
-                            and _print_billing_or_entitlement_guidance(
-                                agent,
-                                capability="model access",
-                                provider=_provider,
-                                base_url=str(_base),
-                                model=_model,
-                                unverified=classified.billing_unverified,
+                            (
+                                classified.reason == FailoverReason.billing
+                                and _print_billing_or_entitlement_guidance(
+                                    agent,
+                                    capability="model access",
+                                    provider=_provider,
+                                    base_url=str(_base),
+                                    model=_model,
+                                    unverified=classified.billing_unverified,
+                                )
                             )
-                        ):
-                            pass
-                        elif _provider == "nous" and _print_nous_entitlement_guidance(
-                            agent,
-                            "Nous model access",
+                            or _provider == "nous"
+                            and _print_nous_entitlement_guidance(
+                                agent,
+                                "Nous model access",
+                            )
                         ):
                             pass
                         elif (

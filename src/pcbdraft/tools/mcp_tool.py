@@ -3685,36 +3685,38 @@ class MCPServerTask:
 
                 _sse_kwargs["httpx_client_factory"] = _mcp_http_client_factory
             try:
-                async with sse_client(**_sse_kwargs) as (read_stream, write_stream):
-                    async with ClientSession(
+                async with (
+                    sse_client(**_sse_kwargs) as (read_stream, write_stream),
+                    ClientSession(
                         read_stream,
                         write_stream,
                         client_info=_pcbdraft_mcp_client_info(),
                         **sampling_kwargs,
-                    ) as session:
-                        # Bound the handshake — same orphaned-task hang as the
-                        # stdio path (#59349): an endpoint that accepts the
-                        # connection but never answers ``initialize`` parks this
-                        # coroutine forever on the background loop.
-                        self.initialize_result = await self._negotiate_session(
-                            session, float(connect_timeout)
+                    ) as session,
+                ):
+                    # Bound the handshake — same orphaned-task hang as the
+                    # stdio path (#59349): an endpoint that accepts the
+                    # connection but never answers ``initialize`` parks this
+                    # coroutine forever on the background loop.
+                    self.initialize_result = await self._negotiate_session(
+                        session, float(connect_timeout)
+                    )
+                    self.session = session
+                    await self._discover_tools()
+                    self._ready.set()
+                    # Session is live again: clear any breaker state from a
+                    # prior outage so the first call after recovery isn't
+                    # gated on a stale consecutive-failure count (#16788).
+                    _reset_server_error(self.name)
+                    # Unproven until keepalive/tool-call success (#62212).
+                    self._session_proven = False
+                    reason = await self._wait_for_lifecycle_event()
+                    if reason == "reconnect":
+                        logger.info(
+                            "MCP server '%s': reconnect requested — "
+                            "tearing down SSE session",
+                            self.name,
                         )
-                        self.session = session
-                        await self._discover_tools()
-                        self._ready.set()
-                        # Session is live again: clear any breaker state from a
-                        # prior outage so the first call after recovery isn't
-                        # gated on a stale consecutive-failure count (#16788).
-                        _reset_server_error(self.name)
-                        # Unproven until keepalive/tool-call success (#62212).
-                        self._session_proven = False
-                        reason = await self._wait_for_lifecycle_event()
-                        if reason == "reconnect":
-                            logger.info(
-                                "MCP server '%s': reconnect requested — "
-                                "tearing down SSE session",
-                                self.name,
-                            )
             except BaseExceptionGroup as _eg:
                 # SSE transport TaskGroup dropped (idle timeout / stream blip):
                 # reconnect immediately instead of backoff/park (#66092).
@@ -3753,41 +3755,41 @@ class MCPServerTask:
             # Caller owns the client lifecycle — the SDK skips cleanup when
             # http_client is provided, so we wrap in async-with.
             try:
-                async with httpx.AsyncClient(**client_kwargs) as http_client:
+                async with (
+                    httpx.AsyncClient(**client_kwargs) as http_client,
+                    streamable_http_client(url, http_client=http_client) as _streams,
+                ):
                     # Unpacked positionally rather than by fixed arity: mcp
                     # 1.x yields (read, write, get_session_id) and 2.x yields
                     # (read, write). This file supports both SDK generations,
                     # and get_session_id was never used here.
-                    async with streamable_http_client(
-                        url, http_client=http_client
-                    ) as _streams:
-                        read_stream, write_stream = _streams[0], _streams[1]
-                        async with ClientSession(
-                            read_stream,
-                            write_stream,
-                            client_info=_pcbdraft_mcp_client_info(),
-                            **sampling_kwargs,
-                        ) as session:
-                            # Bound the handshake (#59349) — see stdio path.
-                            self.initialize_result = await self._negotiate_session(
-                                session, float(connect_timeout)
+                    read_stream, write_stream = _streams[0], _streams[1]
+                    async with ClientSession(
+                        read_stream,
+                        write_stream,
+                        client_info=_pcbdraft_mcp_client_info(),
+                        **sampling_kwargs,
+                    ) as session:
+                        # Bound the handshake (#59349) — see stdio path.
+                        self.initialize_result = await self._negotiate_session(
+                            session, float(connect_timeout)
+                        )
+                        self.session = session
+                        await self._discover_tools()
+                        self._ready.set()
+                        # Session is live again: clear any breaker state from
+                        # a prior outage so the first call after recovery
+                        # isn't gated on a stale failure count (#16788).
+                        _reset_server_error(self.name)
+                        # Unproven until keepalive/tool-call success (#62212).
+                        self._session_proven = False
+                        reason = await self._wait_for_lifecycle_event()
+                        if reason == "reconnect":
+                            logger.info(
+                                "MCP server '%s': reconnect requested — "
+                                "tearing down HTTP session",
+                                self.name,
                             )
-                            self.session = session
-                            await self._discover_tools()
-                            self._ready.set()
-                            # Session is live again: clear any breaker state from
-                            # a prior outage so the first call after recovery
-                            # isn't gated on a stale failure count (#16788).
-                            _reset_server_error(self.name)
-                            # Unproven until keepalive/tool-call success (#62212).
-                            self._session_proven = False
-                            reason = await self._wait_for_lifecycle_event()
-                            if reason == "reconnect":
-                                logger.info(
-                                    "MCP server '%s': reconnect requested — "
-                                    "tearing down HTTP session",
-                                    self.name,
-                                )
             except BaseExceptionGroup as _eg:
                 # Streamable-HTTP transport TaskGroup dropped: reconnect
                 # immediately instead of backoff/park (#66092).
@@ -3812,37 +3814,39 @@ class MCPServerTask:
             if _oauth_auth is not None:
                 _http_kwargs["auth"] = _oauth_auth
             try:
-                async with streamablehttp_client(url, **_http_kwargs) as (
-                    read_stream,
-                    write_stream,
-                    _get_session_id,
-                ):
-                    async with ClientSession(
+                async with (
+                    streamablehttp_client(url, **_http_kwargs) as (
+                        read_stream,
+                        write_stream,
+                        _get_session_id,
+                    ),
+                    ClientSession(
                         read_stream,
                         write_stream,
                         client_info=_pcbdraft_mcp_client_info(),
                         **sampling_kwargs,
-                    ) as session:
-                        # Bound the handshake (#59349) — see stdio path.
-                        self.initialize_result = await self._negotiate_session(
-                            session, float(connect_timeout)
+                    ) as session,
+                ):
+                    # Bound the handshake (#59349) — see stdio path.
+                    self.initialize_result = await self._negotiate_session(
+                        session, float(connect_timeout)
+                    )
+                    self.session = session
+                    await self._discover_tools()
+                    self._ready.set()
+                    # Session is live again: clear any breaker state from a
+                    # prior outage so the first call after recovery isn't
+                    # gated on a stale consecutive-failure count (#16788).
+                    _reset_server_error(self.name)
+                    # Unproven until keepalive/tool-call success (#62212).
+                    self._session_proven = False
+                    reason = await self._wait_for_lifecycle_event()
+                    if reason == "reconnect":
+                        logger.info(
+                            "MCP server '%s': reconnect requested — "
+                            "tearing down legacy HTTP session",
+                            self.name,
                         )
-                        self.session = session
-                        await self._discover_tools()
-                        self._ready.set()
-                        # Session is live again: clear any breaker state from a
-                        # prior outage so the first call after recovery isn't
-                        # gated on a stale consecutive-failure count (#16788).
-                        _reset_server_error(self.name)
-                        # Unproven until keepalive/tool-call success (#62212).
-                        self._session_proven = False
-                        reason = await self._wait_for_lifecycle_event()
-                        if reason == "reconnect":
-                            logger.info(
-                                "MCP server '%s': reconnect requested — "
-                                "tearing down legacy HTTP session",
-                                self.name,
-                            )
             except BaseExceptionGroup as _eg:
                 # Legacy Streamable-HTTP transport TaskGroup dropped: reconnect
                 # immediately instead of backoff/park (#66092).

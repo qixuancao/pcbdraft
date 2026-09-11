@@ -264,9 +264,7 @@ def _context_route_mismatch(
         # raw empty model.base_url and falsely dropped model.context_length,
         # falling through to family defaults (e.g. qwen → 131072) on Discord
         # session-reset banners while /status still showed the config pin.
-        if active_provider and configured_provider == active_provider:
-            return False
-        return True
+        return not (active_provider and configured_provider == active_provider)
     return bool(
         configured_provider
         and active_provider
@@ -430,7 +428,7 @@ def _custom_provider_model_matches(agent_model: str, entry: dict[str, Any]) -> b
     models = entry.get("models")
     catalog: list[str] = []
     if isinstance(models, dict):
-        catalog = [str(k).strip().lower() for k in models.keys()]
+        catalog = [str(k).strip().lower() for k in models]
     elif isinstance(models, (list, tuple)):
         catalog = [str(m).strip().lower() for m in models]
     if catalog and agent_model_norm in catalog:
@@ -704,9 +702,7 @@ def init_agent(
         "codex_app_server",
     }:
         agent.api_mode = api_mode
-    elif agent.provider == "openai-codex":
-        agent.api_mode = "codex_responses"
-    elif agent.provider in {"xai", "xai-oauth"}:
+    elif agent.provider == "openai-codex" or agent.provider in {"xai", "xai-oauth"}:
         agent.api_mode = "codex_responses"
     elif (provider_name is None) and (
         agent._base_url_hostname == "chatgpt.com"
@@ -1954,20 +1950,22 @@ def init_agent(
                 _mp = _load_mem(_mem_provider_name)
                 if _mp and _mp.is_available():
                     agent._memory_manager.add_provider(_mp)
-                elif _mp is not None:
+                elif (
+                    _mp is not None
+                    and _mem_provider_name not in _warned_unavailable_providers
+                ):
                     # Skip the (potentially expensive) unavailable_reason() call
                     # if we've already warned for this provider — the gateway
                     # builds a fresh AIAgent per message, so without this guard
                     # unavailable_reason() (which reads config from disk and may
                     # probe importlib) runs on every turn.
-                    if _mem_provider_name not in _warned_unavailable_providers:
-                        try:
-                            _unavailable_reason = _mp.unavailable_reason()
-                        except Exception:
-                            _unavailable_reason = ""
-                        _warn_memory_provider_unavailable(
-                            _mem_provider_name, _unavailable_reason
-                        )
+                    try:
+                        _unavailable_reason = _mp.unavailable_reason()
+                    except Exception:
+                        _unavailable_reason = ""
+                    _warn_memory_provider_unavailable(
+                        _mem_provider_name, _unavailable_reason
+                    )
                 if agent._memory_manager.providers:
                     _init_kwargs = {
                         "session_id": agent.session_id,

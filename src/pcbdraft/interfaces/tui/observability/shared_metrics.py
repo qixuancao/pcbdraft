@@ -71,48 +71,47 @@ class SharedMetricsStore:
         dimensions: dict[str, str] = {}
         self._validate_counter(CLIENT_ACTIVE_METRIC, dimensions, resource)
         now = _utc_now()
-        with self._connection() as connection:
-            with write_txn(connection):
-                row = connection.execute(
-                    "SELECT value FROM telemetry_state WHERE key = ?",
-                    (_ACTIVE_INSTALL_STATE_KEY,),
-                ).fetchone()
-                if row is not None:
-                    last_recorded = self._parse_state_timestamp(row["value"])
-                    if last_recorded is not None and last_recorded > now:
-                        # A wall-clock correction must not suppress activity until
-                        # the stale future timestamp plus another full interval.
-                        connection.execute(
-                            """
-                            UPDATE telemetry_state
-                            SET value = ?
-                            WHERE key = ?
-                            """,
-                            (_isoformat(now), _ACTIVE_INSTALL_STATE_KEY),
-                        )
-                        return False
-                    if (
-                        last_recorded is not None
-                        and now < last_recorded + _ACTIVE_INSTALL_INTERVAL
-                    ):
-                        return False
+        with self._connection() as connection, write_txn(connection):
+            row = connection.execute(
+                "SELECT value FROM telemetry_state WHERE key = ?",
+                (_ACTIVE_INSTALL_STATE_KEY,),
+            ).fetchone()
+            if row is not None:
+                last_recorded = self._parse_state_timestamp(row["value"])
+                if last_recorded is not None and last_recorded > now:
+                    # A wall-clock correction must not suppress activity until
+                    # the stale future timestamp plus another full interval.
+                    connection.execute(
+                        """
+                        UPDATE telemetry_state
+                        SET value = ?
+                        WHERE key = ?
+                        """,
+                        (_isoformat(now), _ACTIVE_INSTALL_STATE_KEY),
+                    )
+                    return False
+                if (
+                    last_recorded is not None
+                    and now < last_recorded + _ACTIVE_INSTALL_INTERVAL
+                ):
+                    return False
 
-                self._install_id(connection)
-                self._record_counter_in_transaction(
-                    connection,
-                    CLIENT_ACTIVE_METRIC,
-                    dimensions,
-                    resource,
-                    period_start=now.date().isoformat(),
-                )
-                connection.execute(
-                    """
-                    INSERT INTO telemetry_state(key, value)
-                    VALUES (?, ?)
-                    ON CONFLICT(key) DO UPDATE SET value = excluded.value
-                    """,
-                    (_ACTIVE_INSTALL_STATE_KEY, _isoformat(now)),
-                )
+            self._install_id(connection)
+            self._record_counter_in_transaction(
+                connection,
+                CLIENT_ACTIVE_METRIC,
+                dimensions,
+                resource,
+                period_start=now.date().isoformat(),
+            )
+            connection.execute(
+                """
+                INSERT INTO telemetry_state(key, value)
+                VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
+                (_ACTIVE_INSTALL_STATE_KEY, _isoformat(now)),
+            )
         return True
 
     def record_counter(
@@ -296,10 +295,12 @@ class SharedMetricsStore:
             pass
 
     def _ensure_schema(self) -> None:
-        with self._connection(busy_timeout_ms=_SCHEMA_BUSY_TIMEOUT_MS) as connection:
+        with (
+            self._connection(busy_timeout_ms=_SCHEMA_BUSY_TIMEOUT_MS) as connection,
+            write_txn(connection),
+        ):
             # Serialize first-run creation and upgrades across PCBDraft processes.
-            with write_txn(connection):
-                self._ensure_schema_in_transaction(connection)
+            self._ensure_schema_in_transaction(connection)
 
     @staticmethod
     def _ensure_schema_in_transaction(connection: sqlite3.Connection) -> None:
@@ -498,29 +499,27 @@ class SharedMetricsStore:
 
     def _create_pending_packages_if_due(self) -> None:
         now = _utc_now()
-        with self._connection() as connection:
-            with write_txn(connection):
-                # Gate on the committed package, not its file write, so a failed
-                # outbox export can be retried without packaging deltas twice.
-                package_created_today = connection.execute(
-                    """
-                    SELECT 1
-                    FROM package_outbox
-                    WHERE substr(created_at, 1, 10) >= ?
-                    LIMIT 1
-                    """,
-                    (now.date().isoformat(),),
-                ).fetchone()
-                if package_created_today is not None:
-                    return
-                while self._create_package_in_transaction(connection, now) is not None:
-                    pass
+        with self._connection() as connection, write_txn(connection):
+            # Gate on the committed package, not its file write, so a failed
+            # outbox export can be retried without packaging deltas twice.
+            package_created_today = connection.execute(
+                """
+                SELECT 1
+                FROM package_outbox
+                WHERE substr(created_at, 1, 10) >= ?
+                LIMIT 1
+                """,
+                (now.date().isoformat(),),
+            ).fetchone()
+            if package_created_today is not None:
+                return
+            while self._create_package_in_transaction(connection, now) is not None:
+                pass
 
     def _create_package(self) -> dict[str, Any] | None:
         now = _utc_now()
-        with self._connection() as connection:
-            with write_txn(connection):
-                return self._create_package_in_transaction(connection, now)
+        with self._connection() as connection, write_txn(connection):
+            return self._create_package_in_transaction(connection, now)
 
     def _create_package_in_transaction(
         self,
@@ -719,30 +718,29 @@ class SharedMetricsStore:
                 continue
             removable_package_ids.append(package_id)
 
-        with self._connection() as connection:
-            with write_txn(connection):
-                for package_id in removable_package_ids:
-                    connection.execute(
-                        """
-                        DELETE FROM package_outbox
-                        WHERE package_id = ?
-                          AND exported_at IS NOT NULL
-                          AND exported_at < ?
-                        """,
-                        (package_id, cutoff_timestamp),
-                    )
+        with self._connection() as connection, write_txn(connection):
+            for package_id in removable_package_ids:
                 connection.execute(
                     """
-                    DELETE FROM counter_aggregates
-                    WHERE period_start < ?
-                      AND value = packaged_value
-                      AND NOT EXISTS (
-                          SELECT 1
-                          FROM package_outbox
-                          WHERE exported_at IS NULL
-                            AND substr(package_outbox.period_start, 1, 10)
-                                = counter_aggregates.period_start
-                      )
+                    DELETE FROM package_outbox
+                    WHERE package_id = ?
+                      AND exported_at IS NOT NULL
+                      AND exported_at < ?
                     """,
-                    (cutoff_period,),
+                    (package_id, cutoff_timestamp),
                 )
+            connection.execute(
+                """
+                DELETE FROM counter_aggregates
+                WHERE period_start < ?
+                  AND value = packaged_value
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM package_outbox
+                      WHERE exported_at IS NULL
+                        AND substr(package_outbox.period_start, 1, 10)
+                            = counter_aggregates.period_start
+                  )
+                """,
+                (cutoff_period,),
+            )

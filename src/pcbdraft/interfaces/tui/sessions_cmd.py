@@ -878,12 +878,11 @@ def cmd_sessions(args, sessions_parser=None):
         if not resolved_session_id:
             print(f"Session '{args.session_id}' not found.")
             return
-        if not args.yes:
-            if not _confirm_prompt(
-                f"Delete session '{resolved_session_id}' and all its messages? [y/N] "
-            ):
-                print("Cancelled.")
-                return
+        if not args.yes and not _confirm_prompt(
+            f"Delete session '{resolved_session_id}' and all its messages? [y/N] "
+        ):
+            print("Cancelled.")
+            return
         sessions_dir = get_runtime_home() / "sessions"
         if db.delete_session(resolved_session_id, sessions_dir=sessions_dir):
             print(f"Deleted session '{resolved_session_id}'.")
@@ -1018,12 +1017,11 @@ def cmd_sessions(args, sessions_parser=None):
                 )
                 return
 
-        if not args.yes:
-            if not _confirm_prompt(
-                f"{verb} these {len(candidates)} session(s) ({_span})? [y/N] "
-            ):
-                print("Cancelled.")
-                return
+        if not args.yes and not _confirm_prompt(
+            f"{verb} these {len(candidates)} session(s) ({_span})? [y/N] "
+        ):
+            print("Cancelled.")
+            return
 
         if action == "prune":
             sessions_dir = get_runtime_home() / "sessions"

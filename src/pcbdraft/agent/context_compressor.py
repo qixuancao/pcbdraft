@@ -980,9 +980,7 @@ def _digest_worthy(role: str, content: str) -> bool:
     stripped = content.strip()
     if len(stripped) < 80:
         return False
-    if _LOW_SIGNAL_TOOL_RE.match(stripped[:200]):
-        return False
-    return True
+    return not _LOW_SIGNAL_TOOL_RE.match(stripped[:200])
 
 
 def _serialize_turns_for_digest(
@@ -1081,9 +1079,11 @@ def _collect_protected_skill_names(
     protected: set[str] = set()
     for idx, skill in _skill_view_call_sites(messages):
         key = skill.lower()
-        if idx >= recent_start or idx >= tail_start:
-            protected.add(key)
-        elif any(key in text for text in tail_user_texts):
+        if (
+            idx >= recent_start
+            or idx >= tail_start
+            or any(key in text for text in tail_user_texts)
+        ):
             protected.add(key)
     return protected
 
@@ -3815,9 +3815,10 @@ class ContextCompressor(ContextEngine):
                         if result[i].get("role") == "tool":
                             if _demote_tool_result_at(i, spare_protected_skills=False):
                                 pressure_hits += 1
-                        elif result[i].get("role") == "assistant":
-                            if _truncate_tool_call_args_at(i):
-                                pressure_hits += 1
+                        elif result[i].get(
+                            "role"
+                        ) == "assistant" and _truncate_tool_call_args_at(i):
+                            pressure_hits += 1
                     # Absolute last resort: even the newest tool body can
                     # be larger than the soft budget alone (one 200KB file
                     # read).  Summarize it so compression can still reclaim
@@ -3826,11 +3827,10 @@ class ContextCompressor(ContextEngine):
                         last_tool_idx is not None
                         and last_tool_idx >= prune_boundary
                         and _protected_region_tokens() > soft_ceiling
+                    ) and _demote_tool_result_at(
+                        last_tool_idx, spare_protected_skills=False
                     ):
-                        if _demote_tool_result_at(
-                            last_tool_idx, spare_protected_skills=False
-                        ):
-                            pressure_hits += 1
+                        pressure_hits += 1
                 if pressure_hits and not self.quiet_mode:
                     logger.info(
                         "Pre-compression pressure demotion: reclaimed protected-tail "

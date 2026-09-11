@@ -1173,9 +1173,8 @@ def _prepare_core_session(
 ) -> None:
     """Prepare the profile subscriber before the coordinator opens a scope."""
     del context
-    if host.profile_key == relay_runtime.current_profile_key():
-        if enabled():
-            _get_runtime(retry_failed=True, host=host)
+    if host.profile_key == relay_runtime.current_profile_key() and enabled():
+        _get_runtime(retry_failed=True, host=host)
 
 
 def start_task_run(

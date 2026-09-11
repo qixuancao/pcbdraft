@@ -288,9 +288,7 @@ class LSPService:
             per_server_root = srv.resolve_root(file_path, ws_root) or ws_root
         except Exception:  # noqa: BLE001
             per_server_root = ws_root
-        if (srv.server_id, per_server_root) in self._broken:
-            return False
-        return True
+        return (srv.server_id, per_server_root) not in self._broken
 
     def snapshot_baseline(self, file_path: str) -> None:
         """Snapshot current diagnostics for ``file_path`` as the delta baseline.

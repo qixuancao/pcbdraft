@@ -313,9 +313,7 @@ def should_activate(
     """
     if config.enabled == "off":
         return False
-    if deferrable_tokens <= 0:
-        return False
-    return True
+    return not deferrable_tokens <= 0
 
 
 def listing_token_budget(

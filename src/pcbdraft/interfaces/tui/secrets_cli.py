@@ -186,10 +186,12 @@ def cmd_setup(args: argparse.Namespace) -> int:
         missing = []
         if not (args.access_token and args.access_token.strip()):
             missing.append("--access-token")
-        if not (args.server_url and args.server_url.strip()):
+        if (
+            not (args.server_url and args.server_url.strip())
+            and not os.environ.get("BWS_SERVER_URL", "").strip()
+        ):
             # Also accept BWS_SERVER_URL env var as non-interactive substitute
-            if not os.environ.get("BWS_SERVER_URL", "").strip():
-                missing.append("--server-url")
+            missing.append("--server-url")
         if not (args.project_id and args.project_id.strip()):
             missing.append("--project-id")
         if missing:

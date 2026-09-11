@@ -309,21 +309,20 @@ def register_from_config(
                 continue
             already_allowlisted = _is_allowlisted(spec.event, spec.command)
 
-        if not already_allowlisted:
-            if not _prompt_and_record(
+        if not already_allowlisted and not _prompt_and_record(
+            spec.event,
+            spec.command,
+            accept_hooks=effective_accept,
+        ):
+            logger.warning(
+                "shell hook for %s (%s) not allowlisted — skipped. "
+                "Use --accept-hooks / PCBDRAFT_RUNTIME_ACCEPT_HOOKS=1 / "
+                "hooks_auto_accept: true, or approve at the TTY "
+                "prompt next run.",
                 spec.event,
                 spec.command,
-                accept_hooks=effective_accept,
-            ):
-                logger.warning(
-                    "shell hook for %s (%s) not allowlisted — skipped. "
-                    "Use --accept-hooks / PCBDRAFT_RUNTIME_ACCEPT_HOOKS=1 / "
-                    "hooks_auto_accept: true, or approve at the TTY "
-                    "prompt next run.",
-                    spec.event,
-                    spec.command,
-                )
-                continue
+            )
+            continue
 
         with _registered_lock:
             if key in _registered:
@@ -671,9 +670,10 @@ def _make_callback(spec: ShellHookSpec) -> Callable[..., dict[str, Any] | None]:
 
     def _callback(**kwargs: Any) -> dict[str, Any] | None:
         # Matcher gate — only meaningful for tool-scoped events.
-        if spec.event in {"pre_tool_call", "post_tool_call"}:
-            if not spec.matches_tool(kwargs.get("tool_name")):
-                return None
+        if spec.event in {"pre_tool_call", "post_tool_call"} and not spec.matches_tool(
+            kwargs.get("tool_name")
+        ):
+            return None
 
         r = _spawn(spec, _serialize_payload(spec.event, kwargs))
         return _evaluate_result(spec, r)

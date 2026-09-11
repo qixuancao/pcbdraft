@@ -888,9 +888,12 @@ def _validate_file_path(file_path: str) -> str | None:
     # under an allowed subdirectory. Accept its two natural spellings —
     # 'SKILL.md' and '<skill-name>/SKILL.md' — so callers can target the main
     # file. The traversal guard above still applies, so this can't escape.
-    if normalized.parts and normalized.name == "SKILL.md":
-        if len(normalized.parts) == 1 or len(normalized.parts) == 2:
-            return None
+    if (
+        normalized.parts
+        and normalized.name == "SKILL.md"
+        and (len(normalized.parts) == 1 or len(normalized.parts) == 2)
+    ):
+        return None
 
     # Must be under an allowed subdirectory
     if not normalized.parts or normalized.parts[0] not in ALLOWED_SUBDIRS:
@@ -1768,12 +1771,11 @@ def skill_manage(
                     task_id=task_id,
                     session_id=session_id,
                 )
-            elif action == "delete":
+            elif action == "delete" and not result.get("_archived"):
                 # A recoverable curator archive (routed through archive_skill)
                 # keeps its usage record as STATE_ARCHIVED so `hermes curator
                 # status`/`restore` still see it. Only a hard delete forgets.
-                if not result.get("_archived"):
-                    forget(name)
+                forget(name)
         except Exception:
             pass
 

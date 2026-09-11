@@ -2352,9 +2352,7 @@ def _iter_shell_command_starts(command: str):
                 scan(i + 1, nested_end - 1 if nested_end is not None else end)
                 i = nested_end if nested_end is not None else end
                 continue
-            if ch in ("(", "{"):
-                starts.append(i + 1)
-            elif ch in ";\n":
+            if ch in ("(", "{") or ch in ";\n":
                 starts.append(i + 1)
             elif ch in "&|":
                 repeated = i + 1 < end and command[i + 1] == ch
@@ -4759,144 +4757,145 @@ def check_all_command_guards(
     # flows, we do not block on approvals and we skip external guard work.
     if not is_cli and not is_gateway and not is_ask:
         # Single-query (-q) sessions: respect single_query_mode config
-        if _is_single_query_approval_context():
-            if _get_single_query_approval_mode() == "deny":
-                is_dangerous, _pk, description = detect_dangerous_command(command)
-                if is_dangerous:
+        if (
+            _is_single_query_approval_context()
+            and _get_single_query_approval_mode() == "deny"
+        ):
+            is_dangerous, _pk, description = detect_dangerous_command(command)
+            if is_dangerous:
+                return {
+                    "approved": False,
+                    "message": (
+                        f"BLOCKED: Command flagged as dangerous ({description}) "
+                        "but single-query mode (-q) runs without a user "
+                        "present to approve it. Find an alternative approach "
+                        "that avoids this command. To allow dangerous "
+                        "commands in single-query mode, set "
+                        "approvals.single_query_mode: approve in config.yaml."
+                    ),
+                    "pattern_key": _pk,
+                    "description": description,
+                }
+            # Also run tirith check in single-query-deny mode so content-level
+            # threats (homograph URLs, pipe-to-interpreter, terminal
+            # injection, etc.) are caught even when they do not match
+            # the pattern-based detection above.
+            try:
+                from pcbdraft.tools.tirith_security import check_command_security
+
+                _sq_tirith = check_command_security(command)
+                if _sq_tirith.get("action") in ("block", "warn"):
+                    _sq_desc = _format_tirith_description(_sq_tirith)
                     return {
                         "approved": False,
                         "message": (
-                            f"BLOCKED: Command flagged as dangerous ({description}) "
+                            f"BLOCKED: {_sq_desc} "
                             "but single-query mode (-q) runs without a user "
-                            "present to approve it. Find an alternative approach "
-                            "that avoids this command. To allow dangerous "
-                            "commands in single-query mode, set "
+                            "present to approve it. Find an alternative "
+                            "approach that avoids this command. To allow "
+                            "dangerous commands in single-query mode, set "
                             "approvals.single_query_mode: approve in config.yaml."
                         ),
-                        "pattern_key": _pk,
-                        "description": description,
                     }
-                # Also run tirith check in single-query-deny mode so content-level
-                # threats (homograph URLs, pipe-to-interpreter, terminal
-                # injection, etc.) are caught even when they do not match
-                # the pattern-based detection above.
+            except ImportError:
+                # Tirith not installed. Honour security.tirith_fail_open:
+                # the default (True) allows as before, but when an operator
+                # has explicitly opted into fail-closed the command cannot
+                # be silently allowed — and a single-query session has no
+                # user to approve it, so fail-closed means block (mirrors
+                # the cron branch below, see #20733).
+                _sq_fail_open = True  # safe default if config is unreadable
                 try:
-                    from pcbdraft.tools.tirith_security import check_command_security
+                    from pcbdraft.model.configuration import (
+                        load_config_readonly as _load_cfg,
+                    )
 
-                    _sq_tirith = check_command_security(command)
-                    if _sq_tirith.get("action") in ("block", "warn"):
-                        _sq_desc = _format_tirith_description(_sq_tirith)
-                        return {
-                            "approved": False,
-                            "message": (
-                                f"BLOCKED: {_sq_desc} "
-                                "but single-query mode (-q) runs without a user "
-                                "present to approve it. Find an alternative "
-                                "approach that avoids this command. To allow "
-                                "dangerous commands in single-query mode, set "
-                                "approvals.single_query_mode: approve in config.yaml."
-                            ),
-                        }
-                except ImportError:
-                    # Tirith not installed. Honour security.tirith_fail_open:
-                    # the default (True) allows as before, but when an operator
-                    # has explicitly opted into fail-closed the command cannot
-                    # be silently allowed — and a single-query session has no
-                    # user to approve it, so fail-closed means block (mirrors
-                    # the cron branch below, see #20733).
-                    _sq_fail_open = True  # safe default if config is unreadable
-                    try:
-                        from pcbdraft.model.configuration import (
-                            load_config_readonly as _load_cfg,
-                        )
-
-                        _sec = (_load_cfg() or {}).get("security", {}) or {}
-                        if _sec.get("tirith_enabled", True):
-                            _sq_fail_open = _sec.get("tirith_fail_open", True)
-                    except Exception:
-                        pass
-                    if not _sq_fail_open:
-                        return {
-                            "approved": False,
-                            "message": (
-                                "BLOCKED: the Tirith security scanner could not be "
-                                "imported and security.tirith_fail_open is false, "
-                                "so this command cannot be silently allowed — and "
-                                "single-query mode (-q) runs without a user "
-                                "present to approve it. Find an alternative "
-                                "approach, install tirith, or set "
-                                "approvals.single_query_mode: approve in config.yaml."
-                            ),
-                        }
-                    # else: tirith_fail_open is True — allow as before
-            # single_query_mode: approve — fall through to auto-approve below.
-        # Cron sessions: respect cron_mode config
-        if _is_cron_approval_context():
-            if _get_cron_approval_mode() == "deny":
-                # Run detection to get a description for the block message
-                is_dangerous, _pk, description = detect_dangerous_command(command)
-                if is_dangerous:
+                    _sec = (_load_cfg() or {}).get("security", {}) or {}
+                    if _sec.get("tirith_enabled", True):
+                        _sq_fail_open = _sec.get("tirith_fail_open", True)
+                except Exception:
+                    pass
+                if not _sq_fail_open:
                     return {
                         "approved": False,
                         "message": (
-                            f"BLOCKED: Command flagged as dangerous ({description}) "
+                            "BLOCKED: the Tirith security scanner could not be "
+                            "imported and security.tirith_fail_open is false, "
+                            "so this command cannot be silently allowed — and "
+                            "single-query mode (-q) runs without a user "
+                            "present to approve it. Find an alternative "
+                            "approach, install tirith, or set "
+                            "approvals.single_query_mode: approve in config.yaml."
+                        ),
+                    }
+                # else: tirith_fail_open is True — allow as before
+        # single_query_mode: approve — fall through to auto-approve below.
+        # Cron sessions: respect cron_mode config
+        if _is_cron_approval_context() and _get_cron_approval_mode() == "deny":
+            # Run detection to get a description for the block message
+            is_dangerous, _pk, description = detect_dangerous_command(command)
+            if is_dangerous:
+                return {
+                    "approved": False,
+                    "message": (
+                        f"BLOCKED: Command flagged as dangerous ({description}) "
+                        "but cron jobs run without a user present to approve it. "
+                        "Find an alternative approach that avoids this command. "
+                        "To allow dangerous commands in cron jobs, set "
+                        "approvals.cron_mode: approve in config.yaml."
+                    ),
+                }
+            # Also run tirith check in cron-deny mode so content-level
+            # threats (homograph URLs, pipe-to-interpreter, terminal
+            # injection, etc.) are caught even when they do not match
+            # the pattern-based detection above.
+            try:
+                from pcbdraft.tools.tirith_security import check_command_security
+
+                _cron_tirith = check_command_security(command)
+                if _cron_tirith.get("action") in ("block", "warn"):
+                    _cron_desc = _format_tirith_description(_cron_tirith)
+                    return {
+                        "approved": False,
+                        "message": (
+                            f"BLOCKED: {_cron_desc} "
                             "but cron jobs run without a user present to approve it. "
                             "Find an alternative approach that avoids this command. "
                             "To allow dangerous commands in cron jobs, set "
                             "approvals.cron_mode: approve in config.yaml."
                         ),
                     }
-                # Also run tirith check in cron-deny mode so content-level
-                # threats (homograph URLs, pipe-to-interpreter, terminal
-                # injection, etc.) are caught even when they do not match
-                # the pattern-based detection above.
+            except ImportError:
+                # Tirith not installed. Honour security.tirith_fail_open:
+                # the default (True) allows as before, but when an operator
+                # has explicitly opted into fail-closed the command cannot
+                # be silently allowed — and a cron session has no user to
+                # approve it, so fail-closed means block (mirrors the
+                # fail-closed synthesis in the main flow below; see #20733).
+                _cron_fail_open = True  # safe default if config is unreadable
                 try:
-                    from pcbdraft.tools.tirith_security import check_command_security
+                    from pcbdraft.model.configuration import (
+                        load_config_readonly as _load_cfg,
+                    )
 
-                    _cron_tirith = check_command_security(command)
-                    if _cron_tirith.get("action") in ("block", "warn"):
-                        _cron_desc = _format_tirith_description(_cron_tirith)
-                        return {
-                            "approved": False,
-                            "message": (
-                                f"BLOCKED: {_cron_desc} "
-                                "but cron jobs run without a user present to approve it. "
-                                "Find an alternative approach that avoids this command. "
-                                "To allow dangerous commands in cron jobs, set "
-                                "approvals.cron_mode: approve in config.yaml."
-                            ),
-                        }
-                except ImportError:
-                    # Tirith not installed. Honour security.tirith_fail_open:
-                    # the default (True) allows as before, but when an operator
-                    # has explicitly opted into fail-closed the command cannot
-                    # be silently allowed — and a cron session has no user to
-                    # approve it, so fail-closed means block (mirrors the
-                    # fail-closed synthesis in the main flow below; see #20733).
-                    _cron_fail_open = True  # safe default if config is unreadable
-                    try:
-                        from pcbdraft.model.configuration import (
-                            load_config_readonly as _load_cfg,
-                        )
-
-                        _sec = (_load_cfg() or {}).get("security", {}) or {}
-                        if _sec.get("tirith_enabled", True):
-                            _cron_fail_open = _sec.get("tirith_fail_open", True)
-                    except Exception:
-                        pass
-                    if not _cron_fail_open:
-                        return {
-                            "approved": False,
-                            "message": (
-                                "BLOCKED: the Tirith security scanner could not be "
-                                "imported and security.tirith_fail_open is false, "
-                                "so this command cannot be silently allowed — and "
-                                "cron jobs run without a user present to approve it. "
-                                "Find an alternative approach, install tirith, or set "
-                                "approvals.cron_mode: approve in config.yaml."
-                            ),
-                        }
-                    # else: tirith_fail_open is True — allow as before
+                    _sec = (_load_cfg() or {}).get("security", {}) or {}
+                    if _sec.get("tirith_enabled", True):
+                        _cron_fail_open = _sec.get("tirith_fail_open", True)
+                except Exception:
+                    pass
+                if not _cron_fail_open:
+                    return {
+                        "approved": False,
+                        "message": (
+                            "BLOCKED: the Tirith security scanner could not be "
+                            "imported and security.tirith_fail_open is false, "
+                            "so this command cannot be silently allowed — and "
+                            "cron jobs run without a user present to approve it. "
+                            "Find an alternative approach, install tirith, or set "
+                            "approvals.cron_mode: approve in config.yaml."
+                        ),
+                    }
+                # else: tirith_fail_open is True — allow as before
         return {"approved": True, "message": None}
 
     # --- Phase 1: Gather findings from both checks ---
@@ -4967,9 +4966,8 @@ def check_all_command_guards(
         if not is_approved(session_key, tirith_key):
             warnings.append((tirith_key, tirith_desc, True))
 
-    if is_dangerous:
-        if not is_approved(session_key, pattern_key):
-            warnings.append((pattern_key, description, False))
+    if is_dangerous and not is_approved(session_key, pattern_key):
+        warnings.append((pattern_key, description, False))
 
     # Nothing to warn about
     if not warnings:

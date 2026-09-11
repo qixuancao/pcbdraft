@@ -723,9 +723,10 @@ def _chat_messages_to_responses_input(
         if role == "tool":
             raw_tool_call_id = msg.get("tool_call_id")
             call_id, _ = _split_responses_tool_id(raw_tool_call_id)
-            if not isinstance(call_id, str) or not call_id.strip():
-                if isinstance(raw_tool_call_id, str) and raw_tool_call_id.strip():
-                    call_id = raw_tool_call_id.strip()
+            if (not isinstance(call_id, str) or not call_id.strip()) and (
+                isinstance(raw_tool_call_id, str) and raw_tool_call_id.strip()
+            ):
+                call_id = raw_tool_call_id.strip()
             if not isinstance(call_id, str) or not call_id.strip():
                 continue
 
@@ -1760,11 +1761,14 @@ def _normalize_codex_response(
         finish_reason = "tool_calls"
     elif response_incomplete_content_filter:
         finish_reason = "content_filter"
-    elif leaked_tool_call_text:
-        finish_reason = "incomplete"
-    elif saw_streaming_or_item_incomplete:
-        finish_reason = "incomplete"
-    elif (has_incomplete_items or saw_commentary_phase) and not saw_final_answer_phase:
+    elif (
+        leaked_tool_call_text
+        or saw_streaming_or_item_incomplete
+        or (
+            (has_incomplete_items or saw_commentary_phase)
+            and not saw_final_answer_phase
+        )
+    ):
         finish_reason = "incomplete"
     elif (
         reasoning_items_raw or reasoning_parts or saw_reasoning_item

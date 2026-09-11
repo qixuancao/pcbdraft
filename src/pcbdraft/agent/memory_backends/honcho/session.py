@@ -784,9 +784,8 @@ class HonchoSessionManager:
         elif wf == "session":
             # Accumulate; caller must call flush_all() at session end
             pass
-        elif isinstance(wf, int) and wf > 0:
-            if self._turn_counter % wf == 0:
-                self._flush_session(session)
+        elif isinstance(wf, int) and wf > 0 and self._turn_counter % wf == 0:
+            self._flush_session(session)
 
     def flush_all(self) -> None:
         """Flush all pending unsynced messages for all cached sessions.
@@ -831,10 +830,13 @@ class HonchoSessionManager:
         the thread must still be joined so process exit is clean, but nothing
         may be written.
         """
-        if self._async_queue is not None:
-            if self._async_thread is not None and self._async_thread.is_alive():
-                self._async_queue.put(_ASYNC_SHUTDOWN)
-                self._async_thread.join(timeout=10)
+        if (
+            self._async_queue is not None
+            and self._async_thread is not None
+            and self._async_thread.is_alive()
+        ):
+            self._async_queue.put(_ASYNC_SHUTDOWN)
+            self._async_thread.join(timeout=10)
 
     def shutdown(self) -> None:
         """Gracefully shut down the async writer thread."""

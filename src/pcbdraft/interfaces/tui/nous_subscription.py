@@ -209,9 +209,7 @@ def _has_agent_browser() -> bool:
         return False
     # On Termux, the bare npx fallback is too fragile to advertise as ready —
     # require a real install, matching check_browser_requirements.
-    if _requires_real_termux_browser_install(browser_cmd):
-        return False
-    return True
+    return not _requires_real_termux_browser_install(browser_cmd)
 
 
 def _local_browser_runnable() -> bool:

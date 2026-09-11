@@ -580,9 +580,9 @@ def _thinking_requests_output_headroom(thinking_config: Any) -> bool:
     if normalized.get("includeThoughts") is False:
         return "thinkingLevel" in normalized or bool(normalized.get("thinkingBudget"))
     budget = normalized.get("thinkingBudget")
-    if isinstance(budget, int) and budget <= 0 and "thinkingLevel" not in normalized:
-        return False
-    return True
+    return not (
+        isinstance(budget, int) and budget <= 0 and "thinkingLevel" not in normalized
+    )
 
 
 def _effective_gemini_max_output_tokens(

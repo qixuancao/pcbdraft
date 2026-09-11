@@ -385,10 +385,9 @@ class ResponsesApiTransport(ProviderTransport):
 
         instructions = params.get("instructions", "")
         payload_messages = messages
-        if not instructions:
-            if messages and messages[0].get("role") == "system":
-                instructions = str(messages[0].get("content") or "").strip()
-                payload_messages = messages[1:]
+        if not instructions and messages and messages[0].get("role") == "system":
+            instructions = str(messages[0].get("content") or "").strip()
+            payload_messages = messages[1:]
         if not instructions:
             instructions = DEFAULT_AGENT_IDENTITY
 
@@ -398,7 +397,11 @@ class ResponsesApiTransport(ProviderTransport):
         replay_encrypted_reasoning = bool(
             params.get("replay_encrypted_reasoning", True)
         )
-        if replay_encrypted_reasoning and _is_azure_foundry_responses(params):
+        if (
+            replay_encrypted_reasoning
+            and _is_azure_foundry_responses(params)
+            and _is_post_tool_replay(payload_messages)
+        ):
             # Microsoft Foundry accepts the initial Responses function-call
             # request and ordinary (non-tool) multi-turn continuity, but
             # rejects the post-tool follow-up payload that carries prior
@@ -407,8 +410,7 @@ class ResponsesApiTransport(ProviderTransport):
             # suppression to that follow-up turn: keep function_call /
             # function_call_output continuity intact and drop only the
             # encrypted reasoning replay for this endpoint.
-            if _is_post_tool_replay(payload_messages):
-                replay_encrypted_reasoning = False
+            replay_encrypted_reasoning = False
         # Native server-side compaction (gpt-5.6 on direct OpenAI/Codex routes
         # only). The caller resolves eligibility via
         # agent.native_compaction.native_compaction_context_management();

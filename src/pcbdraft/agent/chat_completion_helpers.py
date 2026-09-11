@@ -367,13 +367,14 @@ def _payload_has_error_shape(payload: Any) -> bool:
         return False
     if isinstance(payload.get("error"), (dict, str)):
         return True
-    if payload.get("message") and (
-        payload.get("code")
-        or payload.get("error_code")
-        or _status_code_from_payload(payload) is not None
-    ):
-        return True
-    return False
+    return bool(
+        payload.get("message")
+        and (
+            payload.get("code")
+            or payload.get("error_code")
+            or _status_code_from_payload(payload) is not None
+        )
+    )
 
 
 def _provider_stream_text_may_be_sse(text: str) -> bool:
@@ -401,12 +402,13 @@ def _provider_stream_text_may_be_sse(text: str) -> bool:
             continue
 
         is_last_incomplete = index == len(lines) - 1 and not trailing_newline
-        if is_last_incomplete and any(
-            sse_field.startswith(field_name)
-            for sse_field in _PROVIDER_STREAM_SSE_FIELDS
-        ):
-            return True
-        return False
+        return bool(
+            is_last_incomplete
+            and any(
+                sse_field.startswith(field_name)
+                for sse_field in _PROVIDER_STREAM_SSE_FIELDS
+            )
+        )
 
     return saw_sse_field
 
@@ -2181,7 +2183,12 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
             f"Captured reasoning ({len(reasoning_text)} chars): {reasoning_text}"
         )
 
-    if reasoning_text and agent.reasoning_callback:
+    if (
+        reasoning_text
+        and agent.reasoning_callback
+        and not agent.stream_delta_callback
+        and not agent._stream_callback
+    ):
         # Skip callback when streaming is active — reasoning was already
         # displayed during the stream via one of two paths:
         #   (a) _fire_reasoning_delta (structured reasoning_content deltas)
@@ -2190,11 +2197,10 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
         # (gateway, batch, quiet) still get reasoning.
         # Any reasoning that wasn't shown during streaming is caught by the
         # CLI post-response display fallback (cli.py _reasoning_shown_this_turn).
-        if not agent.stream_delta_callback and not agent._stream_callback:
-            try:
-                agent.reasoning_callback(reasoning_text)
-            except Exception:
-                pass
+        try:
+            agent.reasoning_callback(reasoning_text)
+        except Exception:
+            pass
 
     # Sanitize surrogates from API response — some models (e.g. Kimi/GLM via Ollama)
     # can return invalid surrogate code points that crash json.dumps() on persist.

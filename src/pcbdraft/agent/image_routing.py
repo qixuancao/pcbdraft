@@ -393,9 +393,7 @@ def _explicit_aux_vision_override(cfg: dict[str, Any] | None) -> bool:
     base_url = str(vision.get("base_url") or "").strip()
 
     # "auto" / "" / blank = not explicit
-    if provider in {"", "auto"} and not model and not base_url:
-        return False
-    return True
+    return not (provider in {"", "auto"} and not model and not base_url)
 
 
 def _lookup_supports_vision(
@@ -596,9 +594,8 @@ def _sniff_mime_from_bytes(raw: bytes) -> str | None:
         return "image/x-icon"
     # SVG: text-based, look for an <svg tag near the start (skip BOM/whitespace)
     head = raw[:512].lstrip().lower()
-    if head.startswith(b"<?xml") or head.startswith(b"<svg"):
-        if b"<svg" in head:
-            return "image/svg+xml"
+    if (head.startswith(b"<?xml") or head.startswith(b"<svg")) and b"<svg" in head:
+        return "image/svg+xml"
     return None
 
 

@@ -39,11 +39,9 @@ def _model_supports_thinking(model: str | None) -> bool:
     m = (model or "").strip().lower()
     if not m:
         return False
-    if m.startswith("deepseek-v") and not m.startswith("deepseek-v3"):
-        # deepseek-v4-*, deepseek-v5-*, etc. — every V4+ generation has
-        # thinking. v3 explicitly excluded.
-        return True
-    return False
+    # deepseek-v4-*, deepseek-v5-*, etc. — every V4+ generation has
+    # thinking. v3 explicitly excluded.
+    return m.startswith("deepseek-v") and not m.startswith("deepseek-v3")
 
 
 class DeepSeekProfile(ProviderProfile):

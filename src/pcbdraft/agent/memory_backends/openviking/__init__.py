@@ -363,9 +363,7 @@ class _VikingClient:
         if "X-OpenViking-Account" not in message and "X-OpenViking-User" not in message:
             return False
         status_code = getattr(exc, "status_code", None)
-        if status_code is not None and status_code != 400:
-            return False
-        return True
+        return not (status_code is not None and status_code != 400)
 
     def _send_with_trusted_identity_retry(
         self, send, *, multipart: bool = False
@@ -1514,9 +1512,7 @@ def _should_probe_openviking_auth(
     auth_mode = health.get("auth_mode")
     if auth_mode == "dev":
         return False
-    if auth_mode in {"api_key", "trusted", None}:
-        return True
-    return False
+    return auth_mode in {"api_key", "trusted", None}
 
 
 def _validate_openviking_setup_values(
@@ -2131,31 +2127,30 @@ def _prompt_manual_connection_values(
             require_api_key=service or not is_local,
         )
         if valid:
-            if api_key_type == "user":
-                if role == "root":
-                    print("  That key is valid, but it has root access.")
-                    route_choice = select(
-                        "  OpenViking user API key is root key",
-                        [
-                            (
-                                "Configure as Root API key",
-                                "provide account and user IDs",
-                            ),
-                            ("Re-enter User API key", "try another user key"),
-                            ("Cancel setup", "no changes saved"),
-                        ],
-                        default=0,
-                        cancel_returns=cancelled,
-                    )
-                    if route_choice == 0:
-                        prefilled_api_key = values["api_key"]
-                        prefilled_agent = values["agent"]
-                        api_key_type = "root"
-                        continue
-                    if route_choice == 1:
-                        api_key_type = "user"
-                        continue
-                    return _SETUP_CANCELLED
+            if api_key_type == "user" and role == "root":
+                print("  That key is valid, but it has root access.")
+                route_choice = select(
+                    "  OpenViking user API key is root key",
+                    [
+                        (
+                            "Configure as Root API key",
+                            "provide account and user IDs",
+                        ),
+                        ("Re-enter User API key", "try another user key"),
+                        ("Cancel setup", "no changes saved"),
+                    ],
+                    default=0,
+                    cancel_returns=cancelled,
+                )
+                if route_choice == 0:
+                    prefilled_api_key = values["api_key"]
+                    prefilled_agent = values["agent"]
+                    api_key_type = "root"
+                    continue
+                if route_choice == 1:
+                    api_key_type = "user"
+                    continue
+                return _SETUP_CANCELLED
             if api_key_type == "root" and role != "root":
                 retry = _retry_or_cancel_manual_setup(
                     select,

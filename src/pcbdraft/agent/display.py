@@ -1488,12 +1488,13 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
         return False, ""
 
     # Memory: distinguish "store full" from real errors.
-    if tool_name == "memory":
-        if isinstance(data, dict):
-            if data.get("success") is False and "exceed the limit" in data.get(
-                "error", ""
-            ):
-                return True, " [full]"
+    if (
+        tool_name == "memory"
+        and isinstance(data, dict)
+        and data.get("success") is False
+        and "exceed the limit" in data.get("error", "")
+    ):
+        return True, " [full]"
 
     # Structured error in JSON result (any tool that surfaces {"error": ...}).
     if isinstance(data, dict):

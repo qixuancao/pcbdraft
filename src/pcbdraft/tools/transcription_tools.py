@@ -539,9 +539,7 @@ def _resolve_command_stt_provider_config(
 def _is_local_stt_provider(provider: str, stt_config: dict[str, Any]) -> bool:
     """Return whether *provider* is exempt from Hermes's remote upload cap."""
     key = (provider or "").lower().strip()
-    if key in {"local", "local_command"}:
-        return True
-    return False
+    return key in {"local", "local_command"}
 
 
 def _iter_command_stt_providers(stt_config: dict[str, Any]):
@@ -550,9 +548,12 @@ def _iter_command_stt_providers(stt_config: dict[str, Any]):
         return
     providers = _get_stt_section(stt_config, "providers")
     for name, cfg in (providers or {}).items():
-        if isinstance(name, str) and name.lower() not in BUILTIN_STT_PROVIDERS:
-            if _is_command_stt_provider_config(cfg):
-                yield name, cfg
+        if (
+            isinstance(name, str)
+            and name.lower() not in BUILTIN_STT_PROVIDERS
+            and _is_command_stt_provider_config(cfg)
+        ):
+            yield name, cfg
 
 
 def _has_any_command_stt_provider(stt_config: dict[str, Any] | None = None) -> bool:
@@ -2014,13 +2015,12 @@ def _transcribe_local(
     """Transcribe using faster-whisper (local, free)."""
     global _local_model, _local_model_name
 
-    if not _HAS_FASTER_WHISPER:
-        if not _try_lazy_install_stt():
-            return {
-                "success": False,
-                "transcript": "",
-                "error": "faster-whisper not installed",
-            }
+    if not _HAS_FASTER_WHISPER and not _try_lazy_install_stt():
+        return {
+            "success": False,
+            "transcript": "",
+            "error": "faster-whisper not installed",
+        }
 
     try:
         local_cfg = _load_stt_config().get("local") or {}

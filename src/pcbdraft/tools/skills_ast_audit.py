@@ -54,16 +54,20 @@ def _scan_source(content: str, rel_path: str) -> list[Finding]:
                         )
                     )
             # getattr(obj, <computed>)
-            elif isinstance(f, ast.Name) and f.id == "getattr":
-                if len(node.args) >= 2 and not isinstance(node.args[1], ast.Constant):
-                    findings.append(
-                        (
-                            rel_path,
-                            node.lineno,
-                            "dynamic_getattr",
-                            "getattr with non-literal attribute name",
-                        )
+            elif (
+                isinstance(f, ast.Name)
+                and f.id == "getattr"
+                and len(node.args) >= 2
+                and not isinstance(node.args[1], ast.Constant)
+            ):
+                findings.append(
+                    (
+                        rel_path,
+                        node.lineno,
+                        "dynamic_getattr",
+                        "getattr with non-literal attribute name",
                     )
+                )
             self.generic_visit(node)
 
         def visit_Subscript(self, node):

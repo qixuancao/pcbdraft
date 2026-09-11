@@ -147,14 +147,11 @@ def _notification_belongs_to_turn(
     ):
         return False
 
-    if (
+    return not (
         turn_id is not None
         and observed_turn_id is not None
         and str(observed_turn_id) != str(turn_id)
-    ):
-        return False
-
-    return True
+    )
 
 
 def _coerce_turn_input_text(user_input: Any) -> str:
