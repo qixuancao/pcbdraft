@@ -877,23 +877,21 @@ def _ensure_docker_available() -> None:
             timeout=5,
             stdin=subprocess.DEVNULL,
         )
-    except FileNotFoundError:
-        logger.error(
+    except FileNotFoundError as exc:
+        logger.exception(
             "Docker backend selected but the resolved docker executable '%s' could "
             "not be executed.",
             docker_exe,
-            exc_info=True,
         )
         raise EnvironmentConnectionError(
             "Docker executable could not be executed. Check your Docker installation.",
             retry_hint="Repair the Docker installation and retry.",
-        )
-    except subprocess.TimeoutExpired:
-        logger.error(
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        logger.exception(
             "Docker backend selected but '%s version' timed out. "
             "The Docker daemon may not be running.",
             docker_exe,
-            exc_info=True,
         )
         raise EnvironmentConnectionError(
             "Docker daemon is not responding. Ensure Docker is running and try again.",
@@ -901,11 +899,10 @@ def _ensure_docker_available() -> None:
                 "Start the Docker daemon (e.g. `systemctl start docker` or "
                 "launch Docker Desktop), then retry the same command."
             ),
-        )
+        ) from exc
     except Exception:
-        logger.error(
+        logger.exception(
             "Unexpected error while checking Docker availability.",
-            exc_info=True,
         )
         raise
     else:
@@ -1252,7 +1249,7 @@ class DockerEnvironment(BaseEnvironment):
                 _proxy_cfg = _load_cfg_for_collision().get("proxy") or {}
             except (ImportError, OSError):
                 _proxy_cfg = {}
-            except Exception as _e:  # noqa: BLE001 — narrowed below via yaml import
+            except Exception as _e:
                 # yaml.YAMLError from a malformed config.yaml.  We import
                 # lazily because PyYAML is a soft dep in some test envs.
                 try:
@@ -1292,7 +1289,7 @@ class DockerEnvironment(BaseEnvironment):
                 _critical_provider_keys = {
                     m.real_env_name for m in _ip_for_mappings.load_mappings()
                 }
-            except Exception:  # noqa: BLE001 — best-effort collision check
+            except Exception:
                 pass
             _critical = _critical_proxy_control | _critical_provider_keys
             _collisions = sorted(
@@ -1349,7 +1346,7 @@ class DockerEnvironment(BaseEnvironment):
             )
         except (ImportError, OSError):
             _enforce_egress_merge = True
-        except Exception:  # noqa: BLE001 — yaml.YAMLError or similar
+        except Exception:
             # Malformed config.yaml; fail-safe to enforced.
             _enforce_egress_merge = True
 
@@ -1725,7 +1722,7 @@ class DockerEnvironment(BaseEnvironment):
         passthrough_keys: set[str] = set()
         resolve_passthrough_value = None
         multiplex_active = False
-        is_global_env = lambda _name: False  # noqa: E731
+        is_global_env = lambda _name: False
         try:
             from pcbdraft.agent.secret_scope import _is_global_env
             from pcbdraft.agent.secret_scope import (

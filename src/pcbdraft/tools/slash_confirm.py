@@ -133,11 +133,10 @@ async def resolve(
     try:
         result = await handler(choice)
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Slash-confirm handler for /%s raised: %s",
             command,
             exc,
-            exc_info=True,
         )
         return f"❌ Error handling confirmation: {exc}"
     return result if isinstance(result, str) else None

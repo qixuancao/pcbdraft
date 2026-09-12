@@ -359,8 +359,8 @@ def should_allow_plugin_install(
 
 
 __all__ = [
+    "PLUGIN_SCANNER_VERSION",
+    "format_scan_report",
     "scan_plugin",
     "should_allow_plugin_install",
-    "format_scan_report",
-    "PLUGIN_SCANNER_VERSION",
 ]

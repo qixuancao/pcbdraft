@@ -488,8 +488,8 @@ def _sanitize_subprocess_env(
             resolve_passthrough_value as _resolve_passthrough_value,
         )
     except Exception:
-        _is_passthrough = lambda _: False  # noqa: E731
-        _resolve_passthrough_value = lambda _name, fallback: fallback  # noqa: E731
+        _is_passthrough = lambda _: False
+        _resolve_passthrough_value = lambda _name, fallback: fallback
 
     sanitized: dict[str, str] = {}
 
@@ -1335,8 +1335,8 @@ def _make_run_env(env: dict) -> dict:
             resolve_passthrough_value as _resolve_passthrough_value,
         )
     except Exception:
-        _is_passthrough = lambda _: False  # noqa: E731
-        _resolve_passthrough_value = lambda _name, fallback: fallback  # noqa: E731
+        _is_passthrough = lambda _: False
+        _resolve_passthrough_value = lambda _name, fallback: fallback
 
     merged = dict(os.environ | env)
     run_env = {}

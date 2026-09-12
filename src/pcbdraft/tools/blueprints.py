@@ -39,14 +39,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BlueprintError",
     "BlueprintSpec",
-    "parse_blueprint",
     "blueprint_spec_for_installed",
     "blueprint_to_job_spec",
     "create_blueprint_job",
-    "register_blueprint_suggestion",
     "export_blueprint",
-    "BlueprintError",
+    "parse_blueprint",
+    "register_blueprint_suggestion",
 ]
 
 

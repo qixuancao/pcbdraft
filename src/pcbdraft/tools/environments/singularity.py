@@ -53,12 +53,12 @@ def _ensure_singularity_available() -> str:
             timeout=10,
             stdin=subprocess.DEVNULL,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         raise RuntimeError(
             f"Singularity backend selected but '{exe}' could not be executed."
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"'{exe} version' timed out.")
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(f"'{exe} version' timed out.") from exc
 
     if result.returncode != 0:
         stderr = result.stderr.strip()[:200]
@@ -292,8 +292,8 @@ class SingularityEnvironment(BaseEnvironment):
                 self.instance_id,
                 self._persistent,
             )
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("Instance start timed out")
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError("Instance start timed out") from exc
 
     def _run_bash(
         self,

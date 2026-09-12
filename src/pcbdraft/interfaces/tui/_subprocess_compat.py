@@ -36,16 +36,16 @@ from collections.abc import Mapping, Sequence
 
 __all__ = [
     "IS_WINDOWS",
+    "bounded_git_probe",
+    "bounded_probe_run",
+    "noninteractive_git_env",
     "resolve_node_command",
     "split_command_line",
     "suppress_platform_ver_console",
     "windows_detach_flags",
     "windows_detach_flags_without_breakaway",
-    "windows_hide_flags",
     "windows_detach_popen_kwargs",
-    "bounded_git_probe",
-    "bounded_probe_run",
-    "noninteractive_git_env",
+    "windows_hide_flags",
 ]
 
 

@@ -574,11 +574,10 @@ async def _download_image(
             # limit) and 5xx remain retryable. PermissionError (policy block)
             # and ValueError (too-large / SSRF redirect) are also terminal.
             if not _is_retryable_download_error(e) or attempt >= max_retries - 1:
-                logger.error(
+                logger.exception(
                     "Image download failed after %s attempt(s): %s",
                     attempt + 1,
                     str(e)[:100],
-                    exc_info=True,
                 )
                 raise
             wait_time = 2 ** (attempt + 1)  # 2s, 4s, 8s
@@ -1473,7 +1472,7 @@ async def vision_analyze_tool(
                 image_url, ResolveContext(task_id=task_id)
             )
         except ImageResolutionError as exc:
-            raise ValueError(str(exc))
+            raise ValueError(str(exc)) from exc
 
         detected_mime_type = resolved.mime
         temp_dir = get_pcbdraft_dir("cache/vision", "temp_vision_images")
@@ -1667,7 +1666,7 @@ async def vision_analyze_tool(
 
     except Exception as e:
         error_msg = f"Error analyzing image: {e!s}"
-        logger.error("%s", error_msg, exc_info=True)
+        logger.exception("%s", error_msg)
 
         # Detect vision capability errors — give the model a clear message
         # so it can inform the user instead of a cryptic API error.
@@ -2080,11 +2079,10 @@ async def _download_video(
                 )
                 await asyncio.sleep(wait_time)
             else:
-                logger.error(
+                logger.exception(
                     "Video download failed after %s attempts: %s",
                     max_retries,
                     str(e)[:100],
-                    exc_info=True,
                 )
 
     if last_error is None:
@@ -2260,7 +2258,7 @@ async def video_analyze_tool(
 
     except Exception as e:
         error_msg = f"Error analyzing video: {e!s}"
-        logger.error("%s", error_msg, exc_info=True)
+        logger.exception("%s", error_msg)
 
         err_str = str(e).lower()
         if any(

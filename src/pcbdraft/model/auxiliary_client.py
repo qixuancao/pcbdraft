@@ -10241,7 +10241,7 @@ def _call_llm_impl(
                         raise
                     _last_transient = retry_transient
             # Retries exhausted — fall through to first_err fallback handling.
-            raise _last_transient
+            raise _last_transient from transient_err
     except Exception as first_err:
         if "temperature" in kwargs and _is_unsupported_temperature_error(first_err):
             retry_kwargs = dict(kwargs)

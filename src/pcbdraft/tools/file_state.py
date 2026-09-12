@@ -326,11 +326,11 @@ def known_reads(task_id: str) -> list[str]:
 
 __all__ = [
     "FileStateRegistry",
-    "get_registry",
-    "record_read",
-    "note_write",
     "check_stale",
-    "lock_path",
-    "writes_since",
+    "get_registry",
     "known_reads",
+    "lock_path",
+    "note_write",
+    "record_read",
+    "writes_since",
 ]

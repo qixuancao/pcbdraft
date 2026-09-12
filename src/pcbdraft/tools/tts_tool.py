@@ -135,7 +135,7 @@ def _import_elevenlabs():
     error-handling paths keep working.
     """
     try:
-        from pcbdraft.tools.lazy_deps import FeatureUnavailable, ensure
+        from pcbdraft.tools.lazy_deps import ensure
 
         ensure("tts.elevenlabs", prompt=False)
     except ImportError:
@@ -954,7 +954,7 @@ def _dispatch_to_plugin_provider(
             # recovery pattern.
             _ensure_plugins_discovered(force=True)
             plugin_provider = get_provider(key)
-    except Exception as exc:  # noqa: BLE001 — discovery failure is non-fatal
+    except Exception as exc:
         logger.debug("tts plugin dispatch skipped (discovery failed): %s", exc)
         return None
     if plugin_provider is None:
@@ -1010,7 +1010,7 @@ def _plugin_provider_is_voice_compatible(provider: str) -> bool:
         if plugin_provider is None:
             return False
         return bool(plugin_provider.voice_compatible)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.debug(
             "tts plugin voice_compatible check failed for '%s': %s",
             key,
@@ -2467,12 +2467,12 @@ def _generate_minimax_tts(
                 raise RuntimeError(
                     f"MiniMax TTS API error (code {status_code}): {status_msg}"
                 )
-        except (json.JSONDecodeError, UnicodeDecodeError, TypeError):
+        except (json.JSONDecodeError, UnicodeDecodeError, TypeError) as exc:
             response.raise_for_status()
             raise RuntimeError(
                 f"MiniMax TTS returned unexpected Content-Type '{content_type}' "
                 f"({len(raw_body) if 'raw_body' in locals() else 0} bytes)"
-            )
+            ) from exc
 
         raise RuntimeError("MiniMax TTS returned no audio data")
 
@@ -2527,7 +2527,7 @@ def _generate_mistral_tts(
     except ValueError:
         raise
     except Exception as e:
-        logger.error("Mistral TTS failed: %s", e, exc_info=True)
+        logger.exception("Mistral TTS failed: %s", e)
         raise RuntimeError(f"Mistral TTS failed: {type(e).__name__}") from e
 
     with open(output_path, "wb") as f:
@@ -3769,12 +3769,12 @@ def _text_to_speech_single(
     except FileNotFoundError as e:
         # Missing dependencies or files
         error_msg = f"TTS dependency missing ({provider}): {e}"
-        logger.error("%s", error_msg, exc_info=True)
+        logger.exception("%s", error_msg)
         return tool_error(error_msg, success=False)
     except Exception as e:
         # Unexpected errors
         error_msg = f"TTS generation failed ({provider}): {e}"
-        logger.error("%s", error_msg, exc_info=True)
+        logger.exception("%s", error_msg)
         return tool_error(error_msg, success=False)
 
 
@@ -3936,10 +3936,10 @@ def text_to_speech_tool(
             )
             try:
                 chunk_result = json.loads(raw_result)
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as exc:
                 raise RuntimeError(
                     f"TTS chunk {index} returned invalid JSON: {str(raw_result)[:200]}"
-                )
+                ) from exc
             if not chunk_result.get("success"):
                 error_msg = chunk_result.get("error", "unknown error")
                 return tool_error(
@@ -4002,7 +4002,7 @@ def text_to_speech_tool(
         return tool_error(error_msg, success=False)
     except Exception as exc:
         error_msg = f"TTS long-form generation failed ({provider}): {exc}"
-        logger.error("%s", error_msg, exc_info=True)
+        logger.exception("%s", error_msg)
         return tool_error(error_msg, success=False)
     finally:
         final_absolute = {os.path.abspath(path) for path in final_paths}

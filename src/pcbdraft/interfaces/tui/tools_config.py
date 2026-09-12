@@ -1682,7 +1682,6 @@ def _run_cua_driver_installer(
     version ``check-update`` confirmed sidesteps the race entirely.
     """
     import platform as _plat
-    import shutil
     import subprocess
 
     system = _plat.system()
@@ -2566,7 +2565,6 @@ def enabled_mcp_server_names(config: dict) -> set[str]:
     }
     try:
         from pcbdraft.agent.extensions.manager import (
-            get_plugin_manager,
             get_portable_mcp_server_names_nowait,
         )
 

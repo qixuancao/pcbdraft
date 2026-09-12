@@ -82,7 +82,7 @@ def _redact_sensitive_cmdline(cmdline: str) -> str:
     """
     # Generic pass: the project's shared secret redactor.
     try:
-        from pcbdraft.agent.redact import redact_sensitive_text  # noqa: PLC0415
+        from pcbdraft.agent.redact import redact_sensitive_text
 
         cmdline = redact_sensitive_text(cmdline, force=True)
     except Exception:
@@ -155,7 +155,7 @@ def _local_preview_metadata(pid: int, name: str) -> dict[str, object]:
     if name.lower() not in {"python.exe", "pythonw.exe", "python", "pythonw"}:
         return {}
     try:
-        import psutil  # noqa: PLC0415
+        import psutil
 
         process = psutil.Process(pid)
         metadata = _classify_local_preview_args(process.cmdline())
@@ -180,7 +180,7 @@ def _terminate_safe_preview(
     """
     try:
         if psutil_module is None:
-            import psutil as psutil_module  # type: ignore[no-redef]  # noqa: PLC0415
+            import psutil as psutil_module  # type: ignore[no-redef]
 
         process = psutil_module.Process(pid)  # type: ignore[attr-defined]
         if abs(process.create_time() - expected_create_time) > 0.001:
@@ -231,7 +231,7 @@ def _is_pausable_gateway(cmdline: str) -> bool:
     """
     try:
         from pcbdraft.core.runtime_process import (
-            looks_like_gateway_command_line,  # noqa: PLC0415
+            looks_like_gateway_command_line,
         )
     except Exception:
         return False
@@ -241,13 +241,13 @@ def _is_pausable_gateway(cmdline: str) -> bool:
 def main() -> None:
     """Entry point.  Prints one JSON doc to stdout.  Exits 0 for valid scan."""
     try:
-        import psutil  # noqa: PLC0415, F401
+        import psutil  # noqa: F401
     except Exception as exc:
         _emit_probe_fail(f"psutil is not available: {exc}")
 
     try:
         from pcbdraft.interfaces.tui.main import (
-            _detect_venv_python_processes,  # noqa: PLC0415
+            _detect_venv_python_processes,
         )
 
         matches = _detect_venv_python_processes()
@@ -293,9 +293,9 @@ def _terminate_safe_main(argv: list[str]) -> NoReturn:
         create_time = float(argv[1])
         if pid <= 0 or not math.isfinite(create_time) or create_time <= 0:
             raise ValueError
-    except ValueError:
+    except ValueError as exc:
         print(json.dumps({"ok": False, "error": "invalid process identity"}))
-        raise SystemExit(2)
+        raise SystemExit(2) from exc
 
     stopped, error = _terminate_safe_preview(pid, create_time)
     print(json.dumps({"ok": stopped, "pid": pid, "error": error}))

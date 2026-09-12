@@ -43,10 +43,10 @@ from pcbdraft.core.runtime_environment import (
 
 __all__ = [
     "is_ebadengine",
-    "required_npm_range",
     "managed_npm_prefix",
-    "upgrade_managed_npm",
     "maybe_repair_npm_engine",
+    "required_npm_range",
+    "upgrade_managed_npm",
 ]
 
 # npm prints `npm error notsup Required: {...}` on npm >= 10 and

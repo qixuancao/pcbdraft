@@ -164,7 +164,7 @@ def wait_for_registration_success(
 def _ensure_qrcode_installed() -> bool:
     """Try to import qrcode; if missing, auto-install it via pip/uv."""
     try:
-        import qrcode  # noqa: F401
+        import qrcode
 
         return True
     except ImportError:
@@ -177,7 +177,7 @@ def _ensure_qrcode_installed() -> bool:
     try:
         result = _pip_install(["-q", "qrcode"], timeout=120)
         if result.returncode == 0:
-            import qrcode  # noqa: F401,F811
+            import qrcode  # noqa: F401
 
             return True
     except (subprocess.SubprocessError, ImportError, OSError):

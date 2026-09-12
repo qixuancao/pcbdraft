@@ -2455,11 +2455,10 @@ class ElicitationHandler:
             self.metrics["errors"] += 1
             return ElicitResult(action="cancel")
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "MCP server '%s' elicitation failed: %s",
                 self.server_name,
                 exc,
-                exc_info=True,
             )
             self.metrics["errors"] += 1
             return ElicitResult(action="decline")
@@ -4660,12 +4659,11 @@ def _trust_gate_check(server_name: str, tool_name: str) -> str | None:
             surface=f"mcp-trust/{server_name}",
         )
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "MCP trust gate: approval check failed for %s.%s: %s",
             server_name,
             tool_name,
             exc,
-            exc_info=True,
         )
         return tool_error(
             f"MCP tool '{tool_name}' on untrusted server '{server_name}' "

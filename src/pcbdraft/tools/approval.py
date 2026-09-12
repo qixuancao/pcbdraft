@@ -3319,7 +3319,7 @@ def _prompt_dangerous_approval_inner(
                 display_command, display_description, **callback_kwargs
             )
         except Exception as e:
-            logger.error("Approval callback failed: %s", e, exc_info=True)
+            logger.exception("Approval callback failed: %s", e)
             return "deny"
 
     # Fail-closed guard: if prompt_toolkit owns the terminal (interactive
@@ -5737,10 +5737,9 @@ def request_elicitation_consent(
                 surface=surface,
             )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "Elicitation gateway dispatch failed: %s",
                 exc,
-                exc_info=True,
             )
             return "decline"
 
@@ -5763,10 +5762,9 @@ def request_elicitation_consent(
             allow_permanent=False,
         )
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Elicitation CLI prompt failed: %s",
             exc,
-            exc_info=True,
         )
         return "decline"
 

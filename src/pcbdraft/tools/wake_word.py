@@ -650,7 +650,7 @@ def _ensure_sherpa_model(root: Path | None = None) -> Path:
     root.mkdir(parents=True, exist_ok=True)
     archive = root / f"{_SHERPA_KWS_MODEL_DIR}.tar.bz2"
     logger.info("wake word: downloading sherpa KWS model (one-time, ~13 MB)")
-    urllib.request.urlretrieve(_SHERPA_KWS_MODEL_URL, archive)  # noqa: S310
+    urllib.request.urlretrieve(_SHERPA_KWS_MODEL_URL, archive)
     with tarfile.open(archive, "r:bz2") as tf:
         tf.extractall(root, filter="data")
     archive.unlink(missing_ok=True)

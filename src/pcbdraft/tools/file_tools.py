@@ -2422,7 +2422,7 @@ def write_file_tool(
         if _is_expected_write_exception(e):
             logger.debug("write_file expected denial: %s: %s", type(e).__name__, e)
         else:
-            logger.error("write_file error: %s: %s", type(e).__name__, e, exc_info=True)
+            logger.exception("write_file error: %s: %s", type(e).__name__, e)
         return tool_error(str(e))
 
 

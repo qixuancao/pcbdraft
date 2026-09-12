@@ -11267,7 +11267,7 @@ def _default_spawn(
     # Use 'a' so a re-run on unblock appends rather than overwrites.
     log_f = open(log_path, "ab")
     try:
-        proc = subprocess.Popen(  # noqa: S603 -- argv is a fixed list built above
+        proc = subprocess.Popen(
             cmd,
             cwd=workspace if os.path.isdir(workspace) else None,
             stdin=subprocess.DEVNULL,
@@ -11277,12 +11277,12 @@ def _default_spawn(
             start_new_session=True,
             creationflags=subprocess.CREATE_NO_WINDOW if _IS_WINDOWS else 0,
         )
-    except FileNotFoundError:
+    except FileNotFoundError as exc:
         log_f.close()
         raise RuntimeError(
             "`pcbdraft` executable not found on PATH. "
             "Install PCBDraft Agent or activate its venv before running the kanban dispatcher."
-        )
+        ) from exc
     # NOTE: we intentionally do NOT close log_f here — we want Popen's
     # child process to keep writing after this function returns.  The
     # handle is kept alive by the child's inheritance.  The parent's

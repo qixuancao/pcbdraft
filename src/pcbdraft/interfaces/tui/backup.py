@@ -20,7 +20,7 @@ import threading
 import time
 import zipfile
 from contextlib import contextmanager
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -184,11 +184,11 @@ def _backup_operation_lock(runtime_home: Path, timeout_seconds: float = 0.25):
                     msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
                     acquired = True
                     break
-                except (OSError, PermissionError):
+                except (OSError, PermissionError) as exc:
                     if time.monotonic() >= deadline:
                         raise BackupInProgressError(
                             "another PCBDraft backup is already running"
-                        )
+                        ) from exc
                     time.sleep(0.05)
         else:
             import fcntl
@@ -198,11 +198,11 @@ def _backup_operation_lock(runtime_home: Path, timeout_seconds: float = 0.25):
                     fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                     acquired = True
                     break
-                except (BlockingIOError, OSError):
+                except (BlockingIOError, OSError) as exc:
                     if time.monotonic() >= deadline:
                         raise BackupInProgressError(
                             "another PCBDraft backup is already running"
-                        )
+                        ) from exc
                     time.sleep(0.05)
 
         yield

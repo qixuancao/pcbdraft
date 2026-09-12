@@ -63,7 +63,6 @@ from pcbdraft.tools.debug_helpers import DebugSession
 from pcbdraft.tools.fal_common import (
     _extract_http_status,
     _ManagedFalSyncClient,
-    _normalize_fal_queue_url_format,
 )
 from pcbdraft.tools.managed_tool_gateway import resolve_managed_tool_gateway
 from pcbdraft.tools.tool_backend_helpers import (
@@ -1166,7 +1165,7 @@ def _upscale_image(image_url: str, original_prompt: str) -> dict[str, Any] | Non
         # "upscale failed, use original" fallback that keeps the turn alive.
         raise
     except Exception as e:
-        logger.error("Error upscaling image: %s", e, exc_info=True)
+        logger.exception("Error upscaling image: %s", e)
         return None
 
 
@@ -1501,7 +1500,7 @@ def image_generate_tool(
     except Exception as e:
         generation_time = (datetime.datetime.now() - start_time).total_seconds()
         error_msg = f"Error generating image: {e!s}"
-        logger.error("%s", error_msg, exc_info=True)
+        logger.exception("%s", error_msg)
 
         response_data = {
             "success": False,
@@ -1612,9 +1611,9 @@ if __name__ == "__main__":
         import fal_client  # noqa: F401
 
         print("✅ fal_client library available")
-    except ImportError:
+    except ImportError as exc:
         print("❌ fal_client library not found — pip install fal-client")
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
     model_id, meta = _resolve_fal_model()
     print(f"🤖 Active model: {meta.get('display', model_id)} ({model_id})")

@@ -47,8 +47,8 @@ def import_fal_client() -> Any:
         _lazy_ensure("image.fal", prompt=False)
     except ImportError:
         pass
-    except Exception as exc:  # noqa: BLE001 — lazy_deps surfaces install hints
-        raise ImportError(str(exc))
+    except Exception as exc:
+        raise ImportError(str(exc)) from exc
     import fal_client  # type: ignore  # noqa: WPS433 — intentionally lazy
 
     return fal_client

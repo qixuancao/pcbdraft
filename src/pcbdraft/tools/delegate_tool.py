@@ -3303,7 +3303,7 @@ def _run_single_child(
             _close_subagent_steering(_subagent_id, child) if _subagent_id else None
         )
         duration = round(time.monotonic() - child_start, 2)
-        logging.exception(f"[subagent-{task_index}] failed")
+        logger.exception(f"[subagent-{task_index}] failed")
         if child_progress_cb:
             try:
                 child_progress_cb(

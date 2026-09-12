@@ -259,14 +259,14 @@ def _scrub_child_env(source_env, is_passthrough=None, is_windows=None):
             from pcbdraft.tools.env_passthrough import is_env_passthrough as _ep
             from pcbdraft.tools.env_passthrough import resolve_passthrough_value
         except Exception:
-            _ep = lambda _: False  # noqa: E731
-            resolve_passthrough_value = lambda _name, _fallback: None  # noqa: E731
+            _ep = lambda _: False
+            resolve_passthrough_value = lambda _name, _fallback: None
         is_passthrough = _ep
     else:
         try:
             from pcbdraft.tools.env_passthrough import resolve_passthrough_value
         except Exception:
-            resolve_passthrough_value = lambda _name, _fallback: None  # noqa: E731
+            resolve_passthrough_value = lambda _name, _fallback: None
     if is_windows is None:
         is_windows = _IS_WINDOWS
 
@@ -796,7 +796,7 @@ def _rpc_server_loop(
                             tool_name, tool_args, task_id=task_id
                         )
                 except Exception as exc:
-                    logger.error("Tool call failed in sandbox: %s", exc, exc_info=True)
+                    logger.exception("Tool call failed in sandbox: %s", exc)
                     result = tool_error(str(exc))
 
                 tool_call_counter[0] += 1
@@ -1095,9 +1095,7 @@ def _rpc_poll_loop(
                                 tool_name, tool_args, task_id=task_id
                             )
                     except Exception as exc:
-                        logger.error(
-                            "Tool call failed in remote sandbox: %s", exc, exc_info=True
-                        )
+                        logger.exception("Tool call failed in remote sandbox: %s", exc)
                         tool_result = tool_error(str(exc))
 
                     tool_call_counter[0] += 1
@@ -1259,13 +1257,12 @@ def _execute_remote(
 
     except Exception as exc:
         duration = round(time.monotonic() - exec_start, 2)
-        logger.error(
+        logger.exception(
             "execute_code remote failed after %ss with %d tool calls: %s: %s",
             duration,
             tool_call_counter[0],
             type(exc).__name__,
             exc,
-            exc_info=True,
         )
         return json.dumps(
             {
@@ -1846,13 +1843,12 @@ def execute_code(
 
     except Exception as exc:
         duration = round(time.monotonic() - exec_start, 2)
-        logger.error(
+        logger.exception(
             "execute_code failed after %ss with %d tool calls: %s: %s",
             duration,
             tool_call_counter[0],
             type(exc).__name__,
             exc,
-            exc_info=True,
         )
         return json.dumps(
             {

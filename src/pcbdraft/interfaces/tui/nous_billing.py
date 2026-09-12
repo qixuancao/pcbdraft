@@ -274,14 +274,14 @@ def _resolve_token_and_base(*, use_cache: bool = True) -> tuple[str, str]:
 
     try:
         from pcbdraft.model.auth import AuthError, resolve_nous_access_token
-    except ImportError:
+    except ImportError as exc:
         # auth module unavailable — fall back to the raw stored token.
         token = state.get("access_token")
         if isinstance(token, str) and token.strip():
             resolved = (token.strip(), base)
             _token_cache = (_time.time(), *resolved)
             return resolved
-        raise _billing_not_logged_in()
+        raise _billing_not_logged_in() from exc
 
     try:
         token = resolve_nous_access_token()

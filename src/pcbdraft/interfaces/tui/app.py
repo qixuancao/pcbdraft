@@ -257,12 +257,7 @@ from pcbdraft.core.runtime_utils import (
     base_url_hostname,
     fast_safe_load,
 )
-from pcbdraft.interfaces.tui.browser_connect import (
-    DEFAULT_BROWSER_CDP_URL,
-    is_browser_debug_ready,
-    manual_chrome_debug_command,
-    try_launch_chrome_debug,
-)
+from pcbdraft.interfaces.tui.browser_connect import try_launch_chrome_debug
 from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 
 _runtime_home = get_runtime_home()
@@ -4469,7 +4464,7 @@ def _apply_bracketed_paste_timeout_patch() -> None:
         _vt100_mod.Vt100Parser.feed = _patched_vt100_feed
         _vt100_mod._pcbdraft_bp_timeout_patched = True
         logger.debug("Applied Vt100Parser bracketed-paste timeout patch (#16263)")
-    except Exception as exc:  # noqa: BLE001 — defensive: never break startup
+    except Exception as exc:
         logger.debug("Bracketed-paste timeout patch skipped: %s", exc)
 
 
@@ -13230,7 +13225,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             from pcbdraft.interfaces.tui.goals import GoalManager
             from pcbdraft.model.configuration import load_config
         except Exception as exc:
-            logging.debug("goal manager unavailable: %s", exc)
+            logger.debug("goal manager unavailable: %s", exc)
             return None
 
         sid = getattr(self, "session_id", None) or ""
@@ -13261,7 +13256,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         try:
             from pcbdraft.interfaces.tui.heartbeat import HeartbeatManager
         except Exception as exc:
-            logging.debug("heartbeat manager unavailable: %s", exc)
+            logger.debug("heartbeat manager unavailable: %s", exc)
             return None
 
         sid = getattr(self, "session_id", None) or ""
@@ -13312,7 +13307,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         if prompt:
                             self._pending_input.put(prompt)
                     except Exception as exc:
-                        logging.debug("heartbeat watchdog tick failed: %s", exc)
+                        logger.debug("heartbeat watchdog tick failed: %s", exc)
             finally:
                 self._heartbeat_watchdog_started = False
 
@@ -13330,7 +13325,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         try:
             from pcbdraft.interfaces.tui.loops import LoopManager
         except Exception as exc:
-            logging.debug("loop manager unavailable: %s", exc)
+            logger.debug("loop manager unavailable: %s", exc)
             return None
 
         sid = getattr(self, "session_id", None) or ""
@@ -13387,7 +13382,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _cprint(f"  {_DIM}↻ /loop wakeup #{tick_no} firing…{_RST}")
             self._pending_input.put(wakeup)
         except Exception as exc:
-            logging.debug("loop tick injection failed: %s", exc)
+            logger.debug("loop tick injection failed: %s", exc)
             try:
                 mgr.abandon_tick()
             except Exception:
@@ -13604,7 +13599,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             try:
                 mgr.pause(reason="user-interrupted (Ctrl+C)")
             except Exception as exc:
-                logging.debug("goal pause-on-interrupt failed: %s", exc)
+                logger.debug("goal pause-on-interrupt failed: %s", exc)
             _cprint(
                 f"  {_DIM}⏸ Goal paused — turn was interrupted. "
                 f"Use /goal resume to continue, or /goal clear to stop.{_RST}"
@@ -13664,7 +13659,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                 try:
                     self._pending_input.put(prompt)
                 except Exception as exc:
-                    logging.debug("goal continuation enqueue failed: %s", exc)
+                    logger.debug("goal continuation enqueue failed: %s", exc)
 
     def _toggle_verbose(self):
         """Cycle tool progress mode: off → new → all → verbose → off.
@@ -16933,7 +16928,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     requested_provider=(self.requested_provider or "").strip(),
                 )
             except Exception as _img_exc:
-                logging.debug(
+                logger.debug(
                     "image_routing decision failed, defaulting to text: %s", _img_exc
                 )
                 _img_mode = "text"
@@ -16963,7 +16958,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                             message if isinstance(message, str) else "", images
                         )
                 except Exception as _img_exc:
-                    logging.warning(
+                    logger.warning(
                         "native image attach failed, falling back to text: %s", _img_exc
                     )
                     message = self._preprocess_images_with_vision(
@@ -17011,7 +17006,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         )
                     message = _ctx_result.message
             except Exception as e:
-                logging.debug("@ context reference expansion failed: %s", e)
+                logger.debug("@ context reference expansion failed: %s", e)
 
         # Sanitize surrogate characters that can arrive via clipboard paste from
         # rich-text editors (Google Docs, Word, etc.).  Lone surrogates are invalid
@@ -17263,7 +17258,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         self._pending_moa_restore_model = None
                         self._pending_moa_disable_after_turn = False
                 except Exception as exc:
-                    logging.error("run_conversation raised: %s", exc, exc_info=True)
+                    logger.exception("run_conversation raised: %s", exc)
                     _summary = getattr(
                         self.agent, "_summarize_api_error", lambda e: str(e)[:300]
                     )(exc)
@@ -21320,9 +21315,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         try:
                             self._maybe_continue_goal_after_turn()
                         except Exception as _goal_exc:
-                            logging.debug(
-                                "goal continuation hook failed: %s", _goal_exc
-                            )
+                            logger.debug("goal continuation hook failed: %s", _goal_exc)
 
                         # /loop tick completion: if the turn that just ended
                         # was a loop wakeup, evaluate it (LOOP_COMPLETE marker,
@@ -21330,7 +21323,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         try:
                             self._maybe_complete_loop_tick_after_turn()
                         except Exception as _loop_exc:
-                            logging.debug("loop completion hook failed: %s", _loop_exc)
+                            logger.debug("loop completion hook failed: %s", _loop_exc)
 
                         # Continuous voice: auto-restart recording after agent responds.
                         # Dispatch to a daemon thread so play_beep (sd.wait) and

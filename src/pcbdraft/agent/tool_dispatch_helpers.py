@@ -180,7 +180,7 @@ def _plan_tool_batch_segments(
             function_args = json.loads(tool_call.function.arguments)
         except Exception:
             _raw = tool_call.function.arguments
-            logging.debug(
+            logger.debug(
                 "Could not parse args for %s — treating as sequential barrier; raw=%s",
                 tool_name,
                 _raw[:200] if isinstance(_raw, str) else repr(_raw)[:200],
@@ -188,7 +188,7 @@ def _plan_tool_batch_segments(
             _add_sequential(tool_call)
             continue
         if not isinstance(function_args, dict):
-            logging.debug(
+            logger.debug(
                 "Non-dict args for %s (%s) — treating as sequential barrier",
                 tool_name,
                 type(function_args).__name__,
@@ -775,27 +775,27 @@ def _maybe_wrap_untrusted(name: str, content: Any) -> Any:
 
 
 __all__ = [
+    "_DESTRUCTIVE_PATTERNS",
     "_NEVER_PARALLEL_TOOLS",
     "_PARALLEL_SAFE_TOOLS",
-    "_PATH_SCOPED_TOOLS",
     "_PATH_SCOPED_READERS",
+    "_PATH_SCOPED_TOOLS",
     "_PATH_SCOPED_WRITERS",
-    "_DESTRUCTIVE_PATTERNS",
     "_REDIRECT_OVERWRITE",
-    "_is_destructive_command",
-    "_plan_tool_batch_segments",
-    "_should_parallelize_tool_batch",
-    "_canonical_path",
-    "_extract_parallel_scope_path",
-    "_extract_parallel_scope_paths",
-    "_paths_overlap",
-    "_is_multimodal_tool_result",
-    "_multimodal_text_summary",
     "_append_subdir_hint_to_multimodal",
+    "_canonical_path",
+    "_extract_error_preview",
     "_extract_file_mutation_targets",
     "_extract_landed_file_mutation_paths",
-    "_extract_error_preview",
-    "_trajectory_normalize_msg",
+    "_extract_parallel_scope_path",
+    "_extract_parallel_scope_paths",
+    "_is_destructive_command",
+    "_is_multimodal_tool_result",
+    "_multimodal_text_summary",
+    "_paths_overlap",
+    "_plan_tool_batch_segments",
     "_retire_pcb_render_board_images",
+    "_should_parallelize_tool_batch",
+    "_trajectory_normalize_msg",
     "make_tool_result_message",
 ]

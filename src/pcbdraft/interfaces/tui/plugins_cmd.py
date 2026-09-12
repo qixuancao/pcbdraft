@@ -203,10 +203,10 @@ def _sanitize_plugin_name(
 
     try:
         target.relative_to(plugins_resolved)
-    except ValueError:
+    except ValueError as exc:
         raise ValueError(
             f"Invalid plugin name '{name}': resolves outside the plugins directory."
-        )
+        ) from exc
 
     return target
 
@@ -459,7 +459,7 @@ def _prompt_plugin_env_vars(manifest: dict, console) -> None:
     from pcbdraft.core.runtime_environment import display_runtime_home
     from pcbdraft.model.configuration import (
         get_env_value,
-        save_env_value,  # noqa: F811
+        save_env_value,
     )
 
     # Normalise to list-of-dicts

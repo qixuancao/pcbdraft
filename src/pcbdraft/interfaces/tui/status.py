@@ -349,7 +349,7 @@ def show_status(args):
         print(f"    Auth file:  {qwen_auth_file}")
     qwen_exp = qwen_status.get("expires_at_ms")
     if qwen_exp:
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         print(
             f"    Access exp: {datetime.fromtimestamp(int(qwen_exp) / 1000, tz=UTC).isoformat()}"

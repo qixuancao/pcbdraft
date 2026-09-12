@@ -456,7 +456,7 @@ def x_search_tool(
             ensure_ascii=False,
         )
     except requests.HTTPError as e:
-        logger.error("x_search failed: %s", e, exc_info=True)
+        logger.exception("x_search failed: %s", e)
         return json.dumps(
             {
                 "success": False,
@@ -468,7 +468,7 @@ def x_search_tool(
             ensure_ascii=False,
         )
     except requests.ReadTimeout as e:
-        logger.error("x_search timed out: %s", e, exc_info=True)
+        logger.exception("x_search timed out: %s", e)
         return json.dumps(
             {
                 "success": False,
@@ -480,7 +480,7 @@ def x_search_tool(
             ensure_ascii=False,
         )
     except Exception as e:
-        logger.error("x_search failed: %s", e, exc_info=True)
+        logger.exception("x_search failed: %s", e)
         return json.dumps(
             {
                 "success": False,

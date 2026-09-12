@@ -37,6 +37,8 @@ import json
 import logging
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 from pcbdraft.services.session_db_common import _RESET_END_REASONS
 
 # Sources that are excluded from session browsing/searching by default.
@@ -117,9 +119,9 @@ def _format_timestamp(ts: int | float | str | None) -> str:
                 return dt.strftime("%B %d, %Y at %I:%M %p")
             return ts
     except (ValueError, OSError, OverflowError) as e:
-        logging.debug("Failed to format timestamp %s: %s", ts, e, exc_info=True)
+        logger.debug("Failed to format timestamp %s: %s", ts, e, exc_info=True)
     except Exception as e:
-        logging.debug(
+        logger.debug(
             "Unexpected error formatting timestamp %s: %s", ts, e, exc_info=True
         )
     return str(ts)
@@ -163,7 +165,7 @@ def _resolve_to_parent(db, session_id: str) -> tuple[str, bool]:
                 break
             cur = parent
         except Exception as e:
-            logging.debug("Error resolving parent for %s: %s", cur, e, exc_info=True)
+            logger.debug("Error resolving parent for %s: %s", cur, e, exc_info=True)
             break
     return cur, has_compression
 
@@ -236,7 +238,7 @@ def _get_message_storage_state(db, message_id) -> dict[str, Any] | None:
             )
             row = cursor.fetchone()
     except Exception:
-        logging.debug(
+        logger.debug(
             "message storage-state lookup failed for %s", message_id, exc_info=True
         )
         return None
@@ -388,7 +390,7 @@ def _session_link(session_id: str, profile: str | None = None) -> str:
             resolved = get_active_profile_name()
             name = "" if resolved == "custom" else resolved
         except Exception:
-            logging.debug(
+            logger.debug(
                 "get_active_profile_name failed for session link", exc_info=True
             )
             name = ""
@@ -417,7 +419,7 @@ def _locate_session_db(session_id: str):
     try:
         targets += [(info.name, info.path) for info in profiles_mod.list_profiles()]
     except Exception:
-        logging.debug("list_profiles failed during session locate", exc_info=True)
+        logger.debug("list_profiles failed during session locate", exc_info=True)
 
     seen: set = set()
     for name, home in targets:
@@ -434,7 +436,7 @@ def _locate_session_db(session_id: str):
             if pdb.get_session(session_id):
                 return pdb, name
         except Exception:
-            logging.debug(
+            logger.debug(
                 "get_session probe failed for %s in %s", session_id, name, exc_info=True
             )
         pdb.close()
@@ -455,7 +457,7 @@ def _read_session(
     try:
         meta = db.get_session(session_id) or {}
     except Exception as e:
-        logging.debug("get_session failed for %s: %s", session_id, e, exc_info=True)
+        logger.debug("get_session failed for %s: %s", session_id, e, exc_info=True)
         meta = {}
     if not meta:
         return tool_error(f"session_id not found: {session_id}", success=False)
@@ -463,7 +465,7 @@ def _read_session(
     try:
         rows = db.get_messages(session_id)
     except Exception as e:
-        logging.error("get_messages failed for %s: %s", session_id, e, exc_info=True)
+        logger.exception("get_messages failed for %s: %s", session_id, e)
         return tool_error(f"failed to load session: {e}", success=False)
 
     shaped = [_shape_message(m) for m in rows]
@@ -558,7 +560,7 @@ def _list_recent_sessions(
             ensure_ascii=False,
         )
     except Exception as e:
-        logging.error("Error listing recent sessions: %s", e, exc_info=True)
+        logger.exception("Error listing recent sessions: %s", e)
         return tool_error(f"Failed to list recent sessions: {e}", success=False)
 
 
@@ -631,7 +633,7 @@ def _scroll(
     try:
         session_meta = db.get_session(session_id) or {}
     except Exception as e:
-        logging.debug("get_session failed for %s: %s", session_id, e, exc_info=True)
+        logger.debug("get_session failed for %s: %s", session_id, e, exc_info=True)
         session_meta = {}
     if not session_meta:
         return tool_error(f"session_id not found: {session_id}", success=False)
@@ -640,7 +642,7 @@ def _scroll(
     try:
         view = db.get_messages_around(session_id, around_message_id, window=window)
     except Exception as e:
-        logging.error("get_messages_around failed: %s", e, exc_info=True)
+        logger.exception("get_messages_around failed: %s", e)
         return tool_error(f"failed to load messages: {e}", success=False)
 
     messages = view.get("window") or []
@@ -672,7 +674,7 @@ def _scroll(
                             pass
                         session_id = owning
                 except Exception as e:
-                    logging.debug(
+                    logger.debug(
                         "rebind get_messages_around failed: %s", e, exc_info=True
                     )
 
@@ -721,7 +723,7 @@ def _title_match_result(
     try:
         session_id = db.resolve_session_by_title(title_query)
     except Exception:
-        logging.debug(
+        logger.debug(
             "resolve_session_by_title failed for %r", title_query, exc_info=True
         )
         return None
@@ -741,9 +743,7 @@ def _title_match_result(
     try:
         session_meta = db.get_session(lineage_root) or db.get_session(session_id) or {}
     except Exception:
-        logging.debug(
-            "get_session failed for title match %s", session_id, exc_info=True
-        )
+        logger.debug("get_session failed for title match %s", session_id, exc_info=True)
         session_meta = {}
     if session_meta.get("source") in _HIDDEN_SESSION_SOURCES:
         return None
@@ -751,7 +751,7 @@ def _title_match_result(
     try:
         messages = db.get_messages(session_id)
     except Exception:
-        logging.debug(
+        logger.debug(
             "get_messages failed for title match %s", session_id, exc_info=True
         )
         messages = []
@@ -761,7 +761,7 @@ def _title_match_result(
         try:
             view = db.get_anchored_view(session_id, anchor_id, window=5, bookend=3)
         except Exception:
-            logging.debug(
+            logger.debug(
                 "get_anchored_view failed for title match %s/%s",
                 session_id,
                 anchor_id,
@@ -830,7 +830,7 @@ def _discover(
             fields=_DISCOVER_SEARCH_FIELDS,
         )
     except Exception as e:
-        logging.error("FTS5 search failed: %s", e, exc_info=True)
+        logger.exception("FTS5 search failed: %s", e)
         return tool_error(f"Search failed: {e}", success=False)
 
     # Demote automation (cron) rows below interactive ones before dedup, so a
@@ -919,7 +919,7 @@ def _discover(
         try:
             view = db.get_anchored_view(hit_sid, msg_id, window=5, bookend=3)
         except Exception as e:
-            logging.warning(
+            logger.warning(
                 "get_anchored_view failed for %s/%s: %s",
                 hit_sid,
                 msg_id,
@@ -1154,7 +1154,7 @@ def session_search(
             db = SessionDB()
             owned_dbs.append(db)
         except Exception:
-            logging.debug("SessionDB unavailable for session_search", exc_info=True)
+            logger.debug("SessionDB unavailable for session_search", exc_info=True)
             from pcbdraft.services.session_db import format_session_db_unavailable
 
             return tool_error(format_session_db_unavailable(), success=False)
@@ -1179,7 +1179,7 @@ def session_search(
             try:
                 owned_db.close()
             except Exception:
-                logging.debug("Failed to close session_search SessionDB", exc_info=True)
+                logger.debug("Failed to close session_search SessionDB", exc_info=True)
 
 
 def check_session_search_requirements() -> bool:

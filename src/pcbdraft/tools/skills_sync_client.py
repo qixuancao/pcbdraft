@@ -60,7 +60,6 @@ import json
 import logging
 import os
 import stat as _stat
-import time
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any

@@ -211,7 +211,7 @@ async def auth_login(request: Request, provider: str, next: str = ""):
         raise HTTPException(
             status_code=503,
             detail=f"Provider unreachable: {e}",
-        )
+        ) from e
 
     audit_log(
         AuditEvent.LOGIN_START,
@@ -369,7 +369,7 @@ async def auth_native_authorize(
             client_ip=_client_ip(request),
         )
     except native_flow.NativeFlowError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
     if getattr(p, "supports_password", False):
         # Password provider: no IDP to redirect through. Land the system
@@ -396,7 +396,7 @@ async def auth_native_authorize(
     try:
         ls = p.start_login(redirect_uri=_redirect_uri(request))
     except ProviderError as e:
-        raise HTTPException(status_code=503, detail=f"Provider unreachable: {e}")
+        raise HTTPException(status_code=503, detail=f"Provider unreachable: {e}") from e
 
     audit_log(
         AuditEvent.NATIVE_AUTHORIZE_START,
@@ -507,7 +507,7 @@ async def auth_callback(
             reason="invalid_code",
             ip=_client_ip(request),
         )
-        raise HTTPException(status_code=400, detail=f"Invalid code: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid code: {e}") from e
     except ProviderError as e:
         audit_log(
             AuditEvent.LOGIN_FAILURE,
@@ -518,7 +518,7 @@ async def auth_callback(
         raise HTTPException(
             status_code=503,
             detail=f"Provider unreachable: {e}",
-        )
+        ) from e
 
     audit_log(
         AuditEvent.LOGIN_SUCCESS,
@@ -544,7 +544,7 @@ async def auth_callback(
         try:
             pending = native_flow.get_pending(broker_state)
             gw_code = native_flow.complete_pending(broker_state, session=session)
-        except native_flow.NativeFlowError:
+        except native_flow.NativeFlowError as exc:
             audit_log(
                 AuditEvent.NATIVE_TOKEN_FAILURE,
                 provider=provider_name,
@@ -554,7 +554,7 @@ async def auth_callback(
             raise HTTPException(
                 status_code=400,
                 detail="Native login expired or unknown; restart sign-in.",
-            )
+            ) from exc
         from urllib.parse import urlencode
 
         sep = "&" if "?" in pending.redirect_uri else "?"
@@ -780,7 +780,7 @@ async def auth_password_login(request: Request, body: _PasswordLoginBody):
         session = p.complete_password_login(
             username=body.username, password=body.password
         )
-    except InvalidCredentialsError:
+    except InvalidCredentialsError as exc:
         audit_log(
             AuditEvent.LOGIN_FAILURE,
             provider=body.provider,
@@ -788,11 +788,11 @@ async def auth_password_login(request: Request, body: _PasswordLoginBody):
             ip=ip,
         )
         # Generic message — never distinguish unknown-user from wrong-password.
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    except NotImplementedError:
+        raise HTTPException(status_code=401, detail="Invalid credentials") from exc
+    except NotImplementedError as exc:
         # supports_password was True but the method isn't actually
         # implemented — a provider bug, not a client error.
-        raise HTTPException(status_code=500, detail="Provider misconfigured")
+        raise HTTPException(status_code=500, detail="Provider misconfigured") from exc
     except ProviderError as e:
         audit_log(
             AuditEvent.LOGIN_FAILURE,
@@ -800,7 +800,7 @@ async def auth_password_login(request: Request, body: _PasswordLoginBody):
             reason="provider_unreachable",
             ip=ip,
         )
-        raise HTTPException(status_code=503, detail=f"Provider unreachable: {e}")
+        raise HTTPException(status_code=503, detail=f"Provider unreachable: {e}") from e
 
     audit_log(
         AuditEvent.LOGIN_SUCCESS,
@@ -819,7 +819,7 @@ async def auth_password_login(request: Request, body: _PasswordLoginBody):
         try:
             pending = native_flow.get_pending(broker_state)
             gw_code = native_flow.complete_pending(broker_state, session=session)
-        except native_flow.NativeFlowError:
+        except native_flow.NativeFlowError as exc:
             audit_log(
                 AuditEvent.NATIVE_TOKEN_FAILURE,
                 provider=body.provider,
@@ -829,7 +829,7 @@ async def auth_password_login(request: Request, body: _PasswordLoginBody):
             raise HTTPException(
                 status_code=400,
                 detail="Native login expired or unknown; restart sign-in.",
-            )
+            ) from exc
         from urllib.parse import urlencode
 
         sep = "&" if "?" in pending.redirect_uri else "?"
@@ -876,7 +876,7 @@ async def auth_logout(request: Request):
         for provider in list_providers():
             try:
                 provider.revoke_session(refresh_token=rt)
-            except Exception as e:  # noqa: BLE001 — best-effort
+            except Exception as e:
                 _log.warning(
                     "dashboard-auth: revoke on %r failed: %s",
                     provider.name,
@@ -990,7 +990,7 @@ async def auth_native_token(request: Request, body: _NativeTokenBody):
         session = native_flow.redeem_code(
             code=body.code, code_verifier=body.code_verifier
         )
-    except native_flow.CodeInvalid:
+    except native_flow.CodeInvalid as exc:
         audit_log(
             AuditEvent.NATIVE_TOKEN_FAILURE,
             reason="invalid_code_or_pkce",
@@ -999,7 +999,7 @@ async def auth_native_token(request: Request, body: _NativeTokenBody):
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired authorization code.",
-        )
+        ) from exc
 
     audit_log(
         AuditEvent.NATIVE_TOKEN_SUCCESS,

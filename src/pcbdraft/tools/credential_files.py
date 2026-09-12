@@ -30,7 +30,7 @@ from pcbdraft.model.configuration import cfg_get
 
 try:  # pragma: no cover - exercised via the fail-closed test below
     from pcbdraft.agent.file_safety import get_read_block_error
-except ImportError:  # noqa: F401 - sentinel consumed in register_credential_file
+except ImportError:
     get_read_block_error = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)

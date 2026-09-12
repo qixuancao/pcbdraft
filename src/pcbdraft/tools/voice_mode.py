@@ -956,7 +956,7 @@ class AudioRecorder:
 
         sd, np = _import_audio()
 
-        def _callback(indata, frames, time_info, status):  # noqa: ARG001
+        def _callback(indata, frames, time_info, status):
             if status:
                 logger.debug("sounddevice status: %s", status)
             # When not recording the stream is idle — discard audio.
@@ -1067,9 +1067,7 @@ class AudioRecorder:
                             try:
                                 cb()
                             except Exception as e:
-                                logger.error(
-                                    "Silence callback failed: %s", e, exc_info=True
-                                )
+                                logger.exception("Silence callback failed: %s", e)
 
                         threading.Thread(target=_safe_cb, daemon=True).start()
 
@@ -1590,9 +1588,7 @@ def _transcribe_wav_in_chunks(
             "chunks": len(chunk_paths),
         }
     except Exception as e:
-        logger.error(
-            "Chunked transcription failed for %s: %s", wav_path, e, exc_info=True
-        )
+        logger.exception("Chunked transcription failed for %s: %s", wav_path, e)
         return {
             "success": False,
             "transcript": "",
@@ -2385,7 +2381,7 @@ def _check_plugin_stt_provider(provider: str) -> bool:
             # need one refresh after plugins or configuration change.
             _ensure_plugins_discovered(force=True)
             plugin_provider = get_provider(key)
-    except Exception as exc:  # noqa: BLE001 - discovery failure is non-fatal
+    except Exception as exc:
         logger.debug(
             "STT plugin requirements check skipped for '%s': %s",
             key,
@@ -2398,7 +2394,7 @@ def _check_plugin_stt_provider(provider: str) -> bool:
 
     try:
         return bool(plugin_provider.is_available())
-    except Exception as exc:  # noqa: BLE001 - plugins must not break status
+    except Exception as exc:
         logger.warning(
             "STT plugin provider '%s' is_available() raised during requirements "
             "check: %s - treating as unavailable",

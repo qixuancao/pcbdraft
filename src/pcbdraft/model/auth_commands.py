@@ -763,8 +763,8 @@ def _pick_provider(prompt: str = "Provider") -> str:
         print(f"\nKnown providers: {', '.join(known)}")
     try:
         raw = input(f"{prompt}: ").strip()
-    except (EOFError, KeyboardInterrupt):
-        raise SystemExit()
+    except (EOFError, KeyboardInterrupt) as exc:
+        raise SystemExit() from exc
     return _normalize_provider(raw)
 
 

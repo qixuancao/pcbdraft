@@ -21,7 +21,6 @@ from pcbdraft.interfaces.tui.mcp_security import validate_mcp_server_entry
 from pcbdraft.model.configuration import (
     cfg_get,
     get_env_value,
-    get_runtime_home,
     load_config,
     save_config,
     save_env_value,

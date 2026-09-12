@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Iterator
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from html import escape as html_escape
 from typing import Any, Literal
 

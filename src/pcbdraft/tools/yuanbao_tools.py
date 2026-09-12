@@ -437,7 +437,7 @@ async def send_dm(
 
 from pcbdraft.tools.registry import (
     registry,
-    tool_result,  # noqa: E402
+    tool_result,
 )
 
 

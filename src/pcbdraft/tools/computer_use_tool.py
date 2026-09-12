@@ -33,9 +33,9 @@ registry.register(
 
 
 __all__ = [
+    "check_computer_use_requirements",
     "handle_computer_use",
     "release_computer_use_session",
-    "set_approval_callback",
-    "check_computer_use_requirements",
     "release_computer_use_session",
+    "set_approval_callback",
 ]

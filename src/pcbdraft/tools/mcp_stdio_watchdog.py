@@ -132,7 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     # (`_kill_orphaned_mcp_children`, shutdown sweeps) still kills a wedged
     # server that ignores stdin EOF — otherwise the watchdog wrap would
     # invert the bug it fixes.
-    def _forward_shutdown(signum, frame):  # noqa: ARG001
+    def _forward_shutdown(signum, frame):
         _terminate_process_group(proc)
         sys.exit(128 + signum)
 

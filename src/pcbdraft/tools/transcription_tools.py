@@ -328,9 +328,7 @@ def _transcode_audio_for_stt(
         logger.error("ffmpeg STT transcode failed for %s: %s", file_path, details)
         return None, f"failed to transcode audio for the STT API: {details}"
     except Exception as exc:  # noqa: BLE001 - transcode is best-effort
-        logger.error(
-            "unexpected STT transcode failure for %s: %s", file_path, exc, exc_info=True
-        )
+        logger.exception("unexpected STT transcode failure for %s: %s", file_path, exc)
         return None, f"failed to transcode audio for the STT API: {exc}"
 
 
@@ -1655,9 +1653,7 @@ def _prepare_audio_for_transcription(
         return converted_path, temp_dir, None
     except Exception as exc:
         shutil.rmtree(temp_dir, ignore_errors=True)
-        logger.error(
-            "Failed to convert .silk audio %s: %s", file_path, exc, exc_info=True
-        )
+        logger.exception("Failed to convert .silk audio %s: %s", file_path, exc)
         return (
             None,
             None,
@@ -2116,7 +2112,7 @@ def _transcribe_local(
         return {"success": True, "transcript": transcript, "provider": "local"}
 
     except Exception as e:
-        logger.error("Local transcription failed: %s", e, exc_info=True)
+        logger.exception("Local transcription failed: %s", e)
         return {
             "success": False,
             "transcript": "",
@@ -2296,9 +2292,7 @@ def _transcribe_local_command(
             "error": f"Local STT failed: {details}",
         }
     except Exception as e:
-        logger.error(
-            "Unexpected error during local command transcription: %s", e, exc_info=True
-        )
+        logger.exception("Unexpected error during local command transcription: %s", e)
         return {
             "success": False,
             "transcript": "",
@@ -2399,7 +2393,7 @@ def _transcribe_groq(
     except APIError as e:
         return {"success": False, "transcript": "", "error": f"API error: {e}"}
     except Exception as e:
-        logger.error("Groq transcription failed: %s", e, exc_info=True)
+        logger.exception("Groq transcription failed: %s", e)
         return {
             "success": False,
             "transcript": "",
@@ -2553,7 +2547,7 @@ def _transcribe_openai(
     except APIError as e:
         return {"success": False, "transcript": "", "error": f"API error: {e}"}
     except Exception as e:
-        logger.error("%s transcription failed: %s", provider_label, e, exc_info=True)
+        logger.exception("%s transcription failed: %s", provider_label, e)
         return {
             "success": False,
             "transcript": "",
@@ -2628,7 +2622,7 @@ def _transcribe_mistral(
             "error": f"Permission denied: {file_path}",
         }
     except Exception as e:
-        logger.error("Mistral transcription failed: %s", e, exc_info=True)
+        logger.exception("Mistral transcription failed: %s", e)
         return {
             "success": False,
             "transcript": "",
@@ -2812,7 +2806,7 @@ def _transcribe_xai(
             "error": f"Permission denied: {file_path}",
         }
     except Exception as e:
-        logger.error("xAI STT transcription failed: %s", e, exc_info=True)
+        logger.exception("xAI STT transcription failed: %s", e)
         return {
             "success": False,
             "transcript": "",
@@ -2938,7 +2932,7 @@ def _transcribe_elevenlabs(
             "error": f"Permission denied: {file_path}",
         }
     except Exception as e:
-        logger.error("ElevenLabs STT transcription failed: %s", e, exc_info=True)
+        logger.exception("ElevenLabs STT transcription failed: %s", e)
         return {
             "success": False,
             "transcript": "",

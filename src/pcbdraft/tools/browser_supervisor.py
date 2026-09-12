@@ -629,7 +629,7 @@ class CDPSupervisor:
         try:
             asyncio.set_event_loop(loop)
             loop.run_until_complete(self._run())
-        except BaseException as e:  # noqa: BLE001 — propagate via _start_error
+        except BaseException as e:
             if not self._ready_event.is_set():
                 self._start_error = e
                 self._ready_event.set()
@@ -1536,17 +1536,17 @@ SUPERVISOR_REGISTRY = _SupervisorRegistry()
 
 
 __all__ = [
-    "CDPSupervisor",
-    "ConsoleEvent",
     "DEFAULT_DIALOG_POLICY",
     "DEFAULT_DIALOG_TIMEOUT_S",
     "DIALOG_POLICY_AUTO_ACCEPT",
     "DIALOG_POLICY_AUTO_DISMISS",
     "DIALOG_POLICY_MUST_RESPOND",
+    "SUPERVISOR_REGISTRY",
+    "CDPSupervisor",
+    "ConsoleEvent",
     "DialogRecord",
     "FrameInfo",
     "PendingDialog",
-    "SUPERVISOR_REGISTRY",
     "SupervisorSnapshot",
     "_SupervisorRegistry",
 ]

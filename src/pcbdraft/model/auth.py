@@ -1318,9 +1318,9 @@ def _file_lock(
                     lock_file.seek(0)
                     msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
                 break
-            except (BlockingIOError, OSError, PermissionError):
+            except (BlockingIOError, OSError, PermissionError) as exc:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError(timeout_message)
+                    raise TimeoutError(timeout_message) from exc
                 time.sleep(0.05)
 
         holder.depth = 1
@@ -3656,9 +3656,9 @@ def _spotify_interactive_setup(redirect_uri_hint: str) -> str:
 
     try:
         raw = input("Spotify Client ID: ").strip()
-    except (EOFError, KeyboardInterrupt):
+    except (EOFError, KeyboardInterrupt) as exc:
         print()
-        raise SystemExit("Spotify setup cancelled.")
+        raise SystemExit("Spotify setup cancelled.") from exc
 
     if not raw:
         print()
@@ -5575,9 +5575,11 @@ def _poll_for_token(
 
         try:
             error_payload = response.json()
-        except Exception:
+        except Exception as exc:
             response.raise_for_status()
-            raise RuntimeError("Token endpoint returned a non-JSON error response")
+            raise RuntimeError(
+                "Token endpoint returned a non-JSON error response"
+            ) from exc
 
         error_code = error_payload.get("error", "")
         if error_code == "authorization_pending":
@@ -8467,13 +8469,13 @@ def _xai_oauth_poll_device_token(
 
         try:
             error_payload = response.json()
-        except Exception:
+        except Exception as exc:
             response.raise_for_status()
             raise AuthError(
                 "xAI device-code token polling returned a non-JSON error response.",
                 provider="xai-oauth",
                 code="xai_device_token_failed",
-            )
+            ) from exc
         error_code = str(error_payload.get("error") or "")
         if error_code == "authorization_pending":
             time.sleep(current_interval)
@@ -8598,7 +8600,7 @@ def _codex_device_code_login() -> dict[str, Any]:
                 f"Failed to request device code: {exc}",
                 provider="openai-codex",
                 code="device_code_request_failed",
-            )
+            ) from exc
 
         if resp.status_code != 429:
             break
@@ -8683,9 +8685,9 @@ def _codex_device_code_login() -> dict[str, Any]:
                         provider="openai-codex",
                         code="device_code_poll_error",
                     )
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         print("\nLogin cancelled.")
-        raise SystemExit(130)
+        raise SystemExit(130) from exc
 
     if code_resp is None:
         raise AuthError(
@@ -8724,7 +8726,7 @@ def _codex_device_code_login() -> dict[str, Any]:
             f"Token exchange failed: {exc}",
             provider="openai-codex",
             code="token_exchange_failed",
-        )
+        ) from exc
 
     if token_resp.status_code == 429:
         retry_after = _parse_retry_after_seconds(getattr(token_resp, "headers", None))
@@ -9351,7 +9353,7 @@ def _login_minimax_oauth(args, pconfig: ProviderConfig) -> None:
         )
     except AuthError as exc:
         print(format_auth_error(exc))
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
 
 def _nous_device_code_login(
@@ -9494,7 +9496,7 @@ def _nous_device_code_login(
             print(f"  Subscribe here: {portal_url}/billing")
             print()
             print("After subscribing, run `pcbdraft connect` again to finish setup.")
-            raise SystemExit(1)
+            raise SystemExit(1) from exc
         raise
 
 
@@ -9799,12 +9801,12 @@ def _login_nous(args, pconfig: ProviderConfig) -> None:
             print(f"Default model set to: {selected_model}")
         print(f"  Config updated: {config_path} (model.provider=nous)")
 
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as exc:
         print("\nLogin cancelled.")
-        raise SystemExit(130)
+        raise SystemExit(130) from exc
     except Exception as exc:
         print(f"Login failed: {exc}")
-        raise SystemExit(1)
+        raise SystemExit(1) from exc
 
 
 def logout_command(args) -> None:

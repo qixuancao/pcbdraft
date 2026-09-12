@@ -771,10 +771,7 @@ def get_container_exec_info() -> dict | None:
 # =============================================================================
 
 # Re-export from hermes_constants — canonical definition lives there.
-from pcbdraft.core.runtime_environment import (
-    get_process_runtime_home,
-    get_runtime_home,
-)
+from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.core.runtime_utils import atomic_replace, fast_safe_load
 
 
@@ -1134,11 +1131,11 @@ def _set_nested(config, dotted_key: str, value):
         if isinstance(current, list):
             try:
                 idx = int(part)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError) as exc:
                 raise TypeError(
                     f"Cannot navigate into list at key {dotted_key!r}: "
                     f"segment {part!r} is not a numeric index"
-                )
+                ) from exc
             current = current[idx]
         elif isinstance(current, dict):
             existing = current.get(part)
@@ -6177,8 +6174,6 @@ def _inject_platform_plugin_env_vars() -> None:
         return
     _platform_plugin_env_vars_injected = True
     try:
-        import yaml  # type: ignore
-
         # Resolve the bundled plugins dir from this file's location so the
         # injector works regardless of CWD.
         repo_root = Path(__file__).resolve().parents[1]

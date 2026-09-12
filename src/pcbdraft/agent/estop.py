@@ -28,9 +28,8 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 SENTINEL_NAME = "ESTOP"

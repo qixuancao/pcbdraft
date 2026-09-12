@@ -1338,7 +1338,7 @@ def handle_function_call(
 
     _ts_mod = None
     try:
-        from pcbdraft.tools import tool_search as _ts_mod  # noqa: F401
+        from pcbdraft.tools import tool_search as _ts_mod
     except Exception:
         _ts_mod = None
 

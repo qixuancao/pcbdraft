@@ -16,7 +16,6 @@ import datetime as _dt
 import enum
 import json
 import logging
-import os
 import threading
 from pathlib import Path
 from typing import Any

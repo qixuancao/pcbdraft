@@ -1419,7 +1419,7 @@ def _check_structure(skill_dir: Path, ignore=None) -> list[Finding]:
             or any structural finding.
     """
     if ignore is None:
-        ignore = lambda _rel: False  # noqa: E731
+        ignore = lambda _rel: False
 
     findings = []
     file_count = 0

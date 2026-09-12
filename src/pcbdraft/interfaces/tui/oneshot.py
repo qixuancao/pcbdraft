@@ -30,6 +30,8 @@ from pathlib import Path
 from pcbdraft.agent.session_context import declare_stateless_channel
 from pcbdraft.model.fallback_config import get_fallback_chain
 
+logger = logging.getLogger(__name__)
+
 
 def _normalize_toolsets(toolsets: object = None) -> list[str] | None:
     if not toolsets:
@@ -270,7 +272,7 @@ def run_oneshot(
                     use_config_toolsets=use_config_toolsets,
                     max_iterations=max_iterations,
                 )
-            except BaseException as exc:  # noqa: BLE001
+            except BaseException as exc:
                 # Capture anything that escapes the agent (including OSError
                 # from prompt_toolkit/Vt100 when stdout is a non-TTY pipe,
                 # KeyboardInterrupt, SystemExit, etc.) so we can surface it on
@@ -338,7 +340,7 @@ def _create_session_db_for_oneshot():
 
         return SessionDB()
     except Exception as exc:
-        logging.debug("SQLite session store not available for oneshot mode: %s", exc)
+        logger.debug("SQLite session store not available for oneshot mode: %s", exc)
         return None
 
 
@@ -513,11 +515,11 @@ def _run_agent(
                 else:
                     agent.shutdown_memory_provider()
             except Exception:
-                logging.debug("oneshot memory/context cleanup failed", exc_info=True)
+                logger.debug("oneshot memory/context cleanup failed", exc_info=True)
             try:
                 agent.close()
             except Exception:
-                logging.debug("oneshot agent cleanup failed", exc_info=True)
+                logger.debug("oneshot agent cleanup failed", exc_info=True)
         # agent.close() calls session_db.end_session() but leaves the connection
         # open; close it here to checkpoint the WAL before os._exit skips
         # finalizers.
@@ -525,7 +527,7 @@ def _run_agent(
             try:
                 session_db.close()
             except Exception:
-                logging.debug("oneshot session store cleanup failed", exc_info=True)
+                logger.debug("oneshot session store cleanup failed", exc_info=True)
 
 
 def _oneshot_clarify_callback(question: str, choices=None, multi_select=False) -> str:

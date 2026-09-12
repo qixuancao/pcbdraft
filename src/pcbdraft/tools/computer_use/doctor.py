@@ -248,7 +248,7 @@ def _mcp_rpc(
     except (ValueError, TypeError) as e:
         raise RuntimeError(
             f"{method} response was not valid JSON: {e}\nraw: {line[:200]}"
-        )
+        ) from e
     if "error" in resp:
         raise RuntimeError(f"{method} JSON-RPC error: {resp['error']}")
     return resp

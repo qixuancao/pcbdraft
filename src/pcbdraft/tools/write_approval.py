@@ -153,9 +153,7 @@ def stage_write(
         )
         os.replace(tmp, path)
     except Exception as e:  # pragma: no cover - disk failure path
-        logger.error(
-            "Failed to stage pending %s write: %s", subsystem, e, exc_info=True
-        )
+        logger.exception("Failed to stage pending %s write: %s", subsystem, e)
     return record
 
 

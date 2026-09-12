@@ -72,10 +72,7 @@ def _redact_terminal_error_text(value: Any) -> str:
 # =============================================================================
 # Singularity helpers (scratch dir, SIF cache) now live in tools/environments/singularity.py
 from pcbdraft.tools.environments.singularity import _get_scratch_dir
-from pcbdraft.tools.interrupt import (
-    _interrupt_event,  # noqa: F401 — re-exported
-    is_interrupted,
-)
+from pcbdraft.tools.interrupt import _interrupt_event  # noqa: F401 — re-exported
 from pcbdraft.tools.registry import tool_error
 from pcbdraft.tools.shell_heredoc import strip_inert_heredoc_bodies
 from pcbdraft.tools.tool_backend_helpers import (
@@ -1510,11 +1507,11 @@ def _parse_env_var(
     raw = os.getenv(name, default)
     try:
         return converter(raw)
-    except (ValueError, json.JSONDecodeError):
+    except (ValueError, json.JSONDecodeError) as exc:
         raise ValueError(
             f"Invalid value for {name}: {raw!r} (expected {type_label}). "
             f"Check PCBDRAFT_RUNTIME_HOME/.env or environment variables."
-        )
+        ) from exc
 
 
 def _safe_getcwd() -> str:
@@ -2253,7 +2250,7 @@ def ensure_task_env(task_id: str | None = None):
                 task_id=effective_task_id,
                 host_cwd=_resolve_task_host_cwd(config, task_id),
             )
-        except Exception as exc:  # noqa: BLE001 — best-effort bring-up
+        except Exception as exc:
             logger.warning(
                 "Lazy %s environment init failed for task %s: %s",
                 env_type,
@@ -2307,7 +2304,7 @@ def cleanup_all_environments():
             cleanup_vm(task_id)
             cleaned += 1
         except Exception as e:
-            logger.error("Error cleaning %s: %s", task_id, e, exc_info=True)
+            logger.exception("Error cleaning %s: %s", task_id, e)
 
     # Also clean any orphaned directories
     scratch_dir = _get_scratch_dir()
@@ -4107,7 +4104,7 @@ def check_terminal_requirements() -> bool:
             )
             return False
     except Exception as e:
-        logger.error("Terminal requirements check failed: %s", e, exc_info=True)
+        logger.exception("Terminal requirements check failed: %s", e)
         return False
 
 

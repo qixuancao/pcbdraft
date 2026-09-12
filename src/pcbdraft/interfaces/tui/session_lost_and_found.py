@@ -170,10 +170,12 @@ def run_cli_lost_and_found_recover(
             _, load_err = load.communicate(timeout=timeout)
             dump_err = dump.stderr.read() if dump.stderr is not None else b""
             dump.wait(timeout=60)
-        except subprocess.TimeoutExpired:
+        except subprocess.TimeoutExpired as exc:
             dump.kill()
             load.kill()
-            raise LostAndFoundError(f"sqlite3 .recover timed out after {timeout:.0f}s")
+            raise LostAndFoundError(
+                f"sqlite3 .recover timed out after {timeout:.0f}s"
+            ) from exc
         attempt = {
             "command": command,
             "dump_returncode": dump.returncode,

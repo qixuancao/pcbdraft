@@ -221,7 +221,7 @@ from pcbdraft.interfaces.tui.cli_output import (
     print_success,
     print_warning,
 )
-from pcbdraft.interfaces.tui.secret_prompt import masked_secret_prompt  # noqa: E402
+from pcbdraft.interfaces.tui.secret_prompt import masked_secret_prompt
 
 
 def is_interactive_stdin() -> bool:

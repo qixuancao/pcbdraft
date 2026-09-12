@@ -39,7 +39,7 @@ import subprocess
 import threading
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -2365,28 +2365,28 @@ def run_kanban_goal_loop(
 
 
 __all__ = [
-    "GoalState",
+    "CONTINUATION_PROMPT_TEMPLATE",
+    "CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE",
+    "CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE",
+    "DEFAULT_MAX_TURNS",
+    "DRAFT_CONTRACT_SYSTEM_PROMPT",
+    "JUDGE_USER_PROMPT_TEMPLATE",
+    "JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE",
+    "JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE",
+    "KANBAN_GOAL_CONTINUATION_TEMPLATE",
+    "KANBAN_GOAL_FINALIZE_TEMPLATE",
     "GoalContract",
     "GoalGate",
     "GoalManager",
-    "parse_contract",
-    "draft_contract",
-    "run_gate",
-    "workspace_fingerprint",
-    "CONTINUATION_PROMPT_TEMPLATE",
-    "CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE",
-    "CONTINUATION_PROMPT_WITH_CONTRACT_TEMPLATE",
-    "JUDGE_USER_PROMPT_TEMPLATE",
-    "JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE",
-    "JUDGE_USER_PROMPT_WITH_CONTRACT_TEMPLATE",
-    "DRAFT_CONTRACT_SYSTEM_PROMPT",
-    "KANBAN_GOAL_CONTINUATION_TEMPLATE",
-    "KANBAN_GOAL_FINALIZE_TEMPLATE",
-    "DEFAULT_MAX_TURNS",
-    "load_goal",
-    "save_goal",
+    "GoalState",
     "clear_goal",
-    "migrate_goal_to_session",
+    "draft_contract",
     "judge_goal",
+    "load_goal",
+    "migrate_goal_to_session",
+    "parse_contract",
+    "run_gate",
     "run_kanban_goal_loop",
+    "save_goal",
+    "workspace_fingerprint",
 ]

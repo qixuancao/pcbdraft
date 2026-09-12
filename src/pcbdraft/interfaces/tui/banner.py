@@ -9,7 +9,6 @@ import os
 import shutil
 import subprocess
 import threading
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -71,7 +70,6 @@ def _skin_color(key: str, fallback: str) -> str:
 # ASCII Art & Branding
 # =========================================================================
 
-from pcbdraft.interfaces.tui import __release_date__ as RELEASE_DATE
 from pcbdraft.interfaces.tui import __version__ as VERSION
 
 PCBDRAFT_RUNTIME_AGENT_LOGO = "[bold #22c55e]PCBDraft[/bold #22c55e]"

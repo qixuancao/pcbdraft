@@ -24,9 +24,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = [
+    "EXECUTORS",
     "CommandContext",
     "CommandReply",
-    "EXECUTORS",
     "execute_command",
     "resolve_executor",
     "run_execute",
