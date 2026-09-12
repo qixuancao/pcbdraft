@@ -2791,13 +2791,13 @@ def run_conversation(
 
         # Log request details if verbose
         if agent.verbose_logging:
-            logging.debug(
+            logger.debug(
                 f"API Request - Model: {agent.model}, Messages: {len(messages)}, Tools: {len(agent.tools) if agent.tools else 0}"
             )
-            logging.debug(
+            logger.debug(
                 f"Last message role: {messages[-1]['role'] if messages else 'none'}"
             )
-            logging.debug(f"Total message size: ~{approx_tokens:,} tokens")
+            logger.debug(f"Total message size: ~{approx_tokens:,} tokens")
 
         api_start_time = time.time()
         retry_count = 0
@@ -3203,7 +3203,7 @@ def run_conversation(
                     resp_model = (
                         getattr(response, "model", "N/A") if response else "N/A"
                     )
-                    logging.debug(
+                    logger.debug(
                         f"API Response received - Model: {resp_model}, Usage: {response.usage if hasattr(response, 'usage') else 'N/A'}"
                     )
 
@@ -3389,7 +3389,7 @@ def run_conversation(
                             if not k.startswith("_")
                         }
                         if agent.verbose_logging:
-                            logging.debug(
+                            logger.debug(
                                 f"Response attributes for invalid response: {resp_attrs}"
                             )
 
@@ -4465,7 +4465,7 @@ def run_conversation(
                             )
 
                     if agent.verbose_logging:
-                        logging.debug(
+                        logger.debug(
                             f"Token usage: prompt={usage_dict['prompt_tokens']:,}, completion={usage_dict['completion_tokens']:,}, total={usage_dict['total_tokens']:,}"
                         )
 
@@ -7521,7 +7521,7 @@ def run_conversation(
                             if isinstance(raw_args, str)
                             else repr(raw_args)[:200]
                         )
-                        logging.debug(
+                        logger.debug(
                             "Tool call: %s with args: %s...",
                             tc.function.name,
                             args_preview,

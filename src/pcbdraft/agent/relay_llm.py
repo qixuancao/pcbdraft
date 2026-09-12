@@ -144,7 +144,7 @@ def execute(
             callback_error is not None
             and relay_runtime._is_relay_wrapped_callback_error(exc, callback_error)
         ):
-            raise callback_error
+            raise callback_error from exc
         if _recover_successful_callback(
             raw_response,
             relay_error=exc,
@@ -238,7 +238,7 @@ async def execute_async(
             callback_error is not None
             and relay_runtime._is_relay_wrapped_callback_error(exc, callback_error)
         ):
-            raise callback_error
+            raise callback_error from exc
         if _recover_successful_callback(
             raw_response,
             relay_error=exc,
@@ -672,7 +672,7 @@ class ManagedLlmStream(Iterator[Any]):
                 and relay_runtime._is_relay_wrapped_callback_error(exc, callback_error)
             ):
                 self._close(logical_outcome="failed")
-                raise callback_error
+                raise callback_error from exc
             if (
                 isinstance(exc, Exception)
                 and self._provider_completed

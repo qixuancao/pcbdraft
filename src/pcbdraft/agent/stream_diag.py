@@ -269,9 +269,9 @@ def emit_stream_drop(
 
 __all__ = [
     "STREAM_DIAG_HEADERS",
-    "stream_diag_init",
-    "stream_diag_capture_response",
+    "emit_stream_drop",
     "flatten_exception_chain",
     "log_stream_retry",
-    "emit_stream_drop",
+    "stream_diag_capture_response",
+    "stream_diag_init",
 ]

@@ -80,7 +80,7 @@ class CronExecutionEvent:
 
 
 __all__ = [
-    "GatewayHealthEvent",
-    "GatewayDiagnosticEvent",
     "CronExecutionEvent",
+    "GatewayDiagnosticEvent",
+    "GatewayHealthEvent",
 ]

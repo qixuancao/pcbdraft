@@ -2062,7 +2062,7 @@ def _write_pidfile_safely(pidfile: Path, pid: int) -> None:
         open_flags |= os.O_NOFOLLOW
     try:
         fd = os.open(str(pidfile), open_flags, 0o600)
-    except FileExistsError:
+    except FileExistsError as exc:
         # Pidfile already exists.  If it points at a live iron-proxy,
         # caller's _read_pid + _pid_alive at the top of start_proxy
         # should already have returned.  Reaching here means EITHER
@@ -2075,7 +2075,7 @@ def _write_pidfile_safely(pidfile: Path, pid: int) -> None:
                 f"Another iron-proxy start appears to be in progress "
                 f"(pidfile {pidfile} -> pid {existing_pid}).  "
                 "Stop iron-proxy if that proxy is stuck (see `pcbdraft doctor`)."
-            )
+            ) from exc
         # Stale — unlink and retry.
         try:
             pidfile.unlink()

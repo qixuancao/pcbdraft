@@ -1028,7 +1028,7 @@ def _begin_tool_execution(
                 "tool.started", function_name, preview, display_args
             )
         except Exception as callback_error:
-            logging.debug("Tool progress callback error: %s", callback_error)
+            logger.debug("Tool progress callback error: %s", callback_error)
 
     if agent.tool_start_callback:
         try:
@@ -1038,7 +1038,7 @@ def _begin_tool_execution(
             )
             agent.tool_start_callback(tool_call_id, function_name, display_args)
         except Exception as callback_error:
-            logging.debug("Tool start callback error: %s", callback_error)
+            logger.debug("Tool start callback error: %s", callback_error)
 
     if function_name in {"write_file", "patch"} and agent._checkpoint_mgr.enabled:
         try:
@@ -1432,11 +1432,10 @@ def execute_tool_calls_concurrent(
                 return
             except Exception as tool_error:
                 result = f"Error executing tool '{function_name}': {tool_error}"
-                logger.error(
+                logger.exception(
                     "_invoke_tool raised for %s: %s",
                     function_name,
                     tool_error,
-                    exc_info=True,
                 )
             duration = time.time() - start
             if not blocked and not dispatched:
@@ -1828,13 +1827,11 @@ def execute_tool_calls_concurrent(
                         is_error,
                     )
                 except Exception as _ver_err:
-                    logging.debug("file-mutation verifier record failed: %s", _ver_err)
+                    logger.debug("file-mutation verifier record failed: %s", _ver_err)
 
             if agent.verbose_logging:
-                logging.debug(
-                    "Tool %s completed in %.2fs", function_name, tool_duration
-                )
-                logging.debug(
+                logger.debug("Tool %s completed in %.2fs", function_name, tool_duration)
+                logger.debug(
                     "Tool result (%d chars): %s", len(function_result), function_result
                 )
 
@@ -1907,7 +1904,7 @@ def execute_tool_calls_concurrent(
                     result=display_function_result,
                 )
             except Exception as cb_err:
-                logging.debug("Tool progress callback error: %s", cb_err)
+                logger.debug("Tool progress callback error: %s", cb_err)
 
         # Print cute message per tool
         if agent._should_emit_quiet_tool_messages():
@@ -1946,7 +1943,7 @@ def execute_tool_calls_concurrent(
                     display_function_result,
                 )
             except Exception as cb_err:
-                logging.debug("Tool complete callback error: %s", cb_err)
+                logger.debug("Tool complete callback error: %s", cb_err)
 
         if (
             risk_metadata is not None
@@ -1963,7 +1960,7 @@ def execute_tool_calls_concurrent(
                     risk_metadata=risk_metadata,
                 )
             except Exception as cb_err:
-                logging.debug("Tool output risk callback error: %s", cb_err)
+                logger.debug("Tool output risk callback error: %s", cb_err)
 
     # ── Per-turn aggregate budget enforcement ─────────────────────────
     # Keep /steer pending until the final post-budget drain below.  The model
@@ -2596,11 +2593,10 @@ def execute_tool_calls_sequential(
                         "error": f"Context engine tool '{function_name}' failed: {tool_error}"
                     }
                 )
-                logger.error(
+                logger.exception(
                     "context_engine.handle_tool_call raised for %s: %s",
                     function_name,
                     tool_error,
-                    exc_info=True,
                 )
             finally:
                 tool_duration = time.time() - tool_start_time
@@ -2665,11 +2661,10 @@ def execute_tool_calls_sequential(
                 function_result = json.dumps(
                     {"error": f"Memory tool '{function_name}' failed: {tool_error}"}
                 )
-                logger.error(
+                logger.exception(
                     "memory_manager.handle_tool_call raised for %s: %s",
                     function_name,
                     tool_error,
-                    exc_info=True,
                 )
             finally:
                 tool_duration = time.time() - tool_start_time
@@ -2778,11 +2773,10 @@ def execute_tool_calls_sequential(
                 function_result = (
                     f"Error executing tool '{function_name}': {tool_error}"
                 )
-                logger.error(
+                logger.exception(
                     "handle_function_call raised for %s: %s",
                     function_name,
                     tool_error,
-                    exc_info=True,
                 )
             finally:
                 tool_duration = time.time() - tool_start_time
@@ -2867,11 +2861,10 @@ def execute_tool_calls_sequential(
                 function_result = (
                     f"Error executing tool '{function_name}': {tool_error}"
                 )
-                logger.error(
+                logger.exception(
                     "handle_function_call raised for %s: %s",
                     function_name,
                     tool_error,
-                    exc_info=True,
                 )
             tool_duration = time.time() - tool_start_time
 
@@ -2962,7 +2955,7 @@ def execute_tool_calls_sequential(
                     _is_error_result,
                 )
             except Exception as _ver_err:
-                logging.debug("file-mutation verifier record failed: %s", _ver_err)
+                logger.debug("file-mutation verifier record failed: %s", _ver_err)
 
         agent._current_tool = None
         _status_suffix = " (error)" if _is_error_result else ""
@@ -2971,9 +2964,9 @@ def execute_tool_calls_sequential(
         )
 
         if agent.verbose_logging:
-            logging.debug("Tool %s completed in %.2fs", function_name, tool_duration)
+            logger.debug("Tool %s completed in %.2fs", function_name, tool_duration)
             _log_result = _multimodal_text_summary(function_result)
-            logging.debug("Tool result (%d chars): %s", len(_log_result), _log_result)
+            logger.debug("Tool result (%d chars): %s", len(_log_result), _log_result)
 
         display_function_result = function_result
         function_result = (
@@ -3032,7 +3025,7 @@ def execute_tool_calls_sequential(
                     result=display_function_result,
                 )
             except Exception as cb_err:
-                logging.debug("Tool progress callback error: %s", cb_err)
+                logger.debug("Tool progress callback error: %s", cb_err)
 
         if not _execution_blocked and agent.tool_complete_callback:
             try:
@@ -3047,7 +3040,7 @@ def execute_tool_calls_sequential(
                     display_function_result,
                 )
             except Exception as cb_err:
-                logging.debug("Tool complete callback error: %s", cb_err)
+                logger.debug("Tool complete callback error: %s", cb_err)
 
         if (
             risk_metadata is not None
@@ -3064,7 +3057,7 @@ def execute_tool_calls_sequential(
                     risk_metadata=risk_metadata,
                 )
             except Exception as cb_err:
-                logging.debug("Tool output risk callback error: %s", cb_err)
+                logger.debug("Tool output risk callback error: %s", cb_err)
 
         if (
             not agent.quiet_mode
@@ -3215,6 +3208,6 @@ def execute_tool_calls_segmented(
 
 __all__ = [
     "execute_tool_calls_concurrent",
-    "execute_tool_calls_sequential",
     "execute_tool_calls_segmented",
+    "execute_tool_calls_sequential",
 ]

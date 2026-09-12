@@ -24,7 +24,6 @@ import os
 import re
 import threading
 import time
-from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path

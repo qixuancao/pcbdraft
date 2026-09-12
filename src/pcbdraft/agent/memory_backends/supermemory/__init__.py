@@ -13,7 +13,7 @@ import re
 import threading
 import urllib.error
 import urllib.request
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 

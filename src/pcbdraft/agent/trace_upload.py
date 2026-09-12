@@ -29,7 +29,7 @@ import json
 import logging
 import os
 import uuid
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -126,11 +126,11 @@ def _tool_calls_to_blocks(tool_calls: Any, redact: bool) -> list[dict[str, Any]]
         if redact:
             try:
                 parsed = json.loads(_redact(json.dumps(parsed), redact))
-            except (json.JSONDecodeError, ValueError):
+            except (json.JSONDecodeError, ValueError) as exc:
                 logger.warning(
                     "Trace upload redacted tool arguments are not valid JSON; refusing upload"
                 )
-                raise TraceRedactionError(_REDACTION_BLOCKED_MESSAGE)
+                raise TraceRedactionError(_REDACTION_BLOCKED_MESSAGE) from exc
         blocks.append(
             {
                 "type": "tool_use",

@@ -41,9 +41,9 @@ from pcbdraft.agent.pet.state import derive_pet_state
 
 __all__ = [
     "DEFAULT_SCALE",
+    "FRAMES_PER_STATE",
     "FRAME_H",
     "FRAME_W",
-    "FRAMES_PER_STATE",
     "LOOP_MS",
     "STATE_ROWS",
     "PetState",

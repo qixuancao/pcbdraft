@@ -3271,7 +3271,7 @@ class AIAgent:
                         "message_count", len(existing.get("messages", []))
                     )
                     if existing_count > len(cleaned):
-                        logging.debug(
+                        logger.debug(
                             "Skipping session log overwrite: existing has %d messages, current has %d",
                             existing_count,
                             len(cleaned),
@@ -3304,7 +3304,7 @@ class AIAgent:
 
         except Exception as e:
             if self.verbose_logging:
-                logging.warning(f"Failed to save session log: {e}")
+                logger.warning(f"Failed to save session log: {e}")
 
     def interrupt(
         self, message: str | None = None, *, hard_cancel: bool = False
@@ -9256,10 +9256,9 @@ class AIAgent:
                                 session_id, durable_turn_lease
                             )
                         except Exception:
-                            logger.error(
+                            logger.exception(
                                 "Failed to release session turn lease: %s",
                                 session_id,
-                                exc_info=True,
                             )
                         if (
                             getattr(self, "_active_session_turn_lease_holder", None)

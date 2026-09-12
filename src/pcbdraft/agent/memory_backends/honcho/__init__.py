@@ -362,7 +362,6 @@ class HonchoMemoryProvider(MemoryProvider):
     def save_config(self, values, runtime_home):
         """Write config to $PCBDRAFT_RUNTIME_HOME/honcho.json (Honcho SDK native format)."""
         import json
-        import os
         from pathlib import Path
 
         config_path = Path(runtime_home) / "honcho.json"
@@ -438,13 +437,7 @@ class HonchoMemoryProvider(MemoryProvider):
                 self._cron_skipped = True
                 return
 
-            from pcbdraft.agent.memory_backends.honcho.client import (
-                HonchoClientConfig,
-                get_honcho_client,
-            )
-            from pcbdraft.agent.memory_backends.honcho.session import (
-                HonchoSessionManager,
-            )
+            from pcbdraft.agent.memory_backends.honcho.client import HonchoClientConfig
 
             cfg = HonchoClientConfig.from_global_config()
             if not cfg.enabled or not (cfg.api_key or cfg.base_url):

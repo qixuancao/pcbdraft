@@ -19,10 +19,7 @@ from cron.jobs import (
 from cron.scheduler import get_running_job_ids
 
 from pcbdraft.agent.monitoring.events import CronExecutionEvent
-from pcbdraft.agent.monitoring.gateway_health import (
-    GatewayHealthSnapshot,
-    GatewayMetric,
-)
+from pcbdraft.agent.monitoring.gateway_health import GatewayMetric
 from pcbdraft.core.clock import now as _pcbdraft_now
 
 logger = logging.getLogger(__name__)

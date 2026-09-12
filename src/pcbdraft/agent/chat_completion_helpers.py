@@ -2179,7 +2179,7 @@ def build_assistant_message(agent, assistant_message, finish_reason: str) -> dic
             reasoning_text = combined or None
 
     if reasoning_text and agent.verbose_logging:
-        logging.debug(
+        logger.debug(
             f"Captured reasoning ({len(reasoning_text)} chars): {reasoning_text}"
         )
 
@@ -2520,7 +2520,7 @@ def try_activate_fallback(agent, reason: FailoverReason | None = None) -> bool:
             agent._rate_limit_backoff_count = backoff_count + 1
             backoff_seconds = min(60 * (2**backoff_count), 14400)
             agent._rate_limited_until = time.monotonic() + backoff_seconds
-            logging.info(
+            logger.info(
                 "Rate-limit backoff level %d: cooldown %d s (%.1f min, backoff#%d)",
                 backoff_count,
                 backoff_seconds,
@@ -3375,7 +3375,7 @@ def cleanup_task_resources(agent, task_id: str) -> None:
     try:
         if is_persistent_env(task_id):
             if agent.verbose_logging:
-                logging.debug(
+                logger.debug(
                     f"Skipping per-turn cleanup_vm for persistent env {task_id}; "
                     f"idle reaper will handle it."
                 )
@@ -3394,7 +3394,7 @@ def cleanup_task_resources(agent, task_id: str) -> None:
             headed = bool(os.environ.get("AGENT_BROWSER_HEADED"))
         if headed:
             if agent.verbose_logging:
-                logging.debug(
+                logger.debug(
                     f"Skipping per-turn cleanup_browser for headed session {task_id}; "
                     f"idle reaper will handle it."
                 )
@@ -5589,11 +5589,11 @@ def interruptible_streaming_api_call(agent, api_kwargs: dict, *, on_first_delta=
 
 
 __all__ = [
-    "interruptible_api_call",
     "build_api_kwargs",
     "build_assistant_message",
-    "try_activate_fallback",
-    "handle_max_iterations",
     "cleanup_task_resources",
+    "handle_max_iterations",
+    "interruptible_api_call",
     "interruptible_streaming_api_call",
+    "try_activate_fallback",
 ]

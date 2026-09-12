@@ -150,4 +150,4 @@ def shift_baseline(
     return out
 
 
-__all__ = ["build_line_shift", "shift_diagnostic_range", "shift_baseline"]
+__all__ = ["build_line_shift", "shift_baseline", "shift_diagnostic_range"]

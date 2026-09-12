@@ -139,7 +139,6 @@ import json
 import logging
 import os
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -148,7 +147,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 

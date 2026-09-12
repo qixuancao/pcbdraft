@@ -36,7 +36,7 @@ import threading
 from collections.abc import Callable
 from typing import Generic, TypeVar
 
-__all__ = ["lazy_singleton", "SingletonSlot"]
+__all__ = ["SingletonSlot", "lazy_singleton"]
 
 T = TypeVar("T")
 

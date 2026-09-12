@@ -71,7 +71,7 @@ def execute(
             callback_error is not None
             and relay_runtime._is_relay_wrapped_callback_error(exc, callback_error)
         ):
-            raise callback_error
+            raise callback_error from exc
         if (
             isinstance(exc, Exception)
             and callback_error is None

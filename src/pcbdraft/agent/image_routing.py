@@ -853,7 +853,7 @@ def build_native_content_parts(
 
 
 __all__ = [
-    "decide_image_input_mode",
     "build_native_content_parts",
+    "decide_image_input_mode",
     "extract_image_refs",
 ]

@@ -30,9 +30,9 @@ from pathlib import Path
 from typing import Generic, TypeVar
 
 __all__ = [
-    "FetchResult",
     "CachedFetch",
     "DiskCache",
+    "FetchResult",
     "is_valid_env_name",
     "resolve_cache_home",
 ]

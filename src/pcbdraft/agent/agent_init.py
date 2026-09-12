@@ -1573,7 +1573,7 @@ def init_agent(
                 else:
                     print("⚠️  Warning: API key appears invalid or missing")
         except Exception as e:
-            raise RuntimeError(f"Failed to initialize OpenAI client: {e}")
+            raise RuntimeError(f"Failed to initialize OpenAI client: {e}") from e
 
     # Keep a stable identity for the pool entry that supplied this runtime.
     # OAuth refreshes can replace the runtime token before a failed request is

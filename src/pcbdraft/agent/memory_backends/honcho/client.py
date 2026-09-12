@@ -1290,7 +1290,6 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
     def _build() -> Honcho:
         # Lazy dependency failures fall through to the canonical import error.
         try:
-            from pcbdraft.tools.lazy_deps import FeatureUnavailable
             from pcbdraft.tools.lazy_deps import ensure as _lazy_ensure
 
             _lazy_ensure("memory.honcho", prompt=False)
@@ -1304,12 +1303,12 @@ def get_honcho_client(config: HonchoClientConfig | None = None) -> Honcho:
 
         try:
             from honcho import Honcho
-        except ImportError:
+        except ImportError as exc:
             raise ImportError(
                 "honcho-ai is required for Honcho integration. "
                 "Install it with: pip install honcho-ai  "
                 "(see `pcbdraft --help` for configuration)."
-            )
+            ) from exc
 
         # Allow config.yaml honcho.base_url to override the SDK's environment
         # mapping, enabling remote self-hosted Honcho deployments without

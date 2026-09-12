@@ -497,27 +497,27 @@ def _sanitize_structure_non_ascii(payload: Any) -> bool:
 
 __all__ = [
     "_SURROGATE_RE",
-    "close_interrupted_tool_sequence",
-    "_sanitize_surrogates",
-    "_sanitize_structure_surrogates",
-    "_sanitize_messages_surrogates",
     "_escape_invalid_chars_in_json_strings",
     "_repair_tool_call_arguments",
-    "_strip_non_ascii",
     "_sanitize_messages_non_ascii",
+    "_sanitize_messages_surrogates",
+    "_sanitize_structure_non_ascii",
+    "_sanitize_structure_surrogates",
+    "_sanitize_surrogates",
     "_sanitize_tools_non_ascii",
     "_strip_images_from_messages",
-    "_sanitize_structure_non_ascii",
+    "_strip_non_ascii",
+    "apply_reasoning_content_policy",
+    "close_interrupted_tool_sequence",
+    "coalesce_tool_call_id",
     # call_id policy owners (F4 consolidation)
     "deterministic_call_id",
-    "coalesce_tool_call_id",
-    "uniquify_tool_call_ids",
-    # reasoning_content policy owners (F4 consolidation)
-    "reasoning_echo_family",
     "matches_reasoning_echo_family",
     "needs_reasoning_echo",
-    "apply_reasoning_content_policy",
     "reapply_reasoning_echo",
+    # reasoning_content policy owners (F4 consolidation)
+    "reasoning_echo_family",
+    "uniquify_tool_call_ids",
 ]
 
 

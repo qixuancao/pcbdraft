@@ -122,9 +122,9 @@ def truncate(s: str, *, limit: int = MAX_TOTAL_CHARS) -> str:
 
 
 __all__ = [
-    "SEVERITY_NAMES",
     "DEFAULT_SEVERITIES",
     "MAX_PER_FILE",
+    "SEVERITY_NAMES",
     "format_diagnostic",
     "report_for_file",
     "truncate",

@@ -205,7 +205,7 @@ TelemetryEmitter = MonitoringEmitter
 __all__ = [
     "MonitoringEmitter",
     "TelemetryEmitter",
-    "get_emitter",
     "emit",
+    "get_emitter",
     "reset_emitter_for_tests",
 ]

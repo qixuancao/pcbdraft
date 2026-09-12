@@ -218,16 +218,16 @@ def reset_announce_caches() -> None:
 
 __all__ = [
     "event_log",
-    "log_clean",
-    "log_disabled",
     "log_active",
+    "log_clean",
     "log_diagnostics",
+    "log_disabled",
     "log_no_project_root",
-    "log_server_unavailable",
     "log_no_server_configured",
-    "log_timeout",
-    "log_server_error",
-    "log_spawn_failed",
     "log_reaped",
+    "log_server_error",
+    "log_server_unavailable",
+    "log_spawn_failed",
+    "log_timeout",
     "reset_announce_caches",
 ]

@@ -438,7 +438,7 @@ def detect_status(pkg: str) -> str:
 
 __all__ = [
     "INSTALL_RECIPES",
-    "try_install",
     "detect_status",
     "pcbdraft_lsp_bin_dir",
+    "try_install",
 ]

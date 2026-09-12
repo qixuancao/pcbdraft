@@ -181,15 +181,15 @@ def classify_message(msg: dict) -> tuple[str, Any]:
 
 __all__ = [
     "ERROR_CONTENT_MODIFIED",
-    "ERROR_REQUEST_CANCELLED",
     "ERROR_METHOD_NOT_FOUND",
+    "ERROR_REQUEST_CANCELLED",
     "LSPProtocolError",
     "LSPRequestError",
-    "encode_message",
-    "read_message",
-    "make_request",
-    "make_notification",
-    "make_response",
-    "make_error_response",
     "classify_message",
+    "encode_message",
+    "make_error_response",
+    "make_notification",
+    "make_request",
+    "make_response",
+    "read_message",
 ]

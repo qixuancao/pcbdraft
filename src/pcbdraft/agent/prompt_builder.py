@@ -26,7 +26,6 @@ from pcbdraft.agent.skill_utils import (
     get_all_skills_dirs,
     get_disabled_skill_names,
     iter_skill_index_files,
-    org_id_of_path,
     parse_frontmatter,
     read_active_org_id,
     skill_matches_environment,

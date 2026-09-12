@@ -556,11 +556,11 @@ class GatewayDiagnosticLogHandler(logging.Handler):
 
 
 __all__ = [
-    "GatewayMetric",
-    "GatewayHealthSnapshot",
     "GatewayDiagnosticLogHandler",
+    "GatewayHealthSnapshot",
+    "GatewayMetric",
     "build_gateway_health_snapshot",
     "classify_gateway_error",
-    "source_logger_for_export",
     "redact_gateway_message",
+    "source_logger_for_export",
 ]

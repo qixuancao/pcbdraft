@@ -55,7 +55,6 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.agent.extensions.capabilities import (
-    CAPABILITY_REGISTRY,
     VALID_CAPABILITY_IDS,
     plugin_capability_granted,
 )

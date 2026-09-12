@@ -1246,11 +1246,11 @@ def language_id_for(path: str) -> str:
 
 
 __all__ = [
-    "ServerDef",
-    "ServerContext",
-    "SpawnSpec",
+    "LANGUAGE_BY_EXT",
     "SERVERS",
+    "ServerContext",
+    "ServerDef",
+    "SpawnSpec",
     "find_server_for_file",
     "language_id_for",
-    "LANGUAGE_BY_EXT",
 ]

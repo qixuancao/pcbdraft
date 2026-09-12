@@ -20,7 +20,6 @@ from pcbdraft.agent.memory_backends.mem0._oss_providers import (
     VECTOR_PROVIDERS,
     validate_oss_config,
 )
-from pcbdraft.core.runtime_environment import get_runtime_home
 
 
 def _curses_select(title: str, items: list[tuple[str, str]], default: int = 0) -> int:

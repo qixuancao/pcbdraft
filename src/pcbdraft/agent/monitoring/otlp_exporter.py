@@ -80,7 +80,7 @@ def _require_sdk(*, auto_install: bool = True, prompt: bool = True):
             "OTLP export requires the optional dependency. Install with:\n"
             "    pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http\n"
             f"(import error: {e})"
-        )
+        ) from e
 
 
 def _resolve_headers(headers_env: dict[str, str] | None) -> dict[str, str]:
@@ -296,8 +296,8 @@ def start_streaming(
 
 
 __all__ = [
-    "OTLPUnavailable",
     "OTLPStreamer",
+    "OTLPUnavailable",
     "build_exporter",
     "export_batch",
     "is_available",

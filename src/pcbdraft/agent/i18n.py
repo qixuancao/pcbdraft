@@ -350,9 +350,9 @@ def t(key: str, lang: str | None = None, **format_kwargs: Any) -> str:
 
 
 __all__ = [
-    "SUPPORTED_LANGUAGES",
     "DEFAULT_LANGUAGE",
-    "t",
+    "SUPPORTED_LANGUAGES",
     "get_language",
     "reset_language_cache",
+    "t",
 ]

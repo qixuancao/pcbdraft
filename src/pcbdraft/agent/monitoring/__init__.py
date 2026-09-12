@@ -22,8 +22,8 @@ emit = emitter.emit
 get_emitter = emitter.get_emitter
 
 __all__ = [
+    "emit",
     "emitter",
     "events",
-    "emit",
     "get_emitter",
 ]

@@ -42,7 +42,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pcbdraft.agent.memory_provider import MemoryProvider, RecallStatus
@@ -1001,8 +1001,6 @@ class HindsightMemoryProvider(MemoryProvider):
 
     def post_setup(self, runtime_home: str, config: dict) -> None:
         """Custom setup wizard — installs only the deps needed for the selected mode."""
-        import shutil
-        import subprocess
         import sys
         from pathlib import Path
 
@@ -1554,7 +1552,7 @@ class HindsightMemoryProvider(MemoryProvider):
                 except ImportError:
                     pass
                 except Exception as _e:
-                    raise ImportError(str(_e))
+                    raise ImportError(str(_e)) from _e
                 from hindsight import HindsightEmbedded
 
                 HindsightEmbedded.__del__ = lambda self: None

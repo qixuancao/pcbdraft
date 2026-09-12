@@ -8,7 +8,7 @@ rate-limited provider concurrently.
 import random
 import threading
 import time
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from typing import Any
 
