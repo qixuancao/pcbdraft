@@ -64,6 +64,11 @@ class ProjectPickerDispatchTests(unittest.TestCase):
         self.assertEqual(
             controller._project_picker_query_from_input("/pr sensor"), "sensor"
         )
+        self.assertEqual(
+            controller._project_picker_query_from_input("/RES Power Board"),
+            "Power Board",
+        )
+        self.assertTrue(controller._should_handle_project_command_inline("/res"))
         self.assertEqual(controller._project_picker_query_from_input("/open"), "")
         self.assertIsNone(controller._project_picker_query_from_input("/open board-1"))
         self.assertTrue(
@@ -95,6 +100,56 @@ class ProjectPickerDispatchTests(unittest.TestCase):
 
         projects_handler.assert_called_once_with("sensor")
         controller._process_builtin_command.assert_not_called()
+
+    def test_unique_prefix_dispatch_preserves_project_arguments(self) -> None:
+        controller = _controller()
+        controller._process_builtin_command = Mock(
+            side_effect=AssertionError("/res must dispatch as /resume")
+        )
+        resume_handler = Mock(return_value="matching projects")
+
+        with (
+            patch(
+                "pcbdraft.interfaces.tui.project_commands.HANDLERS",
+                {"resume": resume_handler},
+            ),
+            patch(
+                "pcbdraft.agent.tool_bindings.get_current_project_id",
+                return_value="board-current",
+            ),
+            patch("pcbdraft.interfaces.tui.app._cprint"),
+        ):
+            self.assertTrue(controller.process_command("/RES Sensor HUB"))
+
+        resume_handler.assert_called_once_with("Sensor HUB")
+        controller._process_builtin_command.assert_not_called()
+
+    def test_ambiguous_prefix_does_not_dispatch_a_project_command(self) -> None:
+        controller = _controller()
+        project_handler = Mock()
+        projects_handler = Mock()
+
+        with (
+            patch(
+                "pcbdraft.interfaces.tui.project_commands.HANDLERS",
+                {"project": project_handler, "projects": projects_handler},
+            ),
+            patch("pcbdraft.interfaces.tui.app._cprint") as rendered,
+        ):
+            self.assertTrue(controller.process_command("/pro Sensor HUB"))
+
+        project_handler.assert_not_called()
+        projects_handler.assert_not_called()
+        self.assertIn("Unknown command", str(rendered.call_args.args[0]))
+
+    def test_unique_builtin_prefix_dispatches_with_original_arguments(self) -> None:
+        controller = _controller()
+        controller._handle_goal_command = Mock()
+
+        with patch("pcbdraft.interfaces.tui.app._cprint"):
+            self.assertTrue(controller.process_command("/GO Keep Mixed CASE"))
+
+        controller._handle_goal_command.assert_called_once_with("/GO Keep Mixed CASE")
 
 
 class ProjectPickerStateAndRenderTests(unittest.TestCase):
@@ -266,6 +321,30 @@ class ProjectPickerControllerTests(unittest.TestCase):
 
                 self.assertEqual(rotate.call_count, expected_rotations)
                 controller._close_project_picker.assert_called_once_with()
+
+    def test_same_project_with_empty_history_restores_its_conversation(self) -> None:
+        selected = _project(1)
+        controller = _controller()
+        controller.conversation_history = []
+        controller._project_picker_state = ProjectPickerState.create([selected])
+
+        with (
+            patch(
+                "pcbdraft.agent.tool_bindings.get_current_project_id",
+                side_effect=(selected["id"], selected["id"]),
+            ),
+            patch(
+                "pcbdraft.interfaces.tui.project_commands.handle_open",
+                return_value="opened",
+            ),
+            patch(
+                "pcbdraft.interfaces.terminal._rotate_project_conversation"
+            ) as rotate,
+            patch("pcbdraft.interfaces.tui.app._cprint"),
+        ):
+            self.assertTrue(controller._handle_project_picker_selection())
+
+        rotate.assert_called_once_with(controller, selected["id"])
 
     def test_active_or_pending_work_blocks_open_and_confirmation(self) -> None:
         selected = _project(0)

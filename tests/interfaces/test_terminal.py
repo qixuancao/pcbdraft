@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from pcbdraft.agent.tool_bindings import (
     _set_service,
@@ -20,7 +20,13 @@ from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.legacy_migration import migrate_legacy_runtime_home
 from pcbdraft.core.repository import configure_repository
 from pcbdraft.core.runtime_paths import runtime_home
-from pcbdraft.interfaces.terminal import _take_deferred_connection, launch_cli
+from pcbdraft.interfaces.terminal import (
+    _project_ids_from_session_history,
+    _resume_project_conversation,
+    _take_deferred_connection,
+    _validated_project_session_id,
+    launch_cli,
+)
 from pcbdraft.interfaces.tui.project_commands import (
     BUILTIN_COMMANDS,
     HANDLERS,
@@ -653,6 +659,93 @@ class SlashHandlerTests(unittest.TestCase):
             )
         switch.assert_not_called()
         self.assertIn("one persistent model", str(rendered.call_args.args[0]))
+
+
+class ProjectConversationResumeTests(unittest.TestCase):
+    @staticmethod
+    def _tool_message(project_id: str) -> dict[str, Any]:
+        return {
+            "role": "tool",
+            "tool_name": "pcb_inspect_project",
+            "content": json.dumps(
+                {
+                    "tool": "pcb_inspect_project",
+                    "success": True,
+                    "project_id": project_id,
+                }
+            ),
+        }
+
+    def test_project_ids_require_structured_pcb_tool_results(self) -> None:
+        messages = [
+            {"role": "assistant", "content": "project_id=board-a"},
+            {
+                "role": "tool",
+                "tool_name": "terminal",
+                "content": '{"project_id":"board-b"}',
+            },
+            self._tool_message("board-c"),
+        ]
+
+        self.assertEqual(_project_ids_from_session_history(messages), {"board-c"})
+
+    def test_latest_exact_single_project_session_is_selected(self) -> None:
+        histories = {
+            "mixed": [self._tool_message("board-a"), self._tool_message("board-b")],
+            "exact": [self._tool_message("board-a")],
+        }
+
+        class FakeSessionDB:
+            def list_sessions_rich(self, **_kwargs):
+                return [{"id": "mixed"}, {"id": "exact"}]
+
+            def get_session(self, session_id):
+                return {"id": session_id, "source": "cli"}
+
+            def resolve_resume_session_id(self, session_id):
+                return session_id
+
+            def assert_resume_safe(self, _session_id):
+                return 0
+
+            def get_resume_conversations(self, session_id):
+                history = histories[session_id]
+                return ([{"role": "user", "content": "continue"}], history)
+
+        cli = SimpleNamespace(_session_db=FakeSessionDB())
+        with tempfile.TemporaryDirectory() as temporary:
+            service = SimpleNamespace(project_root=lambda _project_id: Path(temporary))
+            with patch(
+                "pcbdraft.agent.tool_bindings.get_service", return_value=service
+            ):
+                selected = _validated_project_session_id(cli, "board-a")
+
+        self.assertEqual(selected, "exact")
+
+    def test_resume_reuses_existing_session_loader_and_display(self) -> None:
+        cli = SimpleNamespace(
+            session_id="new-session",
+            conversation_history=[],
+            _handle_resume_command=Mock(),
+        )
+
+        def resume(command: str, *, force_display: bool = False) -> None:
+            self.assertEqual(command, "/resume old-session")
+            self.assertTrue(force_display)
+            cli.session_id = "old-session"
+            cli.conversation_history = [{"role": "user", "content": "restored"}]
+
+        cli._handle_resume_command.side_effect = resume
+        with patch(
+            "pcbdraft.interfaces.terminal._validated_project_session_id",
+            return_value="old-session",
+        ):
+            restored = _resume_project_conversation(cli, "board-a")
+
+        self.assertTrue(restored)
+        cli._handle_resume_command.assert_called_once_with(
+            "/resume old-session", force_display=True
+        )
 
 
 class CommandSurfaceTests(unittest.TestCase):

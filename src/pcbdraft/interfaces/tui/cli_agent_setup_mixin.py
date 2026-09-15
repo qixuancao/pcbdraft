@@ -806,7 +806,7 @@ class CLIAgentSetupMixin:
 
         return True
 
-    def _display_resumed_history(self):
+    def _display_resumed_history(self, *, force: bool = False):
         """Render a compact recap of previous conversation messages.
 
         Uses Rich markup with dim/muted styling so the recap is visually
@@ -831,7 +831,7 @@ class CLIAgentSetupMixin:
             return
 
         # Check config: resume_display setting
-        if self.resume_display == "minimal":
+        if self.resume_display == "minimal" and not force:
             return
 
         # Read limits from config (with hardcoded defaults)

@@ -198,6 +198,38 @@ def resolve_command(name: str) -> CommandDef | None:
     return _COMMAND_LOOKUP.get(name.lower().lstrip("/"))
 
 
+def resolve_tui_command(name: str) -> CommandDef | None:
+    """Resolve an exact TUI command or an unambiguous command prefix.
+
+    Exact canonical names and aliases always win.  Otherwise, the prefix must
+    identify exactly one command definition; multiple matching spellings that
+    belong to the same command (its name and aliases) count as one target.
+
+    This intentionally remains separate from :func:`resolve_command` so
+    gateway and programmatic dispatch continue to require exact command names.
+    """
+    token = name.casefold().lstrip("/")
+    if not token:
+        return None
+
+    exact = _COMMAND_LOOKUP.get(token)
+    if exact is not None and not exact.gateway_only:
+        return exact
+
+    matches: dict[str, CommandDef] = {}
+    for command in COMMAND_REGISTRY:
+        if command.gateway_only:
+            continue
+        if any(
+            spelling.casefold().startswith(token)
+            for spelling in (command.name, *command.aliases)
+        ):
+            matches[command.name] = command
+    if len(matches) == 1:
+        return next(iter(matches.values()))
+    return None
+
+
 def _build_description(cmd: CommandDef) -> str:
     """Build a CLI-facing description string including usage hint."""
     if cmd.args_hint:
@@ -1770,12 +1802,13 @@ class SlashCommandCompleter(Completer):
             return
 
         word = text[1:]
+        word_lower = word.casefold()
 
         for cmd, desc in COMMANDS.items():
             if not self._command_allowed(cmd):
                 continue
             cmd_name = cmd[1:]
-            if cmd_name.startswith(word):
+            if cmd_name.casefold().startswith(word_lower):
                 yield Completion(
                     self._completion_text(cmd_name, word),
                     start_position=-len(word),

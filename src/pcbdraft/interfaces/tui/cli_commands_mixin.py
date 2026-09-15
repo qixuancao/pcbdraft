@@ -1049,7 +1049,9 @@ class CLICommandsMixin:
         _cprint("  Your CLI session is intact.")
         return True
 
-    def _handle_resume_command(self, cmd_original: str) -> None:
+    def _handle_resume_command(
+        self, cmd_original: str, *, force_display: bool = False
+    ) -> None:
         """Handle /resume <session_id_or_title> — switch to a previous session mid-conversation."""
         from pcbdraft.interfaces.tui.app import _cprint, _sync_process_session_id
 
@@ -1229,7 +1231,7 @@ class CLICommandsMixin:
                 f" ({msg_count} user message{'s' if msg_count != 1 else ''},"
                 f" {len(self.conversation_history)} total)"
             )
-            self._display_resumed_history()
+            self._display_resumed_history(force=force_display)
         else:
             _cprint(
                 f"  ↻ Resumed session {target_id}{title_part} — no messages, starting fresh."

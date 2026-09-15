@@ -11949,10 +11949,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if not text or has_images or not _looks_like_slash_command(text):
             return False
         try:
-            from pcbdraft.interfaces.tui.commands import resolve_command
+            from pcbdraft.interfaces.tui.commands import resolve_tui_command
 
             base = text.split(None, 1)[0].lower().lstrip("/")
-            cmd = resolve_command(base)
+            cmd = resolve_tui_command(base)
             return bool(cmd and cmd.name == "model")
         except Exception:
             return False
@@ -11965,10 +11965,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if not text or has_images or not _looks_like_slash_command(text):
             return None
         try:
-            from pcbdraft.interfaces.tui.commands import resolve_command
+            from pcbdraft.interfaces.tui.commands import resolve_tui_command
 
             parts = text.strip().split(None, 1)
-            command = resolve_command(parts[0].lstrip("/").casefold())
+            command = resolve_tui_command(parts[0].lstrip("/").casefold())
             if command is None or command.name not in {
                 "new",
                 "open",
@@ -12098,9 +12098,11 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         try:
             result = handle_open(str(selected.get("id") or ""))
             current_id = get_current_project_id()
-            if current_id != previous_id:
+            if current_id != previous_id or not getattr(
+                self, "conversation_history", None
+            ):
                 try:
-                    _rotate_project_conversation(self)
+                    _rotate_project_conversation(self, current_id)
                 except Exception as exc:
                     set_current_project_id(previous_id)
                     _cprint(f"  ✗ Could not switch PCB project: {exc}")
@@ -12133,10 +12135,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if not getattr(self, "_agent_running", False):
             return False
         try:
-            from pcbdraft.interfaces.tui.commands import resolve_command
+            from pcbdraft.interfaces.tui.commands import resolve_tui_command
 
             base = text.split(None, 1)[0].lower().lstrip("/")
-            cmd = resolve_command(base)
+            cmd = resolve_tui_command(base)
             return bool(cmd and cmd.name == "steer")
         except Exception:
             return False
@@ -12165,10 +12167,10 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         if not getattr(self, "_agent_running", False):
             return False
         try:
-            from pcbdraft.interfaces.tui.commands import resolve_command
+            from pcbdraft.interfaces.tui.commands import resolve_tui_command
 
             base = text.split(None, 1)[0].lower().lstrip("/")
-            cmd = resolve_command(base)
+            cmd = resolve_tui_command(base)
             return bool(cmd and cmd.name == "background")
         except Exception:
             return False
@@ -12328,9 +12330,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         tokens = command.strip().split(None, 1)
         raw_base = tokens[0].lstrip("/").casefold() if tokens else ""
         raw_args = tokens[1].strip() if len(tokens) > 1 else ""
-        from pcbdraft.interfaces.tui.commands import resolve_command
+        from pcbdraft.interfaces.tui.commands import resolve_tui_command
 
-        resolved = resolve_command(raw_base)
+        resolved = resolve_tui_command(raw_base)
         base = resolved.name if resolved is not None else raw_base
         if base == "connect" or (base == "model" and raw_args in {"", "--refresh"}):
             options = (
@@ -12350,7 +12352,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return True
         handler = HANDLERS.get(base)
         if handler is None:
-            if not base or resolve_command(base) is None:
+            if not base or resolved is None:
                 _cprint("  Unknown command. Use /help for available commands.")
                 return True
             return self._process_builtin_command(command)
@@ -12364,10 +12366,16 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             current_project_id = get_current_project_id()
             should_rotate = base in {"new", "project"} or (
                 current_project_id != previous_project_id
+            ) or (
+                base in {"open", "resume"}
+                and not getattr(self, "conversation_history", None)
             )
             if should_rotate:
                 try:
-                    _rotate_project_conversation(self)
+                    _rotate_project_conversation(
+                        self,
+                        current_project_id if base in {"open", "resume"} else None,
+                    )
                 except Exception:
                     set_current_project_id(previous_project_id)
                     raise
@@ -12391,7 +12399,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
 
         # Resolve aliases via central registry so adding an alias is a one-line
         # change in pcbdraft.interfaces.tui/commands.py instead of touching every dispatch site.
-        from pcbdraft.interfaces.tui.commands import resolve_command as _resolve_cmd
+        from pcbdraft.interfaces.tui.commands import (
+            resolve_tui_command as _resolve_cmd,
+        )
 
         _base_word = cmd_lower.split()[0].lstrip("/")
         _cmd_def = _resolve_cmd(_base_word)
@@ -13155,34 +13165,20 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         f"[bold red]Failed to load skill for {base_cmd}[/]"
                     )
             else:
-                # Prefix matching: if input uniquely identifies one command, execute it.
-                # Matches against both built-in COMMANDS and installed skill commands so
-                # that execution-time resolution agrees with tab-completion.
+                # Retain direct-call compatibility for skill commands while
+                # refusing to guess when a prefix has multiple targets.
                 from pcbdraft.interfaces.tui.commands import COMMANDS
 
                 typed_base = cmd_lower.split()[0]
                 all_known = set(COMMANDS) | set(skill_commands) | set(skill_bundles)
                 matches = [c for c in all_known if c.startswith(typed_base)]
                 if len(matches) > 1:
-                    # Prefer an exact match (typed the full command name)
                     exact = [c for c in matches if c == typed_base]
                     if len(exact) == 1:
                         matches = exact
-                    else:
-                        # Prefer the unique shortest match:
-                        # /qui → /quit (5) wins over /quint-pipeline (15)
-                        min_len = min(len(c) for c in matches)
-                        shortest = [c for c in matches if len(c) == min_len]
-                        if len(shortest) == 1:
-                            matches = shortest
                 if len(matches) == 1:
-                    # Expand the prefix to the full command name, preserving arguments.
-                    # Guard against redispatching the same token to avoid infinite
-                    # recursion when the expanded name still doesn't hit an exact branch
-                    # (e.g. /config with extra args that are not yet handled above).
                     full_name = matches[0]
                     if full_name == typed_base:
-                        # Already an exact token — no expansion possible; fall through
                         _cprint(f"\033[1;31mUnknown command: {cmd_lower}{_RST}")
                         _cprint(
                             f"{_DIM}{_ACCENT}Type /help for available commands{_RST}"

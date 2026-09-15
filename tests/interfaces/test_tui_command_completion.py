@@ -16,6 +16,7 @@ from pcbdraft.interfaces.tui.commands import (
     SlashCommandAutoSuggest,
     SlashCommandCompleter,
     resolve_command,
+    resolve_tui_command,
 )
 
 
@@ -24,6 +25,29 @@ def _complete(completer: SlashCommandCompleter, text: str):
 
 
 class SlashCommandCompletionTests(unittest.TestCase):
+    def test_tui_resolver_accepts_only_unambiguous_case_insensitive_prefixes(
+        self,
+    ) -> None:
+        self.assertEqual(resolve_tui_command("/res").name, "resume")
+        self.assertEqual(resolve_tui_command("RES").name, "resume")
+
+        # Exact names and aliases win even when longer spellings share them.
+        self.assertEqual(resolve_tui_command("project").name, "project")
+        self.assertEqual(resolve_tui_command("pr").name, "projects")
+
+        # /re matches release, resume, retry, and review, so Enter must not
+        # guess one based on length or registry order.
+        self.assertIsNone(resolve_tui_command("/re"))
+        self.assertIsNone(resolve_tui_command("/unknown"))
+
+    def test_uppercase_prefix_has_the_same_dropdown_completion(self) -> None:
+        completions = _complete(SlashCommandCompleter(), "/RES")
+
+        self.assertEqual(
+            [completion.text for completion in completions],
+            ["resume"],
+        )
+
     def test_root_completion_contains_only_registered_commands(self) -> None:
         provider_calls: list[str] = []
 
