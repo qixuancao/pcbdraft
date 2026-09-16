@@ -14,6 +14,7 @@ from pcbdraft.agent.turns import TurnRecord
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.services.jobs import JobRunner
+from pcbdraft.services.project_history import legacy_project_messages
 
 SESSION_SCHEMA = "pcbdraft-gui-session"
 SESSION_VERSION = 2
@@ -120,6 +121,12 @@ class GuiSessionManager:
             (job for job in jobs if job.get("status") in _ACTIVE_JOB_STATES), None
         )
         messages = self._messages(turns)
+        legacy_session_id = None
+        if not messages:
+            legacy = legacy_project_messages(self.service, project_id)
+            if legacy is not None:
+                legacy_session_id, legacy_history = legacy
+                messages = self._legacy_messages(legacy_history, legacy_session_id)
         active_args = active.get("args") if isinstance(active, dict) else None
         active_turn_id = (
             active_args.get("turn_id") if isinstance(active_args, dict) else None
@@ -150,6 +157,7 @@ class GuiSessionManager:
             ),
             "pending_approval": pending,
             "messages": messages,
+            "legacy_session_id": legacy_session_id,
             "jobs": [self._public_job(job) for job in jobs[:MAX_VISIBLE_JOBS]],
             "canonical_revision": (
                 state.get("revision") if isinstance(state, dict) else None
@@ -201,6 +209,42 @@ class GuiSessionManager:
                     }
                 )
         return messages[-MAX_MESSAGES:]
+
+    @staticmethod
+    def _legacy_messages(
+        history: list[dict[str, Any]], session_id: str
+    ) -> list[dict[str, Any]]:
+        """Project-scoped display projection for pre-GUI CLI transcripts."""
+
+        messages: list[dict[str, Any]] = []
+        for index, message in enumerate(history[-MAX_MESSAGES:]):
+            role = message.get("role")
+            text = GuiSessionManager._legacy_text(message.get("content"))
+            if role not in {"user", "assistant"} or not text:
+                continue
+            messages.append(
+                {
+                    "id": f"legacy-{session_id}-{index}",
+                    "turn_id": session_id,
+                    "role": role,
+                    "text": _bounded_text(text),
+                    "status": "completed",
+                    "created_at": "",
+                }
+            )
+        return messages
+
+    @staticmethod
+    def _legacy_text(content: object) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return " ".join(
+                str(part.get("text") or "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ).strip()
+        return ""
 
     @staticmethod
     def _public_job(job: dict[str, Any]) -> dict[str, Any]:
