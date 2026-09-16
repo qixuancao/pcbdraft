@@ -46,6 +46,20 @@ test("a saved response that differs from the preview is rendered as authoritativ
   )
 })
 
+test("status output separates a resumed preview without changing its final text", () => {
+  const output: string[] = []
+  const preview = new AssistantPreview("turn-1", (text) => output.push(text))
+
+  preview.consume(delta("turn-1", "Hello "))
+  preview.status("Connection resumed\n")
+  preview.consume(delta("turn-1", "world"))
+  preview.finish([saved("Hello world")], "idle")
+
+  expect(output.join("")).toBe(
+    "PCBDraft: Hello \nConnection resumed\nPCBDraft: world\n\n",
+  )
+})
+
 test("a turn without preview still prints its saved assistant messages", () => {
   const output: string[] = []
   const preview = new AssistantPreview("turn-1", (text) => output.push(text))

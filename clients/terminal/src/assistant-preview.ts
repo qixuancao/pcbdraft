@@ -5,6 +5,7 @@ type Writer = (text: string) => void
 /** Render one turn's transient deltas while keeping saved session text authoritative. */
 export class AssistantPreview {
   #closed = false
+  #lineOpen = false
   #started = false
   #text = ""
 
@@ -23,16 +24,27 @@ export class AssistantPreview {
     if (!this.#started) {
       this.write("PCBDraft: ")
       this.#started = true
+      this.#lineOpen = true
+    } else if (!this.#lineOpen) {
+      this.write("PCBDraft: ")
+      this.#lineOpen = true
     }
     this.#text += event.text
     this.write(event.text)
     return true
   }
 
+  status(text: string): void {
+    if (this.#closed) return
+    if (this.#lineOpen) this.write("\n")
+    this.#lineOpen = false
+    this.write(text)
+  }
+
   finish(messages: TranscriptMessage[], status: string): void {
     if (this.#closed) return
     this.#closed = true
-    if (this.#started) this.write("\n\n")
+    if (this.#lineOpen) this.write("\n\n")
 
     const matchingPreview = this.#started
       ? messages.findIndex((message) => message.text === this.#text)

@@ -61,10 +61,11 @@ async function createProject(name: string): Promise<void> {
   await openProject(project.id)
 }
 
-function showLifecycle(event: GuiEvent): void {
-  if (event.kind === "job.started") output.write("Working · agent job started\n")
-  else if (event.kind === "job.complete") output.write("Finishing · loading the saved response\n")
-  else if (event.kind === "job.failed") output.write("Failed · loading the final job state\n")
+function lifecycleMessage(event: GuiEvent): string | null {
+  if (event.kind === "job.started") return "Working · agent job started\n"
+  if (event.kind === "job.complete") return "Finishing · loading the saved response\n"
+  if (event.kind === "job.failed") return "Failed · loading the final job state\n"
+  return null
 }
 
 function showNewAssistantMessages(session: ProjectSession, preview?: AssistantPreview): void {
@@ -92,13 +93,17 @@ async function monitorJob(
       let terminalEvent = false
       try {
         cursor = await gui.subscribe(projectId, cursor, (event) => {
-          if (!preview.consume(event)) showLifecycle(event)
+          cursor = Math.max(cursor, event.sequence)
+          if (!preview.consume(event)) {
+            const message = lifecycleMessage(event)
+            if (message) preview.status(message)
+          }
           terminalEvent = TERMINAL_JOB_EVENTS.has(event.kind)
           return !terminalEvent
         }, controller.signal)
       } catch (error) {
         if (controller.signal.aborted) return
-        output.write(`Event stream error: ${error instanceof Error ? error.message : String(error)}\n`)
+        preview.status(`Event stream error: ${error instanceof Error ? error.message : String(error)}\n`)
       }
       if (controller.signal.aborted) return
       try {
@@ -107,9 +112,9 @@ async function monitorJob(
           if (current?.project.id === projectId) showNewAssistantMessages(session, preview)
           return
         }
-        output.write("Connection resumed · the agent is still working\n")
+        preview.status("Connection resumed · the agent is still working\n")
       } catch (error) {
-        output.write(`Session refresh error: ${error instanceof Error ? error.message : String(error)}\n`)
+        preview.status(`Session refresh error: ${error instanceof Error ? error.message : String(error)}\n`)
       }
       await new Promise((resolve) => setTimeout(resolve, 500))
     }
@@ -134,7 +139,8 @@ async function sendMessage(text: string): Promise<void> {
 async function stopCurrent(): Promise<void> {
   if (!current) throw new Error("Open a project first")
   const result = await gui.stop(current.project.id)
-  output.write(`Cancellation: ${result.status}\n`)
+  activeMonitor?.preview.status(`Cancellation: ${result.status}\n`)
+  if (!activeMonitor) output.write(`Cancellation: ${result.status}\n`)
   if (result.status === "idle" || result.status === "cancelled") {
     const monitor = activeMonitor
     monitor?.controller.abort()
