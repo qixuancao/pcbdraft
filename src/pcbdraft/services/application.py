@@ -11,7 +11,6 @@ import secrets
 import shutil
 import tempfile
 from collections.abc import Mapping
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -73,6 +72,7 @@ from pcbdraft.model.providers import (
     ProviderContext,
     resolve_provider,
 )
+from pcbdraft.services import application_project_store as _application_project_store
 from pcbdraft.services.application_progress import (
     _attach_progress,
     _progress_stage_evidence,
@@ -85,7 +85,6 @@ from pcbdraft.services.application_progress import (
 )
 from pcbdraft.services.doctor import doctor_report
 from pcbdraft.services.managed import (
-    IR_NAME,
     EmptyDesignRequest,
     load_generation_request,
     materialize_managed_design,
@@ -151,28 +150,22 @@ from pcbdraft.verification.validation import (
     validate_managed_project,
 )
 
-APP_PROJECT_SCHEMA = "pcbdraft-application-project"
-APP_PROJECT_VERSION = 1
-CONVERSATION_SCHEMA = "pcbdraft-conversation-record"
-CONVERSATION_VERSION = 1
-ATTEMPT_SCHEMA = "pcbdraft-generation-attempt"
-ATTEMPT_VERSION = 2
-_ATTEMPT_FIELDS = {
-    "schema",
-    "version",
-    "id",
-    "status",
-    "phase",
-    "runtime",
-    "assurance",
-    "started_at",
-    "completed_at",
-    "part_ids",
-    "requested_parts",
-    "files",
-    "error",
-}
-APP_FILE_LIMIT = 4 * 1024 * 1024
+APP_FILE_LIMIT = _application_project_store.APP_FILE_LIMIT
+APP_PROJECT_SCHEMA = _application_project_store.APP_PROJECT_SCHEMA
+APP_PROJECT_VERSION = _application_project_store.APP_PROJECT_VERSION
+ATTEMPT_SCHEMA = _application_project_store.ATTEMPT_SCHEMA
+ATTEMPT_VERSION = _application_project_store.ATTEMPT_VERSION
+CONVERSATION_SCHEMA = _application_project_store.CONVERSATION_SCHEMA
+CONVERSATION_VERSION = _application_project_store.CONVERSATION_VERSION
+MAX_MESSAGES = _application_project_store.MAX_MESSAGES
+ApplicationProject = _application_project_store.ApplicationProject
+ApplicationProjectStoreMixin = _application_project_store.ApplicationProjectStoreMixin
+_ATTEMPT_FIELDS = _application_project_store._ATTEMPT_FIELDS
+_CONVERSATION_FIELDS = _application_project_store._CONVERSATION_FIELDS
+_PROJECT_ID = _application_project_store._PROJECT_ID
+_STATE_FIELDS = _application_project_store._STATE_FIELDS
+_public_readiness_record = _application_project_store._public_readiness_record
+
 TRANSACTION_INSPECTION_FILE_LIMIT = 256 * 1024
 TRANSACTION_INSPECTION_ITEM_LIMIT = 16
 TRANSACTION_INSPECTION_DEPTH_LIMIT = 8
@@ -180,8 +173,6 @@ PENDING_REQUEST_NAME = "pending-agent-request.json"
 PENDING_PLAN_NAME = "pending-circuit-plan.json"
 PENDING_DESIGN_NAME = "pending-design.pcbir.json"
 PENDING_PARTS_NAME = "pending-parts.pcbdraft.json"
-MAX_MESSAGES = 2_000
-_PROJECT_ID = re.compile(r"[a-z][a-z0-9-]{2,79}")
 _TRANSIENT_STATES = {
     "interpreting",
     "generating",
@@ -190,31 +181,6 @@ _TRANSIENT_STATES = {
     "releasing",
     "applying_change",
     "importing_external",
-}
-_STATE_FIELDS = {
-    "schema",
-    "version",
-    "id",
-    "name",
-    "created_at",
-    "updated_at",
-    "status",
-    "provider",
-    "revision",
-    "design_revision",
-    "event_sequence",
-    "active_transaction",
-    "last_transaction",
-    "last_validation",
-    "last_preview",
-    "last_release",
-}
-_CONVERSATION_FIELDS = {
-    "schema",
-    "version",
-    "messages",
-    "proposal",
-    "decisions",
 }
 _NATIVE_DELTA_OPERATIONS = frozenset(NATIVE_OPERATION_POLICIES) - {
     "register_kicad_part"
@@ -276,17 +242,6 @@ def _native_schematic_projection(managed: Any) -> NativeSchematicProjection:
     )
 
 
-@dataclass(frozen=True)
-class ApplicationProject:
-    root: Path
-    state: dict[str, Any]
-    conversation: dict[str, Any]
-
-    @property
-    def design_root(self) -> Path:
-        return self.root / "design"
-
-
 def default_application_home() -> Path:
     """Return the persistent PCB project repository for normal launches.
 
@@ -345,22 +300,28 @@ def _initial_stackup_layers(request: str) -> int:
 _sanitize_secret_text = sanitize_user_text
 
 
-def _public_readiness_record(value: Any) -> Any:
-    """Normalize legacy records without mutating retained audit artifacts."""
-
-    if not isinstance(value, dict):
-        return value
-    result = dict(value)
-    result.setdefault(
-        "production_evidence_complete", value.get("production_ready") is True
-    )
-    result["production_ready"] = False
-    result["production_claimed"] = False
-    return result
-
-
-class ApplicationService:
+class ApplicationService(ApplicationProjectStoreMixin):
     """Single write authority for product projects and their engineering runtime."""
+
+    @staticmethod
+    def _project_store_open_managed_project(design_root: Path) -> Any:
+        """Preserve the historical application.open_managed_project patch point."""
+
+        return open_managed_project(design_root)
+
+    @staticmethod
+    def _project_store_public_readiness(value: Any) -> Any:
+        """Preserve the historical application readiness projection patch point."""
+
+        return _public_readiness_record(value)
+
+    @staticmethod
+    def _project_store_transaction_progress(
+        receipt: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Preserve the historical application progress projection patch point."""
+
+        return _transaction_progress_projection(receipt)
 
     def __init__(
         self,
@@ -4857,152 +4818,6 @@ class ApplicationService:
             except PCBDraftError:
                 continue
 
-    def _project_path(self, project_id: str) -> Path:
-        if not isinstance(project_id, str) or not _PROJECT_ID.fullmatch(project_id):
-            raise ValidationError("application project id is invalid")
-        path = self.projects_root / project_id
-        if path.is_symlink():
-            raise ValidationError("application project path is unsafe")
-        try:
-            resolved = path.resolve(strict=True)
-        except OSError as exc:
-            raise ValidationError(
-                f"application project does not exist: {project_id}"
-            ) from exc
-        if resolved.parent != self.projects_root or not resolved.is_dir():
-            raise ValidationError("application project path escapes the workspace")
-        return resolved
-
-    def _open(self, project_id: str) -> ApplicationProject:
-        return self._open_path(self._project_path(project_id))
-
-    def _open_path(self, root: Path) -> ApplicationProject:
-        state = load_json_limited(root / "project.json", APP_FILE_LIMIT)
-        conversation = load_json_limited(root / "conversation.json", APP_FILE_LIMIT)
-        self._validate_state(state, expected_id=root.name)
-        self._validate_conversation(conversation)
-        return ApplicationProject(root=root, state=state, conversation=conversation)
-
-    @staticmethod
-    def _validate_state(value: Any, *, expected_id: str) -> None:
-        if not isinstance(value, dict) or set(value) != _STATE_FIELDS:
-            raise ValidationError("application project record is malformed")
-        if (
-            value["schema"] != APP_PROJECT_SCHEMA
-            or value["version"] != APP_PROJECT_VERSION
-        ):
-            raise ValidationError("unsupported application project schema/version")
-        if value["id"] != expected_id or not _PROJECT_ID.fullmatch(value["id"]):
-            raise ValidationError("application project identity is malformed")
-        for field in ("name", "created_at", "updated_at", "status", "provider"):
-            if not isinstance(value[field], str) or not value[field]:
-                raise ValidationError(
-                    f"application project field is malformed: {field}"
-                )
-        for field in ("revision", "design_revision", "event_sequence"):
-            if (
-                isinstance(value[field], bool)
-                or not isinstance(value[field], int)
-                or value[field] < 0
-            ):
-                raise ValidationError(
-                    f"application project counter is malformed: {field}"
-                )
-
-    @staticmethod
-    def _validate_conversation(value: Any) -> None:
-        if not isinstance(value, dict) or set(value) != _CONVERSATION_FIELDS:
-            raise ValidationError("conversation record is malformed")
-        if (
-            value["schema"] != CONVERSATION_SCHEMA
-            or value["version"] != CONVERSATION_VERSION
-        ):
-            raise ValidationError("unsupported conversation record schema/version")
-        if (
-            not isinstance(value["messages"], list)
-            or len(value["messages"]) > MAX_MESSAGES
-        ):
-            raise ValidationError("conversation message history is malformed")
-        if not isinstance(value["decisions"], dict):
-            raise ValidationError("conversation decisions are malformed")
-
-    @staticmethod
-    def _append_message(
-        conversation: dict[str, Any],
-        role: str,
-        kind: str,
-        text: str,
-        *,
-        data: dict[str, Any] | None = None,
-    ) -> None:
-        if len(conversation["messages"]) >= MAX_MESSAGES:
-            raise ValidationError("conversation reached its 2000 message limit")
-        conversation["messages"].append(
-            {
-                "id": secrets.token_hex(8),
-                "role": role,
-                "kind": kind,
-                "text": _sanitize_secret_text(text),
-                "created_at": utc_timestamp(),
-                "data": data or {},
-            }
-        )
-
-    @staticmethod
-    def _event(
-        state: dict[str, Any],
-        root: Path,
-        kind: str,
-        message: str,
-        *,
-        level: str = "info",
-    ) -> None:
-        state["event_sequence"] += 1
-        sequence = state["event_sequence"]
-        content_hash: str | None = None
-        ir_path = root / "design" / IR_NAME
-        if ir_path.is_file() and not ir_path.is_symlink():
-            try:
-                content_hash = Design.from_dict(
-                    load_json_limited(ir_path, 16 * 1024 * 1024)
-                ).content_hash()
-            except PCBDraftError:
-                content_hash = None
-        atomic_write_json(
-            root / "events" / f"{sequence:08d}.json",
-            {
-                "schema": "pcbdraft-structured-event",
-                "version": 1,
-                "sequence": sequence,
-                "kind": kind,
-                "level": level,
-                "message": _sanitize_secret_text(message)[:2048],
-                "created_at": utc_timestamp(),
-                "canonical_revision": state.get("revision"),
-                "design_revision": state.get("design_revision"),
-                "design_content_hash": content_hash,
-                "binding_state": ("bound" if content_hash is not None else "no_design"),
-            },
-        )
-
-    @staticmethod
-    def _write_records(
-        root: Path, state: dict[str, Any], conversation: dict[str, Any]
-    ) -> None:
-        atomic_write_json(root / "conversation.json", conversation)
-        atomic_write_json(root / "project.json", state)
-
-    @staticmethod
-    def _summary(project: ApplicationProject) -> dict[str, Any]:
-        return {
-            "id": project.state["id"],
-            "name": project.state["name"],
-            "status": project.state["status"],
-            "updated_at": project.state["updated_at"],
-            "design_revision": project.state["design_revision"],
-            "provider": project.state["provider"],
-        }
-
     @staticmethod
     def _interrupt_running_attempts(root: Path) -> None:
         attempts = root / "attempts"
@@ -5028,119 +4843,6 @@ class ApplicationService:
             record["completed_at"] = utc_timestamp()
             record["error"] = "Generation process stopped before completion."
             atomic_write_json(record_path, record)
-
-    @staticmethod
-    def _attempt_records(project: ApplicationProject) -> list[dict[str, Any]]:
-        attempts = project.root / "attempts"
-        if attempts.is_symlink() or not attempts.is_dir():
-            return []
-        result: list[dict[str, Any]] = []
-        for candidate in sorted(attempts.iterdir(), reverse=True):
-            if candidate.is_symlink() or not candidate.is_dir():
-                continue
-            try:
-                record = load_json_limited(candidate / "attempt.json", APP_FILE_LIMIT)
-            except PCBDraftError:
-                continue
-            if not ApplicationService._valid_attempt_record(
-                record, expected_id=candidate.name
-            ):
-                continue
-            public = dict(record)
-            public["root"] = str(candidate)
-            result.append(public)
-            if len(result) >= 50:
-                break
-        return result
-
-    @staticmethod
-    def _valid_attempt_record(value: Any, *, expected_id: str) -> bool:
-        if not isinstance(value, dict) or set(value) != _ATTEMPT_FIELDS:
-            return False
-        files = value.get("files")
-        string_lists = (value.get("part_ids"), value.get("requested_parts"))
-        return bool(
-            value.get("schema") == ATTEMPT_SCHEMA
-            and value.get("version") == ATTEMPT_VERSION
-            and value.get("id") == expected_id
-            and value.get("status") in {"running", "completed", "failed", "interrupted"}
-            and isinstance(value.get("phase"), str)
-            and isinstance(value.get("runtime"), str)
-            and value.get("assurance") in {"unknown", "provisional"}
-            and isinstance(value.get("started_at"), str)
-            and (
-                value.get("completed_at") is None
-                or isinstance(value.get("completed_at"), str)
-            )
-            and all(
-                isinstance(items, list)
-                and len(items) <= 2_000
-                and all(isinstance(item, str) for item in items)
-                for items in string_lists
-            )
-            and isinstance(files, dict)
-            and set(files)
-            == {"request", "plan", "semantic_ir", "part_catalog", "retained_native"}
-            and all(item is None or isinstance(item, str) for item in files.values())
-            and (value.get("error") is None or isinstance(value.get("error"), str))
-        )
-
-    def _public_project(self, project: ApplicationProject) -> dict[str, Any]:
-        design: dict[str, Any] | None = None
-        if project.design_root.is_dir() and not project.design_root.is_symlink():
-            managed = open_managed_project(project.design_root)
-            design = {
-                "root": str(managed.root),
-                "design_id": managed.design.design_id,
-                "name": managed.design.name,
-                "content_hash": managed.design.content_hash(),
-                "drift": list(managed.drift()),
-                "files": {
-                    key: str(managed.root / relative)
-                    for key, relative in managed.manifest["files"].items()
-                },
-            }
-        active_change: dict[str, Any] | None = None
-        transaction_id = project.state.get("active_transaction")
-        if isinstance(transaction_id, str) and re.fullmatch(
-            r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}", transaction_id
-        ):
-            transaction = project.root / "transactions" / transaction_id
-            receipt = load_json_limited(transaction / "receipt.json", APP_FILE_LIMIT)
-            diff = load_json_limited(transaction / "semantic-diff.json", APP_FILE_LIMIT)
-            active_change = {
-                "transaction_id": transaction_id,
-                "request": receipt.get("request"),
-                "status": receipt.get("status"),
-                "diff": diff,
-                "validation": _public_readiness_record(receipt.get("validation")),
-                "progress": _transaction_progress_projection(receipt),
-            }
-        public_state = dict(project.state)
-        public_state["last_validation"] = _public_readiness_record(
-            project.state["last_validation"]
-        )
-        public_state["last_release"] = _public_readiness_record(
-            project.state["last_release"]
-        )
-        return {
-            "schema": "pcbdraft-application-view",
-            "version": 1,
-            "project": self._summary(project),
-            "state": public_state,
-            "conversation": project.conversation,
-            "design": design,
-            "artifacts": {
-                "previews": project.state["last_preview"],
-                "validation": public_state["last_validation"],
-                "release": public_state["last_release"],
-            },
-            "attempts": self._attempt_records(project),
-            "active_change": active_change,
-            "events": self.events(
-                project.state["id"], after=max(0, project.state["event_sequence"] - 50)
-            ),
-        }
 
     def external_kicad_change_status(self, project_id: str) -> dict[str, Any]:
         """Detect native-file drift without treating desktop state as authoritative."""
