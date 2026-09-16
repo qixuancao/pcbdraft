@@ -224,6 +224,20 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         action="store_true",
         help="enable the optional read-only KiCad desktop companion (default: off)",
     )
+    terminal = subcommands.add_parser(
+        "terminal", help="start the TypeScript terminal client and local GUI API"
+    )
+    terminal.add_argument(
+        "--port",
+        type=tcp_port,
+        default=9130,
+        help="loopback GUI API port (default: 9130)",
+    )
+    terminal.add_argument(
+        "--no-start-gui",
+        action="store_true",
+        help="require an already-running healthy PCBDraft GUI API",
+    )
     return parser
 
 
@@ -395,6 +409,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 port=args.port,
                 project_id=args.gui_project_id,
                 kicad_ipc=args.kicad_ipc,
+            )
+        if args.command == "terminal":
+            if args.approval_mode != "workspace":
+                raise ValidationError(
+                    "TypeScript terminal currently supports only --approval-mode "
+                    "workspace"
+                )
+            if args.workspace:
+                os.environ["PCBDRAFT_HOME"] = args.workspace
+            from pcbdraft.interfaces.terminal_launcher import launch_terminal
+
+            return launch_terminal(
+                port=args.port,
+                no_start_gui=args.no_start_gui,
             )
         if args.command == "repository":
             repository = (

@@ -4,19 +4,20 @@ This is the TypeScript terminal client for PCBDraft. The loopback FastAPI API
 remains authoritative for projects, sessions, jobs, cancellation, permissions,
 and PCB revisions. This client does not read PCBDraft's SQLite state.
 
-In one terminal, start the loopback-only Python service from the repository
-root with:
+From the repository root, run the official launcher:
 
 ```sh
-uv run python -c 'from pcbdraft.interfaces.cli import main; raise SystemExit(main())' gui --host 127.0.0.1 --port 9130
+uv run pcbdraft terminal
 ```
 
-Then start the terminal client:
+The launcher checks Bun, starts the loopback GUI API when needed, waits for it
+to become healthy, and then runs this client. If a healthy PCBDraft GUI already
+uses port 9130, the launcher reuses it and leaves it running on exit. To require
+an existing service or choose another port, use:
 
 ```sh
-cd clients/terminal
-bun install
-bun run dev
+uv run pcbdraft terminal --no-start-gui
+uv run pcbdraft terminal --port 9131
 ```
 
 Use `/new <name>` to create and immediately open an empty synchronized PCB
