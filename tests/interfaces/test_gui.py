@@ -20,6 +20,7 @@ from pcbdraft.interfaces.gui import (
 class _Service:
     def __init__(self) -> None:
         self.project_id = "demo-board"
+        self.created_names: list[str] = []
         self.activity = [
             {
                 "sequence": 1,
@@ -52,6 +53,21 @@ class _Service:
         if project_id != self.project_id:
             raise PCBDraftError("project not found")
         return {"project": {"id": project_id}}
+
+    def create_empty_project(self, name: str) -> dict[str, Any]:
+        self.created_names.append(name)
+        return {
+            "project": {
+                "id": "new-board-ab12cd34",
+                "name": name,
+                "status": "generated",
+                "updated_at": "2026-08-30T00:00:02Z",
+                "design_revision": 1,
+                "provider": "must-not-leak",
+                "root": "/must/not/leak",
+            },
+            "tool_result": {"design_content_hash": "must-not-leak"},
+        }
 
     def events(self, project_id: str, *, after: int = 0) -> list[dict[str, Any]]:
         self.open_project(project_id)
@@ -437,6 +453,75 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(snapshot.json()["ipc"]["status"], "offline")
         self.assertEqual(snapshot.json()["binding"]["content_hash"], "a" * 64)
         self.assertRegex(snapshot.json()["stream"]["stream_id"], r"^[0-9a-f]{32}$")
+
+    async def test_create_project_uses_authoritative_service_and_returns_summary(
+        self,
+    ) -> None:
+        response = await self.client.post(
+            "/api/projects",
+            json={"name": "  Sensor board  "},
+            headers=await self._mutation_headers(),
+        )
+
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(self.service.created_names, ["Sensor board"])
+        self.assertEqual(
+            response.json(),
+            {
+                "project": {
+                    "id": "new-board-ab12cd34",
+                    "name": "Sensor board",
+                    "status": "generated",
+                    "updated_at": "2026-08-30T00:00:02Z",
+                    "design_revision": 1,
+                }
+            },
+        )
+        self.assertNotIn("provider", response.text)
+        self.assertNotIn("root", response.text)
+        self.assertNotIn("design_content_hash", response.text)
+
+    async def test_create_project_rejects_invalid_names_and_extra_fields(self) -> None:
+        headers = await self._mutation_headers()
+        invalid_bodies = (
+            {},
+            {"name": ""},
+            {"name": "   "},
+            {"name": 42},
+            {"name": "x" * 257},
+            {"name": "Board", "request": "hidden expansion"},
+        )
+
+        for body in invalid_bodies:
+            with self.subTest(body=body):
+                response = await self.client.post(
+                    "/api/projects", json=body, headers=headers
+                )
+                self.assertEqual(response.status_code, 400, response.text)
+        self.assertEqual(self.service.created_names, [])
+
+    async def test_create_project_requires_same_origin_and_csrf(self) -> None:
+        csrf = (await self._bootstrap())["csrf_token"]
+        wrong_origin = await self.client.post(
+            "/api/projects",
+            json={"name": "Sensor board"},
+            headers={
+                "Origin": "http://evil.example",
+                "X-PCBDraft-CSRF": csrf,
+            },
+        )
+        wrong_csrf = await self.client.post(
+            "/api/projects",
+            json={"name": "Sensor board"},
+            headers={
+                "Origin": "http://testserver",
+                "X-PCBDraft-CSRF": "wrong",
+            },
+        )
+
+        self.assertEqual(wrong_origin.status_code, 403)
+        self.assertEqual(wrong_csrf.status_code, 403)
+        self.assertEqual(self.service.created_names, [])
 
     async def test_snapshot_cursor_keeps_a_racing_commit_replayable(self) -> None:
         runtime = self.app.state.pcbdraft

@@ -47,6 +47,7 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_URL_LENGTH = 2_048
 MAX_STATIC_BYTES = 4 * 1024 * 1024
 MAX_STREAM_EVENTS = 500
+MAX_PROJECT_NAME_LENGTH = 256
 _PROJECT_ID = re.compile(r"[a-z][a-z0-9-]{2,79}")
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 _PREFIXES = ("", "/pcbdraft")
@@ -96,21 +97,30 @@ def _bounded_project_list(service: ApplicationService) -> list[dict[str, Any]]:
 
     result: list[dict[str, Any]] = []
     for value in service.list_projects()[:500]:
-        if not isinstance(value, Mapping):
-            continue
-        project_id = value.get("id")
-        if not isinstance(project_id, str) or _PROJECT_ID.fullmatch(project_id) is None:
-            continue
-        result.append(
-            {
-                "id": project_id,
-                "name": str(value.get("name", ""))[:256],
-                "status": str(value.get("status", "unknown"))[:64],
-                "updated_at": str(value.get("updated_at", ""))[:64],
-                "design_revision": value.get("design_revision", 0),
-            }
-        )
+        summary = _bounded_project_summary(value)
+        if summary is not None:
+            result.append(summary)
     return result
+
+
+def _bounded_project_summary(value: Any) -> dict[str, Any] | None:
+    """Return the stable GUI projection for one application project summary."""
+
+    if not isinstance(value, Mapping):
+        return None
+    project_id = value.get("id")
+    if not isinstance(project_id, str) or _PROJECT_ID.fullmatch(project_id) is None:
+        return None
+    revision = value.get("design_revision", 0)
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
+        revision = 0
+    return {
+        "id": project_id,
+        "name": str(value.get("name", ""))[:MAX_PROJECT_NAME_LENGTH],
+        "status": str(value.get("status", "unknown"))[:64],
+        "updated_at": str(value.get("updated_at", ""))[:64],
+        "design_revision": revision,
+    }
 
 
 def _open_project_in_kicad(
@@ -924,6 +934,30 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
             "projects": await run_in_threadpool(_bounded_project_list, runtime.service)
         }
 
+    async def create_project(request: Request) -> JSONResponse:
+        try:
+            body = await request.json()
+        except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+            raise ValidationError("project request must be a JSON object") from exc
+        if not isinstance(body, dict) or set(body) != {"name"}:
+            raise ValidationError("project request requires only a name")
+        name = body.get("name")
+        if not isinstance(name, str):
+            raise ValidationError("project name must be a string")
+        name = name.strip()
+        if not name:
+            raise ValidationError("project name must not be empty")
+        if len(name) > MAX_PROJECT_NAME_LENGTH:
+            raise ValidationError(
+                f"project name must be at most {MAX_PROJECT_NAME_LENGTH} characters"
+            )
+        created = await run_in_threadpool(runtime.service.create_empty_project, name)
+        project = created.get("project") if isinstance(created, Mapping) else None
+        summary = _bounded_project_summary(project)
+        if summary is None:
+            raise PCBDraftError("created project summary is unavailable")
+        return JSONResponse({"project": summary}, status_code=201)
+
     async def snapshot(project_id: str) -> dict[str, Any]:
         project_id = _safe_project_id(project_id)
         # Capture a lower bound first. Updates racing the snapshot remain
@@ -1218,6 +1252,13 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
 
     _add_route(app, "/api/bootstrap", bootstrap, methods=["GET"], name="bootstrap")
     _add_route(app, "/api/projects", projects, methods=["GET"], name="projects")
+    _add_route(
+        app,
+        "/api/projects",
+        create_project,
+        methods=["POST"],
+        name="create-project",
+    )
     _add_route(
         app,
         "/api/projects/{project_id}/snapshot",

@@ -60,6 +60,11 @@ export class GuiClient {
     return value.projects.filter((project) => !needle || project.id.toLocaleLowerCase().includes(needle) || project.name.toLocaleLowerCase().includes(needle))
   }
 
+  async createProject(name: string): Promise<Project> {
+    const value = await this.#post<{ project: Project }>("/api/projects", { name })
+    return value.project
+  }
+
   async session(projectId: string): Promise<ProjectSession> {
     return this.#get<ProjectSession>(`/api/projects/${encodeURIComponent(projectId)}/session`)
   }

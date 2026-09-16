@@ -2,6 +2,8 @@ import { expect, test } from "bun:test"
 import { resolveSlashCommand } from "../src/commands.ts"
 
 test("unique command prefixes resolve case-insensitively", () => {
+  expect(resolveSlashCommand("/n")).toBe("new")
+  expect(resolveSlashCommand("/NEW")).toBe("new")
   expect(resolveSlashCommand("/res")).toBe("resume")
   expect(resolveSlashCommand("/RES")).toBe("resume")
   expect(resolveSlashCommand("/Resume")).toBe("resume")

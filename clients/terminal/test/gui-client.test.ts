@@ -29,6 +29,35 @@ test("the TypeScript client bootstraps before it mutates a project", async () =>
   expect(new Headers(requests[1]?.init?.headers).get("origin")).toBe("http://127.0.0.1:9130")
 })
 
+test("createProject sends only the name and returns the public project summary", async () => {
+  const requests: Array<{ url: string; init?: RequestInit }> = []
+  globalThis.fetch = (async (input, init) => {
+    const url = input instanceof Request ? input.url : input.toString()
+    requests.push({ url, init })
+    if (url.endsWith("/api/bootstrap")) {
+      return Response.json({ csrf_token: "csrf", projects: [] })
+    }
+    return Response.json({
+      project: {
+        id: "sensor-board-ab12cd34",
+        name: "Sensor board",
+        status: "generated",
+        updated_at: "2026-08-30T00:00:02Z",
+        design_revision: 1,
+      },
+    }, { status: 201 })
+  }) as typeof fetch
+
+  const client = new GuiClient("http://127.0.0.1:9130")
+  const project = await client.createProject("Sensor board")
+
+  expect(project.id).toBe("sensor-board-ab12cd34")
+  expect(new URL(requests[1]!.url).pathname).toBe("/api/projects")
+  expect(requests[1]!.init?.method).toBe("POST")
+  expect(requests[1]!.init?.body).toBe(JSON.stringify({ name: "Sensor board" }))
+  expect(new Headers(requests[1]!.init?.headers).get("x-pcbdraft-csrf")).toBe("csrf")
+})
+
 test("subscribe resumes the SSE stream and stops when the handler returns false", async () => {
   const requests: string[] = []
   globalThis.fetch = (async (input) => {

@@ -1,4 +1,4 @@
-export const SLASH_COMMANDS = ["resume", "open", "stop", "help", "quit", "exit"] as const
+export const SLASH_COMMANDS = ["new", "resume", "open", "stop", "help", "quit", "exit"] as const
 
 export type SlashCommand = (typeof SLASH_COMMANDS)[number]
 

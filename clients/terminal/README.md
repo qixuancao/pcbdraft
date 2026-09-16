@@ -19,9 +19,10 @@ bun install
 bun run dev
 ```
 
-Use `/resume` and `/open` to restore a project. Slash commands accept unique,
-case-insensitive prefixes, so `/res` and `/RES` resolve to `/resume`; ambiguous
-prefixes produce an error instead of guessing.
+Use `/new <name>` to create and immediately open an empty synchronized PCB
+project. `/resume` and `/open` restore an existing project. Slash commands
+accept unique, case-insensitive prefixes, so `/n` and `/NEW` resolve to `/new`,
+while ambiguous prefixes produce an error instead of guessing.
 
 After a message is submitted, the client follows the GUI lifecycle SSE stream.
 It shows the current job phase, then reloads the canonical session after a

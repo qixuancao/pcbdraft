@@ -14,8 +14,9 @@ let activeMonitor: { jobId: string; controller: AbortController } | null = null
 function heading(): void {
   const project = current ? `project: ${current.project.name}` : "project: none"
   output.write(`\nPCBDraft Terminal · ${project}\n`)
-  output.write("/resume [text]  projects · /open <number|id>  restore · /stop  cancel · /help · /quit\n")
-  output.write("Unique command prefixes work regardless of case, for example /res or /RES.\n\n")
+  output.write("/new <name>  create · /resume [text]  projects · /open <number|id>  restore\n")
+  output.write("/stop  cancel · /help · /quit\n")
+  output.write("Unique command prefixes work regardless of case, for example /n or /NEW.\n\n")
 }
 
 function transcript(messages: TranscriptMessage[]): void {
@@ -50,6 +51,13 @@ async function openProject(reference: string): Promise<void> {
   current = { project: selected, messages: session.messages }
   output.write(`\nOpened ${current.project.name} · ${session.status}\n\n`)
   transcript(current.messages)
+}
+
+async function createProject(name: string): Promise<void> {
+  if (!name.trim()) throw new Error("Usage: /new <name>")
+  const project = await gui.createProject(name)
+  projects = [project, ...projects.filter((candidate) => candidate.id !== project.id)]
+  await openProject(project.id)
 }
 
 function showLifecycle(event: GuiEvent): void {
@@ -123,7 +131,8 @@ async function main(): Promise<void> {
       try {
         if (token.startsWith("/")) {
           const command = resolveSlashCommand(token)
-          if (command === "resume") await listProjects(argument)
+          if (command === "new") await createProject(argument)
+          else if (command === "resume") await listProjects(argument)
           else if (command === "open") await openProject(argument)
           else if (command === "help") heading()
           else if (command === "stop") await stopCurrent()
