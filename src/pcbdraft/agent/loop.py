@@ -167,6 +167,12 @@ from pcbdraft.agent.context_compressor import (
     ContextCompressor,
 )
 from pcbdraft.agent.error_classifier import FailoverReason
+from pcbdraft.agent.memory_lifecycle import (
+    MemoryLifecycleMixin,
+)
+from pcbdraft.agent.memory_lifecycle import (
+    configure_memory_lifecycle_runtime as _configure_memory_lifecycle_runtime,
+)
 from pcbdraft.agent.memory_manager import sanitize_context
 from pcbdraft.agent.memory_provider import is_trivial_prompt
 from pcbdraft.agent.message_preparation import MessagePreparationMixin
@@ -264,6 +270,13 @@ _configure_api_message_helper_runtime(
         _codex_derive_responses_function_call_id(call_id, response_item_id)
     ),
     warning=lambda message, *args: logger.warning(message, *args),
+)
+_configure_memory_lifecycle_runtime(
+    summarize_user_message=lambda message, **kwargs: _summarize_user_message_for_log(
+        message, **kwargs
+    ),
+    is_trivial_prompt=lambda prompt: is_trivial_prompt(prompt),
+    warning=lambda message, *args, **kwargs: logger.warning(message, *args, **kwargs),
 )
 
 # Internal flags that mark a message as ephemeral empty-response/prefill
@@ -453,6 +466,7 @@ class _StreamErrorEvent(Exception):
 
 
 class AIAgent(
+    MemoryLifecycleMixin,
     ApiMessageHelpersMixin,
     MessagePreparationMixin,
     StatusDeliveryMixin,
@@ -4093,129 +4107,6 @@ class AIAgent(
                 "budget_max": self.iteration_budget.max_total,
             },
         )
-
-    def shutdown_memory_provider(self, messages: list | None = None) -> None:
-        """Shut down the memory provider and context engine at session end.
-
-        Idempotent: gateway cleanup and AIAgent.close() may share this
-        ownership boundary.
-        """
-        if getattr(self, "_memory_provider_shutdown", False):
-            return
-        self._memory_provider_shutdown = True
-        if self._memory_manager:
-            try:
-                self._memory_manager.on_session_end(messages or [])
-            except Exception as e:
-                logger.warning(
-                    "Memory provider on_session_end failed during shutdown: %s",
-                    e,
-                    exc_info=True,
-                )
-            try:
-                self._memory_manager.shutdown_all()
-            except Exception:
-                pass
-        # Notify context engine of session end (flush DAG, close DBs, etc.)
-        if hasattr(self, "context_compressor") and self.context_compressor:
-            try:
-                self.context_compressor.on_session_end(
-                    self.session_id or "",
-                    messages or [],
-                )
-            except Exception:
-                pass
-
-    def commit_memory_session(self, messages: list | None = None) -> None:
-        """Trigger end-of-session extraction without tearing providers down.
-        Called when session_id rotates (e.g. /new, context compression);
-        providers keep their state and continue running under the old
-        session_id — they just flush pending extraction now."""
-        if self._memory_manager:
-            try:
-                self._memory_manager.on_session_end(messages or [])
-            except Exception:
-                pass
-        # Notify context engine of session end too — same lifecycle moment as
-        # the memory manager's on_session_end. Without this, engines that
-        # accumulate per-session state (DAGs, summaries) leak that state from
-        # the rotated-out session into whatever comes next under the same
-        # compressor instance. Mirrors the call in shutdown_memory_provider().
-        # See issue #22394.
-        if hasattr(self, "context_compressor") and self.context_compressor:
-            try:
-                self.context_compressor.on_session_end(
-                    self.session_id or "",
-                    messages or [],
-                )
-            except Exception:
-                pass
-
-    def _sync_external_memory_for_turn(
-        self,
-        *,
-        original_user_message: Any,
-        final_response: Any,
-        interrupted: bool,
-        messages: list | None = None,
-    ) -> None:
-        """Mirror a completed turn into external memory providers.
-
-        Called at the end of ``run_conversation`` with the cleaned user
-        message (``original_user_message``) and the finalised assistant
-        response.  The external memory backend gets both ``sync_all`` (to
-        persist the exchange) and ``queue_prefetch_all`` (to start
-        warming context for the next turn) in one shot.
-
-        Uses ``original_user_message`` rather than ``user_message``
-        because the latter may carry injected skill content that bloats
-        or breaks provider queries.
-
-        Interrupted turns are skipped entirely (#15218).  A partial
-        assistant output, an aborted tool chain, or a mid-stream reset
-        is not durable conversational truth — mirroring it into an
-        external memory backend pollutes future recall with state the
-        user never saw completed.  The prefetch is gated on the same
-        flag: the user's next message is almost certainly a retry of
-        the same intent, and a prefetch keyed on the interrupted turn
-        would fire against stale context.
-
-        Normal completed turns still sync as before.  The whole body is
-        wrapped in ``try/except Exception`` because external memory
-        providers are strictly best-effort — a misconfigured or offline
-        backend must not block the user from seeing their response.
-        """
-        if interrupted:
-            return
-        if not (self._memory_manager and final_response and original_user_message):
-            return
-        # Multimodal turns carry content as a list of typed parts; providers
-        # expect plain strings, so flatten to text first (newline-joined for
-        # memory, vs the default space-join used for log/trajectory previews).
-        user_text = _summarize_user_message_for_log(original_user_message, sep="\n")
-        response_text = _summarize_user_message_for_log(final_response, sep="\n")
-        if not (user_text and response_text):
-            return
-        try:
-            sync_kwargs = {"session_id": self.session_id or ""}
-            if messages is not None:
-                sync_kwargs["messages"] = messages
-            self._memory_manager.sync_all(
-                user_text,
-                response_text,
-                **sync_kwargs,
-            )
-            # Sibling of the build_turn_context() prefetch gate: warming the
-            # next turn's recall with a trivial prompt ("hi", "thanks") keys
-            # provider searches on zero-signal text — skip it. The sync above
-            # still runs so the turn itself is persisted.
-            if not is_trivial_prompt(user_text):
-                self._memory_manager.queue_prefetch_all(
-                    user_text,
-                    session_id=self.session_id or "",
-                )
-        except Exception:
-            pass
 
     def release_clients(self) -> None:
         """Release LLM client resources WITHOUT tearing down session tool state.
