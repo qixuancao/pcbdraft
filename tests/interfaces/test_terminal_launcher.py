@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.interfaces import terminal_launcher as launcher
@@ -66,6 +66,34 @@ class TerminalLauncherTests(unittest.TestCase):
         self.assertEqual(kwargs["cwd"], self.client)
         self.assertEqual(kwargs["env"]["PCBDRAFT_GUI_URL"], "http://127.0.0.1:9141")
         self.assertFalse(kwargs["check"])
+
+    def test_flushes_api_status_before_starting_bun(self) -> None:
+        client_patch, bun_patch, probe_patch = self._common_patches(
+            launcher._GuiState.HEALTHY
+        )
+        calls = Mock()
+        print_status = Mock()
+        run = Mock(return_value=subprocess.CompletedProcess([], 0))
+        calls.attach_mock(print_status, "print_status")
+        calls.attach_mock(run, "run")
+
+        with (
+            client_patch,
+            bun_patch,
+            probe_patch,
+            patch("builtins.print", print_status),
+            patch.object(launcher.subprocess, "run", run),
+        ):
+            launcher.launch_terminal(port=9146)
+
+        self.assertEqual(
+            calls.mock_calls[0],
+            call.print_status(
+                "PCBDraft Terminal API: http://127.0.0.1:9146 (reusing existing GUI)",
+                flush=True,
+            ),
+        )
+        self.assertEqual(calls.mock_calls[1][0], "run")
 
     def test_starts_waits_for_and_cleans_up_owned_gui(self) -> None:
         client_patch, bun_patch, probe_patch = self._common_patches(

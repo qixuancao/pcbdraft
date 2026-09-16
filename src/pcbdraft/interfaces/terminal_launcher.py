@@ -196,9 +196,15 @@ def launch_terminal(*, port: int = 9130, no_start_gui: bool = False) -> int:
         if state is _GuiState.FREE:
             owned_gui = _start_gui(port, source_root=source_root)
             _wait_for_gui(owned_gui, base_url)
-            print(f"PCBDraft Terminal API: {base_url} (started for this session)")
+            print(
+                f"PCBDraft Terminal API: {base_url} (started for this session)",
+                flush=True,
+            )
         else:
-            print(f"PCBDraft Terminal API: {base_url} (reusing existing GUI)")
+            print(
+                f"PCBDraft Terminal API: {base_url} (reusing existing GUI)",
+                flush=True,
+            )
 
         environment = os.environ.copy()
         environment["PCBDRAFT_GUI_URL"] = base_url
