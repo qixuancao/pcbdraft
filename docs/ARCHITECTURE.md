@@ -67,11 +67,44 @@ package root:
       model/         model configuration, transport, review, and providers
       kicad/         native KiCad generation, layout, routing, preview, and sync
       services/      application use cases, jobs, managed projects, transactions
+      tools/         reusable tool implementations and external tool adapters
       verification/  evidence, validation, review, benchmark, and release gates
       interfaces/    the ``pcbdraft`` CLI, loopback GUI API, and legacy terminal facade
+      terminal_client/  canonical TypeScript interactive terminal source
 
-    clients/
-      terminal/      the supported TypeScript interactive terminal
+The canonical supported TypeScript terminal source is
+`src/pcbdraft/terminal_client`; packaging includes that directory as an installed
+resource used by the terminal launcher.
+
+### Module ownership map
+
+| Package | Owns | Does not own |
+| --- | --- | --- |
+| `core` | Generic errors, safe I/O, redaction, locking, process, run, and path primitives | PCB semantics, model calls, presentation, or application workflows |
+| `domain` | Immutable PCB IR, parts, requirements, change sets, and deterministic invariants | Filesystem publication, provider transport, or UI rendering |
+| `services` | Application use cases, project/session stores, jobs, managed projects, and transaction coordination | Presentation rendering or model-provider wire protocols |
+| `agent` | Conversation control, planning contracts, tool selection, permissions, durable turns, and bounded agent behavior | Authoritative PCB writes or provider credential storage |
+| `model` | Provider configuration, authentication, transports, response normalization, and model metadata | Project mutation, KiCad generation, or permission decisions |
+| `tools` | Reusable tool implementations plus external tool and environment adapters | PCB project authority or agent turn policy |
+| `interfaces` | CLI dispatch, the loopback HTTP/SSE API, launchers, and compatibility facades | Engineering decisions, transcript authority, or a second job store |
+| `kicad` | Native KiCad generation, inspection, geometry, routing, previews, and synchronization | Product workflow policy or release claims |
+| `verification` | Persisted evidence evaluation, validation gates, BoardBench, and release decisions | Design generation or authoritative project mutation |
+
+Three focused extractions currently make those package boundaries more explicit:
+
+- `services.session_db_runtime` owns reusable SQLite journal negotiation,
+  connection PRAGMAs, and persistence-error classification. `services.session_db`
+  still owns the transcript store, its schema, queries, and repair lifecycle.
+- `services.native_operations` owns native KiCad projections, operation
+  postconditions, routing-failure normalization, and related delta checks.
+  `ApplicationService` still owns the project transaction and publication.
+- `agent.stream_delivery` owns visible-stream filtering, callback ordering,
+  redaction, and duplicate suppression. `agent.loop.AIAgent` still controls the
+  model turn and tool loop.
+
+These entries describe implemented ownership boundaries, not completion of a
+whole-project modularization. Coordinator modules remain and should be split
+only when another responsibility can be moved behind a tested boundary.
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,
@@ -214,11 +247,12 @@ that state. It exposes bounded presentation data through the versioned
 `gui_session_contract` and the loopback GUI API.
 
 The TypeScript terminal owns rendering, input, slash-command resolution, and
-reconnect behavior only. During a turn it displays the lifecycle events exposed
-by the GUI SSE stream. Those events do not contain model token deltas. When a
-terminal `job.complete` or `job.failed` event arrives, the client fetches the
-session again and prints the assistant message after the Python runtime has
-saved it.
+reconnect behavior only. During a turn it displays lifecycle events and bounded,
+redacted `assistant.delta` previews exposed by the GUI SSE stream. Those preview
+events are transient presentation hints rather than transcript authority. When
+a terminal `job.complete` or `job.failed` event arrives, the client fetches the
+session again and reconciles the display with the assistant message saved by the
+Python runtime.
 
 `AgentRuntime` and `JobRunner` turn synchronous, transactional application
 operations into durable background turns and UI-neutral activity events.
@@ -278,8 +312,9 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-The bundled TypeScript terminal (`pcbdraft/terminal_client`) and local Web workbench use the
-same loopback GUI API and therefore the same native `agent.loop.AIAgent`, model
+The bundled TypeScript terminal (`src/pcbdraft/terminal_client`) and local Web
+workbench use the same loopback GUI API and therefore the same native
+`agent.loop.AIAgent`, model
 configuration, authentication, and project/session authority. Terminal
 commands select projects through that trusted boundary; jobs bind their own
 project and permission context, including in propagated tool-worker contexts.
