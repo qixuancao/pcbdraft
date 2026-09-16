@@ -1,5 +1,5 @@
 {
-  "name": "pcbdraft-typescript-tui-prototype",
+  "name": "@pcbdraft/terminal",
   "private": true,
   "type": "module",
   "scripts": {
