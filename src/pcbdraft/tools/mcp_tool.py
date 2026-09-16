@@ -98,7 +98,6 @@ import asyncio
 import concurrent.futures
 import contextvars
 import errno
-import fnmatch
 import inspect
 import json
 import logging
@@ -117,6 +116,7 @@ from typing import Any, Optional
 
 from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
 from pcbdraft.tools import mcp_content as _mcp_content
+from pcbdraft.tools import mcp_tool_schema as _mcp_tool_schema
 from pcbdraft.tools.ansi_strip import strip_unicode_tags
 from pcbdraft.tools.registry import tool_error
 
@@ -6133,14 +6133,9 @@ def _normalize_mcp_input_schema(schema: dict | None) -> dict:
 
 
 def sanitize_mcp_name_component(value: str) -> str:
-    """Return an MCP name component safe for tool and prefix generation.
+    """Compatibility wrapper for the extracted name sanitizer."""
 
-    Preserves Hermes's historical behavior of converting hyphens to
-    underscores, and also replaces any other character outside
-    ``[A-Za-z0-9_]`` with ``_`` so generated tool names are compatible with
-    provider validation rules.
-    """
-    return re.sub(r"[^A-Za-z0-9_]", "_", str(value or ""))
+    return _mcp_tool_schema.sanitize_mcp_name_component(value)
 
 
 # Native MCP tool-name prefix. Hermes uses the ``mcp__<server>__<tool>``
@@ -6150,194 +6145,78 @@ def sanitize_mcp_name_component(value: str) -> str:
 # naming models are trained on. It also aligns native registration with the
 # Anthropic-OAuth wire form (``_MCP_TOOL_PREFIX`` in anthropic_adapter.py),
 # removing the single->double rewrite that path previously had to perform.
-MCP_TOOL_NAME_PREFIX = "mcp__"
-_MCP_NAME_DELIM = "__"
+MCP_TOOL_NAME_PREFIX = _mcp_tool_schema.MCP_TOOL_NAME_PREFIX
+_MCP_NAME_DELIM = _mcp_tool_schema._MCP_NAME_DELIM
 
 
 def mcp_prefixed_tool_name(server_name: str, tool_name: str) -> str:
-    """Build the registry/wire name for an MCP tool.
+    """Compatibility wrapper preserving the legacy sanitizer patch path."""
 
-    Produces ``mcp__<sanitizedServer>__<sanitizedTool>``.
-    """
-    safe_server = sanitize_mcp_name_component(server_name)
-    safe_tool = sanitize_mcp_name_component(tool_name)
-    return f"{MCP_TOOL_NAME_PREFIX}{safe_server}{_MCP_NAME_DELIM}{safe_tool}"
+    return _mcp_tool_schema.mcp_prefixed_tool_name(
+        server_name,
+        tool_name,
+        sanitizer=sanitize_mcp_name_component,
+        prefix=MCP_TOOL_NAME_PREFIX,
+        delimiter=_MCP_NAME_DELIM,
+    )
 
 
 def _convert_mcp_schema(server_name: str, mcp_tool) -> dict:
-    """Convert an MCP tool listing to the Hermes registry schema format.
+    """Compatibility wrapper preserving legacy conversion patch paths."""
 
-    Args:
-        server_name: The logical server name for prefixing.
-        mcp_tool:    An MCP ``Tool`` object with ``.name``, ``.description``,
-                     and ``.input_schema`` (``.inputSchema`` before mcp 2.0).
-
-    Returns:
-        A dict suitable for ``registry.register(schema=...)``.
-    """
-    prefixed_name = mcp_prefixed_tool_name(server_name, mcp_tool.name)
-    return {
-        "name": prefixed_name,
-        "description": strip_unicode_tags(
-            mcp_tool.description or f"MCP tool {mcp_tool.name} from {server_name}"
-        ),
-        "parameters": _normalize_mcp_input_schema(
-            mcp_field(mcp_tool, "input_schema", "inputSchema")
-        ),
-    }
+    return _mcp_tool_schema._convert_mcp_schema(
+        server_name,
+        mcp_tool,
+        schema_normalizer=_normalize_mcp_input_schema,
+        field_reader=mcp_field,
+        name_builder=mcp_prefixed_tool_name,
+        description_sanitizer=strip_unicode_tags,
+    )
 
 
 def _build_utility_schemas(server_name: str) -> list[dict]:
-    """Build schemas for the MCP utility tools (resources & prompts).
+    """Compatibility wrapper preserving the legacy name-builder patch path."""
 
-    Returns a list of (schema, handler_factory_name) tuples encoded as dicts
-    with keys: schema, handler_key.
-    """
-    return [
-        {
-            "schema": {
-                "name": mcp_prefixed_tool_name(server_name, "list_resources"),
-                "description": f"List available resources from MCP server '{server_name}'",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                },
-            },
-            "handler_key": "list_resources",
-        },
-        {
-            "schema": {
-                "name": mcp_prefixed_tool_name(server_name, "read_resource"),
-                "description": f"Read a resource by URI from MCP server '{server_name}'",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "uri": {
-                            "type": "string",
-                            "description": "URI of the resource to read",
-                        },
-                    },
-                    "required": ["uri"],
-                },
-            },
-            "handler_key": "read_resource",
-        },
-        {
-            "schema": {
-                "name": mcp_prefixed_tool_name(server_name, "list_prompts"),
-                "description": f"List available prompts from MCP server '{server_name}'",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                },
-            },
-            "handler_key": "list_prompts",
-        },
-        {
-            "schema": {
-                "name": mcp_prefixed_tool_name(server_name, "get_prompt"),
-                "description": f"Get a prompt by name from MCP server '{server_name}'",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "description": "Name of the prompt to retrieve",
-                        },
-                        "arguments": {
-                            "type": "object",
-                            "description": "Optional arguments to pass to the prompt",
-                            "properties": {},
-                            "additionalProperties": True,
-                        },
-                    },
-                    "required": ["name"],
-                },
-            },
-            "handler_key": "get_prompt",
-        },
-    ]
+    return _mcp_tool_schema._build_utility_schemas(
+        server_name,
+        name_builder=mcp_prefixed_tool_name,
+    )
 
 
 def _normalize_name_filter(value: Any, label: str) -> set[str]:
-    """Normalize include/exclude config to a set of tool-name patterns.
+    """Compatibility wrapper preserving the legacy logger patch path."""
 
-    Entries may be exact tool names or fnmatch-style globs
-    (``*_radar_*``, ``get_zones_*``). Matching happens in
-    :func:`matches_name_filter`.
-    """
-    if value is None:
-        return set()
-    if isinstance(value, str):
-        return {value}
-    if isinstance(value, (list, tuple, set)):
-        return {str(item) for item in value}
-    logger.warning(
-        "MCP config %s must be a string or list of strings; ignoring %r", label, value
+    return _mcp_tool_schema._normalize_name_filter(
+        value,
+        label,
+        warning=logger.warning,
     )
-    return set()
 
 
 def matches_name_filter(tool_name: str, patterns: set[str]) -> bool:
-    """True if ``tool_name`` matches any entry in ``patterns``.
+    """Compatibility wrapper for exact and case-sensitive glob matching."""
 
-    Exact names match literally; entries containing fnmatch metacharacters
-    (``*``, ``?``, ``[``) match as case-sensitive globs — the same pattern
-    semantics as ``approvals.deny``. Exact membership is checked first so
-    large literal lists stay O(1).
-    """
-    if not patterns:
-        return False
-    if tool_name in patterns:
-        return True
-    return any(
-        fnmatch.fnmatchcase(tool_name, p)
-        for p in patterns
-        if "*" in p or "?" in p or "[" in p
-    )
+    return _mcp_tool_schema.matches_name_filter(tool_name, patterns)
 
 
 def _parse_boolish(value: Any, default: bool = True) -> bool:
-    """Parse a bool-like config value with safe fallback."""
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        lowered = value.strip().lower()
-        if lowered in {"true", "1", "yes", "on"}:
-            return True
-        if lowered in {"false", "0", "no", "off"}:
-            return False
-    logger.warning(
-        "MCP config expected a boolean-ish value, got %r; using default=%s",
+    """Compatibility wrapper preserving the legacy logger patch path."""
+
+    return _mcp_tool_schema._parse_boolish(
         value,
         default,
+        warning=logger.warning,
     )
-    return default
 
 
 def _get_lifecycle_seconds(config: dict, key: str) -> float | None:
-    """Return an optional positive lifecycle timeout from top-level/nested config."""
-    raw = config.get(key)
-    lifecycle = config.get("lifecycle")
-    if raw is None and isinstance(lifecycle, dict):
-        raw = lifecycle.get(key)
-    if raw is None:
-        return None
-    try:
-        seconds = float(raw)
-    except (TypeError, ValueError):
-        logger.warning(
-            "MCP config %s must be a number of seconds; ignoring %r", key, raw
-        )
-        return None
-    if seconds == 0:
-        return None
-    if seconds < 0:
-        logger.warning("MCP config %s must be positive; ignoring %r", key, raw)
-        return None
-    return seconds
+    """Compatibility wrapper preserving the legacy logger patch path."""
+
+    return _mcp_tool_schema._get_lifecycle_seconds(
+        config,
+        key,
+        warning=logger.warning,
+    )
 
 
 _UTILITY_CAPABILITY_METHODS = {
