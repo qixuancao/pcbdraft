@@ -13,10 +13,11 @@ pcbdraft/
 │   ├── agent/          planning contracts, tool policy, ports, and durable turn orchestration
 │   ├── core/           errors, safe I/O, redaction, locks, processes, runs, and project paths
 │   ├── domain/         immutable PCB data and deterministic domain rules
-│   ├── interfaces/     CLI, local Web, and the native terminal
-│   │   ├── cli.py       subcommands (doctor/setup/repository/trace) and bare launch
-│   │   ├── terminal.py    terminal startup and model-wizard lifecycle
-│   │   ├── tui/           rendering, prompt editing, commands, and terminal sessions
+│   ├── interfaces/     CLI, local Web API, launchers, and compatibility facades
+│   │   ├── cli.py       subcommands, legacy bare launch, and `terminal` dispatch
+│   │   ├── terminal.py    legacy terminal startup and model-wizard lifecycle
+│   │   ├── terminal_launcher.py  source TypeScript client and loopback GUI lifecycle
+│   │   ├── tui/           legacy Python terminal compatibility surface
 │   │   ├── commands.py  pruned slash-command surface (PCB project commands)
 │   │   └── gui.py         local Web API
 │   ├── kicad/          native KiCad adapters and geometry algorithms
@@ -25,6 +26,8 @@ pcbdraft/
 │   ├── services/       application use cases and transactional orchestration
 │   ├── verification/   evidence, gates, validation, BoardBench, benchmark, and release
 │   └── data/           immutable bundled catalogs and benchmark corpus
+├── clients/
+│   └── terminal/       supported TypeScript terminal client
 ├── tests/              responsibility-mirrored unit and integration tests
 ├── scripts/            stable development, cleanup, E2E, BoardBench, and release entrypoints
 └── docs/               architecture, API, development, and roadmap documentation
@@ -73,16 +76,41 @@ model catalog and HTTP transport.
 ### Services and verification
 
 `services` owns application use cases, write authority, jobs, managed projects,
-and transactions. `verification` evaluates persisted project evidence and owns
-candidate/release decisions. Neither layer should contain presentation code.
+and transactions. `ApplicationService`, `JobRunner`,
+`ConversationOrchestrator`, and `AgentTurnStore` remain the authoritative
+Python runtime for project state, execution, conversation turns, and durable
+tool records. `services.gui_session` adapts that state for clients but persists
+nothing itself; `services.gui_session_contract` defines the typed, versioned
+reconnect payload shared by the local Web and TypeScript terminal clients.
+`verification` evaluates persisted project evidence and owns candidate/release
+decisions. Neither layer should contain presentation code.
 
 ### Interfaces
 
-`interfaces` owns the ``pcbdraft`` CLI and the native ``prompt_toolkit`` terminal. A bare ``pcbdraft`` launch starts
-``interfaces.tui.app.TerminalApp``; the PCBDraft slash commands (``/new``, ``/projects``,
-``/project``, ``/open`` and the PCB workflow commands) translate terminal input
-into ``ApplicationService`` calls. Interfaces may format results, but they must
-not duplicate engineering decisions or become an independent project store.
+`interfaces` owns the `pcbdraft` CLI and the loopback GUI HTTP/SSE API. The GUI
+API plus `services.gui_session_contract` is the sole supported protocol for
+presentation clients; interfaces may format and validate requests, but they
+must not duplicate engineering decisions or become an independent project,
+job, or transcript store.
+
+`clients/terminal` is the supported TypeScript TUI. It resolves the compact
+slash-command surface, renders the trusted project transcript, and follows GUI
+SSE lifecycle events. The event stream does not carry model token deltas. On a
+terminal job event the client fetches the session contract again and displays
+the saved assistant response.
+
+`pcbdraft terminal` is a source-checkout launcher for that client. It starts a
+GUI API bound to `127.0.0.1` when needed, or reuses a healthy PCBDraft GUI on the
+selected loopback port. It rejects installed-only operation without
+`clients/terminal` and rejects an occupied port that does not expose the exact
+PCBDraft health document.
+
+The former Python `prompt_toolkit` terminal remains a compatibility boundary.
+`interfaces.tui.app` is the stable legacy facade and delegates to the isolated
+implementation in `interfaces.tui.legacy_app`; a bare `pcbdraft` launch still
+uses that compatibility path. New terminal features belong in
+`clients/terminal` and use the GUI protocol rather than importing the legacy
+implementation.
 
 ## Compatibility policy
 

@@ -68,7 +68,10 @@ package root:
       kicad/         native KiCad generation, layout, routing, preview, and sync
       services/      application use cases, jobs, managed projects, transactions
       verification/  evidence, validation, review, benchmark, and release gates
-      interfaces/    the ``pcbdraft`` CLI and the native interactive terminal
+      interfaces/    the ``pcbdraft`` CLI, loopback GUI API, and legacy terminal facade
+
+    clients/
+      terminal/      the supported TypeScript interactive terminal
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,
@@ -76,6 +79,12 @@ verification evaluates their persisted results, and interfaces translate user
 input without becoming a second business-logic layer. See
 [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) for placement rules and the
 compatibility policy for historical module paths.
+
+The TypeScript terminal and local Web workbench are presentation clients. Both
+use the loopback GUI HTTP/SSE API, whose reconnect payload is defined by the
+versioned types in `services.gui_session_contract`. This is the sole supported
+client protocol: neither client imports Python service internals or creates a
+second project, job, or transcript store.
 
 BoardBench follows the same boundary: a thin repository script invokes the
 verification-owned runner, evaluator, evidence importers, correction diff, and
@@ -120,18 +129,24 @@ engineering fact, not a router for the next tool call.
 
 ## Product path
 
-          terminal                         local Web workbench
+    TypeScript terminal                    local Web workbench
              |                                    |
-             |                     JobRunner / ConversationOrchestrator
-             |                                    |
-             +------------- agent.loop.AIAgent ---+
+             +----- loopback GUI HTTP/SSE API ----+
+                                  |
+                       typed gui_session_contract
+                                  |
+                         GUI session adapter
+                                  |
+                JobRunner / ConversationOrchestrator
+                                  |
+                         agent.loop.AIAgent
                                |
                      model selects each tool
                                |
                per-conversation tool_session context
                (project, permission policy, application service)
                                |
-               Web: AgentTurnStore journals before dispatch
+               AgentTurnStore journals before dispatch
                                |
                                v
                   PermissionBroker: allow / ask / deny
@@ -191,11 +206,24 @@ engineering fact, not a router for the next tool call.
                   - replacement plan through the same compiler
                   - staged validation before atomic apply
 
-The application service is the only business write authority. `AgentRuntime`
-and `JobRunner` turn its synchronous, transactional operations into durable
-background turns and UI-neutral activity events; the interactive terminal
-owns rendering and input only. Before any side effect, `AgentOrchestrator` persists a
-versioned `TurnRecord` and `ToolRunRecord` under `agent-turns/`. The compound
+The Python runtime remains authoritative: `ApplicationService` is the only
+business write authority, `JobRunner` owns durable execution,
+`ConversationOrchestrator` runs the conversation loop, and `AgentTurnStore`
+owns durable turn and tool records. The GUI session adapter persists none of
+that state. It exposes bounded presentation data through the versioned
+`gui_session_contract` and the loopback GUI API.
+
+The TypeScript terminal owns rendering, input, slash-command resolution, and
+reconnect behavior only. During a turn it displays the lifecycle events exposed
+by the GUI SSE stream. Those events do not contain model token deltas. When a
+terminal `job.complete` or `job.failed` event arrives, the client fetches the
+session again and prints the assistant message after the Python runtime has
+saved it.
+
+`AgentRuntime` and `JobRunner` turn synchronous, transactional application
+operations into durable background turns and UI-neutral activity events.
+Before any side effect, `AgentOrchestrator` persists a versioned `TurnRecord`
+and `ToolRunRecord` under `agent-turns/`. The compound
 `(thread_id, turn_id, tool_call_id)` identity owns progress, result, and approval
 state. A waiting approval additionally binds the canonical argument hash and
 observed engineering revision, so UI status alone can never authorize a write.
@@ -250,11 +278,12 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-The terminal (`interfaces/tui`) and local Web workbench use the native
-`agent.loop.AIAgent` and shared model/authentication configuration. Terminal
-commands select projects through a trusted boundary; Web jobs bind their own
+The TypeScript terminal (`clients/terminal`) and local Web workbench use the
+same loopback GUI API and therefore the same native `agent.loop.AIAgent`, model
+configuration, authentication, and project/session authority. Terminal
+commands select projects through that trusted boundary; jobs bind their own
 project and permission context, including in propagated tool-worker contexts.
-`ConversationOrchestrator` records each model-selected Web tool before dispatch,
+`ConversationOrchestrator` records each model-selected tool before dispatch,
 retains model conversation history in the project session database, and writes
 assistant replies to the durable turn. Approval resumes the exact pending tool
 once and provides its receipt to the model; cancellation interrupts the model.
@@ -264,16 +293,25 @@ The deterministic producer remains only for compatibility jobs and explicit
 shortcut actions.
 Follow-up messages on a generated project are compiled into an isolated replacement,
 validated under `transactions/`, and only then atomically applied by policy.
-The terminal retains bounded tool history across recent turns; collapsed mode
-shows concise call activity, while expanded logs include effect, risk, argument
-hash, baseline/result revisions, bounded arguments, and the local result receipt.
-A restart marks an
+The durable runtime retains bounded tool history across recent turns, including
+effect, risk, argument hash, baseline/result revisions, bounded arguments, and
+the local result receipt. A restart marks an
 incomplete job and active tool interrupted rather than replaying its side
-effects. `/retry` creates another Job attempt over the same `turn_id`; completed
-tool receipts are reused. A call that was durably marked as dispatched but lacks
-an exact matching result receipt is ambiguous even when the project revision did
-not advance; it is failed closed and is never dispatched again. The user must
-inspect the retained project and submit a new turn.
+effects. A retry creates another Job attempt over the same `turn_id`; completed
+tool receipts are reused. A call that was durably marked as dispatched but
+lacks an exact matching result receipt is ambiguous even when the project
+revision did not advance; it is failed closed and is never dispatched again.
+The user must inspect the retained project and submit a new turn.
+
+The historical Python terminal is isolated behind
+`interfaces.tui.app`, a compatibility facade that forwards existing imports to
+`interfaces.tui.legacy_app`. It remains available for compatibility but is not
+the client protocol or the implementation of the supported TypeScript terminal.
+From a source checkout, `pcbdraft terminal` validates Bun, starts a GUI service
+on `127.0.0.1` when the selected port is free, or reuses an already healthy
+PCBDraft GUI on that loopback port. The launcher refuses installed-only use when
+`clients/terminal` is absent and never accepts a non-PCBDraft service occupying
+the selected port.
 
 ## Goal Mode
 
