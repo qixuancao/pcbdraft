@@ -156,6 +156,12 @@ except Exception:  # pragma: no cover - vendored trim: browser tooling omitted
 
 # Agent internals extracted to agent/ package for modularity
 # Re-exported for tests that monkeypatch these symbols on run_agent.
+from pcbdraft.agent.api_message_helpers import (
+    ApiMessageHelpersMixin,
+)
+from pcbdraft.agent.api_message_helpers import (
+    configure_api_message_helper_runtime as _configure_api_message_helper_runtime,
+)
 from pcbdraft.agent.context_compressor import (
     COMPRESSED_SUMMARY_METADATA_KEY,
     ContextCompressor,
@@ -244,6 +250,21 @@ from pcbdraft.model.model_metadata import (
     is_local_endpoint,
 )
 from pcbdraft.model.usage_pricing import normalize_usage
+
+_configure_api_message_helper_runtime(
+    coalesce_tool_call_id=lambda tool_call: _sanitize_coalesce_tool_call_id(tool_call),
+    uniquify_tool_call_ids=lambda tool_calls: _sanitize_uniquify_tool_call_ids(
+        tool_calls
+    ),
+    deterministic_call_id=lambda fn_name, arguments, index: (
+        _codex_deterministic_call_id(fn_name, arguments, index)
+    ),
+    split_responses_tool_id=lambda raw_id: _codex_split_responses_tool_id(raw_id),
+    derive_responses_function_call_id=lambda call_id, response_item_id: (
+        _codex_derive_responses_function_call_id(call_id, response_item_id)
+    ),
+    warning=lambda message, *args: logger.warning(message, *args),
+)
 
 # Internal flags that mark a message as ephemeral empty-response/prefill
 # recovery scaffolding: the synthetic assistant "(empty)" turn and user nudge
@@ -431,7 +452,12 @@ class _StreamErrorEvent(Exception):
         }
 
 
-class AIAgent(MessagePreparationMixin, StatusDeliveryMixin, StreamDeliveryMixin):
+class AIAgent(
+    ApiMessageHelpersMixin,
+    MessagePreparationMixin,
+    StatusDeliveryMixin,
+    StreamDeliveryMixin,
+):
     """
     AI Agent with tool calling capabilities.
 
@@ -4539,265 +4565,11 @@ class AIAgent(MessagePreparationMixin, StatusDeliveryMixin, StreamDeliveryMixin)
         """Check if an interrupt has been requested."""
         return self._interrupt_requested
 
-    def _build_system_prompt_parts(
-        self, system_message: str | None = None
-    ) -> dict[str, str]:
-        """Forwarder — see ``agent.system_prompt.build_system_prompt_parts``."""
-        from pcbdraft.agent.system_prompt import build_system_prompt_parts
-
-        return build_system_prompt_parts(self, system_message=system_message)
-
-    def _build_system_prompt(self, system_message: str | None = None) -> str:
-        """Forwarder — see ``agent.system_prompt.build_system_prompt``."""
-        from pcbdraft.agent.system_prompt import build_system_prompt
-
-        return build_system_prompt(self, system_message=system_message)
-
-    @staticmethod
-    def _get_tool_call_id_static(tc) -> str:
-        """Extract call ID from a tool_call entry (dict or object).
-
-        Forwarder — policy owner is
-        ``agent.message_sanitization.coalesce_tool_call_id`` (audit F4).
-        """
-        return _sanitize_coalesce_tool_call_id(tc)
-
-    @staticmethod
-    def _get_tool_call_name_static(tc) -> str:
-        """Extract function name from a tool_call entry (dict or object).
-
-        Gemini's OpenAI-compatibility endpoint requires every `role: tool`
-        message to carry the matching function name. OpenAI/Anthropic/ollama
-        tolerate its absence, so the field is best-effort: callers fall back
-        to "" and the message still works elsewhere.
-        """
-        if isinstance(tc, dict):
-            fn = tc.get("function")
-            if isinstance(fn, dict):
-                return fn.get("name", "") or ""
-            return ""
-        fn = getattr(tc, "function", None)
-        return getattr(fn, "name", "") or ""
-
-    _VALID_API_ROLES = frozenset(
-        {"system", "user", "assistant", "tool", "function", "developer"}
-    )
-
-    @staticmethod
-    def _sanitize_api_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Forwarder — see ``agent.agent_runtime_helpers.sanitize_api_messages``."""
-        from pcbdraft.agent.agent_runtime_helpers import sanitize_api_messages
-
-        return sanitize_api_messages(messages)
-
-    @staticmethod
-    def _is_thinking_only_assistant(
-        msg: dict[str, Any],
-        *,
-        drop_codex_reasoning_items: bool = True,
-    ) -> bool:
-        """Return True if ``msg`` is an assistant turn whose only payload is reasoning.
-
-        "Thinking-only" means the model emitted reasoning (``reasoning`` or
-        ``reasoning_content``) but no visible text and no tool_calls. When sent
-        back to providers that convert reasoning into thinking blocks (native
-        Anthropic, OpenRouter Anthropic, third-party Anthropic-compatible
-        gateways), the resulting message has only thinking blocks — which
-        Anthropic rejects with HTTP 400 "The final block in an assistant
-        message cannot be `thinking`."
-
-        Symmetric with Claude Code's ``filterOrphanedThinkingOnlyMessages``
-        (src/utils/messages.ts). We drop the whole turn from the API copy
-        rather than fabricating stub text — the message log (UI transcript)
-        keeps the reasoning block; only the wire copy is cleaned.
-        """
-        if not isinstance(msg, dict) or msg.get("role") != "assistant":
-            return False
-        if msg.get("tool_calls"):
-            return False
-        # Prefill stubs are thinking-only by construction; check before content
-        # inspection since repair_empty_non_final_messages may have healed content.
-        if msg.get("_thinking_prefill"):
-            return True
-        # Does it have any actual output?
-        content = msg.get("content")
-        if isinstance(content, str):
-            if content.strip():
-                return False
-        elif isinstance(content, list):
-            for block in content:
-                if not isinstance(block, dict):
-                    if block:  # non-empty non-dict string etc.
-                        return False
-                    continue
-                btype = block.get("type")
-                if btype in {"thinking", "redacted_thinking"}:
-                    continue
-                if btype == "text":
-                    text = block.get("text", "")
-                    if isinstance(text, str) and text.strip():
-                        return False
-                    continue
-                # tool_use, image, document, etc. — real payload
-                return False
-        elif content is not None and content != "":
-            return False
-        # A native compaction checkpoint makes a carrier never thinking-only,
-        # regardless of api_mode or which reasoning field is populated. The
-        # checkpoint is the server-side stand-in for already-pruned history
-        # and exists in exactly one place; the codex_responses adapter also
-        # surfaces commentary text via msg["reasoning"], so the string branch
-        # below would otherwise drop a carrier before the sidecar is ever
-        # inspected. Checked here — above every reasoning branch — so no
-        # carrier shape can fall into a drop path (#82108 review finding).
-        from pcbdraft.agent.native_compaction import has_compaction_checkpoint
-
-        if has_compaction_checkpoint(msg.get("codex_reasoning_items")):
-            return False
-        reasoning = msg.get("reasoning_content") or msg.get("reasoning")
-        if isinstance(reasoning, str) and reasoning.strip():
-            return True
-        # reasoning_details list form
-        rd = msg.get("reasoning_details")
-        if isinstance(rd, list) and rd:
-            return True
-        # Codex Responses stores encrypted reasoning state under a separate
-        # assistant-message key. Treat only real reasoning items as
-        # thinking-only; empty/junk lists should fall through to the generic
-        # empty-turn handling instead of being dropped here.
-        codex_items = msg.get("codex_reasoning_items")
-        if drop_codex_reasoning_items and isinstance(codex_items, list):
-            return any(
-                isinstance(item, dict) and item.get("type") == "reasoning"
-                for item in codex_items
-            )
-        return False
-
-    @staticmethod
-    def _drop_thinking_only_and_merge_users(
-        messages: list[dict[str, Any]],
-        *,
-        drop_codex_reasoning_items: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Forwarder — see ``agent.agent_runtime_helpers.drop_thinking_only_and_merge_users``."""
-        from pcbdraft.agent.agent_runtime_helpers import (
-            drop_thinking_only_and_merge_users,
-        )
-
-        return drop_thinking_only_and_merge_users(
-            messages,
-            drop_codex_reasoning_items=drop_codex_reasoning_items,
-        )
-
-    @staticmethod
-    def _cap_delegate_task_calls(tool_calls: list) -> list:
-        """Truncate excess delegate_task calls to max_concurrent_children.
-
-        The delegate_tool caps the task list inside a single call, but the
-        model can emit multiple separate delegate_task tool_calls in one
-        turn.  This truncates the excess, preserving all non-delegate calls.
-
-        Returns the original list if no truncation was needed.
-        """
-        from pcbdraft.tools.delegate_tool import _get_max_concurrent_children
-
-        max_children = _get_max_concurrent_children()
-        delegate_count = sum(
-            1 for tc in tool_calls if tc.function.name == "delegate_task"
-        )
-        if delegate_count <= max_children:
-            return tool_calls
-        kept_delegates = 0
-        truncated = []
-        for tc in tool_calls:
-            if tc.function.name == "delegate_task":
-                if kept_delegates < max_children:
-                    truncated.append(tc)
-                    kept_delegates += 1
-            else:
-                truncated.append(tc)
-        logger.warning(
-            "Truncated %d excess delegate_task call(s) to enforce "
-            "max_concurrent_children=%d limit",
-            delegate_count - max_children,
-            max_children,
-        )
-        return truncated
-
-    @staticmethod
-    def _deduplicate_tool_calls(tool_calls: list) -> list:
-        """Remove duplicate (tool_name, arguments) pairs within a single turn.
-
-        Valid JSON arguments are canonicalized so equivalent objects do not
-        evade deduplication merely because their keys or whitespace differ.
-        Malformed arguments retain their raw representation rather than being
-        repaired here. Only the first occurrence of each unique pair is kept.
-        Returns the original list if no duplicates were found.
-        """
-        seen: set = set()
-        unique: list = []
-        for tc in tool_calls:
-            arguments = tc.function.arguments
-            try:
-                arguments = json.dumps(
-                    json.loads(arguments), separators=(",", ":"), sort_keys=True
-                )
-            except (TypeError, ValueError):
-                pass
-            key = (tc.function.name, arguments)
-            if key not in seen:
-                seen.add(key)
-                unique.append(tc)
-            else:
-                logger.warning("Removed duplicate tool call: %s", tc.function.name)
-        return unique if len(unique) < len(tool_calls) else tool_calls
-
-    @staticmethod
-    def _uniquify_tool_call_ids(tool_calls: list) -> list:
-        """Ensure every tool call in a single assistant turn has a distinct id.
-
-        Forwarder — policy owner is
-        ``agent.message_sanitization.uniquify_tool_call_ids`` (audit F4).
-        First occurrence keeps its id; later collisions get a deterministic
-        ``<id>_d<n>`` suffix (never uuid4 — prompt-cache prefix stability).
-        Mutates entries in place and returns the same list.
-        """
-        return _sanitize_uniquify_tool_call_ids(tool_calls)
-
-    def _repair_tool_call(self, tool_name: str) -> str | None:
-        """Forwarder — see ``agent.agent_runtime_helpers.repair_tool_call``."""
-        from pcbdraft.agent.agent_runtime_helpers import repair_tool_call
-
-        return repair_tool_call(self, tool_name)
-
     def _invalidate_system_prompt(self):
         """Forwarder — see ``agent.system_prompt.invalidate_system_prompt``."""
         from pcbdraft.agent.system_prompt import invalidate_system_prompt
 
         invalidate_system_prompt(self)
-
-    @staticmethod
-    def _deterministic_call_id(fn_name: str, arguments: str, index: int = 0) -> str:
-        """Generate a deterministic call_id from tool call content.
-
-        Used as a fallback when the API doesn't provide a call_id.
-        Deterministic IDs prevent cache invalidation — random UUIDs would
-        make every API call's prefix unique, breaking OpenAI's prompt cache.
-        """
-        return _codex_deterministic_call_id(fn_name, arguments, index)
-
-    @staticmethod
-    def _split_responses_tool_id(raw_id: Any) -> tuple[str | None, str | None]:
-        """Split a stored tool id into (call_id, response_item_id)."""
-        return _codex_split_responses_tool_id(raw_id)
-
-    def _derive_responses_function_call_id(
-        self,
-        call_id: str,
-        response_item_id: str | None = None,
-    ) -> str:
-        """Build a valid Responses `function_call.id` (must start with `fc_`)."""
-        return _codex_derive_responses_function_call_id(call_id, response_item_id)
 
     def _thread_identity(self) -> str:
         thread = threading.current_thread()
