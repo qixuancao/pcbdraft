@@ -304,6 +304,12 @@ class ApplicationService(ApplicationProjectStoreMixin):
     """Single write authority for product projects and their engineering runtime."""
 
     @staticmethod
+    def _project_store_sanitize_secret_text(value: str) -> str:
+        """Preserve the historical application sanitizer patch point."""
+
+        return _sanitize_secret_text(value)
+
+    @staticmethod
     def _project_store_open_managed_project(design_root: Path) -> Any:
         """Preserve the historical application.open_managed_project patch point."""
 

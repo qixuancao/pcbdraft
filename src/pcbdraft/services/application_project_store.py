@@ -16,7 +16,6 @@ from typing import Any
 
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, load_json_limited
-from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.domain.ir import Design
 from pcbdraft.services.managed import IR_NAME
@@ -169,8 +168,9 @@ class ApplicationProjectStoreMixin:
         if not isinstance(value["decisions"], dict):
             raise ValidationError("conversation decisions are malformed")
 
-    @staticmethod
+    @classmethod
     def _append_message(
+        cls,
         conversation: dict[str, Any],
         role: str,
         kind: str,
@@ -185,14 +185,15 @@ class ApplicationProjectStoreMixin:
                 "id": secrets.token_hex(8),
                 "role": role,
                 "kind": kind,
-                "text": sanitize_user_text(text),
+                "text": cls._project_store_sanitize_secret_text(text),
                 "created_at": utc_timestamp(),
                 "data": data or {},
             }
         )
 
-    @staticmethod
+    @classmethod
     def _event(
+        cls,
         state: dict[str, Any],
         root: Path,
         kind: str,
@@ -219,7 +220,7 @@ class ApplicationProjectStoreMixin:
                 "sequence": sequence,
                 "kind": kind,
                 "level": level,
-                "message": sanitize_user_text(message)[:2048],
+                "message": cls._project_store_sanitize_secret_text(message)[:2048],
                 "created_at": utc_timestamp(),
                 "canonical_revision": state.get("revision"),
                 "design_revision": state.get("design_revision"),

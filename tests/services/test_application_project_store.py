@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import inspect
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,8 +54,8 @@ class ApplicationProjectStoreTests(unittest.TestCase):
         for name in moved_methods:
             with self.subTest(name=name):
                 self.assertIs(
-                    getattr(application.ApplicationService, name),
-                    getattr(
+                    inspect.getattr_static(application.ApplicationService, name),
+                    inspect.getattr_static(
                         application_project_store.ApplicationProjectStoreMixin, name
                     ),
                 )
@@ -205,6 +206,31 @@ class ApplicationProjectStoreTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValidationError, "path is unsafe"):
             self.service._project_path("escape-id")
+
+    def test_append_and_event_use_legacy_application_sanitizer_patch(self) -> None:
+        draft = self.service.create_draft("Sanitizer patch")
+        project_id = str(draft["project"]["id"])
+        project = self.service._open(project_id)
+
+        with patch.object(
+            application,
+            "_sanitize_secret_text",
+            side_effect=lambda value: f"patched:{value}",
+        ) as sanitize:
+            self.service._append_message(
+                project.conversation, "assistant", "status", "message"
+            )
+            self.service._event(project.state, project.root, "project.tested", "event")
+
+        self.assertEqual(
+            project.conversation["messages"][-1]["text"], "patched:message"
+        )
+        event = self.service.events(project_id)[0]
+        self.assertEqual(event["message"], "patched:event")
+        self.assertEqual(
+            [call.args[0] for call in sanitize.call_args_list],
+            ["message", "event"],
+        )
 
 
 if __name__ == "__main__":
