@@ -34,6 +34,9 @@ export type GuiEvent = {
   sequence: number
   stream_id: string
   state?: string
+  turn_id?: string
+  text?: string
+  transient?: boolean
 }
 
 export type ProjectSnapshot = {
@@ -200,7 +203,7 @@ function parseSseRecord(block: string): SseRecord | null {
 function isGuiEvent(value: unknown): value is GuiEvent {
   if (!value || typeof value !== "object") return false
   const event = value as Partial<GuiEvent>
-  return typeof event.kind === "string"
+  const baseIsValid = typeof event.kind === "string"
     && typeof event.message === "string"
     && typeof event.level === "string"
     && typeof event.created_at === "string"
@@ -208,4 +211,18 @@ function isGuiEvent(value: unknown): value is GuiEvent {
     && Number.isSafeInteger(event.sequence)
     && (event.sequence ?? 0) > 0
     && typeof event.stream_id === "string"
+    && (event.state === undefined || typeof event.state === "string")
+    && (event.turn_id === undefined || typeof event.turn_id === "string")
+    && (event.text === undefined || typeof event.text === "string")
+    && (event.transient === undefined || typeof event.transient === "boolean")
+  if (!baseIsValid) return false
+  if (event.kind !== "assistant.delta") return true
+  return event.source === "agent"
+    && event.transient === true
+    && typeof event.turn_id === "string"
+    && event.turn_id.length > 0
+    && event.turn_id.length <= 128
+    && typeof event.text === "string"
+    && event.text.length > 0
+    && event.text.length <= 4_096
 }

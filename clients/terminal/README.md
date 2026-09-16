@@ -25,8 +25,8 @@ project. `/resume` and `/open` restore an existing project. Slash commands
 accept unique, case-insensitive prefixes, so `/n` and `/NEW` resolve to `/new`,
 while ambiguous prefixes produce an error instead of guessing.
 
-After a message is submitted, the client follows the GUI lifecycle SSE stream.
-It shows the current job phase, then reloads the canonical session after a
-terminal job event and prints the saved assistant reply. The lifecycle stream
-does not contain token deltas, so this client does not present status events as
-token streaming.
+After a message is submitted, the client follows the GUI SSE stream and renders
+bounded `assistant.delta` events for that turn as a live preview. On completion,
+cancellation, or a resumed connection, it reloads the canonical session. The
+saved assistant message remains authoritative and is not printed twice when it
+matches the completed preview.

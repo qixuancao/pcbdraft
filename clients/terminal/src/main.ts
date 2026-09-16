@@ -1,6 +1,7 @@
 import { createInterface } from "node:readline/promises"
 import { stdin as input, stdout as output } from "node:process"
 import { GuiClient, type GuiEvent, type Project, type ProjectSession, type TranscriptMessage } from "./bridge.ts"
+import { AssistantPreview } from "./assistant-preview.ts"
 import { resolveSlashCommand } from "./commands.ts"
 
 const gui = new GuiClient()
@@ -9,7 +10,7 @@ const TERMINAL_JOB_EVENTS = new Set(["job.complete", "job.failed"])
 
 let projects: Project[] = []
 let current: { project: Project; messages: TranscriptMessage[] } | null = null
-let activeMonitor: { jobId: string; controller: AbortController } | null = null
+let activeMonitor: { jobId: string; controller: AbortController; preview: AssistantPreview } | null = null
 
 function heading(): void {
   const project = current ? `project: ${current.project.name}` : "project: none"
@@ -66,32 +67,52 @@ function showLifecycle(event: GuiEvent): void {
   else if (event.kind === "job.failed") output.write("Failed · loading the final job state\n")
 }
 
-function showNewAssistantMessages(session: ProjectSession): void {
+function showNewAssistantMessages(session: ProjectSession, preview?: AssistantPreview): void {
   if (!current) return
   const known = new Set(current.messages.map((message) => message.id))
   const added = session.messages.filter((message) => !known.has(message.id) && message.role === "assistant")
   current.messages = session.messages
-  for (const message of added) printMessage(message)
-  if (added.length === 0 && session.status === "idle") output.write("Job finished without a new assistant message.\n")
+  if (preview) preview.finish(added, session.status)
+  else {
+    for (const message of added) printMessage(message)
+    if (added.length === 0 && session.status === "idle") output.write("Job finished without a new assistant message.\n")
+  }
 }
 
-async function monitorJob(projectId: string, jobId: string, after: number, controller: AbortController): Promise<void> {
+async function monitorJob(
+  projectId: string,
+  jobId: string,
+  after: number,
+  controller: AbortController,
+  preview: AssistantPreview,
+): Promise<void> {
   let cursor = after
   try {
     while (!controller.signal.aborted) {
       let terminalEvent = false
-      cursor = await gui.subscribe(projectId, cursor, (event) => {
-        showLifecycle(event)
-        terminalEvent = TERMINAL_JOB_EVENTS.has(event.kind)
-        return !terminalEvent
-      }, controller.signal)
-      const session = await gui.session(projectId)
-      if (current?.project.id === projectId) showNewAssistantMessages(session)
-      if (terminalEvent || !session.active_turn) return
-      output.write("Connection resumed · the agent is still working\n")
+      try {
+        cursor = await gui.subscribe(projectId, cursor, (event) => {
+          if (!preview.consume(event)) showLifecycle(event)
+          terminalEvent = TERMINAL_JOB_EVENTS.has(event.kind)
+          return !terminalEvent
+        }, controller.signal)
+      } catch (error) {
+        if (controller.signal.aborted) return
+        output.write(`Event stream error: ${error instanceof Error ? error.message : String(error)}\n`)
+      }
+      if (controller.signal.aborted) return
+      try {
+        const session = await gui.session(projectId)
+        if (terminalEvent || !session.active_turn) {
+          if (current?.project.id === projectId) showNewAssistantMessages(session, preview)
+          return
+        }
+        output.write("Connection resumed · the agent is still working\n")
+      } catch (error) {
+        output.write(`Session refresh error: ${error instanceof Error ? error.message : String(error)}\n`)
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500))
     }
-  } catch (error) {
-    if (!controller.signal.aborted) output.write(`Event stream error: ${error instanceof Error ? error.message : String(error)}\n`)
   } finally {
     if (activeMonitor?.jobId === jobId) activeMonitor = null
   }
@@ -103,10 +124,11 @@ async function sendMessage(text: string): Promise<void> {
   const projectId = current.project.id
   const snapshot = await gui.snapshot(projectId)
   const result = await gui.sendMessage(projectId, text)
-  output.write(`Queued ${result.job_id} · waiting for lifecycle events (assistant text is shown after it is saved)\n`)
+  output.write(`Queued ${result.job_id} · streaming the assistant response\n`)
   const controller = new AbortController()
-  activeMonitor = { jobId: result.job_id, controller }
-  void monitorJob(projectId, result.job_id, snapshot.stream.last_sequence, controller)
+  const preview = new AssistantPreview(result.turn_id, (value) => output.write(value))
+  activeMonitor = { jobId: result.job_id, controller, preview }
+  void monitorJob(projectId, result.job_id, snapshot.stream.last_sequence, controller, preview)
 }
 
 async function stopCurrent(): Promise<void> {
@@ -114,9 +136,10 @@ async function stopCurrent(): Promise<void> {
   const result = await gui.stop(current.project.id)
   output.write(`Cancellation: ${result.status}\n`)
   if (result.status === "idle" || result.status === "cancelled") {
-    activeMonitor?.controller.abort()
+    const monitor = activeMonitor
+    monitor?.controller.abort()
     activeMonitor = null
-    showNewAssistantMessages(await gui.session(current.project.id))
+    showNewAssistantMessages(await gui.session(current.project.id), monitor?.preview)
   }
 }
 

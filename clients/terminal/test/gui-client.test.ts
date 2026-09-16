@@ -82,3 +82,32 @@ test("subscribe resumes the SSE stream and stops when the handler returns false"
   expect(events).toEqual(["job.started", "job.complete"])
   expect(cursor).toBe(9)
 })
+
+test("subscribe accepts a bounded transient assistant delta", async () => {
+  globalThis.fetch = (async (_input, _init) => new Response(
+    "event: update\ndata: {\"kind\":\"assistant.delta\",\"message\":\"Assistant response update\",\"level\":\"info\",\"created_at\":\"now\",\"source\":\"agent\",\"sequence\":12,\"stream_id\":\"stream-1\",\"turn_id\":\"turn-1\",\"text\":\"Hello\",\"transient\":true}\n\n",
+    { headers: { "Content-Type": "text/event-stream" } },
+  )) as typeof fetch
+
+  const received: string[] = []
+  const client = new GuiClient("http://127.0.0.1:9130")
+  const cursor = await client.subscribe("board-1", 11, (event) => {
+    received.push(`${event.turn_id}:${event.text}`)
+    return false
+  })
+
+  expect(received).toEqual(["turn-1:Hello"])
+  expect(cursor).toBe(12)
+})
+
+test("subscribe rejects assistant deltas that are persistent or have invalid optional fields", async () => {
+  globalThis.fetch = (async (_input, _init) => new Response(
+    "event: update\ndata: {\"kind\":\"assistant.delta\",\"message\":\"Assistant response update\",\"level\":\"info\",\"created_at\":\"now\",\"source\":\"agent\",\"sequence\":12,\"stream_id\":\"stream-1\",\"turn_id\":\"turn-1\",\"text\":\"Hello\",\"transient\":false}\n\n",
+    { headers: { "Content-Type": "text/event-stream" } },
+  )) as typeof fetch
+
+  const client = new GuiClient("http://127.0.0.1:9130")
+  expect(client.subscribe("board-1", 11, () => undefined)).rejects.toThrow(
+    "GUI event stream returned an invalid event",
+  )
+})
