@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 import sys
 import threading
-from collections.abc import Mapping
 from typing import Any
 
 from pcbdraft.agent.permissions import PermissionMode
@@ -22,7 +20,6 @@ from pcbdraft.services.provider_connection import (
 _LOGGER = logging.getLogger(__name__)
 _deferred_connection_options: ConnectionOptions | None = None
 _deferred_connection_lock = threading.Lock()
-_PROJECT_SESSION_SCAN_LIMIT = 50
 
 
 def _defer_connection(options: ConnectionOptions) -> None:
@@ -63,26 +60,11 @@ def _slash_connection_options(raw_args: str) -> ConnectionOptions:
 
 
 def _project_ids_from_session_history(messages: list[dict[str, Any]]) -> set[str]:
-    """Return project IDs proven by structured PCB tool results."""
+    """Compatibility import for terminal-focused callers and tests."""
 
-    project_ids: set[str] = set()
-    for message in messages:
-        if not isinstance(message, dict) or message.get("role") != "tool":
-            continue
-        content = message.get("content")
-        try:
-            payload = json.loads(content) if isinstance(content, str) else content
-        except (TypeError, ValueError):
-            continue
-        if not isinstance(payload, Mapping):
-            continue
-        tool_name = str(message.get("tool_name") or payload.get("tool") or "")
-        if not tool_name.startswith("pcb_"):
-            continue
-        project_id = payload.get("project_id")
-        if isinstance(project_id, str) and project_id:
-            project_ids.add(project_id)
-    return project_ids
+    from pcbdraft.services.project_history import project_ids_from_history
+
+    return project_ids_from_history(messages)
 
 
 def _validated_project_session_id(cli: Any, project_id: str) -> str | None:
@@ -91,85 +73,12 @@ def _validated_project_session_id(cli: Any, project_id: str) -> str | None:
     session_db = getattr(cli, "_session_db", None)
     if session_db is None or not project_id:
         return None
+    from pcbdraft.agent.tool_bindings import get_service
+    from pcbdraft.services.project_history import find_project_session_id
 
-    receipt_candidate_ids: list[str] = []
-    try:
-        from pcbdraft.agent.tool_bindings import get_service
-        from pcbdraft.core.io import load_json_limited
-        from pcbdraft.services.progress import ProductSessionTerminalReceipt
-
-        project_root = get_service(recover_interrupted=False).project_root(project_id)
-        receipt_root = project_root / "product-sessions"
-        receipts: list[tuple[str, str]] = []
-        if receipt_root.is_dir() and not receipt_root.is_symlink():
-            for path in receipt_root.iterdir():
-                if path.is_symlink() or not path.is_file() or path.suffix != ".json":
-                    continue
-                try:
-                    receipt = ProductSessionTerminalReceipt.from_dict(
-                        load_json_limited(path, 1024 * 1024)
-                    )
-                except Exception as exc:  # noqa: BLE001 - skip one malformed receipt
-                    _LOGGER.debug(
-                        "Ignoring invalid product-session receipt %s: %s", path, exc
-                    )
-                    continue
-                if receipt.project_id == project_id:
-                    receipts.append((receipt.created_at, receipt.session_id))
-        receipt_candidate_ids.extend(
-            session_id for _created_at, session_id in sorted(receipts, reverse=True)
-        )
-    except Exception:
-        _LOGGER.debug(
-            "Could not read product-session receipts for project %s",
-            project_id,
-            exc_info=True,
-        )
-
-    # Older projects may predate product-session terminal receipts. Search a
-    # bounded recent window, then accept only exact structured PCB tool output.
-    try:
-        recent = session_db.list_sessions_rich(
-            source="cli",
-            limit=_PROJECT_SESSION_SCAN_LIMIT,
-            min_message_count=1,
-            order_by_last_active=True,
-            compact_rows=True,
-        )
-        recent_candidate_ids = [str(row.get("id") or "") for row in recent]
-    except Exception:
-        _LOGGER.debug("Could not list legacy project sessions", exc_info=True)
-        recent_candidate_ids = []
-
-    seen: set[str] = set()
-    # Recent sessions come first so a valid follow-up chat without a terminal
-    # receipt is not hidden behind an older completed product turn. Receipts
-    # remain the unbounded fallback for projects older than the recent window.
-    for candidate_id in recent_candidate_ids + receipt_candidate_ids:
-        if not candidate_id or candidate_id in seen:
-            continue
-        seen.add(candidate_id)
-        try:
-            metadata = session_db.get_session(candidate_id)
-            if not metadata or metadata.get("source") != "cli":
-                continue
-            resolved_id = (
-                session_db.resolve_resume_session_id(candidate_id) or candidate_id
-            )
-            safety_check = getattr(session_db, "assert_resume_safe", None)
-            if callable(safety_check):
-                safety_check(resolved_id)
-            model_history, display_history = session_db.get_resume_conversations(
-                resolved_id
-            )
-        except Exception as exc:  # noqa: BLE001 - one bad session must not block fallback
-            _LOGGER.debug("Ignoring unusable project session %s: %s", candidate_id, exc)
-            continue
-        if model_history and _project_ids_from_session_history(display_history) == {
-            project_id
-        }:
-            return resolved_id
-    return None
+    return find_project_session_id(
+        session_db, get_service(recover_interrupted=False), project_id
+    )
 
 
 def _resume_project_conversation(cli: Any, project_id: str) -> bool:

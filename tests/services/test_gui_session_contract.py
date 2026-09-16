@@ -67,6 +67,7 @@ class GuiSessionContractTests(unittest.TestCase):
             active=active_turn(job, turn_id="turn-1"),
             pending_approval=None,
             messages=[message],
+            legacy_session_id="legacy-session",
             jobs=[visible_job(job)],
             canonical_revision=7,
             design_revision=3,
@@ -83,6 +84,7 @@ class GuiSessionContractTests(unittest.TestCase):
                 "active_turn",
                 "pending_approval",
                 "messages",
+                "legacy_session_id",
                 "jobs",
                 "canonical_revision",
                 "design_revision",
@@ -91,6 +93,7 @@ class GuiSessionContractTests(unittest.TestCase):
         )
         self.assertEqual(response["schema"], "pcbdraft-gui-session")
         self.assertEqual(response["version"], 2)
+        self.assertEqual(response["legacy_session_id"], "legacy-session")
         self.assertEqual(response["active_turn"]["job_id"], "job-1")
         self.assertEqual(response["jobs"][0]["project_revision"], 7)
         self.assertNotIn("private", response["jobs"][0])

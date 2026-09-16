@@ -24,6 +24,7 @@ from pcbdraft.services.gui_session_contract import (
     visible_job,
 )
 from pcbdraft.services.jobs import JobRunner
+from pcbdraft.services.project_history import legacy_project_messages
 
 MAX_PROMPT_BYTES = 16 * 1024
 MAX_RESPONSE_BYTES = 16 * 1024
@@ -124,7 +125,7 @@ class GuiSessionManager:
         )
 
     def session(self, project_id: str) -> GuiSessionResponse:
-        """Build reconnect state only from canonical jobs, turns, and project state."""
+        """Build reconnect state from canonical turns or verified legacy history."""
 
         view = self.service.open_project(project_id)
         jobs = self.jobs.list(project_id)
@@ -133,6 +134,12 @@ class GuiSessionManager:
             (job for job in jobs if job.get("status") in _ACTIVE_JOB_STATES), None
         )
         messages = self._messages(turns)
+        legacy_session_id = None
+        if not messages:
+            legacy = legacy_project_messages(self.service, project_id)
+            if legacy is not None:
+                legacy_session_id, legacy_history = legacy
+                messages = self._legacy_messages(legacy_history, legacy_session_id)
         active_args = active.get("args") if isinstance(active, dict) else None
         active_turn_id = (
             active_args.get("turn_id") if isinstance(active_args, dict) else None
@@ -156,6 +163,7 @@ class GuiSessionManager:
             ),
             pending_approval=pending,
             messages=messages,
+            legacy_session_id=legacy_session_id,
             jobs=[visible_job(job) for job in jobs[:MAX_VISIBLE_JOBS]],
             canonical_revision=(
                 state.get("revision") if isinstance(state, dict) else None
@@ -207,6 +215,42 @@ class GuiSessionManager:
                     )
                 )
         return messages[-MAX_MESSAGES:]
+
+    @staticmethod
+    def _legacy_messages(
+        history: list[dict[str, Any]], session_id: str
+    ) -> list[GuiSessionMessage]:
+        """Project a verified pre-GUI transcript into the public message shape."""
+
+        messages: list[GuiSessionMessage] = []
+        for index, message in enumerate(history):
+            role = message.get("role")
+            text = GuiSessionManager._legacy_text(message.get("content"))
+            if role not in {"user", "assistant"} or not text:
+                continue
+            messages.append(
+                session_message(
+                    message_id=f"legacy-{session_id}-{index}",
+                    turn_id=session_id,
+                    role=role,
+                    text=_bounded_text(text),
+                    status="completed",
+                    created_at="",
+                )
+            )
+        return messages[-MAX_MESSAGES:]
+
+    @staticmethod
+    def _legacy_text(content: object) -> str:
+        if isinstance(content, str):
+            return content.strip()
+        if isinstance(content, list):
+            return " ".join(
+                str(part.get("text") or "")
+                for part in content
+                if isinstance(part, dict) and part.get("type") == "text"
+            ).strip()
+        return ""
 
     @staticmethod
     def _content_hash(view: dict[str, Any]) -> str | None:

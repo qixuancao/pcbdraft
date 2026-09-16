@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from pcbdraft.agent.turns import TurnStatus
 from pcbdraft.core.errors import ValidationError
@@ -151,6 +152,32 @@ class GuiSessionManagerTests(unittest.TestCase):
         self.assertEqual(reconnected["canonical_revision"], 7)
         self.assertEqual(reconnected["content_hash"], "a" * 64)
         self.assertEqual(reconnected["jobs"][0]["project_revision"], 7)
+        self.assertIsNone(reconnected["legacy_session_id"])
+
+    def test_empty_native_session_projects_verified_legacy_history(self) -> None:
+        legacy = (
+            "legacy-session",
+            [
+                {"role": "tool", "content": "ignore"},
+                {"role": "user", "content": "  Restore this board  "},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "Restored safely"}],
+                },
+                {"role": "assistant", "content": "   "},
+            ],
+        )
+        with patch(
+            "pcbdraft.services.gui_session.legacy_project_messages",
+            return_value=legacy,
+        ):
+            view = self.manager.session("board-one")
+
+        self.assertEqual(view["legacy_session_id"], "legacy-session")
+        self.assertEqual(
+            [(message["role"], message["text"]) for message in view["messages"]],
+            [("user", "Restore this board"), ("assistant", "Restored safely")],
+        )
 
     def test_stop_and_shutdown_use_canonical_job_lifecycle(self) -> None:
         started = self.manager.start("board-one", "Wait")

@@ -66,6 +66,7 @@ class GuiSessionResponse(TypedDict):
     active_turn: GuiActiveTurn | None
     pending_approval: dict[str, Any] | None
     messages: list[GuiSessionMessage]
+    legacy_session_id: str | None
     jobs: list[GuiVisibleJob]
     canonical_revision: int | None
     design_revision: int | None
@@ -153,6 +154,7 @@ def session_response(
     active: GuiActiveTurn | None,
     pending_approval: dict[str, Any] | None,
     messages: list[GuiSessionMessage],
+    legacy_session_id: str | None,
     jobs: list[GuiVisibleJob],
     canonical_revision: int | None,
     design_revision: int | None,
@@ -168,6 +170,7 @@ def session_response(
         "active_turn": active,
         "pending_approval": pending_approval,
         "messages": messages,
+        "legacy_session_id": legacy_session_id,
         "jobs": jobs,
         "canonical_revision": canonical_revision,
         "design_revision": design_revision,
