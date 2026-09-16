@@ -6,10 +6,10 @@ every ``self.<handler>`` call resolves unchanged via the MRO — behavior-neutra
 
 Import discipline (mirrors gateway/slash_commands.py, PR #41886):
   * Neutral, non-cyclic deps are imported at module top-level below.
-  * cli.py-internal symbols (the ``_cprint``/``_ACCENT``/``save_config_value``…
+  * Legacy runtime symbols (the ``_cprint``/``_ACCENT``/``save_config_value``…
     module-level helpers and constants) are imported LAZILY inside each handler
-    via ``from cli import ...`` — that resolves at call time when ``cli`` is fully
-    loaded, so the mixin module never imports ``cli`` at top level (no cycle).
+    from ``legacy_app``. That resolves at call time when the implementation is
+    fully loaded, so the mixin never creates a top-level import cycle.
 """
 
 from __future__ import annotations
@@ -45,7 +45,7 @@ class CLICommandsMixin:
     """Mixin holding the interactive-CLI slash-command handlers.
 
     All methods use only ``self`` state plus the imports above and per-method
-    lazy ``from cli import ...`` lines, so they compose cleanly onto
+    lazy ``legacy_app`` imports, so they compose cleanly onto
     ``TerminalApp`` via the MRO.
     """
 
@@ -302,7 +302,7 @@ class CLICommandsMixin:
         console = getattr(self, "console", None)
         if console is not None:
             try:
-                from pcbdraft.interfaces.tui.app import _rich_text_from_ansi
+                from pcbdraft.interfaces.tui.legacy_app import _rich_text_from_ansi
 
                 console.print(_rich_text_from_ansi(text))
                 return
@@ -516,7 +516,7 @@ class CLICommandsMixin:
 
     def _handle_agents_command(self):
         """Handle /agents — show background processes and agent status."""
-        from pcbdraft.interfaces.tui.app import _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
         from pcbdraft.tools.process_registry import (
             format_uptime_short,
             process_registry,
@@ -591,8 +591,8 @@ class CLICommandsMixin:
         import shlex
         from contextlib import redirect_stdout
 
-        from pcbdraft.interfaces.tui.app import _cprint
         from pcbdraft.interfaces.tui.journey import register_cli
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
 
         parser = argparse.ArgumentParser(prog="/journey", add_help=False)
         register_cli(parser)
@@ -622,7 +622,7 @@ class CLICommandsMixin:
         doesn't fire for image-only clipboard content (e.g., VSCode terminal,
         Windows Terminal with WSL2).
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _DIM,
             _RST,
             _cprint,
@@ -652,7 +652,7 @@ class CLICommandsMixin:
 
     def _handle_copy_command(self, cmd_original: str) -> None:
         """Handle /copy [number] — copy assistant output to clipboard."""
-        from pcbdraft.interfaces.tui.app import _assistant_copy_text, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _assistant_copy_text, _cprint
 
         parts = cmd_original.split(maxsplit=1)
         arg = parts[1].strip() if len(parts) > 1 else ""
@@ -717,7 +717,7 @@ class CLICommandsMixin:
 
     def _handle_image_command(self, cmd_original: str):
         """Handle /image <path> — attach a local image file for the next prompt."""
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _DIM,
             _IMAGE_EXTENSIONS,
             _RST,
@@ -773,7 +773,7 @@ class CLICommandsMixin:
         from contextlib import redirect_stdout
         from io import StringIO
 
-        from pcbdraft.interfaces.tui.app import _ACCENT, _DIM, _RST, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _ACCENT, _DIM, _RST, _cprint
         from pcbdraft.interfaces.tui.tools_config import tools_disable_enable_command
 
         def _run_capture(ns: Namespace) -> None:
@@ -871,7 +871,7 @@ class CLICommandsMixin:
         Returns:
             False to signal CLI exit, True to keep going.
         """
-        from pcbdraft.interfaces.tui.app import _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
         from pcbdraft.services.session_db import format_session_db_unavailable
 
         parts = cmd_original.split(maxsplit=1)
@@ -1023,7 +1023,7 @@ class CLICommandsMixin:
                 # set end_reason on the row the gateway is actively writing
                 # to, causing the handoff leg to vanish from session history
                 # and session_search (#88234).
-                from pcbdraft.interfaces.tui.app import _handed_off_session_ids
+                from pcbdraft.interfaces.tui.legacy_app import _handed_off_session_ids
 
                 _handed_off_session_ids.add(self.session_id)
                 # End the CLI cleanly — same exit semantics as /quit.
@@ -1053,7 +1053,7 @@ class CLICommandsMixin:
         self, cmd_original: str, *, force_display: bool = False
     ) -> None:
         """Handle /resume <session_id_or_title> — switch to a previous session mid-conversation."""
-        from pcbdraft.interfaces.tui.app import _cprint, _sync_process_session_id
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _sync_process_session_id
 
         parts = cmd_original.split(None, 1)
         target = parts[1].strip() if len(parts) > 1 else ""
@@ -1271,7 +1271,7 @@ class CLICommandsMixin:
         prints ``Unknown command: sessions`` even though the command is
         registered in the central COMMAND_REGISTRY.
         """
-        from pcbdraft.interfaces.tui.app import _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
 
         parts = cmd_original.split(None, 1)
         arg = parts[1].strip() if len(parts) > 1 else ""
@@ -1307,7 +1307,7 @@ class CLICommandsMixin:
         """
         import subprocess
 
-        import pcbdraft.interfaces.tui.app as _cli
+        import pcbdraft.interfaces.tui.legacy_app as _cli
 
         parts = cmd_original.split(None, 2)
         sub = parts[1].lower() if len(parts) > 1 else ""
@@ -1401,7 +1401,7 @@ class CLICommandsMixin:
         explore a different approach without losing the original session state.
         Inspired by Claude Code's /branch command.
         """
-        from pcbdraft.interfaces.tui.app import _cprint, _sync_process_session_id
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _sync_process_session_id
 
         if not self.conversation_history:
             _cprint("  No conversation to branch — send a message first.")
@@ -1782,7 +1782,7 @@ class CLICommandsMixin:
         """Handle the /cron command to manage scheduled tasks."""
         import shlex
 
-        from pcbdraft.interfaces.tui.app import get_job
+        from pcbdraft.interfaces.tui.legacy_app import get_job
         from pcbdraft.tools.cronjob_tools import cronjob as cronjob_tool
 
         def _cron_api(**kwargs):
@@ -2145,7 +2145,7 @@ class CLICommandsMixin:
 
     def _handle_skills_command(self, cmd: str):
         """Handle /skills slash command — delegates to pcbdraft.interfaces.tui.skills_hub."""
-        from pcbdraft.interfaces.tui.app import ChatConsole
+        from pcbdraft.interfaces.tui.legacy_app import ChatConsole
 
         # Intercept write-approval review subcommands first (pending/approve/
         # reject/diff/mode); everything else goes to the skills hub.
@@ -2274,7 +2274,7 @@ class CLICommandsMixin:
 
     def _save_write_approval(self, subsystem: str, enabled: bool):
         """Persist <subsystem>.write_approval to config (for /memory|/skills approval)."""
-        from pcbdraft.interfaces.tui.app import save_config_value
+        from pcbdraft.interfaces.tui.legacy_app import save_config_value
 
         save_config_value(f"{subsystem}.write_approval", bool(enabled))
 
@@ -2285,7 +2285,7 @@ class CLICommandsMixin:
         When it completes, prints the result to the CLI without modifying
         the active session's conversation history.
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             AIAgent,
             ChatConsole,
             _accent_hex,
@@ -2466,7 +2466,7 @@ class CLICommandsMixin:
         CLI so users can discover what's available without dropping out
         of their session. Bundles are loaded via ``/<bundle-name>``.
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _BOLD,
             _DIM,
             _RST,
@@ -2850,8 +2850,8 @@ class CLICommandsMixin:
         turn whenever due. Session-scoped and in-process — for durable
         cross-process schedules use `internal cron`.
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
         from pcbdraft.interfaces.tui.heartbeat import format_interval, parse_interval
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         parts = (cmd or "").strip().split(None, 1)
         arg = parts[1].strip() if len(parts) > 1 else ""
@@ -2945,7 +2945,7 @@ class CLICommandsMixin:
         in a background fork; the live conversation and prompt cache are
         never touched.
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         parts = (cmd or "").strip().split(None, 1)
         focus = parts[1].strip() if len(parts) > 1 else ""
@@ -2979,7 +2979,7 @@ class CLICommandsMixin:
 
     def _handle_goal_command(self, cmd: str) -> None:
         """Dispatch /goal subcommands: set / draft / show / gate / status / pause / resume / clear."""
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         parts = (cmd or "").strip().split(None, 1)
         arg = parts[1].strip() if len(parts) > 1 else ""
@@ -3157,8 +3157,8 @@ class CLICommandsMixin:
         """Draft a structured completion contract from a plain objective and
         set it as the active goal. Falls back to a bare goal if the aux model
         can't produce a contract."""
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
         from pcbdraft.interfaces.tui.goals import draft_contract
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         mgr = self._get_goal_manager()
         if mgr is None:
@@ -3207,7 +3207,7 @@ class CLICommandsMixin:
           /loop [interval] <prompt> [--times N] [--until <cond>]   start a loop
           /loop status | pause | resume | stop                     controls
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         parts = (cmd or "").strip().split(None, 1)
         arg = parts[1].strip() if len(parts) > 1 else ""
@@ -3249,7 +3249,7 @@ class CLICommandsMixin:
         boundary. No special kick — the running turn finishes, the next
         judge call includes them.
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         parts = (cmd or "").strip().split(None, 2)
         arg = " ".join(parts[1:]).strip() if len(parts) > 1 else ""
@@ -3313,7 +3313,7 @@ class CLICommandsMixin:
 
     def _handle_skin_command(self, cmd: str):
         """Handle /skin [name] — show or change the display skin."""
-        from pcbdraft.interfaces.tui.app import _ACCENT, save_config_value
+        from pcbdraft.interfaces.tui.legacy_app import _ACCENT, save_config_value
 
         try:
             from pcbdraft.interfaces.tui.skin_engine import (
@@ -3413,7 +3413,7 @@ class CLICommandsMixin:
         buffer as the next agent turn via the one-shot ``_pending_agent_seed``
         the interactive loop already consumes (same path as /blueprint).
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
         initial = ""
         parts = (cmd_original or "").strip().split(None, 1)
@@ -3455,7 +3455,6 @@ class CLICommandsMixin:
         Nothing here touches conversation history, the system prompt, or any
         request payload — the model sees an identical turn either way.
         """
-        from pcbdraft.interfaces.tui.app import _cprint, save_config_value
         from pcbdraft.interfaces.tui.colors import Colors as _Colors
         from pcbdraft.interfaces.tui.focus_view import (
             FOCUS_CONFIG_KEY,
@@ -3465,6 +3464,7 @@ class CLICommandsMixin:
             normalize_tool_progress_mode,
             resolve_focus_arg,
         )
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, save_config_value
 
         arg = ""
         try:
@@ -3581,7 +3581,7 @@ class CLICommandsMixin:
         if not line:
             return
         try:
-            from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint
+            from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint
 
             _cprint(f"  {_DIM}{line}{_RST}")
         except Exception:
@@ -3589,8 +3589,8 @@ class CLICommandsMixin:
 
     def _handle_approvals_command(self, cmd_original: str) -> None:
         """Show or persist the profile-wide dangerous-command approval mode."""
-        from pcbdraft.interfaces.tui.app import _cprint
         from pcbdraft.interfaces.tui.approval_mode import run_approval_mode_command
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
 
         parts = (cmd_original or "").strip().split(None, 1)
         requested = parts[1] if len(parts) > 1 else None
@@ -3605,8 +3605,8 @@ class CLICommandsMixin:
             /footer on|off    → explicit
             /footer status    → show current state
         """
-        from pcbdraft.interfaces.tui.app import _cprint, save_config_value
         from pcbdraft.interfaces.tui.colors import Colors as _Colors
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, save_config_value
         from pcbdraft.model.configuration import load_config
 
         # Parse arg
@@ -3663,8 +3663,8 @@ class CLICommandsMixin:
             /timestamps on|off    → explicit
             /timestamps status    → show current state
         """
-        from pcbdraft.interfaces.tui.app import _cprint, save_config_value
         from pcbdraft.interfaces.tui.colors import Colors as _Colors
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, save_config_value
 
         arg = ""
         try:
@@ -3714,7 +3714,7 @@ class CLICommandsMixin:
             /reasoning full         Show complete thinking (no 10-line clamp)
             /reasoning clamp        Collapse long thinking to the first 10 lines
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _ACCENT,
             _DIM,
             _RST,
@@ -3845,7 +3845,7 @@ class CLICommandsMixin:
             /busy steer         Inject Enter mid-run via /steer (after next tool call)
             /busy interrupt     Redirect the current run on Enter (default)
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _ACCENT,
             _DIM,
             _RST,
@@ -3905,7 +3905,7 @@ class CLICommandsMixin:
             DEFAULT_INDICATOR_STYLE,
             INDICATOR_STYLES,
         )
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _ACCENT,
             _DIM,
             _RST,
@@ -3947,7 +3947,7 @@ class CLICommandsMixin:
         Session-scoped by default; ``--global`` persists agent.service_tier
         to config.yaml (parity with /model and /reasoning).
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _ACCENT,
             _DIM,
             _RST,
@@ -4098,7 +4098,7 @@ class CLICommandsMixin:
 
     def _handle_voice_command(self, command: str):
         """Handle /voice [on|off|tts|status] command."""
-        from pcbdraft.interfaces.tui.app import _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
 
         parts = command.strip().split(maxsplit=1)
         subcommand = parts[1].lower().strip() if len(parts) > 1 else ""
@@ -4128,7 +4128,7 @@ class CLICommandsMixin:
         writes ``wake_word.enabled`` to config.yaml so the choice persists
         across sessions. Startup auto-arm (_maybe_start_wake_word) only reads.
         """
-        from pcbdraft.interfaces.tui.app import _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
 
         parts = command.strip().split(maxsplit=1)
         subcommand = parts[1].lower().strip() if len(parts) > 1 else ""
@@ -4155,7 +4155,12 @@ class CLICommandsMixin:
 
     def _persist_wake_word_enabled(self, enabled: bool):
         """Save ``wake_word.enabled`` so the /wake toggle sticks for future sessions."""
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint, save_config_value
+        from pcbdraft.interfaces.tui.legacy_app import (
+            _DIM,
+            _RST,
+            _cprint,
+            save_config_value,
+        )
 
         try:
             from pcbdraft.tools.wake_word import load_wake_word_config

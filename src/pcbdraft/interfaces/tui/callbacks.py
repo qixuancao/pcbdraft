@@ -24,7 +24,7 @@ def clarify_callback(cli, question, choices, multi_select=False):
     When ``multi_select`` is True, shows checkboxes and the user can
     select multiple options with Space, confirming with Enter.
     """
-    from pcbdraft.interfaces.tui.app import CLI_CONFIG
+    from pcbdraft.interfaces.tui.legacy_app import CLI_CONFIG
     from pcbdraft.tools.clarify_gateway import resolve_clarify_timeout
 
     # Canonical clarify timeout, shared with the gateway/TUI path. `<= 0`
@@ -214,7 +214,7 @@ def approval_callback(cli, command: str, description: str) -> str:
         lock = cli._approval_lock
 
     with lock:
-        from pcbdraft.interfaces.tui.app import CLI_CONFIG
+        from pcbdraft.interfaces.tui.legacy_app import CLI_CONFIG
 
         timeout = CLI_CONFIG.get("approvals", {}).get("timeout", 300)
         response_queue = queue.Queue()

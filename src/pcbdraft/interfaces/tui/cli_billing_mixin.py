@@ -7,10 +7,9 @@ via the MRO — behavior-neutral apart from focused billing fixes.
 
 Import discipline mirrors ``pcbdraft.interfaces.tui.cli_commands_mixin``:
   * Neutral, non-cyclic dependencies are imported at module top level below.
-  * cli.py-internal symbols (the ``_cprint``/``_b``/``_d`` helpers and
-    display constants) are imported LAZILY inside each method via
-    ``from cli import ...``. The mixin never imports ``cli`` at module load
-    time, avoiding the cycle created when ``cli.py`` imports this mixin.
+  * Legacy runtime symbols (the ``_cprint``/``_b``/``_d`` helpers and display
+    constants) are imported LAZILY from ``legacy_app`` inside each method. The
+    mixin never imports the implementation at module load time, avoiding a cycle.
 """
 
 from __future__ import annotations
@@ -31,7 +30,7 @@ class CLIBillingMixin:
         slash-worker subprocess that resumes WITHOUT a live agent. Fail-open and
         wall-clock-bounded; honors PCBDRAFT_RUNTIME_DEV_CREDITS_FIXTURE for offline testing.
         """
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
 
         try:
             from pcbdraft.model.billing_usage import build_usage_model, format_renews
@@ -99,7 +98,7 @@ class CLIBillingMixin:
         usage read with the same nudge. Only called when a Nous account is logged
         in (the balance block printed), since both commands are Nous-account only.
         """
-        from pcbdraft.interfaces.tui.app import _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _d
 
         _cprint(
             f"  {_d('Run /subscription to change plan · /topup to add to your balance')}"
@@ -125,7 +124,7 @@ class CLIBillingMixin:
             build_subscription_state,
             subscription_manage_url,
         )
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
 
         state = build_subscription_state()
 
@@ -163,7 +162,7 @@ class CLIBillingMixin:
         the bar, and state-matched free/low nudges. No in-terminal tier picker —
         the only action is managing the subscription on the portal.
         """
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
 
         # Shared dollar usage model (the only source with top-up dollars).
         from pcbdraft.model.billing_usage import format_renews
@@ -347,7 +346,7 @@ class CLIBillingMixin:
             selectable_tiers,
             subscription_manage_url,
         )
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
 
         tiers = selectable_tiers(state)
         if not tiers:
@@ -404,7 +403,7 @@ class CLIBillingMixin:
         self, state, manage_url, *, verb="Manage your subscription"
     ):
         """Open / copy the manage-subscription URL — the portal hand-off."""
-        from pcbdraft.interfaces.tui.app import _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _d
 
         if not manage_url:
             print()
@@ -528,7 +527,7 @@ class CLIBillingMixin:
         from pcbdraft.agent.subscription_view import (
             subscription_change_preview_from_payload,
         )
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
         from pcbdraft.interfaces.tui.nous_billing import (
             BillingError,
             BillingScopeRequired,
@@ -646,7 +645,7 @@ class CLIBillingMixin:
 
     def _subscription_confirm_cancel(self, state):
         """Confirm, then schedule a cancellation at period end."""
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
         from pcbdraft.model.billing_usage import format_renews
 
         c = state.current
@@ -684,7 +683,7 @@ class CLIBillingMixin:
         ``allow_stepup=False`` (a post-grant replay) declines a second step-up on a
         repeated scope denial so the flow can't re-prompt/re-open the browser in a loop.
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint, _d
         from pcbdraft.interfaces.tui.nous_billing import (
             BillingError,
             BillingRemoteSpendingRevoked,
@@ -801,7 +800,7 @@ class CLIBillingMixin:
         step_up_nous_billing_scope directly (it opens the browser + blocks), then
         replays the held preview/mutation so the user never re-runs the command.
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _cprint, _d
 
         print()
         print("  ! One-time setup")
@@ -867,7 +866,7 @@ class CLIBillingMixin:
 
     def _subscription_render_error(self, state, exc):
         """Render a subscription BillingError (a lighter _billing_render_charge_error)."""
-        from pcbdraft.interfaces.tui.app import _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _cprint
 
         code = getattr(exc, "error", None)
         msg = str(exc) or "Something went wrong."
@@ -888,7 +887,7 @@ class CLIBillingMixin:
         never a flat failure that invites a blind retry (mirrors the TUI's
         upgradeResult(null) — the CLI can't persist the key across a command re-run,
         so a re-check is the safe path)."""
-        from pcbdraft.interfaces.tui.app import _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _d
 
         _cprint(
             "  🟡 Couldn't confirm the upgrade — your card may or may not have been charged."
@@ -918,7 +917,7 @@ class CLIBillingMixin:
         prompting (the URL is the affordance), same discipline as ``_show_subscription``.
         All money is Decimal end-to-end; the terminal never collects card details.
         """
-        from pcbdraft.interfaces.tui.app import _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _d
         from pcbdraft.model.billing_view import build_billing_state
 
         state = build_billing_state()
@@ -952,7 +951,7 @@ class CLIBillingMixin:
         reordered menu (Add funds first). No scope preflight — remote spending
         is discovered reactively when a charge 403s insufficient_scope.
         """
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
         from pcbdraft.model.billing_view import format_money
 
         # Shared dollar usage model (plan + top-up bars), same source as /usage.
@@ -1115,7 +1114,7 @@ class CLIBillingMixin:
 
     def _billing_require_admin(self, state) -> bool:
         """Guard charge/auto-reload entry points; print + return False if blocked."""
-        from pcbdraft.interfaces.tui.app import _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _d
 
         if not state.can_change_plan:
             print()
@@ -1140,7 +1139,7 @@ class CLIBillingMixin:
         this also recovers a transient miss (the card display is best-effort
         server-side). Returns the refreshed state (card present), or None to abandon.
         """
-        from pcbdraft.interfaces.tui.app import _DIM, _RST, _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _DIM, _RST, _b, _cprint, _d
 
         print()
         _cprint(f"  💳 {_b('Add a card first')}")
@@ -1196,7 +1195,7 @@ class CLIBillingMixin:
 
     def _billing_buy_flow(self, state):
         """Screen 2 (preset select) → Screen 3 (confirm + charge + poll)."""
-        from pcbdraft.interfaces.tui.app import _b, _cprint
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint
         from pcbdraft.model.billing_view import format_money, validate_charge_amount
 
         if not self._billing_require_admin(state):
@@ -1270,7 +1269,7 @@ class CLIBillingMixin:
 
     def _billing_confirm_and_charge(self, state, amount):
         """Screen 3 — confirm total + consent, charge, then poll to settlement."""
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
         from pcbdraft.model.billing_view import format_money, new_idempotency_key
 
         card = state.card
@@ -1483,7 +1482,7 @@ class CLIBillingMixin:
         the resumed charge collapses with the original). Never leaks the raw
         billing:manage scope.
         """
-        from pcbdraft.interfaces.tui.app import _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, _d
         from pcbdraft.model.billing_view import format_money
 
         amount_str = format_money(amount) if amount is not None else "your top-up"
@@ -1597,7 +1596,7 @@ class CLIBillingMixin:
         amounts (2dp, within bounds, ``reload_to > threshold``). When auto-reload
         is already on, offers a "Turn off" path (PATCH ``enabled:false``).
         """
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
         from pcbdraft.model.billing_view import format_money, validate_charge_amount
 
         if not self._billing_require_admin(state):
@@ -1765,7 +1764,7 @@ class CLIBillingMixin:
 
     def _billing_limit_screen(self, state):
         """Screen 5 — monthly spend limit (read-only; cap is portal-only)."""
-        from pcbdraft.interfaces.tui.app import _b, _cprint, _d
+        from pcbdraft.interfaces.tui.legacy_app import _b, _cprint, _d
         from pcbdraft.model.billing_view import format_money
 
         print()

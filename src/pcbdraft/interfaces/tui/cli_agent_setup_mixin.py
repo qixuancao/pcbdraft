@@ -7,9 +7,9 @@ config, first-use agent construction, and resumed-session preload + history reca
 
 Behavior-neutral: every method is lifted verbatim from ``TerminalApp``. ``self.*``
 calls resolve unchanged via the MRO. Neutral dependencies are imported at module
-top level; ``cli.py``-internal helpers/constants are imported lazily inside each
-method (``from cli import ...`` resolves at call time, when ``cli`` is fully
-loaded) so this module never imports ``cli`` at import time -> no import cycle.
+top level; legacy runtime helpers/constants are imported lazily from
+``legacy_app`` inside each method, after the implementation is fully loaded, so
+this module does not create a top-level import cycle.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ class CLIAgentSetupMixin:
         are picked up without restarting the CLI.
         Returns True if credentials are ready, False on auth failure.
         """
-        from pcbdraft.interfaces.tui.app import ChatConsole, _cprint, logger
+        from pcbdraft.interfaces.tui.legacy_app import ChatConsole, _cprint, logger
         from pcbdraft.model.runtime_provider import (
             format_runtime_provider_error,
             resolve_runtime_provider,
@@ -260,7 +260,7 @@ class CLIAgentSetupMixin:
         source of truth for provider onboarding. Returns True when a provider
         was configured.
         """
-        from pcbdraft.interfaces.tui.app import _cprint, logger
+        from pcbdraft.interfaces.tui.legacy_app import _cprint, logger
 
         _cprint("")
         _cprint("⚕ No inference provider is configured yet — let's fix that.")
@@ -378,7 +378,7 @@ class CLIAgentSetupMixin:
         Returns:
             bool: True if successful, False otherwise
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _DIM,
             _RST,
             AIAgent,
@@ -615,7 +615,7 @@ class CLIAgentSetupMixin:
             # god-file extraction into this mixin a ``global`` here would bind
             # *this module's* namespace, leaving ``cli._active_agent_ref`` None
             # forever — so memory shutdown never ran on /exit (#49287).
-            import pcbdraft.interfaces.tui.app as _cli
+            import pcbdraft.interfaces.tui.legacy_app as _cli
 
             _cli._active_agent_ref = self.agent
             # Route agent status output through prompt_toolkit so ANSI escape
@@ -723,7 +723,7 @@ class CLIAgentSetupMixin:
         The corresponding block in ``_init_agent()`` checks whether history is
         already populated and skips the DB round-trip.
         """
-        from pcbdraft.interfaces.tui.app import _accent_hex
+        from pcbdraft.interfaces.tui.legacy_app import _accent_hex
 
         if not self._resumed or not self._session_db:
             return False
@@ -814,7 +814,7 @@ class CLIAgentSetupMixin:
         last ``MAX_DISPLAY_EXCHANGES`` user/assistant exchanges and shows
         an indicator for earlier hidden messages.
         """
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             CLI_CONFIG,
             _record_output_history_entry,
             _strip_reasoning_tags,

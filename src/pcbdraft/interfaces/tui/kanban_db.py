@@ -6102,7 +6102,7 @@ def _cleanup_worktree_workspace(
     with it; custom branches are kept. Best-effort like the scratch path.
     """
     try:
-        from pcbdraft.interfaces.tui.app import (
+        from pcbdraft.interfaces.tui.legacy_app import (
             _worktree_has_unpushed_commits,
             _worktree_is_dirty,
         )

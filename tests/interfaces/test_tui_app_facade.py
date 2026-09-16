@@ -1,9 +1,29 @@
-"""Compatibility checks for the staged terminal implementation split."""
+"""Compatibility and import-boundary checks for the terminal implementation split."""
 
+import ast
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from pcbdraft.interfaces.tui import app, legacy_app
+
+_TUI_ROOT = Path(__file__).resolve().parents[2] / "src/pcbdraft/interfaces/tui"
+
+
+def _tui_app_imports(path: Path) -> list[int]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    lines = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom):
+            if node.module == "pcbdraft.interfaces.tui.app" or (
+                node.level > 0 and node.module == "app"
+            ):
+                lines.append(node.lineno)
+        elif isinstance(node, ast.Import) and any(
+            alias.name == "pcbdraft.interfaces.tui.app" for alias in node.names
+        ):
+            lines.append(node.lineno)
+    return lines
 
 
 class TuiAppFacadeTests(unittest.TestCase):
@@ -21,3 +41,24 @@ class TuiAppFacadeTests(unittest.TestCase):
 
         self.assertIs(legacy_app._cprint, original)
         self.assertIs(app._cprint, original)
+
+    def test_facade_is_the_only_tui_module_allowed_to_expose_legacy_app(self) -> None:
+        facade_tree = ast.parse(
+            (_TUI_ROOT / "app.py").read_text(encoding="utf-8"),
+            filename=str(_TUI_ROOT / "app.py"),
+        )
+        local_imports = {
+            alias.name
+            for node in ast.walk(facade_tree)
+            if isinstance(node, ast.ImportFrom)
+            and node.module == "pcbdraft.interfaces.tui"
+            for alias in node.names
+        }
+        self.assertEqual(local_imports, {"legacy_app"})
+
+        reverse_imports = {
+            str(path.relative_to(_TUI_ROOT)): _tui_app_imports(path)
+            for path in _TUI_ROOT.rglob("*.py")
+            if path.name != "app.py" and _tui_app_imports(path)
+        }
+        self.assertEqual(reverse_imports, {})
