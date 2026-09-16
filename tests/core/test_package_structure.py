@@ -26,6 +26,7 @@ class PackageStructureTests(unittest.TestCase):
             "kicad",
             "model",
             "services",
+            "terminal_client",
             "tools",
             "verification",
         }

@@ -334,7 +334,7 @@ class SlashHandlerTests(unittest.TestCase):
         project_id = str(existing["project"]["id"])
 
         with patch("pcbdraft.interfaces.cli.launch_cli", return_value=0) as launch:
-            result = main(["--project", project_id])
+            result = main(["--project", project_id, "legacy-terminal"])
 
         self.assertEqual(result, 0)
         self.assertEqual(get_current_project_id(), project_id)
@@ -378,6 +378,7 @@ class SlashHandlerTests(unittest.TestCase):
                         "read_only",
                         "--project",
                         project_id,
+                        "legacy-terminal",
                     ]
                 )
         finally:

@@ -111,10 +111,17 @@ pcbdraft = [
     "tools/**/*.wav",
     "tools/**/*.onnx",
     "tools/**/*.tflite",
+    "terminal_client/*.json",
+    "terminal_client/*.md",
+    "terminal_client/*.lock",
+    "terminal_client/src/**/*.ts",
     "web/*.html",
     "web/*.css",
     "web/*.js",
 ]
+
+[tool.setuptools.exclude-package-data]
+"pcbdraft.terminal_client" = ["test/*.ts"]
 
 [tool.ruff.lint]
 extend-select = ["B", "C90", "S"]

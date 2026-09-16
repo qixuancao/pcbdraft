@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from enum import Enum
+from importlib import resources
 from pathlib import Path
 from typing import Any
 
@@ -32,20 +33,26 @@ class _GuiState(Enum):
     OCCUPIED = "occupied"
 
 
-def _terminal_client_directory(source_root: Path | None = None) -> Path:
-    """Return the checked-out TypeScript client, rejecting installed-only use."""
+def _terminal_client_directory(package_root: Path | None = None) -> Path:
+    """Return the bundled TypeScript client from the installed Python package."""
 
-    root = (
-        source_root.resolve()
-        if source_root is not None
-        else Path(__file__).resolve().parents[3]
-    )
-    candidate = root / "clients" / "terminal"
+    if package_root is None:
+        package_resource = resources.files("pcbdraft")
+        try:
+            root = Path(os.fspath(package_resource))
+        except TypeError as exc:
+            raise PCBDraftError(
+                "the installed PCBDraft package does not expose terminal resources "
+                "as local files"
+            ) from exc
+    else:
+        root = package_root.resolve()
+    candidate = root / "terminal_client"
     required = (candidate / "package.json", candidate / "src" / "main.ts")
     if not candidate.is_dir() or not all(path.is_file() for path in required):
         raise PCBDraftError(
-            "TypeScript terminal client was not found; run `pcbdraft terminal` "
-            "from a PCBDraft source checkout containing clients/terminal"
+            "the installed PCBDraft package is missing its TypeScript terminal "
+            "resources; reinstall PCBDraft from a complete wheel or sdist"
         )
     return candidate
 
@@ -105,7 +112,7 @@ def _gui_popen_options() -> dict[str, Any]:
     return {"start_new_session": True}
 
 
-def _start_gui(port: int, *, source_root: Path) -> subprocess.Popen[bytes]:
+def _start_gui(port: int) -> subprocess.Popen[bytes]:
     command = [
         sys.executable,
         "-m",
@@ -119,7 +126,6 @@ def _start_gui(port: int, *, source_root: Path) -> subprocess.Popen[bytes]:
     try:
         return subprocess.Popen(  # noqa: S603 - fixed Python module and bounded args
             command,
-            cwd=source_root,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -166,11 +172,15 @@ def _stop_gui(process: subprocess.Popen[bytes]) -> None:
         return
 
 
-def launch_terminal(*, port: int = 9130, no_start_gui: bool = False) -> int:
-    """Run the source TypeScript client and own only a GUI started here."""
+def launch_terminal(
+    *,
+    port: int = 9130,
+    no_start_gui: bool = False,
+    initial_project_id: str | None = None,
+) -> int:
+    """Run the bundled TypeScript client and own only a GUI started here."""
 
     client_directory = _terminal_client_directory()
-    source_root = client_directory.parents[1]
     bun = shutil.which("bun")
     if bun is None:
         raise PCBDraftError(
@@ -194,7 +204,7 @@ def launch_terminal(*, port: int = 9130, no_start_gui: bool = False) -> int:
 
     try:
         if state is _GuiState.FREE:
-            owned_gui = _start_gui(port, source_root=source_root)
+            owned_gui = _start_gui(port)
             _wait_for_gui(owned_gui, base_url)
             print(
                 f"PCBDraft Terminal API: {base_url} (started for this session)",
@@ -208,6 +218,9 @@ def launch_terminal(*, port: int = 9130, no_start_gui: bool = False) -> int:
 
         environment = os.environ.copy()
         environment["PCBDRAFT_GUI_URL"] = base_url
+        environment.pop("PCBDRAFT_INITIAL_PROJECT_ID", None)
+        if initial_project_id:
+            environment["PCBDRAFT_INITIAL_PROJECT_ID"] = initial_project_id
         try:
             completed = subprocess.run(  # noqa: S603 - resolved Bun executable
                 [bun, "run", "dev"],

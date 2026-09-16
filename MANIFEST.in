@@ -11,6 +11,12 @@ recursive-include src/pcbdraft/model *.yaml *.yml *.json
 recursive-include src/pcbdraft/agent *.yaml *.yml *.json
 recursive-include src/pcbdraft/agent/extensions *.yaml *.yml *.json
 recursive-include src/pcbdraft/tools *.yaml *.yml *.json *.wav *.onnx *.tflite
+include src/pcbdraft/terminal_client/README.md
+include src/pcbdraft/terminal_client/package.json
+include src/pcbdraft/terminal_client/bun.lock
+include src/pcbdraft/terminal_client/tsconfig.json
+recursive-include src/pcbdraft/terminal_client/src *.ts
+prune src/pcbdraft/terminal_client/test
 recursive-include src/pcbdraft/web *.html *.css *.js
 prune artifacts
 global-exclude *.py[cod] __pycache__ *.kicad_prl

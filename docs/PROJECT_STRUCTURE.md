@@ -14,20 +14,18 @@ pcbdraft/
 │   ├── core/           errors, safe I/O, redaction, locks, processes, runs, and project paths
 │   ├── domain/         immutable PCB data and deterministic domain rules
 │   ├── interfaces/     CLI, local Web API, launchers, and compatibility facades
-│   │   ├── cli.py       subcommands, legacy bare launch, and `terminal` dispatch
+│   │   ├── cli.py       subcommands, default TypeScript launch, and legacy dispatch
 │   │   ├── terminal.py    legacy terminal startup and model-wizard lifecycle
-│   │   ├── terminal_launcher.py  source TypeScript client and loopback GUI lifecycle
+│   │   ├── terminal_launcher.py  bundled TypeScript client and loopback GUI lifecycle
 │   │   ├── tui/           legacy Python terminal compatibility surface
-│   │   ├── commands.py  pruned slash-command surface (PCB project commands)
 │   │   └── gui.py         local Web API
 │   ├── kicad/          native KiCad adapters and geometry algorithms
 │   ├── model/          configuration, authentication, transports, and provider profiles
 │   ├── tools/          tool registry, dispatch, and reusable tool implementations
 │   ├── services/       application use cases and transactional orchestration
 │   ├── verification/   evidence, gates, validation, BoardBench, benchmark, and release
-│   └── data/           immutable bundled catalogs and benchmark corpus
-├── clients/
-│   └── terminal/       supported TypeScript terminal client
+│   ├── data/           immutable bundled catalogs and benchmark corpus
+│   └── terminal_client/ supported TypeScript terminal package resource
 ├── tests/              responsibility-mirrored unit and integration tests
 ├── scripts/            stable development, cleanup, E2E, BoardBench, and release entrypoints
 └── docs/               architecture, API, development, and roadmap documentation
@@ -93,24 +91,28 @@ presentation clients; interfaces may format and validate requests, but they
 must not duplicate engineering decisions or become an independent project,
 job, or transcript store.
 
-`clients/terminal` is the supported TypeScript TUI. It resolves the compact
+`pcbdraft/terminal_client` is the canonical supported TypeScript TUI source and
+an installed package resource. It resolves the compact
 slash-command surface, renders the trusted project transcript, and follows GUI
-SSE lifecycle events. The event stream does not carry model token deltas. On a
-terminal job event the client fetches the session contract again and displays
-the saved assistant response.
+SSE lifecycle and bounded assistant-preview events. On a terminal job event the
+client fetches the session contract again; the saved assistant response remains
+authoritative. Unique slash-command prefixes execute on Enter and complete on
+Tab, while ambiguous prefixes never guess.
 
-`pcbdraft terminal` is a source-checkout launcher for that client. It starts a
-GUI API bound to `127.0.0.1` when needed, or reuses a healthy PCBDraft GUI on the
-selected loopback port. It rejects installed-only operation without
-`clients/terminal` and rejects an occupied port that does not expose the exact
-PCBDraft health document.
+Bare `pcbdraft` launches that bundled client from source, wheel, or sdist;
+`pcbdraft terminal` is the explicit alias. It starts a GUI API bound to
+`127.0.0.1` when needed, or reuses a healthy PCBDraft GUI on the selected
+loopback port. It rejects an incomplete installation and an occupied port that
+does not expose the exact PCBDraft health document. `--project` is forwarded as
+the initial project and restores its trusted transcript.
 
 The former Python `prompt_toolkit` terminal remains a compatibility boundary.
 `interfaces.tui.app` is the stable legacy facade and delegates to the isolated
-implementation in `interfaces.tui.legacy_app`; a bare `pcbdraft` launch still
-uses that compatibility path. New terminal features belong in
-`clients/terminal` and use the GUI protocol rather than importing the legacy
-implementation.
+implementation in `interfaces.tui.legacy_app`. A bare `pcbdraft` launch uses
+the TypeScript client, and the compatibility path is explicit as
+`pcbdraft legacy-terminal`. New terminal features belong in
+`pcbdraft/terminal_client` and use the GUI protocol rather than importing the
+legacy implementation.
 
 ## Compatibility policy
 

@@ -18,7 +18,7 @@ class TerminalLauncherTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.client = self.root / "clients" / "terminal"
+        self.client = self.root / "terminal_client"
         (self.client / "src").mkdir(parents=True)
         (self.client / "package.json").write_text("{}", encoding="utf-8")
         (self.client / "src" / "main.ts").write_text("", encoding="utf-8")
@@ -35,10 +35,12 @@ class TerminalLauncherTests(unittest.TestCase):
             patch.object(launcher, "_probe_gui", return_value=state),
         )
 
-    def test_finds_terminal_client_only_with_required_source_files(self) -> None:
-        self.assertEqual(launcher._terminal_client_directory(self.root), self.client)
+    def test_finds_packaged_terminal_client_only_with_required_files(self) -> None:
+        with patch.object(launcher.resources, "files", return_value=self.root) as files:
+            self.assertEqual(launcher._terminal_client_directory(), self.client)
+        files.assert_called_once_with("pcbdraft")
         (self.client / "src" / "main.ts").unlink()
-        with self.assertRaisesRegex(PCBDraftError, "source checkout"):
+        with self.assertRaisesRegex(PCBDraftError, "complete wheel or sdist"):
             launcher._terminal_client_directory(self.root)
 
     def test_reuses_healthy_gui_and_passes_explicit_url_to_bun(self) -> None:
@@ -65,7 +67,30 @@ class TerminalLauncherTests(unittest.TestCase):
         self.assertEqual(args[0], ["/tools/bun", "run", "dev"])
         self.assertEqual(kwargs["cwd"], self.client)
         self.assertEqual(kwargs["env"]["PCBDRAFT_GUI_URL"], "http://127.0.0.1:9141")
+        self.assertNotIn("PCBDRAFT_INITIAL_PROJECT_ID", kwargs["env"])
         self.assertFalse(kwargs["check"])
+
+    def test_passes_initial_project_to_the_terminal_environment(self) -> None:
+        client_patch, bun_patch, probe_patch = self._common_patches(
+            launcher._GuiState.HEALTHY
+        )
+        completed = subprocess.CompletedProcess([], 0)
+        with (
+            client_patch,
+            bun_patch,
+            probe_patch,
+            patch.object(launcher.subprocess, "run", return_value=completed) as run,
+            redirect_stdout(io.StringIO()),
+        ):
+            launcher.launch_terminal(
+                port=9147,
+                initial_project_id="board-abc123",
+            )
+
+        self.assertEqual(
+            run.call_args.kwargs["env"]["PCBDRAFT_INITIAL_PROJECT_ID"],
+            "board-abc123",
+        )
 
     def test_flushes_api_status_before_starting_bun(self) -> None:
         client_patch, bun_patch, probe_patch = self._common_patches(
@@ -114,7 +139,7 @@ class TerminalLauncherTests(unittest.TestCase):
             result = launcher.launch_terminal(port=9142)
 
         self.assertEqual(result, 0)
-        start_gui.assert_called_once_with(9142, source_root=self.root)
+        start_gui.assert_called_once_with(9142)
         wait_for_gui.assert_called_once_with(process, "http://127.0.0.1:9142")
         stop_gui.assert_called_once_with(process)
         self.assertIn("started for this session", stdout.getvalue())
@@ -217,6 +242,9 @@ class TerminalCommandTests(unittest.TestCase):
         self.assertEqual(defaults.port, 9130)
         self.assertFalse(defaults.no_start_gui)
 
+        legacy = parser.parse_args(["legacy-terminal"])
+        self.assertEqual(legacy.command, "legacy-terminal")
+
         selected = parser.parse_args(["terminal", "--port", "9148", "--no-start-gui"])
         self.assertEqual(selected.port, 9148)
         self.assertTrue(selected.no_start_gui)
@@ -236,7 +264,20 @@ class TerminalCommandTests(unittest.TestCase):
             result = main(["terminal", "--port", "9149", "--no-start-gui"])
 
         self.assertEqual(result, 19)
-        launch.assert_called_once_with(port=9149, no_start_gui=True)
+        launch.assert_called_once_with(
+            port=9149,
+            no_start_gui=True,
+            initial_project_id=None,
+        )
+
+    def test_bare_cli_dispatches_typescript_terminal_with_initial_project(self) -> None:
+        with patch(
+            "pcbdraft.interfaces.terminal_launcher.launch_terminal", return_value=17
+        ) as launch:
+            result = main(["--project", "board-1"])
+
+        self.assertEqual(result, 17)
+        launch.assert_called_once_with(initial_project_id="board-1")
 
     def test_cli_forwards_workspace_through_gui_environment(self) -> None:
         with (
@@ -251,6 +292,35 @@ class TerminalCommandTests(unittest.TestCase):
             self.assertEqual(os.environ["PCBDRAFT_HOME"], "/tmp/terminal-home")
         self.assertEqual(result, 0)
 
+    def test_explicit_legacy_terminal_dispatches_python_compatibility(self) -> None:
+        with patch("pcbdraft.interfaces.cli.launch_cli", return_value=23) as launch:
+            result = main(["--approval-mode", "review", "legacy-terminal"])
+
+        self.assertEqual(result, 23)
+        launch.assert_called_once_with([], permission_mode="review")
+
+    def test_legacy_terminal_forwards_an_explicit_provider(self) -> None:
+        with patch("pcbdraft.interfaces.cli.launch_cli", return_value=0) as launch:
+            result = main(["--provider", "native", "legacy-terminal"])
+
+        self.assertEqual(result, 0)
+        launch.assert_called_once_with(
+            ["--provider", "native"],
+            permission_mode="workspace",
+        )
+
+    def test_legacy_terminal_rejects_the_previously_ignored_timeout(self) -> None:
+        stderr = io.StringIO()
+        with (
+            patch("pcbdraft.interfaces.cli.launch_cli") as launch,
+            redirect_stderr(stderr),
+        ):
+            result = main(["--timeout", "30", "legacy-terminal"])
+
+        self.assertEqual(result, 2)
+        self.assertIn("previous launcher ignored this option", stderr.getvalue())
+        launch.assert_not_called()
+
     def test_cli_rejects_unsupported_approval_mode(self) -> None:
         stderr = io.StringIO()
         with (
@@ -261,7 +331,26 @@ class TerminalCommandTests(unittest.TestCase):
 
         self.assertEqual(result, 2)
         self.assertIn("supports only --approval-mode workspace", stderr.getvalue())
+        self.assertIn("legacy-terminal", stderr.getvalue())
         launch.assert_not_called()
+
+    def test_default_terminal_rejects_legacy_provider_and_timeout_options(self) -> None:
+        for arguments, message in (
+            (["--provider", "native"], "does not accept --provider"),
+            (["--timeout", "30"], "does not support the legacy --timeout"),
+        ):
+            with self.subTest(arguments=arguments):
+                stderr = io.StringIO()
+                with (
+                    patch(
+                        "pcbdraft.interfaces.terminal_launcher.launch_terminal"
+                    ) as launch,
+                    redirect_stderr(stderr),
+                ):
+                    result = main(arguments)
+                self.assertEqual(result, 2)
+                self.assertIn(message, stderr.getvalue())
+                launch.assert_not_called()
 
 
 if __name__ == "__main__":

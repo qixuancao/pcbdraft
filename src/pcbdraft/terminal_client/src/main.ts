@@ -2,10 +2,10 @@ import { createInterface } from "node:readline/promises"
 import { stdin as input, stdout as output } from "node:process"
 import { GuiClient, type GuiEvent, type Project, type ProjectSession, type TranscriptMessage } from "./bridge.ts"
 import { AssistantPreview } from "./assistant-preview.ts"
-import { resolveSlashCommand } from "./commands.ts"
+import { completeSlashCommand, resolveSlashCommand } from "./commands.ts"
+import { initialProjectId, projectForReference } from "./startup.ts"
 
 const gui = new GuiClient()
-const terminal = createInterface({ input, output, prompt: "› " })
 const TERMINAL_JOB_EVENTS = new Set(["job.complete", "job.failed"])
 
 let projects: Project[] = []
@@ -44,7 +44,7 @@ async function listProjects(query = ""): Promise<void> {
 }
 
 async function openProject(reference: string): Promise<void> {
-  const selected = /^\d+$/.test(reference) ? projects[Number(reference) - 1] : projects.find((project) => project.id === reference)
+  const selected = projectForReference(projects, reference)
   if (!selected) throw new Error("Choose a project number from /resume, or pass its full ID")
   activeMonitor?.controller.abort()
   activeMonitor = null
@@ -151,6 +151,16 @@ async function stopCurrent(): Promise<void> {
 
 async function main(): Promise<void> {
   heading()
+  const startupProject = initialProjectId()
+  if (startupProject) {
+    try {
+      projects = await gui.projects()
+      await openProject(startupProject)
+    } catch (error) {
+      output.write(`Error opening initial project: ${error instanceof Error ? error.message : String(error)}\n`)
+    }
+  }
+  const terminal = createInterface({ input, output, prompt: "› ", completer: completeSlashCommand })
   terminal.prompt()
   try {
     for await (const line of terminal) {

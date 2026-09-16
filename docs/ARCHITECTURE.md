@@ -278,7 +278,7 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-The TypeScript terminal (`clients/terminal`) and local Web workbench use the
+The bundled TypeScript terminal (`pcbdraft/terminal_client`) and local Web workbench use the
 same loopback GUI API and therefore the same native `agent.loop.AIAgent`, model
 configuration, authentication, and project/session authority. Terminal
 commands select projects through that trusted boundary; jobs bind their own
@@ -307,11 +307,16 @@ The historical Python terminal is isolated behind
 `interfaces.tui.app`, a compatibility facade that forwards existing imports to
 `interfaces.tui.legacy_app`. It remains available for compatibility but is not
 the client protocol or the implementation of the supported TypeScript terminal.
-From a source checkout, `pcbdraft terminal` validates Bun, starts a GUI service
-on `127.0.0.1` when the selected port is free, or reuses an already healthy
-PCBDraft GUI on that loopback port. The launcher refuses installed-only use when
-`clients/terminal` is absent and never accepts a non-PCBDraft service occupying
-the selected port.
+Bare `pcbdraft` is the supported TypeScript terminal entrypoint;
+`pcbdraft terminal` is its explicit alias. The terminal source ships once as a
+Python package resource, so source checkouts, wheels, and sdists use the same
+files. The launcher validates Bun, starts a GUI service on `127.0.0.1` when the
+selected port is free, or reuses an already healthy PCBDraft GUI on that
+loopback port. It forwards an initial `--project` selection to the client and
+never accepts a non-PCBDraft service occupying the selected port. Legacy
+permission modes remain available through the explicit
+`pcbdraft legacy-terminal` compatibility entrypoint; unsupported provider and
+timeout flags fail clearly instead of being discarded.
 
 ## Goal Mode
 

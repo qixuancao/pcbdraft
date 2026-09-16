@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { resolveSlashCommand } from "../src/commands.ts"
+import { completeSlashCommand, resolveSlashCommand } from "../src/commands.ts"
 
 test("unique command prefixes resolve case-insensitively", () => {
   expect(resolveSlashCommand("/n")).toBe("new")
@@ -23,4 +23,18 @@ test("unknown prefixes explain how to discover commands", () => {
   expect(() => resolveSlashCommand("/wat")).toThrow(
     "Unknown command /wat. Use /help for available commands.",
   )
+})
+
+test("Tab completes one case-insensitive slash-command match", () => {
+  expect(completeSlashCommand("/res")).toEqual([["/resume "], "/res"])
+  expect(completeSlashCommand("/RES")).toEqual([["/resume "], "/RES"])
+})
+
+test("Tab does not guess an ambiguous slash-command prefix", () => {
+  expect(completeSlashCommand("/res", ["resume", "reset", "help"])).toEqual([[], "/res"])
+})
+
+test("Tab leaves arguments and normal messages alone", () => {
+  expect(completeSlashCommand("/resume board")).toEqual([[], "/resume board"])
+  expect(completeSlashCommand("hello")).toEqual([[], "hello"])
 })

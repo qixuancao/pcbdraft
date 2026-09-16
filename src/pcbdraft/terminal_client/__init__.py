@@ -1,0 +1,1 @@
+"""Bundled TypeScript terminal resources."""
