@@ -45,6 +45,7 @@ class _Store:
 class _Agent:
     def __init__(self, store: _Store) -> None:
         self._store = store
+        self.preview_sink = None
 
     def store(self, project_id: str) -> _Store:
         if project_id != "board-one":
@@ -54,6 +55,9 @@ class _Agent:
     @staticmethod
     def approval_payload(_turn: object):
         return None
+
+    def set_assistant_preview_sink(self, sink):
+        self.preview_sink = sink
 
 
 class _Jobs:
@@ -190,6 +194,14 @@ class GuiSessionManagerTests(unittest.TestCase):
         self.assertEqual(self.manager.events("board-one"), [])
         self.assertEqual(self.manager.shutdown(), [])
         self.assertEqual(self.jobs.shutdown_calls, 1)
+
+    def test_preview_sink_is_injected_into_canonical_agent(self) -> None:
+        sink = lambda *_args: None
+
+        attached = self.manager.set_assistant_preview_sink(sink)
+
+        self.assertTrue(attached)
+        self.assertIs(self.jobs.agent.preview_sink, sink)
 
     def test_legacy_subprocess_mode_is_rejected(self) -> None:
         with self.assertRaisesRegex(ValidationError, "subprocess workers were removed"):

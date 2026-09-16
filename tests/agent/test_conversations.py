@@ -54,9 +54,11 @@ class ScriptedAgent:
         self.interrupted = threading.Event()
         self.closed = False
         self.run_calls = 0
+        self.run_kwargs: dict[str, Any] = {}
 
-    def run_conversation(self, prompt: str, **_kwargs: Any) -> dict[str, Any]:
+    def run_conversation(self, prompt: str, **kwargs: Any) -> dict[str, Any]:
         self.run_calls += 1
+        self.run_kwargs = kwargs
         self.action(self, prompt)
         return {"completed": True, "final_response": "已查看，未修改设计。"}
 
@@ -142,6 +144,36 @@ class NativeConversationTests(unittest.TestCase):
         self.assertEqual(turn.status, TurnStatus.COMPLETED)
         self.assertEqual(turn.tool_runs, ())
         self.assertTrue(turn.assistant_texts)
+
+    def test_preview_uses_safe_stream_callback_across_split_secrets(self) -> None:
+        previews: list[tuple[str, str, str]] = []
+
+        def stream(agent: ScriptedAgent, _prompt: str) -> None:
+            self.assertIn("stream_callback", agent.run_kwargs)
+            self.assertNotIn("stream_delta_callback", agent.run_kwargs)
+            callback = agent.run_kwargs["stream_callback"]
+            callback("Visible response. ")
+            callback("api_")
+            self.assertEqual(len(previews), 1)
+            callback("key=topsecretvalue ")
+            callback("Then sk-")
+            callback("abcdefghijklmnopqrstuvwxyz ")
+
+        turn = self.run_turn(
+            self.orchestrator(
+                stream, assistant_preview=lambda *args: previews.append(args)
+            )
+        )
+
+        preview_text = "".join(item[2] for item in previews)
+        self.assertEqual(turn.status, TurnStatus.COMPLETED)
+        self.assertEqual({item[0] for item in previews}, {"board-a"})
+        self.assertEqual({item[1] for item in previews}, {turn.turn_id})
+        self.assertIn("Visible response", preview_text)
+        self.assertEqual(preview_text.count("[REDACTED]"), 2)
+        self.assertNotIn("topsecretvalue", preview_text)
+        self.assertNotIn("abcdefghijklmnopqrstuvwxyz", preview_text)
+        self.assertEqual(turn.assistant_texts, ("已查看，未修改设计。",))
 
     def test_concurrent_projects_keep_separate_tool_authority(self) -> None:
         barrier = threading.Barrier(2)

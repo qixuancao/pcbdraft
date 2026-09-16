@@ -161,6 +161,11 @@ class _Sessions:
         self.stopped: list[str] = []
         self.shutdown_calls = 0
         self._events: list[dict[str, Any]] = []
+        self.preview_sink = None
+
+    def set_assistant_preview_sink(self, sink) -> bool:
+        self.preview_sink = sink
+        return True
 
     def start(self, project_id: str, text: object) -> dict[str, Any]:
         if not isinstance(text, str):
@@ -700,6 +705,25 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(reset.status_code, 200)
         self.assertIn("stream.reset_required", reset.text)
         self.assertIn('"binding_state":"bound"', reset.text)
+
+    async def test_assistant_delta_is_transient_and_never_persisted(self) -> None:
+        self.assertIsNotNone(self.sessions.preview_sink)
+        self.sessions.preview_sink(
+            "demo-board", "turn-preview", "Visible assistant response "
+        )
+
+        response = await self.client.get(
+            "/api/projects/demo-board/events?after=0&once=1"
+        )
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertIn('"kind":"assistant.delta"', response.text)
+        self.assertIn('"text":"Visible assistant response "', response.text)
+        self.assertIn('"transient":true', response.text)
+        stream_cache = self.root / "cache" / "demo-board" / "stream.json"
+        persisted = stream_cache.read_text(encoding="utf-8")
+        self.assertNotIn("Visible assistant response", persisted)
+        self.assertNotIn("assistant.delta", persisted)
 
     async def test_artifacts_are_fixed_routes_and_3d_is_generated_only_by_post(
         self,

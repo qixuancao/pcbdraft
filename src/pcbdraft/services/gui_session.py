@@ -13,6 +13,7 @@ from typing import Any
 from pcbdraft.agent.turns import TurnRecord
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.services.assistant_preview import AssistantPreviewSink
 from pcbdraft.services.gui_session_contract import (
     GuiActionResponse,
     GuiSessionMessage,
@@ -78,6 +79,15 @@ class GuiSessionManager:
 
             jobs = JobRunner(service, orchestrator=ConversationOrchestrator(service))
         self.jobs = jobs
+
+    def set_assistant_preview_sink(self, sink: AssistantPreviewSink | None) -> bool:
+        """Attach a transient preview sink when the canonical agent supports it."""
+
+        setter = getattr(self.jobs.agent, "set_assistant_preview_sink", None)
+        if not callable(setter):
+            return False
+        setter(sink)
+        return True
 
     def start(self, project_id: str, text: object) -> GuiActionResponse:
         """Admit one canonical permission-bound agent job."""

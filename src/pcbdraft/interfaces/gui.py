@@ -38,6 +38,7 @@ from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.kicad.runtime import find_kicad_app
 from pcbdraft.services.application import ApplicationService
+from pcbdraft.services.assistant_preview import MAX_ASSISTANT_DELTA_BYTES
 from pcbdraft.services.gui_session_contract import (
     GuiActionResponse,
     GuiSessionResponse,
@@ -47,6 +48,7 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_URL_LENGTH = 2_048
 MAX_STATIC_BYTES = 4 * 1024 * 1024
 MAX_STREAM_EVENTS = 500
+MAX_TRANSIENT_STREAM_EVENTS = 500
 MAX_PROJECT_NAME_LENGTH = 256
 _PROJECT_ID = re.compile(r"[a-z][a-z0-9-]{2,79}")
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -199,6 +201,7 @@ class _StreamState:
     application_cursor: int = 0
     scene_token: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
+    transient_events: list[dict[str, Any]] = field(default_factory=list)
 
 
 class GUIEventBroker:
@@ -247,6 +250,8 @@ class GUIEventBroker:
                         if isinstance(item, dict)
                         and isinstance(item.get("sequence"), int)
                         and item["sequence"] > 0
+                        and item.get("kind") != "assistant.delta"
+                        and "text" not in item
                     ]
                     state.events = safe_events
                     state.next_sequence = max(
@@ -352,12 +357,52 @@ class GUIEventBroker:
         return event
 
     @staticmethod
-    def _append(state: _StreamState, value: dict[str, Any]) -> None:
+    def _append(
+        state: _StreamState, value: dict[str, Any], *, transient: bool = False
+    ) -> None:
         value["sequence"] = state.next_sequence
         value["stream_id"] = state.stream_id
         state.next_sequence += 1
-        state.events.append(value)
-        del state.events[:-MAX_STREAM_EVENTS]
+        target = state.transient_events if transient else state.events
+        target.append(value)
+        limit = MAX_TRANSIENT_STREAM_EVENTS if transient else MAX_STREAM_EVENTS
+        del target[:-limit]
+
+    @staticmethod
+    def _all_events(state: _StreamState) -> list[dict[str, Any]]:
+        return sorted(
+            (*state.events, *state.transient_events),
+            key=lambda event: int(event["sequence"]),
+        )
+
+    def publish_preview(self, project_id: str, turn_id: str, text: str) -> None:
+        """Publish one bounded assistant delta without writing its text to disk."""
+
+        project_id = _safe_project_id(project_id)
+        if not isinstance(turn_id, str) or not turn_id or len(turn_id) > 128:
+            raise ValidationError("assistant preview turn id is invalid")
+        if not isinstance(text, str) or not text:
+            return
+        encoded = text.encode("utf-8", errors="replace")
+        bounded = encoded[:MAX_ASSISTANT_DELTA_BYTES].decode("utf-8", errors="ignore")
+        if not bounded:
+            return
+        with self._lock:
+            state = self._load(project_id)
+            self._append(
+                state,
+                {
+                    "kind": "assistant.delta",
+                    "message": "Assistant response update",
+                    "level": "info",
+                    "created_at": utc_timestamp(),
+                    "source": "agent",
+                    "turn_id": turn_id,
+                    "text": bounded,
+                    "transient": True,
+                },
+                transient=True,
+            )
 
     def poll(self, project_id: str) -> list[dict[str, Any]]:
         project_id = _safe_project_id(project_id)
@@ -449,7 +494,7 @@ class GUIEventBroker:
                     changed = True
             if changed:
                 self._persist(project_id, state)
-            return list(state.events)
+            return self._all_events(state)
 
     def after(self, project_id: str, sequence: int) -> list[dict[str, Any]]:
         if sequence < 0:
@@ -459,7 +504,11 @@ class GUIEventBroker:
             state = self._load(project_id)
             oldest = int(events[0]["sequence"]) if events else state.next_sequence
             latest = state.next_sequence - 1
-            if sequence > latest or (sequence > 0 and sequence < oldest - 1):
+            pending = [event for event in events if int(event["sequence"]) > sequence]
+            has_gap = bool(
+                sequence > 0 and pending and int(pending[0]["sequence"]) != sequence + 1
+            )
+            if sequence > latest or (sequence > 0 and sequence < oldest - 1) or has_gap:
                 if sequence > latest:
                     state.next_sequence = sequence + 1
                 self._append(
@@ -475,18 +524,17 @@ class GUIEventBroker:
                 )
                 self._persist(project_id, state)
                 return [state.events[-1]]
-        return [event for event in events if int(event["sequence"]) > sequence]
+        return pending
 
     def cursor(self, project_id: str) -> dict[str, Any]:
         self.poll(project_id)
         with self._lock:
             state = self._load(project_id)
+            events = self._all_events(state)
             return {
                 "stream_id": state.stream_id,
                 "last_sequence": state.next_sequence - 1,
-                "oldest_sequence": (
-                    state.events[0]["sequence"] if state.events else None
-                ),
+                "oldest_sequence": (events[0]["sequence"] if events else None),
             }
 
     def _scene_binding(self, project_id: str) -> dict[str, Any]:
@@ -834,6 +882,9 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
     ipc = ipc if ipc is not None else KiCadIPCCompanion(enabled=ipc_enabled)
     sessions = sessions or GuiSessionManager(service, cache_root=cache)
     broker = GUIEventBroker(service, live_view, sessions, cache)
+    set_preview_sink = getattr(sessions, "set_assistant_preview_sink", None)
+    if callable(set_preview_sink):
+        set_preview_sink(broker.publish_preview)
     runtime = GUIRuntime(
         service=service,
         live_view=live_view,

@@ -24,6 +24,10 @@ from pcbdraft.agent.turns import (
 )
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.services.assistant_preview import (
+    AssistantPreviewSink,
+    SafeAssistantPreview,
+)
 
 
 def initialize_runtime(*, permission_mode: PermissionMode = "workspace") -> None:
@@ -94,10 +98,19 @@ class ConversationOrchestrator(AgentOrchestrator):
         service: Any,
         *,
         agent_factory: Callable[..., Any] | None = None,
+        assistant_preview: AssistantPreviewSink | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(service, **kwargs)
         self.agent_factory = agent_factory or create_conversation_agent
+        self._assistant_preview = assistant_preview
+        self._assistant_preview_lock = threading.RLock()
+
+    def set_assistant_preview_sink(self, sink: AssistantPreviewSink | None) -> None:
+        """Set the optional transient UI sink used by future model turns."""
+
+        with self._assistant_preview_lock:
+            self._assistant_preview = sink
 
     def _run_turn(
         self,
@@ -178,6 +191,7 @@ class ConversationOrchestrator(AgentOrchestrator):
         dispatch_lock = threading.RLock()
         agent: Any = None
         watcher: threading.Thread | None = None
+        preview: SafeAssistantPreview | None = None
 
         def interrupt() -> None:
             if agent is not None:
@@ -260,7 +274,15 @@ class ConversationOrchestrator(AgentOrchestrator):
                         "project and continue the original request: "
                         + record.user_message
                     )
-                result = agent.run_conversation(prompt, conversation_history=history)
+                with self._assistant_preview_lock:
+                    preview_sink = self._assistant_preview
+                run_kwargs: dict[str, Any] = {"conversation_history": history}
+                if preview_sink is not None:
+                    preview = SafeAssistantPreview(project_id, turn_id, preview_sink)
+                    run_kwargs["stream_callback"] = preview.feed
+                result = agent.run_conversation(prompt, **run_kwargs)
+                if preview is not None:
+                    preview.finish()
                 current = store.load(turn_id)
                 if current.status is not TurnStatus.RUNNING:
                     return self.service.open_project(project_id)
@@ -307,6 +329,8 @@ class ConversationOrchestrator(AgentOrchestrator):
             raise
         finally:
             done.set()
+            if preview is not None:
+                preview.finish()
             if watcher is not None:
                 watcher.join(timeout=1.0)
             try:
