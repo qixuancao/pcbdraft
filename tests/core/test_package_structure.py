@@ -225,10 +225,10 @@ class PackageStructureTests(unittest.TestCase):
                 "__init__.py",
                 "boardbench_worker.py",
                 "cli.py",
-                "commands.py",
                 "gui.py",
                 "gui_worker.py",
                 "terminal.py",
+                "terminal_launcher.py",
                 "terminal_text.py",
             },
         )
