@@ -525,6 +525,7 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_message_and_stop_use_project_bound_session_manager(self) -> None:
         headers = await self._mutation_headers()
+        session = await self.client.get("/api/projects/demo-board/session")
         message = await self.client.post(
             "/api/projects/demo-board/messages",
             json={"text": "Place U1 near J1"},
@@ -534,6 +535,17 @@ class GUIApplicationTests(unittest.IsolatedAsyncioTestCase):
             "/api/projects/demo-board/stop", json={}, headers=headers
         )
 
+        self.assertEqual(session.status_code, 200, session.text)
+        self.assertEqual(
+            session.json(),
+            {
+                "schema": "pcbdraft-gui-session",
+                "version": 1,
+                "project_id": "demo-board",
+                "status": "idle",
+                "messages": [],
+            },
+        )
         self.assertEqual(message.status_code, 202, message.text)
         self.assertEqual(stop.status_code, 202, stop.text)
         self.assertEqual(self.sessions.started, [("demo-board", "Place U1 near J1")])

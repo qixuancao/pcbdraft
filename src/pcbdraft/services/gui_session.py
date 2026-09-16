@@ -13,10 +13,18 @@ from typing import Any
 from pcbdraft.agent.turns import TurnRecord
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.services.gui_session_contract import (
+    GuiActionResponse,
+    GuiSessionMessage,
+    GuiSessionResponse,
+    action_response,
+    active_turn,
+    session_message,
+    session_response,
+    visible_job,
+)
 from pcbdraft.services.jobs import JobRunner
 
-SESSION_SCHEMA = "pcbdraft-gui-session"
-SESSION_VERSION = 2
 MAX_PROMPT_BYTES = 16 * 1024
 MAX_RESPONSE_BYTES = 16 * 1024
 MAX_MESSAGES = 60
@@ -70,7 +78,7 @@ class GuiSessionManager:
             jobs = JobRunner(service, orchestrator=ConversationOrchestrator(service))
         self.jobs = jobs
 
-    def start(self, project_id: str, text: object) -> dict[str, Any]:
+    def start(self, project_id: str, text: object) -> GuiActionResponse:
         """Admit one canonical permission-bound agent job."""
 
         self.service.project_root(project_id)
@@ -81,14 +89,14 @@ class GuiSessionManager:
         )
         args = job.get("args")
         turn_id = args.get("turn_id") if isinstance(args, dict) else None
-        return {
-            "project_id": project_id,
-            "job_id": job["id"],
-            "turn_id": turn_id,
-            "status": job["status"],
-        }
+        return action_response(
+            project_id=project_id,
+            job_id=job["id"],
+            turn_id=turn_id,
+            status=job["status"],
+        )
 
-    def stop(self, project_id: str) -> dict[str, Any]:
+    def stop(self, project_id: str) -> GuiActionResponse:
         """Request cancellation through the canonical job/turn boundary."""
 
         active = next(
@@ -100,17 +108,22 @@ class GuiSessionManager:
             None,
         )
         if active is None:
-            return {"project_id": project_id, "job_id": None, "status": "idle"}
+            return action_response(
+                project_id=project_id,
+                job_id=None,
+                status="idle",
+                include_turn_id=False,
+            )
         cancelled = self.jobs.cancel(project_id, str(active["id"]))
         args = cancelled.get("args")
-        return {
-            "project_id": project_id,
-            "job_id": cancelled["id"],
-            "turn_id": args.get("turn_id") if isinstance(args, dict) else None,
-            "status": cancelled["status"],
-        }
+        return action_response(
+            project_id=project_id,
+            job_id=cancelled["id"],
+            turn_id=args.get("turn_id") if isinstance(args, dict) else None,
+            status=cancelled["status"],
+        )
 
-    def session(self, project_id: str) -> dict[str, Any]:
+    def session(self, project_id: str) -> GuiSessionResponse:
         """Build reconnect state only from canonical jobs, turns, and project state."""
 
         view = self.service.open_project(project_id)
@@ -133,32 +146,25 @@ class GuiSessionManager:
             except PCBDraftError:
                 pending = None
         state = view.get("state") if isinstance(view, dict) else None
-        return {
-            "schema": SESSION_SCHEMA,
-            "version": SESSION_VERSION,
-            "project_id": project_id,
-            "status": active["status"] if active is not None else "idle",
-            "active_turn": (
-                {
-                    "job_id": active["id"],
-                    "turn_id": active_turn_id,
-                    "status": active["status"],
-                    "started_at": active.get("started_at") or active.get("created_at"),
-                }
+        return session_response(
+            project_id=project_id,
+            status=active["status"] if active is not None else "idle",
+            active=(
+                active_turn(active, turn_id=active_turn_id)
                 if active is not None
                 else None
             ),
-            "pending_approval": pending,
-            "messages": messages,
-            "jobs": [self._public_job(job) for job in jobs[:MAX_VISIBLE_JOBS]],
-            "canonical_revision": (
+            pending_approval=pending,
+            messages=messages,
+            jobs=[visible_job(job) for job in jobs[:MAX_VISIBLE_JOBS]],
+            canonical_revision=(
                 state.get("revision") if isinstance(state, dict) else None
             ),
-            "design_revision": (
+            design_revision=(
                 state.get("design_revision") if isinstance(state, dict) else None
             ),
-            "content_hash": self._content_hash(view),
-        }
+            content_hash=self._content_hash(view),
+        )
 
     def events(self, project_id: str, after: int = 0) -> list[dict[str, Any]]:
         """Compatibility view: lifecycle events are owned by ApplicationService."""
@@ -176,51 +182,31 @@ class GuiSessionManager:
         return []
 
     @staticmethod
-    def _messages(turns: list[TurnRecord]) -> list[dict[str, Any]]:
-        messages: list[dict[str, Any]] = []
+    def _messages(turns: list[TurnRecord]) -> list[GuiSessionMessage]:
+        messages: list[GuiSessionMessage] = []
         for turn in reversed(turns):
             messages.append(
-                {
-                    "id": f"{turn.turn_id}-user",
-                    "turn_id": turn.turn_id,
-                    "role": "user",
-                    "text": _bounded_text(turn.user_message),
-                    "status": turn.status.value,
-                    "created_at": turn.created_at,
-                }
+                session_message(
+                    message_id=f"{turn.turn_id}-user",
+                    turn_id=turn.turn_id,
+                    role="user",
+                    text=_bounded_text(turn.user_message),
+                    status=turn.status.value,
+                    created_at=turn.created_at,
+                )
             )
             for index, reply in enumerate(turn.assistant_texts):
                 messages.append(
-                    {
-                        "id": f"{turn.turn_id}-assistant-{index}",
-                        "turn_id": turn.turn_id,
-                        "role": "assistant",
-                        "text": _bounded_text(reply),
-                        "status": turn.status.value,
-                        "created_at": turn.updated_at,
-                    }
+                    session_message(
+                        message_id=f"{turn.turn_id}-assistant-{index}",
+                        turn_id=turn.turn_id,
+                        role="assistant",
+                        text=_bounded_text(reply),
+                        status=turn.status.value,
+                        created_at=turn.updated_at,
+                    )
                 )
         return messages[-MAX_MESSAGES:]
-
-    @staticmethod
-    def _public_job(job: dict[str, Any]) -> dict[str, Any]:
-        args = job.get("args")
-        result = job.get("result")
-        return {
-            "id": job.get("id"),
-            "turn_id": args.get("turn_id") if isinstance(args, dict) else None,
-            "status": job.get("status"),
-            "attempt": job.get("attempt"),
-            "created_at": job.get("created_at"),
-            "started_at": job.get("started_at"),
-            "completed_at": job.get("completed_at"),
-            "project_revision": (
-                result.get("project_revision") if isinstance(result, dict) else None
-            ),
-            "design_content_hash": (
-                result.get("design_content_hash") if isinstance(result, dict) else None
-            ),
-        }
 
     @staticmethod
     def _content_hash(view: dict[str, Any]) -> str | None:

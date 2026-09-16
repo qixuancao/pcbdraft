@@ -38,6 +38,10 @@ from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.kicad.runtime import find_kicad_app
 from pcbdraft.services.application import ApplicationService
+from pcbdraft.services.gui_session_contract import (
+    GuiActionResponse,
+    GuiSessionResponse,
+)
 
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_URL_LENGTH = 2_048
@@ -1026,7 +1030,10 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
     async def session(project_id: str) -> dict[str, Any]:
         project_id = _safe_project_id(project_id)
         await run_in_threadpool(runtime.service.open_project, project_id)
-        return await run_in_threadpool(runtime.sessions.session, project_id)
+        result: GuiSessionResponse = await run_in_threadpool(
+            runtime.sessions.session, project_id
+        )
+        return dict(result)
 
     async def event_stream(request: Request, project_id: str) -> StreamingResponse:
         project_id = _safe_project_id(project_id)
@@ -1078,7 +1085,7 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
             raise ValidationError("request body must be a JSON object") from exc
         if not isinstance(body, dict) or set(body) != {"text"}:
             raise ValidationError("message request fields are invalid")
-        result = await run_in_threadpool(
+        result: GuiActionResponse = await run_in_threadpool(
             runtime.sessions.start, project_id, body["text"]
         )
         await run_in_threadpool(runtime.events.poll, project_id)
@@ -1092,7 +1099,9 @@ def create_gui_app(  # noqa: C901 - closed-route setup keeps security policy adj
             raise ValidationError("request body must be an empty JSON object") from exc
         if body != {}:
             raise ValidationError("stop request body must be an empty object")
-        result = await run_in_threadpool(runtime.sessions.stop, project_id)
+        result: GuiActionResponse = await run_in_threadpool(
+            runtime.sessions.stop, project_id
+        )
         await run_in_threadpool(runtime.events.poll, project_id)
         return JSONResponse(result, status_code=202)
 
