@@ -76,6 +76,9 @@ from pcbdraft.services import (
     application_semantic_operations as _application_semantic_operations,
 )
 from pcbdraft.services import application_project_store as _application_project_store
+from pcbdraft.services.application_external_revision import (
+    ApplicationExternalRevisionMixin,
+)
 from pcbdraft.services.application_progress import (
     _attach_progress,
     _progress_stage_evidence,
@@ -303,7 +306,10 @@ def _initial_stackup_layers(request: str) -> int:
 _sanitize_secret_text = sanitize_user_text
 
 
-class ApplicationService(ApplicationProjectStoreMixin):
+class ApplicationService(
+    ApplicationExternalRevisionMixin,
+    ApplicationProjectStoreMixin,
+):
     """Single write authority for product projects and their engineering runtime."""
 
     @staticmethod
@@ -331,6 +337,54 @@ class ApplicationService(ApplicationProjectStoreMixin):
         """Preserve the historical application progress projection patch point."""
 
         return _transaction_progress_projection(receipt)
+
+    @staticmethod
+    def _external_revision_open_managed_project(design_root: Path) -> Any:
+        """Preserve the historical managed-project patch point."""
+
+        return open_managed_project(design_root)
+
+    @staticmethod
+    def _external_revision_preview_kicad_import(managed: Any) -> Any:
+        """Preserve the historical external-preview patch point."""
+
+        return preview_kicad_import(managed)
+
+    @staticmethod
+    def _external_revision_apply_kicad_import(
+        preview: Any,
+        *,
+        timeout: float,
+    ) -> Path:
+        """Preserve the historical external-apply patch point."""
+
+        return apply_kicad_import(preview, timeout=timeout)
+
+    @staticmethod
+    def _external_revision_sanitize_secret_text(value: str) -> str:
+        """Preserve the historical application sanitizer patch point."""
+
+        return _sanitize_secret_text(value)
+
+    @staticmethod
+    def _external_revision_preview_token_is_valid(value: Any) -> bool:
+        """Preserve the historical preview-token validation behavior."""
+
+        return (
+            isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+        )
+
+    @staticmethod
+    def _external_revision_resource_lock(root: Path, locks_root: Path) -> Any:
+        """Preserve the historical application resource-lock patch point."""
+
+        return ResourceLock(root, locks_root)
+
+    @staticmethod
+    def _external_revision_timestamp() -> str:
+        """Preserve the historical application timestamp patch point."""
+
+        return utc_timestamp()
 
     def __init__(
         self,
@@ -4580,178 +4634,6 @@ class ApplicationService(ApplicationProjectStoreMixin):
             record["completed_at"] = utc_timestamp()
             record["error"] = "Generation process stopped before completion."
             atomic_write_json(record_path, record)
-
-    def external_kicad_change_status(self, project_id: str) -> dict[str, Any]:
-        """Detect native-file drift without treating desktop state as authoritative."""
-
-        project = self._open(project_id)
-        if project.design_root.is_symlink() or not project.design_root.is_dir():
-            return {
-                "state": "no_design",
-                "requires_import": False,
-                "canonical_revision": project.state["revision"],
-                "design_revision": project.state["design_revision"],
-                "content_hash": None,
-            }
-        managed = open_managed_project(project.design_root)
-        drift = managed.drift()
-        binding = {
-            "canonical_revision": project.state["revision"],
-            "design_revision": project.state["design_revision"],
-            "content_hash": managed.design.content_hash(),
-        }
-        if not drift:
-            return {
-                "state": "clean",
-                "requires_import": False,
-                "drift": [],
-                **binding,
-            }
-        try:
-            preview = preview_kicad_import(managed)
-        except PCBDraftError as exc:
-            return {
-                "state": "unsupported_external_change",
-                "requires_import": True,
-                "importable": False,
-                "drift": list(drift),
-                "limitation": _sanitize_secret_text(str(exc))[:1024],
-                **binding,
-            }
-        if not preview.has_changes:
-            return {
-                "state": "unsupported_external_change",
-                "requires_import": True,
-                "importable": False,
-                "drift": list(drift),
-                "limitation": "native bytes changed without a supported semantic placement revision",
-                **binding,
-            }
-        return {
-            "state": "review_required",
-            "requires_import": True,
-            "importable": True,
-            "drift": list(drift),
-            "board_sha256": preview.board_sha256,
-            "review_token": preview.review_token,
-            "change_set_id": preview.change_set.id if preview.change_set else None,
-            "native_changes": list(preview.native_changes[:1_000]),
-            "semantic_diff": preview.diff,
-            **binding,
-        }
-
-    def import_external_kicad_revision(
-        self,
-        project_id: str,
-        *,
-        expected_preview_token: str,
-        expected_revision: int | None = None,
-        timeout: float = 120.0,
-    ) -> dict[str, Any]:
-        """Explicitly import reviewed KiCad placement drift as a new revision."""
-
-        if not isinstance(expected_preview_token, str) or not re.fullmatch(
-            r"[0-9a-f]{64}", expected_preview_token
-        ):
-            raise ValidationError(
-                "external import requires a valid reviewed preview token"
-            )
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation="external KiCad import"
-        )
-        if project.state["status"] not in {
-            "generated",
-            "validated",
-            "validation_failed",
-            "released",
-            "release_failed",
-            "interrupted",
-        }:
-            raise ValidationError("project is not eligible for external KiCad import")
-        if project.state["active_transaction"] is not None:
-            raise ValidationError("project already has a staged semantic change")
-        managed = open_managed_project(project.design_root)
-        preview = preview_kicad_import(managed)
-        if not preview.has_changes or preview.change_set is None:
-            raise ValidationError("no supported external KiCad revision is available")
-        source_design_revision = int(project.state["design_revision"])
-        source_hash = managed.design.content_hash()
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before external KiCad import")
-            if preview.review_token != expected_preview_token:
-                raise ValidationError(
-                    "external KiCad files changed since review; refresh the preview"
-                )
-            current.state["status"] = "importing_external"
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            self._event(
-                current.state,
-                current.root,
-                "external_revision.import_started",
-                "Importing a reviewed external KiCad placement revision",
-            )
-            self._write_records(current.root, current.state, current.conversation)
-            expected_revision = int(current.state["revision"])
-        try:
-            transaction = apply_kicad_import(preview, timeout=timeout)
-            imported = open_managed_project(project.design_root)
-            imported.assert_synchronized()
-        except BaseException as exc:
-            self._record_failure(
-                project_id,
-                expected_revision,
-                "interrupted",
-                "external_revision.import_failed",
-                str(exc),
-            )
-            raise
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed while external KiCad import ran")
-            current.state["status"] = "generated"
-            current.state["revision"] += 1
-            current.state["design_revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            current.state["last_validation"] = None
-            current.state["last_preview"] = None
-            current.state["last_release"] = None
-            message = (
-                "Reviewed KiCad placement changes were imported as an explicit external "
-                "revision. Run final validation before release."
-            )
-            self._append_message(
-                current.conversation,
-                "assistant",
-                "external_revision",
-                message,
-                data={
-                    "source_design_revision": source_design_revision,
-                    "source_content_hash": source_hash,
-                    "design_content_hash": imported.design.content_hash(),
-                    "transaction": transaction.name,
-                },
-            )
-            self._event(
-                current.state,
-                current.root,
-                "external_revision.imported",
-                message,
-            )
-            self._write_records(current.root, current.state, current.conversation)
-        result = self.open_project(project_id)
-        result["external_revision"] = {
-            "state": "imported",
-            "source_design_revision": source_design_revision,
-            "design_revision": result["state"]["design_revision"],
-            "content_hash": imported.design.content_hash(),
-            "transaction": transaction.name,
-        }
-        return result
 
     def validate_project(
         self,

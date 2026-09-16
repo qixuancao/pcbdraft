@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import tempfile
 import unittest
@@ -10,7 +11,11 @@ from unittest.mock import patch
 
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.kicad.sync import SyncPreview
+from pcbdraft.services import application, application_external_revision
 from pcbdraft.services.application import ApplicationService
+from pcbdraft.services.application_external_revision import (
+    ApplicationExternalRevisionMixin,
+)
 
 
 class _Design:
@@ -99,6 +104,37 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
             self.assertTrue(status["importable"])
             self.assertEqual(status["canonical_revision"], 4)
 
+    def test_status_preserves_legacy_sanitizer_and_native_adapter_patch_paths(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            service, project_id, design_root = self._service(Path(temporary))
+            drifted = _Managed(design_root, "a" * 64, ("board:hash_mismatch",))
+            with (
+                patch.object(
+                    application,
+                    "open_managed_project",
+                    return_value=drifted,
+                ) as opener,
+                patch.object(
+                    application,
+                    "preview_kicad_import",
+                    side_effect=PCBDraftError("token=private"),
+                ) as preview,
+                patch.object(
+                    application,
+                    "_sanitize_secret_text",
+                    return_value="redacted",
+                ) as sanitizer,
+            ):
+                status = service.external_kicad_change_status(project_id)
+
+            self.assertEqual(status["state"], "unsupported_external_change")
+            self.assertEqual(status["limitation"], "redacted")
+            opener.assert_called_once_with(design_root)
+            preview.assert_called_once_with(drifted)
+            sanitizer.assert_called_once_with("token=private")
+
     def test_explicit_import_advances_one_design_revision_and_invalidates_evidence(
         self,
     ) -> None:
@@ -111,6 +147,11 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
             )
             transaction.mkdir(parents=True)
             with (
+                patch.object(
+                    service,
+                    "_bind_expected_revision",
+                    wraps=service._bind_expected_revision,
+                ) as revision_binding,
                 patch(
                     "pcbdraft.services.application.open_managed_project",
                     side_effect=[before, after, after],
@@ -129,6 +170,12 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
                     expected_revision=4,
                     expected_preview_token=self._preview().review_token,
                 )
+            revision_binding.assert_called_once()
+            self.assertEqual(revision_binding.call_args.args[1], 4)
+            self.assertEqual(
+                revision_binding.call_args.kwargs,
+                {"operation": "external KiCad import"},
+            )
             self.assertEqual(result["state"]["revision"], 6)
             self.assertEqual(result["state"]["design_revision"], 3)
             self.assertEqual(result["state"]["status"], "generated")
@@ -209,6 +256,52 @@ class ApplicationExternalRevisionTests(unittest.TestCase):
                     )
                 apply.assert_not_called()
                 self.assertEqual(state_path.read_bytes(), baseline)
+
+    def test_mixin_boundary_and_host_adapters_remain_patchable(self) -> None:
+        source = Path(application_external_revision.__file__).read_text(
+            encoding="utf-8"
+        )
+        tree = ast.parse(source)
+        imports = {
+            alias.name
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        imports.update(
+            node.module
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module
+        )
+        self.assertNotIn("pcbdraft.services.application", imports)
+        self.assertIs(
+            ApplicationService.external_kicad_change_status,
+            ApplicationExternalRevisionMixin.external_kicad_change_status,
+        )
+        self.assertIs(
+            ApplicationService.import_external_kicad_revision,
+            ApplicationExternalRevisionMixin.import_external_kicad_revision,
+        )
+
+        sentinel = object()
+        root = Path("/project")
+        locks_root = Path("/locks")
+        with (
+            patch.object(application, "ResourceLock", return_value=sentinel) as lock,
+            patch.object(
+                application, "utc_timestamp", return_value="timestamp"
+            ) as clock,
+        ):
+            self.assertIs(
+                ApplicationService._external_revision_resource_lock(root, locks_root),
+                sentinel,
+            )
+            self.assertEqual(
+                ApplicationService._external_revision_timestamp(),
+                "timestamp",
+            )
+        lock.assert_called_once_with(root, locks_root)
+        clock.assert_called_once_with()
 
 
 if __name__ == "__main__":
