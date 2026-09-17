@@ -197,6 +197,9 @@ records.
 - `services.session_db_compression_lease` owns compression lease acquisition,
   renewal, inspection, release, and in-transaction fence/recovery helpers. It
   uses the host write-transaction adapter and a late-bound process-liveness hook.
+- `services.session_db_compression_health` owns durable compression cooldown,
+  fallback and ineffective-compaction counters, plus gateway hygiene streaks.
+  Connection and write-transaction authority remain on the host.
 - `services.session_db_gateway_queries` owns read-only gateway session listing,
   origin and peer recovery lookup, and orphan-adoption candidate projection.
 
