@@ -110,6 +110,9 @@ from pcbdraft.services.application_progress import (
 from pcbdraft.services.application_project_lifecycle import (
     ApplicationProjectLifecycleMixin,
 )
+from pcbdraft.services.application_project_queries import (
+    ApplicationProjectQueriesMixin,
+)
 from pcbdraft.services.application_release import ApplicationReleaseMixin
 from pcbdraft.services.application_tool_inspection import (
     ApplicationToolInspectionMixin,
@@ -393,6 +396,7 @@ class ApplicationService(
     ApplicationNativeOutputsMixin,
     ApplicationToolInspectionMixin,
     ApplicationProductSessionMixin,
+    ApplicationProjectQueriesMixin,
     ApplicationProjectLifecycleMixin,
     ApplicationReleaseMixin,
     ApplicationModificationRevertMixin,
@@ -402,6 +406,18 @@ class ApplicationService(
     ApplicationProjectStoreMixin,
 ):
     """Single write authority for product projects and their engineering runtime."""
+
+    @staticmethod
+    def _project_query_error_type() -> type[BaseException]:
+        """Preserve the historical application.PCBDraftError patch point."""
+
+        return PCBDraftError
+
+    @staticmethod
+    def _project_query_resource_lock(*args: Any, **kwargs: Any) -> Any:
+        """Preserve the historical application.ResourceLock patch point."""
+
+        return ResourceLock(*args, **kwargs)
 
     @staticmethod
     def _project_store_sanitize_secret_text(value: str) -> str:
@@ -984,58 +1000,9 @@ class ApplicationService(
             },
         }
 
-    def list_projects(self) -> list[dict[str, Any]]:
-        result: list[dict[str, Any]] = []
-        for candidate in sorted(self.projects_root.iterdir()):
-            if (
-                candidate.name.startswith(".")
-                or candidate.is_symlink()
-                or not candidate.is_dir()
-            ):
-                continue
-            try:
-                project = self._open_path(candidate)
-            except PCBDraftError:
-                continue
-            result.append(self._summary(project))
-        return sorted(result, key=lambda item: item["updated_at"], reverse=True)
-
     def create_project(self, name: str, request: str) -> dict[str, Any]:
         draft = self.create_draft(name)
         return self.send_message(draft["project"]["id"], request)
-
-    def open_project(self, project_id: str) -> dict[str, Any]:
-        return self._public_project(self._open(project_id))
-
-    def try_open_project_snapshot(
-        self, project_id: str, *, timeout: float = 0.0
-    ) -> dict[str, Any] | None:
-        """Read a self-consistent public view without blocking live UI polling.
-
-        Project records and managed design directories are updated under the
-        project lock.  A live client must use the same lock or it can otherwise
-        observe a conversation from one revision and state/design files from
-        another.  Returning ``None`` when the writer is busy lets callers keep
-        streaming events and retry on their next poll.
-        """
-
-        root = self._project_path(project_id)
-        lock = ResourceLock(root, self.locks_root, timeout=timeout)
-        try:
-            lock.acquire()
-        except PCBDraftError as exc:
-            if "resource is locked by another runtime process" in str(exc):
-                return None
-            raise
-        try:
-            return self._public_project(self._open_path(root))
-        finally:
-            lock.release()
-
-    def project_root(self, project_id: str) -> Path:
-        """Return a validated application-owned root for internal adapters."""
-
-        return self._open(project_id).root
 
     def execute_pcb_tool(
         self,
