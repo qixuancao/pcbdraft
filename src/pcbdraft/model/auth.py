@@ -96,6 +96,7 @@ from pcbdraft.model import auth_error_formatting as _auth_error_formatting
 from pcbdraft.model import auth_provider_endpoints as _auth_provider_endpoints
 from pcbdraft.model import auth_provider_policy as _auth_provider_policy
 from pcbdraft.model import auth_provider_state as _auth_provider_state
+from pcbdraft.model import auth_qwen_oauth as _auth_qwen_oauth
 from pcbdraft.model import auth_store_persistence as _auth_store_persistence
 from pcbdraft.model.configuration import (
     get_config_path,
@@ -1753,160 +1754,63 @@ def _codex_access_token_is_expiring(access_token: Any, skew_seconds: int) -> boo
 
 
 def _qwen_cli_auth_path() -> Path:
-    return Path.home() / ".qwen" / "oauth_creds.json"
+    """Compatibility wrapper for the Qwen CLI credential path."""
+
+    return _auth_qwen_oauth._qwen_cli_auth_path(home=Path.home)
 
 
 def _read_qwen_cli_tokens() -> dict[str, Any]:
-    auth_path = _qwen_cli_auth_path()
-    if not auth_path.exists():
-        raise AuthError(
-            "Qwen CLI credentials not found. Run 'qwen auth qwen-oauth' first.",
-            provider="qwen-oauth",
-            code="qwen_auth_missing",
-        )
-    try:
-        data = json.loads(auth_path.read_text(encoding="utf-8"))
-    except Exception as exc:
-        raise AuthError(
-            f"Failed to read Qwen CLI credentials from {auth_path}: {exc}",
-            provider="qwen-oauth",
-            code="qwen_auth_read_failed",
-        ) from exc
-    if not isinstance(data, dict):
-        raise AuthError(
-            f"Invalid Qwen CLI credentials in {auth_path}.",
-            provider="qwen-oauth",
-            code="qwen_auth_invalid",
-        )
-    return data
+    """Compatibility wrapper for reading Qwen CLI tokens."""
+
+    return _auth_qwen_oauth._read_qwen_cli_tokens(
+        qwen_cli_auth_path=_qwen_cli_auth_path,
+        auth_error=AuthError,
+        json_loads=json.loads,
+    )
 
 
 def _save_qwen_cli_tokens(tokens: dict[str, Any]) -> Path:
-    auth_path = _qwen_cli_auth_path()
-    auth_path.parent.mkdir(parents=True, exist_ok=True)
-    # secure_parent_dir refuses to chmod / or top-level dirs (#25821).
-    secure_parent_dir(auth_path)
-    # Per-process random temp suffix avoids collisions between concurrent
-    # writers and stale leftovers from a crashed prior write.
-    tmp_path = auth_path.with_name(
-        f"{auth_path.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
+    """Compatibility wrapper for atomically saving Qwen CLI tokens."""
+
+    return _auth_qwen_oauth._save_qwen_cli_tokens(
+        tokens,
+        qwen_cli_auth_path=_qwen_cli_auth_path,
+        secure_parent=secure_parent_dir,
+        atomic_replace=atomic_replace,
+        os_module=os,
+        stat_module=stat,
+        json_dumps=json.dumps,
+        uuid4=uuid.uuid4,
     )
-    # Create with 0o600 atomically via os.open(O_EXCL) — closes the TOCTOU
-    # window where write_text() + post-write chmod briefly exposed tokens
-    # at process umask (typically 0o644). See #19673, #21148.
-    fd = os.open(
-        str(tmp_path),
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-        stat.S_IRUSR | stat.S_IWUSR,
-    )
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            fh.write(json.dumps(tokens, indent=2, sort_keys=True) + "\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-        atomic_replace(tmp_path, auth_path)
-    finally:
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-    return auth_path
 
 
 def _qwen_access_token_is_expiring(
     expiry_date_ms: Any, skew_seconds: int = QWEN_ACCESS_TOKEN_REFRESH_SKEW_SECONDS
 ) -> bool:
-    try:
-        expiry_ms = int(expiry_date_ms)
-    except Exception:
-        return True
-    return (time.time() + max(0, int(skew_seconds))) * 1000 >= expiry_ms
+    """Compatibility wrapper for the Qwen token refresh-window check."""
+
+    return _auth_qwen_oauth._qwen_access_token_is_expiring(
+        expiry_date_ms,
+        skew_seconds,
+        time_now=time.time,
+    )
 
 
 def _refresh_qwen_cli_tokens(
     tokens: dict[str, Any], timeout_seconds: float = 20.0
 ) -> dict[str, Any]:
-    refresh_token = str(tokens.get("refresh_token", "") or "").strip()
-    if not refresh_token:
-        raise AuthError(
-            "Qwen OAuth refresh token missing. Re-run 'qwen auth qwen-oauth'.",
-            provider="qwen-oauth",
-            code="qwen_refresh_token_missing",
-        )
+    """Compatibility wrapper for refreshing Qwen CLI OAuth tokens."""
 
-    try:
-        response = httpx.post(
-            QWEN_OAUTH_TOKEN_URL,
-            headers={
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Accept": "application/json",
-            },
-            data={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": QWEN_OAUTH_CLIENT_ID,
-            },
-            timeout=timeout_seconds,
-        )
-    except Exception as exc:
-        raise AuthError(
-            f"Qwen OAuth refresh failed: {exc}",
-            provider="qwen-oauth",
-            code="qwen_refresh_failed",
-        ) from exc
-
-    if response.status_code >= 400:
-        body = response.text.strip()
-        raise AuthError(
-            "Qwen OAuth refresh failed. Re-run 'qwen auth qwen-oauth'."
-            + (f" Response: {body}" if body else ""),
-            provider="qwen-oauth",
-            code="qwen_refresh_failed",
-        )
-
-    try:
-        payload = response.json()
-    except Exception as exc:
-        raise AuthError(
-            f"Qwen OAuth refresh returned invalid JSON: {exc}",
-            provider="qwen-oauth",
-            code="qwen_refresh_invalid_json",
-        ) from exc
-
-    if (
-        not isinstance(payload, dict)
-        or not str(payload.get("access_token", "") or "").strip()
-    ):
-        raise AuthError(
-            "Qwen OAuth refresh response missing access_token.",
-            provider="qwen-oauth",
-            code="qwen_refresh_invalid_response",
-        )
-
-    expires_in = payload.get("expires_in")
-    try:
-        expires_in_seconds = int(expires_in)
-    except Exception:
-        expires_in_seconds = 6 * 60 * 60
-
-    refreshed = {
-        "access_token": str(payload.get("access_token", "") or "").strip(),
-        "refresh_token": str(
-            payload.get("refresh_token", refresh_token) or refresh_token
-        ).strip(),
-        "token_type": str(
-            payload.get("token_type", tokens.get("token_type", "Bearer")) or "Bearer"
-        ).strip()
-        or "Bearer",
-        "resource_url": str(
-            payload.get("resource_url", tokens.get("resource_url", "portal.qwen.ai"))
-            or "portal.qwen.ai"
-        ).strip(),
-        "expiry_date": int(time.time() * 1000) + max(1, expires_in_seconds) * 1000,
-    }
-    _save_qwen_cli_tokens(refreshed)
-    return refreshed
+    return _auth_qwen_oauth._refresh_qwen_cli_tokens(
+        tokens,
+        timeout_seconds,
+        http_post=httpx.post,
+        token_url=QWEN_OAUTH_TOKEN_URL,
+        client_id=QWEN_OAUTH_CLIENT_ID,
+        auth_error=AuthError,
+        save_qwen_cli_tokens=_save_qwen_cli_tokens,
+        time_now=time.time,
+    )
 
 
 def _mark_qwen_oauth_active(creds: dict[str, Any]) -> None:
@@ -1919,13 +1823,13 @@ def _mark_qwen_oauth_active(creds: dict[str, Any]) -> None:
     _model_section_has_credentials() detect the provider for the setup wizard
     and status commands.
     """
-    with _auth_store_lock():
-        auth_store = _load_auth_store()
-        state: dict[str, Any] = {}
-        if creds.get("base_url"):
-            state["base_url"] = str(creds["base_url"])
-        _save_provider_state(auth_store, "qwen-oauth", state)
-        _save_auth_store(auth_store)
+    _auth_qwen_oauth._mark_qwen_oauth_active(
+        creds,
+        auth_store_lock=_auth_store_lock,
+        load_auth_store=_load_auth_store,
+        save_provider_state=_save_provider_state,
+        save_auth_store=_save_auth_store,
+    )
 
 
 def resolve_qwen_runtime_credentials(
@@ -1934,57 +1838,30 @@ def resolve_qwen_runtime_credentials(
     refresh_if_expiring: bool = True,
     refresh_skew_seconds: int = QWEN_ACCESS_TOKEN_REFRESH_SKEW_SECONDS,
 ) -> dict[str, Any]:
-    tokens = _read_qwen_cli_tokens()
-    access_token = str(tokens.get("access_token", "") or "").strip()
-    should_refresh = bool(force_refresh)
-    if not should_refresh and refresh_if_expiring:
-        should_refresh = _qwen_access_token_is_expiring(
-            tokens.get("expiry_date"), refresh_skew_seconds
-        )
-    if should_refresh:
-        tokens = _refresh_qwen_cli_tokens(tokens)
-        access_token = str(tokens.get("access_token", "") or "").strip()
-    if not access_token:
-        raise AuthError(
-            "Qwen OAuth access token missing. Re-run 'qwen auth qwen-oauth'.",
-            provider="qwen-oauth",
-            code="qwen_access_token_missing",
-        )
+    """Compatibility wrapper for Qwen runtime credential resolution."""
 
-    base_url = (
-        os.getenv("PCBDRAFT_RUNTIME_QWEN_BASE_URL", "").strip().rstrip("/")
-        or DEFAULT_QWEN_BASE_URL
+    return _auth_qwen_oauth.resolve_qwen_runtime_credentials(
+        force_refresh=force_refresh,
+        refresh_if_expiring=refresh_if_expiring,
+        refresh_skew_seconds=refresh_skew_seconds,
+        read_qwen_cli_tokens=_read_qwen_cli_tokens,
+        qwen_access_token_is_expiring=_qwen_access_token_is_expiring,
+        refresh_qwen_cli_tokens=_refresh_qwen_cli_tokens,
+        qwen_cli_auth_path=_qwen_cli_auth_path,
+        environment_getter=os.getenv,
+        default_base_url=DEFAULT_QWEN_BASE_URL,
+        auth_error=AuthError,
     )
-    return {
-        "provider": "qwen-oauth",
-        "base_url": base_url,
-        "api_key": access_token,
-        "source": "qwen-cli",
-        "expires_at_ms": tokens.get("expiry_date"),
-        "auth_file": str(_qwen_cli_auth_path()),
-    }
 
 
 def get_qwen_auth_status() -> dict[str, Any]:
-    auth_path = _qwen_cli_auth_path()
-    try:
-        # Validate the runtime credentials, including refresh when the cached
-        # CLI token is expired. Otherwise stale tokens show up as "logged in"
-        # and `hermes model` walks users into a broken Qwen setup flow.
-        creds = resolve_qwen_runtime_credentials(refresh_if_expiring=True)
-        return {
-            "logged_in": True,
-            "auth_file": str(auth_path),
-            "source": creds.get("source"),
-            "api_key": creds.get("api_key"),
-            "expires_at_ms": creds.get("expires_at_ms"),
-        }
-    except AuthError as exc:
-        return {
-            "logged_in": False,
-            "auth_file": str(auth_path),
-            "error": str(exc),
-        }
+    """Compatibility wrapper for Qwen OAuth status projection."""
+
+    return _auth_qwen_oauth.get_qwen_auth_status(
+        qwen_cli_auth_path=_qwen_cli_auth_path,
+        resolve_qwen_runtime_credentials=resolve_qwen_runtime_credentials,
+        auth_error=AuthError,
+    )
 
 
 # =============================================================================
