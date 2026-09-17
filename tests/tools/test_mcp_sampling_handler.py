@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from pcbdraft.tools import mcp_sampling_handler, mcp_tool
+from pcbdraft.tools import mcp_sampling_handler, mcp_server_task, mcp_tool
 
 
 def _namespace_result(**kwargs):
@@ -37,7 +37,7 @@ class MCPSamplingCompatibilityTests(unittest.TestCase):
         self.assertNotIn("pcbdraft.tools.mcp_tool", imports)
         self.assertIs(mcp_tool.SamplingHandler, mcp_sampling_handler.SamplingHandler)
         self.assertIs(inspect.getmodule(mcp_tool._safe_numeric), mcp_tool)
-        self.assertIs(inspect.getmodule(mcp_tool.MCPServerTask.run), mcp_tool)
+        self.assertIs(inspect.getmodule(mcp_tool.MCPServerTask.run), mcp_server_task)
         self.assertFalse(hasattr(mcp_sampling_handler, "_servers"))
 
     def test_constructor_and_rate_limit_use_legacy_patch_paths(self) -> None:

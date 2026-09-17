@@ -7,7 +7,12 @@ from pathlib import Path
 from threading import RLock
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from pcbdraft.tools import mcp_task_lifecycle, mcp_tool, mcp_tool_discovery
+from pcbdraft.tools import (
+    mcp_server_task,
+    mcp_task_lifecycle,
+    mcp_tool,
+    mcp_tool_discovery,
+)
 
 
 class _AsyncContext:
@@ -66,7 +71,7 @@ class MCPTaskLifecycleContractTests(unittest.TestCase):
             mcp_task_lifecycle.MCPTaskLifecycleMixin._run_http,
         )
         self.assertEqual(inspect.getmodule(task.start), mcp_task_lifecycle)
-        self.assertEqual(inspect.getmodule(task.run), mcp_tool)
+        self.assertEqual(inspect.getmodule(task.run), mcp_server_task)
         self.assertEqual(inspect.getmodule(task._discover_tools), mcp_tool_discovery)
 
     def test_constructor_reads_legacy_module_patch_path_late(self):

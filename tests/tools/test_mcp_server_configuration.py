@@ -8,7 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from pcbdraft.tools import mcp_server_configuration, mcp_tool
+from pcbdraft.tools import mcp_server_configuration, mcp_server_task, mcp_tool
 
 
 class MCPServerConfigurationCompatibilityTests(unittest.TestCase):
@@ -44,7 +44,7 @@ class MCPServerConfigurationCompatibilityTests(unittest.TestCase):
             mcp_tool._ENV_VAR_PATTERN,
             mcp_server_configuration._ENV_VAR_PATTERN,
         )
-        self.assertIs(inspect.getmodule(mcp_tool.MCPServerTask), mcp_tool)
+        self.assertIs(inspect.getmodule(mcp_tool.MCPServerTask), mcp_server_task)
         self.assertIs(inspect.getmodule(mcp_tool.register_mcp_servers), mcp_tool)
 
     def test_legacy_interpolation_reads_context_patch_path_late(self):
