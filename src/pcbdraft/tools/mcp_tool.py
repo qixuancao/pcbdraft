@@ -108,11 +108,12 @@ import time
 from collections.abc import Callable, Coroutine
 from datetime import datetime
 from types import SimpleNamespace  # noqa: F401 -- injected utility-handler dependency
-from typing import Any, Optional
+from typing import Any
 
 from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
 from pcbdraft.tools import mcp_connection_recovery as _mcp_connection_recovery
 from pcbdraft.tools import mcp_content as _mcp_content
+from pcbdraft.tools import mcp_elicitation_handler as _mcp_elicitation_handler
 from pcbdraft.tools import mcp_protocol_policy as _mcp_protocol_policy
 from pcbdraft.tools import mcp_runtime_loop as _mcp_runtime_loop
 from pcbdraft.tools import mcp_server_configuration as _mcp_server_configuration
@@ -125,6 +126,7 @@ from pcbdraft.tools.mcp_task_lifecycle import MCPTaskLifecycleMixin
 from pcbdraft.tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
+_mcp_elicitation_handler.configure_mcp_elicitation_runtime(namespace=lambda: globals())
 _mcp_protocol_policy.configure_mcp_protocol_policy_runtime(namespace=lambda: globals())
 _mcp_tool_call.configure_mcp_tool_call_runtime(namespace=lambda: globals())
 _mcp_tool_discovery.configure_mcp_tool_discovery_runtime(namespace=lambda: globals())
@@ -1297,207 +1299,10 @@ class SamplingHandler:
 # ---------------------------------------------------------------------------
 
 
-def _format_elicitation_schema_summary(schema: dict, server_name: str) -> str:
-    """Render a JSON-schema-ish requested_schema to a human-readable field list.
-
-    Elicitation schemas are restricted to a flat object with named top-level
-    properties. We surface field names, types, and descriptions so the user
-    can tell what the server is asking for before approving.
-    """
-    props = schema.get("properties") if isinstance(schema, dict) else None
-    if not isinstance(props, dict) or not props:
-        return f"Approval requested by MCP server '{server_name}'."
-
-    lines = [f"Fields requested by MCP server '{server_name}':"]
-    for field_name, field_spec in props.items():
-        field_type = ""
-        field_desc = ""
-        if isinstance(field_spec, dict):
-            field_type = str(field_spec.get("type", "") or "")
-            field_desc = str(field_spec.get("description", "") or "")
-        suffix = f" ({field_type})" if field_type else ""
-        if field_desc:
-            lines.append(f"  - {field_name}{suffix}: {field_desc}")
-        else:
-            lines.append(f"  - {field_name}{suffix}")
-    return "\n".join(lines)
-
-
-class ElicitationHandler:
-    """Handles ``elicitation/create`` requests for a single MCP server.
-
-    Each ``MCPServerTask`` that has elicitation enabled creates one handler.
-    The handler is callable and passed directly to ``ClientSession`` as the
-    ``elicitation_callback`` (added in mcp Python SDK 1.11.0).
-
-    Elicitation lets a server ask the client to collect structured input from
-    the user mid-tool-call (e.g. payment authorization, OAuth confirmation).
-    Form-mode elicitations are routed through Hermes' existing approval
-    system (``tools.approval.prompt_dangerous_approval``), which surfaces
-    the prompt on whichever surface the active session uses -- CLI, TUI,
-    Telegram, Slack, etc. URL-mode elicitations are declined as unsupported.
-
-    Failure modes are fail-closed: any timeout, exception, or unexpected
-    state returns ``decline``/``cancel`` rather than silently accepting.
-    The server treats this as the user not approving.
-    """
-
-    # Outer cap for the approval await. ``prompt_dangerous_approval`` runs
-    # its own input() timeout via the approval-config value; this is an
-    # asyncio-side safety net so the MCP event loop never blocks
-    # indefinitely if the inner timeout machinery is bypassed.
-    _OUTER_TIMEOUT_GRACE_SECONDS = 5
-
-    def __init__(
-        self, server_name: str, config: dict, owner: Optional["MCPServerTask"] = None
-    ):
-        self.server_name = server_name
-        # Per-elicitation timeout. Default 5 min mirrors the gateway approval
-        # default so users on async surfaces (Telegram, Slack) have time to
-        # respond before the server gives up.
-        self.timeout = _safe_numeric(config.get("timeout", 300), 300, float)
-        # Back-reference to the MCPServerTask so we can read the agent's
-        # captured contextvars snapshot at elicitation time. Optional so
-        # the handler stays unit-testable in isolation.
-        self.owner = owner
-        self.metrics = {
-            "requests": 0,
-            "accepted": 0,
-            "declined": 0,
-            "errors": 0,
-        }
-
-    def session_kwargs(self) -> dict:
-        """Return kwargs to pass to ClientSession for elicitation support."""
-        return {"elicitation_callback": self}
-
-    async def __call__(self, context, params):
-        """Elicitation callback invoked by the MCP SDK.
-
-        Conforms to ``ElicitationFnT`` protocol. Returns ``ElicitResult``
-        or ``ErrorData``.
-        """
-        self.metrics["requests"] += 1
-
-        # URL-mode elicitations point the user to an external URL for
-        # sensitive out-of-band flows (OAuth, payment processing). Honouring
-        # them requires opening a browser to that URL and waiting for the
-        # server's notifications/elicitation/complete -- out of scope for
-        # the initial implementation. Decline cleanly so the server does
-        # not hang.
-        mode = getattr(params, "mode", "form")
-        if mode == "url":
-            logger.info(
-                "MCP server '%s' requested URL-mode elicitation; "
-                "declining (URL-mode elicitation not implemented)",
-                self.server_name,
-            )
-            self.metrics["declined"] += 1
-            return ElicitResult(action="decline")
-
-        message = getattr(params, "message", "") or (
-            f"MCP server '{self.server_name}' is requesting your approval"
-        )
-        # The SDK model spells this field ``requestedSchema`` on mcp 1.x (the
-        # pinned version) and ``requested_schema`` on 2.0, which renamed model
-        # fields to snake_case and kept camelCase only as a serialization
-        # alias -- and pydantic aliases do not apply to attribute access. A
-        # single-spelling read therefore returns the ``{}`` default on the
-        # other generation, and _format_elicitation_schema_summary degrades to
-        # its generic "Approval requested by ..." line, so the user is asked to
-        # approve without being told which fields the server wants.
-        schema = (
-            getattr(params, "requestedSchema", None)
-            or getattr(params, "requested_schema", None)
-            or {}
-        )
-        description = _format_elicitation_schema_summary(schema, self.server_name)
-
-        logger.info(
-            "MCP server '%s' elicitation request: %s",
-            self.server_name,
-            _sanitize_error(message)[:200],
-        )
-
-        # Lazy import: tools.approval is imported very early during process
-        # bootstrap; matching the lazy pattern used by _fire_approval_hook
-        # avoids any chance of import-order coupling.
-        try:
-            from pcbdraft.tools.approval import request_elicitation_consent
-        except Exception as exc:  # pragma: no cover -- defensive
-            logger.error(
-                "MCP server '%s' elicitation: approval system unavailable: %s",
-                self.server_name,
-                exc,
-            )
-            self.metrics["errors"] += 1
-            return ElicitResult(action="decline")
-
-        # Offload the sync consent flow to a worker thread. Running it
-        # inline would freeze the MCP background event loop, blocking every
-        # other RPC on this session. request_elicitation_consent() routes
-        # itself to the right surface (gateway notify_cb for Telegram /
-        # Slack / etc., prompt_dangerous_approval for CLI / TUI) and
-        # normalizes the answer to one of accept / decline / cancel.
-        #
-        # The recv-loop task that fires this callback does NOT inherit
-        # the agent's contextvars (PCBDRAFT_RUNTIME_SESSION_PLATFORM etc.). When
-        # the MCP tool wrapper captured the agent's context onto
-        # owner._pending_call_context we replay it here via
-        # contextvars.Context.run so the gateway-platform detection in
-        # request_elicitation_consent picks up the right session.
-        captured = (
-            getattr(self.owner, "_pending_call_context", None) if self.owner else None
-        )
-
-        def _invoke_consent() -> str:
-            if captured is None:
-                return request_elicitation_consent(
-                    message,
-                    description,
-                    timeout_seconds=int(self.timeout),
-                    surface=f"mcp-elicitation/{self.server_name}",
-                )
-            # Context.run can only execute a context once — copy to allow
-            # multiple elicitations within a single tool call.
-            return captured.copy().run(
-                request_elicitation_consent,
-                message,
-                description,
-                timeout_seconds=int(self.timeout),
-                surface=f"mcp-elicitation/{self.server_name}",
-            )
-
-        try:
-            answer = await asyncio.wait_for(
-                asyncio.to_thread(_invoke_consent),
-                timeout=self.timeout + self._OUTER_TIMEOUT_GRACE_SECONDS,
-            )
-        except TimeoutError:
-            logger.warning(
-                "MCP server '%s' elicitation timed out after %ds",
-                self.server_name,
-                int(self.timeout),
-            )
-            self.metrics["errors"] += 1
-            return ElicitResult(action="cancel")
-        except Exception as exc:
-            logger.exception(
-                "MCP server '%s' elicitation failed: %s",
-                self.server_name,
-                exc,
-            )
-            self.metrics["errors"] += 1
-            return ElicitResult(action="decline")
-
-        if answer == "accept":
-            self.metrics["accepted"] += 1
-            return ElicitResult(action="accept", content={})
-        if answer == "cancel":
-            self.metrics["errors"] += 1
-            return ElicitResult(action="cancel")
-        self.metrics["declined"] += 1
-        return ElicitResult(action="decline")
+_format_elicitation_schema_summary = (
+    _mcp_elicitation_handler._format_elicitation_schema_summary
+)
+ElicitationHandler = _mcp_elicitation_handler.ElicitationHandler
 
 
 # ---------------------------------------------------------------------------
