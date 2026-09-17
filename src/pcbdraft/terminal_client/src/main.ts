@@ -1,8 +1,9 @@
 import { createInterface } from "node:readline/promises"
 import { stdin as input, stdout as output } from "node:process"
-import { GuiClient, type GuiEvent, type Project, type ProjectSession, type TranscriptMessage } from "./bridge.ts"
+import { GuiClient, type Project, type ProjectSession, type TranscriptMessage } from "./bridge.ts"
 import { AssistantPreview } from "./assistant-preview.ts"
 import { completeSlashCommand, resolveSlashCommand } from "./commands.ts"
+import { formatTranscriptMessage, lifecycleMessage } from "./display.ts"
 import { initialProjectId, projectForReference } from "./startup.ts"
 
 const gui = new GuiClient()
@@ -29,8 +30,7 @@ function transcript(messages: TranscriptMessage[]): void {
 }
 
 function printMessage(message: TranscriptMessage): void {
-  const label = message.role === "user" ? "You" : "PCBDraft"
-  output.write(`${label}: ${message.text}\n\n`)
+  output.write(formatTranscriptMessage(message))
 }
 
 async function listProjects(query = ""): Promise<void> {
@@ -59,13 +59,6 @@ async function createProject(name: string): Promise<void> {
   const project = await gui.createProject(name)
   projects = [project, ...projects.filter((candidate) => candidate.id !== project.id)]
   await openProject(project.id)
-}
-
-function lifecycleMessage(event: GuiEvent): string | null {
-  if (event.kind === "job.started") return "Working · agent job started\n"
-  if (event.kind === "job.complete") return "Finishing · loading the saved response\n"
-  if (event.kind === "job.failed") return "Failed · loading the final job state\n"
-  return null
 }
 
 function showNewAssistantMessages(session: ProjectSession, preview?: AssistantPreview): void {
