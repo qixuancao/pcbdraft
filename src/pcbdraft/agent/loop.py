@@ -156,6 +156,12 @@ except Exception:  # pragma: no cover - vendored trim: browser tooling omitted
 
 # Agent internals extracted to agent/ package for modularity
 # Re-exported for tests that monkeypatch these symbols on run_agent.
+from pcbdraft.agent.activity_tracking import (
+    ActivityTrackingMixin,
+)
+from pcbdraft.agent.activity_tracking import (
+    configure_activity_tracking_runtime as _configure_activity_tracking_runtime,
+)
 from pcbdraft.agent.api_message_helpers import (
     ApiMessageHelpersMixin,
 )
@@ -276,6 +282,15 @@ _configure_memory_lifecycle_runtime(
         message, **kwargs
     ),
     is_trivial_prompt=lambda prompt: is_trivial_prompt(prompt),
+    warning=lambda message, *args, **kwargs: logger.warning(message, *args, **kwargs),
+)
+_configure_activity_tracking_runtime(
+    now=lambda: time.time(),
+    monotonic=lambda: time.monotonic(),
+    env_get=lambda name: os.environ.get(name),
+    is_truthy_value=lambda value: is_truthy_value(value),
+    debug=lambda message, *args, **kwargs: logger.debug(message, *args, **kwargs),
+    info=lambda message, *args, **kwargs: logger.info(message, *args, **kwargs),
     warning=lambda message, *args, **kwargs: logger.warning(message, *args, **kwargs),
 )
 
@@ -466,6 +481,7 @@ class _StreamErrorEvent(Exception):
 
 
 class AIAgent(
+    ActivityTrackingMixin,
     MemoryLifecycleMixin,
     ApiMessageHelpersMixin,
     MessagePreparationMixin,
@@ -3717,396 +3733,6 @@ class AIAgent(
         )
 
         return apply_pending_steer_to_tool_results(self, messages, num_tool_msgs)
-
-    def _touch_activity(
-        self,
-        desc: str,
-        *,
-        provenance: ActivityProvenance | None = None,
-        force_persist: bool = False,
-    ) -> None:
-        """Update the last-activity timestamp and description (thread-safe).
-
-        Also bridges to the kanban board's heartbeat fields when this
-        process is a dispatcher-spawned worker (PCBDRAFT_RUNTIME_KANBAN_TASK set),
-        so the dispatcher watchdog doesn't reclaim an actively-running
-        worker as stale (#31752). Bridge is rate-limited (60s) and
-        best-effort — it never raises into the agent loop.
-
-        Separately, rate-limits a durable SessionDB activity projection
-        (``last_activity_at`` + bounded description/provenance) so
-        CLI/Gateway consumers share one observation source (#72016 / #72039).
-
-        ``provenance`` defaults to ``unknown`` (the ordinary agent activity
-        clock). Named values are for special writers (e.g. compression);
-        ordinary call sites should leave the default.
-
-        ``force_persist`` bypasses the 60s SessionDB rate limit so a
-        terminal stamp (e.g. compression completed) is not dropped.
-        """
-        from pcbdraft.agent.session_activity import (
-            bound_activity_description,
-            normalize_activity_provenance,
-            reset_session_activity_persist_window,
-        )
-
-        self._last_activity_ts = time.time()
-        self._last_activity_desc = bound_activity_description(desc)
-        self._last_activity_provenance = normalize_activity_provenance(provenance)
-        if os.environ.get("PCBDRAFT_RUNTIME_KANBAN_TASK"):
-            try:
-                from pcbdraft.tools.kanban_tools import (
-                    heartbeat_current_worker_from_env,
-                    inject_new_comments_from_env,
-                )
-
-                heartbeat_current_worker_from_env()
-                # Fold any new operator notes into the running turn (OUT-OF-BAND
-                # steer) so the user can talk to a live task without a restart.
-                inject_new_comments_from_env(self)
-            except Exception:
-                # Never let the bridge break the agent loop.  The function
-                # already swallows exceptions internally; this outer guard
-                # covers import-time failures (kanban_tools unavailable,
-                # etc.) on niche deployment surfaces.
-                pass
-        if force_persist:
-            reset_session_activity_persist_window(self)
-        self._persist_session_activity_if_due()
-
-    def _persist_session_activity_if_due(self) -> None:
-        """Best-effort durable activity heartbeat for SessionDB consumers.
-
-        Cadence is pinned by SESSION_ACTIVITY_HEARTBEAT_MIN_INTERVAL_SECONDS
-        (>=30s per session, config-independent — see agent/session_activity.py).
-        The write rides the standard SessionDB ``_execute_write`` patience
-        path via ``touch_session_activity``. Fail-open: a failed heartbeat
-        write must NEVER raise into the agent loop (swallow + debug-log).
-        """
-        session_id = getattr(self, "session_id", None)
-        session_db = getattr(self, "_session_db", None)
-        if not session_id or session_db is None:
-            return
-        touch = getattr(session_db, "touch_session_activity", None)
-        if not callable(touch):
-            return
-        from pcbdraft.agent.session_activity import (
-            SESSION_ACTIVITY_HEARTBEAT_MIN_INTERVAL_SECONDS,
-            normalize_activity_provenance,
-        )
-
-        now_mono = time.monotonic()
-        last_mono = getattr(self, "_session_activity_last_persist_mono", 0.0)
-        if (now_mono - last_mono) < SESSION_ACTIVITY_HEARTBEAT_MIN_INTERVAL_SECONDS:
-            return
-        self._session_activity_last_persist_mono = now_mono
-        try:
-            touch(
-                session_id,
-                getattr(self, "_last_activity_ts", None),
-                description=getattr(self, "_last_activity_desc", None),
-                provenance=normalize_activity_provenance(
-                    getattr(self, "_last_activity_provenance", None)
-                ),
-            )
-        except Exception:
-            # Never let durable heartbeat I/O break the agent loop. The
-            # heartbeat is an observation-only projection; the next due
-            # window retries naturally.
-            logger.debug(
-                "session activity heartbeat write failed (ignored)",
-                exc_info=True,
-            )
-
-    def _reset_activity_labels_after_turn(self) -> None:
-        """Drop mid-turn activity labels once the turn is no longer running.
-
-        Keeps ``_last_activity_ts`` so idle/watchdog clocks stay continuous
-        across interrupt-recursive turns (#15654) and between turns. Clears
-        description + provenance so idle cached agents / SessionDB listings
-        do not keep advertising the last mid-turn stamp (e.g. compression
-        or tool execution) after the turn ended (#72039).
-        """
-        from pcbdraft.agent.session_activity import ActivityProvenance
-
-        self._last_activity_desc = ""
-        self._last_activity_provenance = ActivityProvenance.UNKNOWN
-        session_id = getattr(self, "session_id", None)
-        session_db = getattr(self, "_session_db", None)
-        if not session_id or session_db is None:
-            return
-        clear = getattr(session_db, "clear_session_activity_labels", None)
-        if not callable(clear):
-            return
-        try:
-            clear(session_id)
-        except Exception:
-            # Never let durable cleanup I/O break turn teardown.
-            pass
-
-    def _capture_rate_limits(self, http_response: Any) -> None:
-        """Parse x-ratelimit-* headers from an HTTP response and cache the state.
-
-        Called after each streaming API call.  The httpx Response object is
-        available on the OpenAI SDK Stream via ``stream.response``.
-        """
-        if http_response is None:
-            return
-        headers = getattr(http_response, "headers", None)
-        if not headers:
-            return
-        try:
-            from pcbdraft.agent.rate_limit_tracker import parse_rate_limit_headers
-
-            state = parse_rate_limit_headers(headers, provider=self.provider)
-            if state is not None:
-                self._rate_limit_state = state
-        except Exception:
-            pass  # Never let header parsing break the agent loop
-
-    def get_rate_limit_state(self):
-        """Return the last captured RateLimitState, or None."""
-        return self._rate_limit_state
-
-    def _capture_anthropic_response_headers(self, http_response: Any) -> None:
-        """Capture out-of-band state from Anthropic Messages response headers.
-
-        The Anthropic SDK's aggregated ``Message`` drops HTTP headers. Portal
-        (and other providers) put rate-limit and credits state there — the same
-        families the OpenAI-wire streaming path captures via
-        ``stream.response``. Fail-open: each capture swallows its own errors.
-        """
-        self._capture_rate_limits(http_response)
-        self._capture_credits(http_response)
-
-    def _capture_credits(self, http_response: Any) -> None:
-        """Parse x-nous-credits-* headers, cache CreditsState, fire threshold notices.
-
-        Fail-open throughout — header issues never break the agent loop. The PARSE is
-        swallowed (any error → treated as a miss → keep last-known). The notice
-        EVALUATION/EMIT is a SEPARATE block that WARNS on failure (R1-M2): a bug in the
-        depletion-notice path must not vanish silently under the parse swallow.
-        """
-        # Dev test fixture (PCBDRAFT_RUNTIME_DEV_CREDITS_FIXTURE): inject a chosen notice state
-        # each turn for repeatable testing, bypassing real headers. Throwaway scaffolding.
-        try:
-            from pcbdraft.model.credits_tracker import dev_fixture_credits_state
-
-            _fixture = dev_fixture_credits_state()
-        except Exception:
-            _fixture = None
-        if _fixture is not None:
-            self._credits_state = _fixture
-            if self._credits_session_start_micros is None:
-                self._credits_session_start_micros = _fixture.remaining_micros
-            _latch = getattr(self, "_credits_latch", None)
-            if isinstance(_latch, dict):
-                # Only seen_below_90 — never seen_grant_unspent (priming it would
-                # fire grant_spent on a fixture's first observation, the exact
-                # every-session nag the gate exists to prevent).
-                _latch["seen_below_90"] = (
-                    True  # let warn90 fire without a real crossing
-                )
-            _used = _fixture.used_fraction
-            logger.info(
-                "credits ▸ [FIXTURE] remaining=%d (%s) · paid=%s · denom=%s · used=%s "
-                "(real headers bypassed — `echo clear` / unset PCBDRAFT_RUNTIME_DEV_CREDITS_FIXTURE to restore)",
-                _fixture.remaining_micros,
-                _fixture.remaining_usd or "?",
-                _fixture.paid_access,
-                _fixture.denominator_kind,
-                ("%.0f%%" % (_used * 100)) if _used is not None else "n/a",
-            )
-            self._emit_credits_notices()
-            return
-        if http_response is None:
-            return
-        headers = getattr(http_response, "headers", None)
-        if not headers:
-            return
-        _dev = is_truthy_value(os.environ.get("PCBDRAFT_RUNTIME_DEV_CREDITS"))
-
-        # ── Parse (fail-open → miss; never overwrite good state with None) ──
-        try:
-            from pcbdraft.model.credits_tracker import parse_credits_headers
-
-            state = parse_credits_headers(headers, provider=self.provider)
-        except Exception:
-            return  # parse error → treat as a miss, keep last-known
-        if state is None:
-            if _dev:
-                logger.info(
-                    "credits ▸ response had no valid x-nous-credits-* headers "
-                    "(miss — producer off / non-Nous path / >TTL stale)"
-                )
-            return
-
-        # retain-last-known: only overwrite on a fresh valid parse
-        self._credits_state = state
-        # Latch session-start remaining the first time we ever see a header
-        if self._credits_session_start_micros is None:
-            self._credits_session_start_micros = state.remaining_micros
-        if _dev:
-            # PCBDRAFT_RUNTIME_DEV_CREDITS: stream each capture to agent.log — watch live with
-            # `hermes logs -f` (grep 'credits ▸'). Dev-only; silent for normal users.
-            spent = self.get_credits_spent_micros()
-            used = state.used_fraction
-            logger.info(
-                "credits ▸ remaining=%d (%s) · paid=%s · denom=%s · used=%s "
-                "· Δspent=%s · age=%s%s",
-                state.remaining_micros,
-                state.remaining_usd or "?",
-                state.paid_access,
-                state.denominator_kind,
-                ("%.0f%%" % (used * 100)) if used is not None else "n/a",
-                ("%.1f¢" % (spent / 10000)) if spent is not None else "n/a",
-                ("%.0fs" % state.age_seconds)
-                if state.age_seconds != float("inf")
-                else "n/a",
-                (" · disabled=%s" % state.disabled_reason)
-                if state.disabled_reason
-                else "",
-            )
-
-        # Threshold notices — shared with the cold-start seed (see _emit_credits_notices).
-        self._emit_credits_notices()
-
-    def _emit_credits_notices(self) -> None:
-        """Run the threshold policy on the current credits state and emit notices.
-
-        Shared by the warm path (_capture_credits) and the L3 cold-start seed, so a
-        session that opens already depleted warns immediately — not only after the first
-        inference header. Runs only when a notice consumer is bound (messaging binds none
-        → state still cached for /usage, no policy). WARNS on failure rather than
-        swallowing (R1-M2): a depletion-path bug must not vanish silently. Emits clears
-        FIRST, then shows (so depleted lands last in a latest-wins slot).
-        """
-        if (
-            getattr(self, "notice_callback", None) is None
-            and getattr(self, "notice_clear_callback", None) is None
-        ):
-            return
-        if not self._credits_notices_enabled():
-            return
-        state = getattr(self, "_credits_state", None)
-        if state is None:
-            return
-        try:
-            from pcbdraft.model.credits_tracker import (
-                evaluate_credits_notices,
-                is_free_tier_model,
-                new_credits_latch,
-            )
-
-            latch = getattr(self, "_credits_latch", None)
-            if latch is None:
-                latch = self._credits_latch = new_credits_latch()
-            # Free-model gate: a depleted account on a free model can still
-            # inference, so the depleted error banner is suppressed. Local-data
-            # only (":free" suffix + pricing-cache peek) — never a network call.
-            model_is_free = is_free_tier_model(
-                getattr(self, "model", "") or "",
-                getattr(self, "base_url", "") or "",
-            )
-            to_show, to_clear = evaluate_credits_notices(
-                state, latch, model_is_free=model_is_free
-            )
-            for key in to_clear:  # clears FIRST …
-                self._emit_notice_clear(key)
-            for (
-                notice
-            ) in to_show:  # … then shows (depleted lands last in a latest-wins slot)
-                self._emit_notice(notice)
-        except Exception:
-            logger.warning("credits notice evaluation/emit failed", exc_info=True)
-
-    def _credits_notices_enabled(self) -> bool:
-        """Whether credits notices are enabled (config display.credits_notices).
-
-        Read once per agent and cached — the policy runs after every API
-        response, and the setting governs UI noise, not correctness, so a
-        config flip applying on the next session is fine.  Fail-open True
-        (preserve current behaviour) on any config error.
-        """
-        cached = getattr(self, "_credits_notices_enabled_cache", None)
-        if cached is not None:
-            return cached
-        enabled = True
-        try:
-            from pcbdraft.model.configuration import load_config as _load_config
-
-            _cfg = _load_config() or {}
-            _display = _cfg.get("display") if isinstance(_cfg, dict) else None
-            if isinstance(_display, dict) and "credits_notices" in _display:
-                enabled = bool(_display.get("credits_notices"))
-        except Exception:
-            enabled = True
-        self._credits_notices_enabled_cache = enabled
-        return enabled
-
-    def get_credits_state(self):
-        """Return the last captured CreditsState, or None."""
-        return self._credits_state
-
-    def get_credits_spent_micros(self):
-        """Session-cumulative micros spent = first_seen_remaining - current_remaining. None if no data."""
-        if self._credits_session_start_micros is None or self._credits_state is None:
-            return None
-        return self._credits_session_start_micros - self._credits_state.remaining_micros
-
-    def _check_openrouter_cache_status(self, http_response: Any) -> None:
-        """Read X-OpenRouter-Cache-Status from response headers and log it.
-
-        Increments ``_or_cache_hits`` on HIT so callers can report savings.
-        """
-        if http_response is None:
-            return
-        headers = getattr(http_response, "headers", None)
-        if not headers:
-            return
-        try:
-            status = headers.get("x-openrouter-cache-status")
-            if not status:
-                return
-            if status.upper() == "HIT":
-                self._or_cache_hits += 1
-                logger.info(
-                    "OpenRouter response cache HIT (total: %d)", self._or_cache_hits
-                )
-            else:
-                logger.debug("OpenRouter response cache %s", status.upper())
-        except Exception:
-            pass  # Never let header parsing break the agent loop
-
-    def get_activity_summary(self) -> dict:
-        """Return a snapshot of the agent's current activity for diagnostics.
-
-        Exposes the shared activity observation contract
-        (``last_activity_at`` / ``last_activity_description`` /
-        ``last_activity_provenance``) plus short aliases
-        (``last_activity_ts`` / ``last_activity_desc`` / …) for existing
-        gateway and delegate readers.
-        """
-        from pcbdraft.agent.session_activity import (
-            ActivityProvenance,
-            build_activity_snapshot,
-        )
-
-        provenance = getattr(self, "_last_activity_provenance", None)
-        if provenance is None:
-            provenance = ActivityProvenance.UNKNOWN
-        return build_activity_snapshot(
-            last_activity_at=getattr(self, "_last_activity_ts", None),
-            last_activity_description=getattr(self, "_last_activity_desc", None) or "",
-            last_activity_provenance=provenance,
-            extra={
-                "current_tool": self._current_tool,
-                "api_call_count": self._api_call_count,
-                "max_iterations": self.max_iterations,
-                "budget_used": self.iteration_budget.used,
-                "budget_max": self.iteration_budget.max_total,
-            },
-        )
 
     def release_clients(self) -> None:
         """Release LLM client resources WITHOUT tearing down session tool state.
