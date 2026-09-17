@@ -188,6 +188,11 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
 - `model.auth_credential_pool_store` owns the credential-pool portion of
   `auth.json`, including profile/global fallback reads, concurrency-safe pool
   writes and cooldown merging, and credential-source suppression state.
+- `model.auth_provider_state` owns scoped provider-state and active-provider
+  queries, explicit provider-configuration detection, credential clearing and
+  deactivation, and unknown-provider configuration diagnostics.
+- `model.auth_provider_endpoints` owns provider endpoint normalization,
+  API-key discovery, and Z.AI endpoint probing and cached endpoint selection.
 - `model.auxiliary_cancellation` owns synchronous-call cancellation,
   request-scoped interrupt protection, progress callbacks, and its isolated
   worker.
@@ -201,8 +206,8 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
 `model.auxiliary_client` remains responsible for provider routing,
 authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
 `model.auth` remains the authentication-store and locking composition root and
-owns provider state, token/OAuth lifecycle, active-provider selection, and
-runtime credential routing.
+coordinates OAuth/token lifecycle, top-level `resolve_provider`, and runtime
+credential resolution.
 
 #### MCP and terminal presentation
 
