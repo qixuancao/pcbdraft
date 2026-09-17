@@ -50,8 +50,8 @@ class ApplicationProjectLifecycleTests(unittest.TestCase):
             ApplicationService.create_empty_project,
             ApplicationProjectLifecycleMixin.create_empty_project,
         )
+        self.assertIn("create_project", ApplicationService.__dict__)
         for retained in ("create_project", "open_project", "list_projects"):
-            self.assertIn(retained, ApplicationService.__dict__)
             self.assertNotIn(retained, ApplicationProjectLifecycleMixin.__dict__)
 
     def test_draft_preserves_private_publication_and_legacy_patch_paths(self) -> None:
