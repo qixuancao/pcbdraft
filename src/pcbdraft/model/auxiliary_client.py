@@ -71,6 +71,7 @@ from pcbdraft.model import auxiliary_provider_failures as _auxiliary_provider_fa
 from pcbdraft.model import (
     auxiliary_response_projection as _auxiliary_response_projection,
 )
+from pcbdraft.model import auxiliary_task_config as _auxiliary_task_config
 from pcbdraft.model import auxiliary_vision as _auxiliary_vision
 from pcbdraft.model.auxiliary_adapters import (
     AnthropicAuxiliaryClient,
@@ -215,6 +216,9 @@ MINIMUM_CONTEXT_LENGTH = _auxiliary_fallbacks.MINIMUM_CONTEXT_LENGTH
 get_model_context_length = _auxiliary_fallbacks.get_model_context_length
 
 logger = logging.getLogger(__name__)
+_auxiliary_task_config.configure_auxiliary_task_config_runtime(
+    namespace=lambda: globals()
+)
 _auxiliary_vision.configure_auxiliary_vision_runtime(namespace=lambda: globals())
 
 
@@ -5246,215 +5250,21 @@ def _resolve_task_provider_model(
     return "auto", resolved_model, None, None, resolved_api_mode
 
 
-_DEFAULT_AUX_TIMEOUT = 30.0
-
-# Compression summarises large conversation histories; a reasoning auxiliary
-# model (e.g. Codex / GPT-5.5) can legitimately take longer than the default
-# ``auxiliary.compression.timeout`` (120 s), causing the stream to time out and
-# the compressor to fall back to the deterministic context marker (#54915).
-# This is a bounded *floor* applied only to config-derived compression timeouts
-# — it does not affect other auxiliary tasks and does not override an explicit
-# per-call ``timeout=``.  A floor is harmless for fast compression models
-# (they finish before the deadline) and is a minimum, so a higher config value
-# is kept unchanged.
-_COMPRESSION_TIMEOUT_FLOOR_SECONDS = 300.0
-
-
-def _get_auxiliary_task_config(task: str) -> dict[str, Any]:
-    """Return the config dict for auxiliary.<task>, or {} when unavailable.
-
-    For plugin-registered auxiliary tasks (see
-    :meth:`hermes_cli.plugins.PluginContext.register_auxiliary_task`) the
-    plugin's declared *defaults* are layered underneath the user's config
-    so an unconfigured plugin task still works:
-
-        plugin defaults  ←  config.yaml auxiliary.<task>  (user wins)
-
-    Built-in tasks ignore this path (their defaults live in DEFAULT_CONFIG).
-    """
-    if not task:
-        return {}
-    try:
-        from pcbdraft.model.configuration import load_config_readonly
-
-        config = load_config_readonly()
-    except ImportError:
-        return {}
-    aux = config.get("auxiliary", {}) if isinstance(config, dict) else {}
-    task_config = aux.get(task, {}) if isinstance(aux, dict) else {}
-    if not isinstance(task_config, dict):
-        task_config = {}
-
-    # Layer plugin-declared defaults underneath user config so
-    # ctx.register_auxiliary_task(defaults={...}) takes effect without
-    # forcing the user to write config.yaml entries.
-    try:
-        from pcbdraft.agent.extensions.manager import get_plugin_auxiliary_tasks
-
-        for _entry in get_plugin_auxiliary_tasks():
-            if _entry.get("key") == task:
-                _defaults = _entry.get("defaults") or {}
-                if isinstance(_defaults, dict):
-                    merged = dict(_defaults)
-                    merged.update(task_config)
-                    return merged
-                break
-    except Exception:
-        # Plugin discovery failure must not break aux task config reads.
-        pass
-
-    return task_config
-
-
-def _get_task_timeout(task: str, default: float = _DEFAULT_AUX_TIMEOUT) -> float:
-    """Read timeout from auxiliary.{task}.timeout in config, falling back to *default*."""
-    if not task:
-        return default
-    task_config = _get_auxiliary_task_config(task)
-    raw = task_config.get("timeout")
-    if raw is not None:
-        try:
-            return float(raw)
-        except (ValueError, TypeError):
-            pass
-    return default
-
-
-def _effective_aux_timeout(task: str, timeout: float | None) -> float:
-    """Resolve the effective timeout for an auxiliary LLM call.
-
-    Uses the caller-provided ``timeout`` when given; otherwise reads
-    ``auxiliary.{task}.timeout`` from config via :func:`_get_task_timeout`.
-    For the ``compression`` task only, applies a bounded floor so a reasoning
-    model summarising a large context is not cut off by the default timeout
-    (#54915).  The floor is intentionally skipped when the caller passes an
-    explicit ``timeout=`` — explicit per-call deadlines are always honoured —
-    and it is a minimum (``max``), so a config value already above it is kept.
-    """
-    effective = timeout if timeout is not None else _get_task_timeout(task)
-    if timeout is None and task == "compression":
-        effective = max(effective, _COMPRESSION_TIMEOUT_FLOOR_SECONDS)
-    return effective
-
-
-def _get_task_extra_body(task: str) -> dict[str, Any]:
-    """Read auxiliary.<task>.extra_body and return a shallow copy when valid.
-
-    Also folds in ``auxiliary.<task>.reasoning_effort`` as an
-    ``extra_body.reasoning`` config dict ({"enabled": ..., "effort": ...})
-    when set. An explicit ``extra_body.reasoning`` in config wins over the
-    ``reasoning_effort`` shorthand (it is the more specific wire control).
-    Downstream, each wire already translates ``extra_body.reasoning``:
-    chat.completions passes it through, the Codex Responses adapter maps it
-    to top-level ``reasoning``/``include``, and the Anthropic auxiliary
-    client maps it to ``build_anthropic_kwargs(reasoning_config=...)``.
-
-    MoA tasks are excluded by design: reasoning depth for MoA is a per-slot
-    setting in the MoA preset (``moa.presets.<name>.reference_models[].
-    reasoning_effort`` / ``aggregator.reasoning_effort``), not an
-    auxiliary-task knob — an ensemble-wide value would override the
-    per-slot ones.
-    """
-    task_config = _get_auxiliary_task_config(task)
-    raw = task_config.get("extra_body")
-    result = dict(raw) if isinstance(raw, dict) else {}
-    if "reasoning" not in result:
-        effort = task_config.get("reasoning_effort")
-        if effort is not None and effort != "":
-            if task in ("moa_reference", "moa_aggregator"):
-                logger.warning(
-                    "auxiliary.%s.reasoning_effort is not supported — MoA "
-                    "reasoning depth is per-slot: set reasoning_effort on the "
-                    "preset's reference_models entries / aggregator instead "
-                    "(moa.presets.<name>...). Ignoring.",
-                    task,
-                )
-                return result
-            from pcbdraft.core.runtime_environment import parse_reasoning_effort
-
-            parsed = parse_reasoning_effort(effort)
-            if parsed is not None:
-                result["reasoning"] = parsed
-            else:
-                logger.warning(
-                    "auxiliary.%s.reasoning_effort %r is not a valid level "
-                    "(none, minimal, low, medium, high, xhigh, max, ultra) — ignoring",
-                    task,
-                    effort,
-                )
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Per-task concurrency limiting (#23324)
-# ---------------------------------------------------------------------------
-# Background auxiliary work (title generation, context compression, etc.) can
-# spawn unbounded concurrent LLM calls when many sessions are active. During
-# provider incidents each call also retries / fans out across the fallback
-# chain, multiplying request volume on already-degraded endpoints. A per-task
-# semaphore caps in-flight calls so retry amplification stays bounded.
-
-_aux_sync_semaphores: dict[str, tuple[int, threading.BoundedSemaphore]] = {}
-_aux_async_semaphores: dict[tuple[str, int], tuple[int, Any]] = {}
-_aux_sem_lock = threading.Lock()
-
-
-def _get_task_max_concurrency(task: str | None) -> int | None:
-    """Return ``auxiliary.<task>.max_concurrency`` as a positive int, or None."""
-    if not task or task == "vision":
-        # Vision already uses this key for its encode/resize CPU worker pool;
-        # its LLM calls deliberately remain concurrent.
-        return None
-    raw = _get_auxiliary_task_config(task).get("max_concurrency")
-    if raw is None:
-        return None
-    try:
-        value = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return value if value > 0 else None
-
-
-def _acquire_sync_aux_semaphore(task: str | None) -> threading.BoundedSemaphore | None:
-    """Get a per-task sync semaphore, rebuilding it after a config change."""
-    limit = _get_task_max_concurrency(task)
-    if limit is None:
-        return None
-    with _aux_sem_lock:
-        entry = _aux_sync_semaphores.get(task)
-        if entry is None or entry[0] != limit:
-            semaphore = threading.BoundedSemaphore(limit)
-            _aux_sync_semaphores[task] = (limit, semaphore)
-            return semaphore
-        return entry[1]
-
-
-def _acquire_async_aux_semaphore(task: str | None):
-    """Get a per-task, per-event-loop async semaphore after config lookup."""
-    limit = _get_task_max_concurrency(task)
-    if limit is None:
-        return None
-    import asyncio
-
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        return None
-    key = (task, id(loop))
-    with _aux_sem_lock:
-        entry = _aux_async_semaphores.get(key)
-        if entry is None or entry[0] != limit:
-            semaphore = asyncio.Semaphore(limit)
-            _aux_async_semaphores[key] = (limit, semaphore)
-            return semaphore
-        return entry[1]
-
-
-def _reset_aux_semaphores() -> None:
-    """Drop cached semaphores (test helper)."""
-    with _aux_sem_lock:
-        _aux_sync_semaphores.clear()
-        _aux_async_semaphores.clear()
+_DEFAULT_AUX_TIMEOUT = _auxiliary_task_config._DEFAULT_AUX_TIMEOUT
+_COMPRESSION_TIMEOUT_FLOOR_SECONDS = (
+    _auxiliary_task_config._COMPRESSION_TIMEOUT_FLOOR_SECONDS
+)
+_get_auxiliary_task_config = _auxiliary_task_config._get_auxiliary_task_config
+_get_task_timeout = _auxiliary_task_config._get_task_timeout
+_effective_aux_timeout = _auxiliary_task_config._effective_aux_timeout
+_get_task_extra_body = _auxiliary_task_config._get_task_extra_body
+_aux_sync_semaphores = _auxiliary_task_config._aux_sync_semaphores
+_aux_async_semaphores = _auxiliary_task_config._aux_async_semaphores
+_aux_sem_lock = _auxiliary_task_config._aux_sem_lock
+_get_task_max_concurrency = _auxiliary_task_config._get_task_max_concurrency
+_acquire_sync_aux_semaphore = _auxiliary_task_config._acquire_sync_aux_semaphore
+_acquire_async_aux_semaphore = _auxiliary_task_config._acquire_async_aux_semaphore
+_reset_aux_semaphores = _auxiliary_task_config._reset_aux_semaphores
 
 
 # ---------------------------------------------------------------------------
