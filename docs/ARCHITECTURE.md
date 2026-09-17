@@ -90,21 +90,117 @@ resource used by the terminal launcher.
 | `kicad` | Native KiCad generation, inspection, geometry, routing, previews, and synchronization | Product workflow policy or release claims |
 | `verification` | Persisted evidence evaluation, validation gates, BoardBench, and release decisions | Design generation or authoritative project mutation |
 
-Three focused extractions currently make those package boundaries more explicit:
+### Implemented extraction ledger
+
+The modules below are present on the current modularization integration branch.
+Each extraction has focused unit coverage and passed the targeted checks for its
+own boundary. That evidence establishes local compatibility; it is not a
+whole-repository regression run or a release gate.
+
+#### ApplicationService
+
+- `services.native_operations` owns native KiCad projections, operation
+  postconditions, routing-failure normalization, and native delta checks.
+- `services.application_progress` owns immutable progress, stage, convergence,
+  and route-retry projections.
+- `services.application_project_store` owns bounded project-record loading,
+  validated paths, atomic record/event writes, attempt reads, and public views.
+- `services.application_semantic_operations` owns semantic-operation argument
+  normalization and grouped-operation preflight checks.
+- `services.application_external_revision` owns review and explicit import of
+  externally edited native placement revisions.
+- `services.application_validation` owns application-level validation and
+  generated-project preview workflows.
+- `services.application_release` owns building, verifying, and retaining one
+  manufacturing-candidate release.
+- `services.application_modification_preview` owns staging an agent-planned
+  project revision for review.
+- `services.application_modification_revert` owns discard and atomic undo flows
+  for staged or applied project revisions.
+
+`services.application.ApplicationService` remains the composition root and the
+only project mutation, transaction, publication, and project-state authority.
+The extracted modules do not create a parallel application service.
+
+#### SessionDB
 
 - `services.session_db_runtime` owns reusable SQLite journal negotiation,
-  connection PRAGMAs, and persistence-error classification. `services.session_db`
-  still owns the transcript store, its schema, queries, and repair lifecycle.
-- `services.native_operations` owns native KiCad projections, operation
-  postconditions, routing-failure normalization, and related delta checks.
-  `ApplicationService` still owns the project transaction and publication.
-- `agent.stream_delivery` owns visible-stream filtering, callback ordering,
-  redaction, and duplicate suppression. `agent.loop.AIAgent` still controls the
-  model turn and tool loop.
+  runtime PRAGMAs, and persistence-error classification.
+- `services.session_db_metadata` and `services.session_db_token_accounting` own
+  mutable activity/model metadata and asynchronous token/model accounting.
+- `services.session_db_transcript_write`,
+  `services.session_db_transcript_query`, and
+  `services.session_db_conversation` own transcript serialization/writes,
+  bounded transcript queries, and resume/lineage reads.
+- `services.session_db_rewind` owns duplicate-replay detection and transcript
+  tail soft-delete/restore behavior.
+- `services.session_db_presentation`, `services.session_db_listing`, and
+  `services.session_db_search_metrics` own titles/visibility/read state, list and
+  usage projections, search, and lightweight store metrics.
+- `services.session_db_deletion` and `services.session_db_pruning` own explicit
+  deletion/file cleanup and archive/prune/stale-marker maintenance.
+- `services.session_db_meta_store` owns namespaced `state_meta` values and the
+  one-time kanban compatibility gates.
+- `services.session_db_telegram_topics` owns Telegram DM topic-mode opt-in state
+  and durable chat/thread-to-session bindings.
 
-These entries describe implemented ownership boundaries, not completion of a
-whole-project modularization. Coordinator modules remain and should be split
-only when another responsibility can be moved behind a tested boundary.
+`services.session_db.SessionDB` remains the authoritative durable session store
+and composition root. It owns connection and schema lifecycle and supplies the
+state and compatibility hooks used by these mixins; none imports the
+`session_db` coordinator back.
+
+#### AIAgent
+
+- `agent.stream_delivery` and `agent.status_delivery` own visible stream
+  delivery, callback ordering, terminal status buffering, and stream
+  diagnostics.
+- `agent.message_preparation`, `agent.api_message_helpers`, and
+  `agent.response_cleanup` own provider-safe message/image preparation,
+  tool-call/API message normalization, and visible response/reasoning cleanup.
+- `agent.provider_capabilities` and `agent.error_normalization` own endpoint and
+  API capability policy, timeout selection, and safe provider-error summaries.
+- `agent.memory_lifecycle`, `agent.activity_tracking`, and
+  `agent.client_lifecycle` own external-memory synchronization, activity/rate
+  limit/credit observations, and best-effort resource teardown.
+
+`agent.loop.AIAgent` still composes those mixins and owns the model turn,
+conversation control, and tool loop. The extracted modules preserve historical
+method names and late-bound compatibility hooks without importing `agent.loop`.
+
+#### Auxiliary model clients
+
+- `model.auxiliary_cancellation` owns synchronous-call cancellation,
+  request-scoped interrupt protection, progress callbacks, and its isolated
+  worker.
+- `model.auxiliary_adapters` owns the Codex, Anthropic, and Bedrock completion
+  adapters, chat shims, and client wrappers used by auxiliary calls.
+- `model.auxiliary_provider_config` owns provider/model catalog rules, endpoint
+  normalization, and request-header construction.
+- `model.auxiliary_provider_failures` owns provider-failure and recoverability
+  classification that does not require routing or cache state.
+
+`model.auxiliary_client` remains responsible for provider routing,
+authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
+
+#### MCP and terminal presentation
+
+- `tools.mcp_content` owns MCP content-block normalization, rendering, and local
+  caching; `tools.mcp_connection_policy` owns remote URL/header/certificate and
+  redirect/error policy; `tools.mcp_tool_schema` owns stateless tool naming,
+  filtering, schema conversion, and lifecycle-config parsing.
+  `tools.mcp_tool` remains the connection, registration, task, and lifecycle
+  coordinator.
+- `terminal_client/src/commands.ts` owns slash-command resolution and unique
+  prefix completion, `assistant-preview.ts` owns transient delta rendering and
+  saved-transcript reconciliation, `bridge.ts` owns the typed GUI API client,
+  and `startup.ts` owns initial project selection. `main.ts` composes those
+  presentation responsibilities, while `interfaces.terminal_launcher` starts
+  the bundled client against the authoritative loopback GUI API.
+
+This ledger describes implemented, targeted-tested boundaries only. The broader
+modularization remains in progress: large coordinator modules and compatibility
+facades still exist, and this state must not be treated as whole-project
+completion, full regression evidence, or release readiness.
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,
