@@ -217,6 +217,12 @@ from pcbdraft.agent.prompt_builder import (
     load_soul_md,
 )
 from pcbdraft.agent.redact import redact_sensitive_text
+from pcbdraft.agent.response_cleanup import (
+    ResponseCleanupMixin,
+)
+from pcbdraft.agent.response_cleanup import (
+    configure_response_cleanup_runtime as _configure_response_cleanup_runtime,
+)
 from pcbdraft.agent.retry_utils import jittered_backoff  # noqa: F401
 from pcbdraft.agent.session_activity import ActivityProvenance
 from pcbdraft.agent.status_delivery import StatusDeliveryMixin
@@ -303,6 +309,9 @@ _configure_client_lifecycle_runtime(
     cleanup_vm=lambda task_id: cleanup_vm(task_id),
     cleanup_browser=lambda task_id: cleanup_browser(task_id),
     debug=lambda message, *args, **kwargs: logger.debug(message, *args, **kwargs),
+)
+_configure_response_cleanup_runtime(
+    regex_search=lambda pattern, text: re.search(pattern, text),
 )
 
 # Internal flags that mark a message as ephemeral empty-response/prefill
@@ -492,6 +501,7 @@ class _StreamErrorEvent(Exception):
 
 
 class AIAgent(
+    ResponseCleanupMixin,
     ClientLifecycleMixin,
     ActivityTrackingMixin,
     MemoryLifecycleMixin,
@@ -1436,128 +1446,6 @@ class AIAgent(
             if value > 0:
                 return value
         return None
-
-    def _has_content_after_think_block(self, content: str) -> bool:
-        """
-        Check if content has actual text after any reasoning/thinking blocks.
-
-        This detects cases where the model only outputs reasoning but no actual
-        response, which indicates an incomplete generation that should be retried.
-        Must stay in sync with _strip_think_blocks() tag variants.
-
-        Args:
-            content: The assistant message content to check
-
-        Returns:
-            True if there's meaningful content after think blocks, False otherwise
-        """
-        if not content:
-            return False
-
-        # Remove all reasoning tag variants (must match _strip_think_blocks)
-        cleaned = self._strip_think_blocks(content)
-
-        # Check if there's any non-whitespace content remaining
-        return bool(cleaned.strip())
-
-    def _strip_think_blocks(self, content: str) -> str:
-        """Forwarder — see ``agent.agent_runtime_helpers.strip_think_blocks``."""
-        from pcbdraft.agent.agent_runtime_helpers import strip_think_blocks
-
-        return strip_think_blocks(self, content)
-
-    @staticmethod
-    def _has_natural_response_ending(content: str) -> bool:
-        """Heuristic: does visible assistant text look intentionally finished?"""
-        if not content:
-            return False
-        stripped = content.rstrip()
-        if not stripped:
-            return False
-        if stripped.endswith("```"):
-            return True
-        if stripped.endswith("^"):
-            return True
-        last = stripped[-1]
-        if last in ".!?:)\"']}。！？：）】」』》^":
-            return True
-        # Emoji ranges (Misc Symbols, Dingbats, Emoticons, Supplemental, etc.)
-        return ord(last) >= 127744
-
-    def _is_ollama_glm_backend(self) -> bool:
-        """Detect Ollama-hosted GLM models affected by stop misreports.
-
-        Ollama can misreport truncated output as finish_reason='stop'.
-        Detection relies on explicit Ollama signatures:
-        - Port 11434 (Ollama default)
-        - "ollama" in the base URL (e.g. ollama.local, /ollama/ path)
-        - provider explicitly set to "ollama"
-
-        Crucially it does NOT match arbitrary local/private endpoints
-        (LiteLLM/sglang/vLLM/LM Studio proxies, Tailscale boxes), which
-        report finish_reason correctly and were the source of #13971's
-        false-positive truncation continuations.
-        """
-        model_lower = (self.model or "").lower()
-        provider_lower = (self.provider or "").lower()
-        if "glm" not in model_lower and provider_lower != "zai":
-            return False
-        if "ollama" in self._base_url_lower or ":11434" in self._base_url_lower:
-            return True
-        return provider_lower == "ollama"
-
-    def _should_treat_stop_as_truncated(
-        self,
-        finish_reason: str,
-        assistant_message,
-        messages: list | None = None,
-    ) -> bool:
-        """Detect conservative stop->length misreports for Ollama-hosted GLM models."""
-        if finish_reason != "stop" or self.api_mode != "chat_completions":
-            return False
-        if not self._is_ollama_glm_backend():
-            return False
-        if not any(
-            isinstance(msg, dict) and msg.get("role") == "tool"
-            for msg in (messages or [])
-        ):
-            return False
-        if assistant_message is None or getattr(assistant_message, "tool_calls", None):
-            return False
-
-        content = getattr(assistant_message, "content", None)
-        if not isinstance(content, str):
-            return False
-
-        visible_text = self._strip_think_blocks(content).strip()
-        if not visible_text:
-            return False
-        if len(visible_text) < 20 or not re.search(r"\s", visible_text):
-            return False
-
-        return not self._has_natural_response_ending(visible_text)
-
-    def _looks_like_codex_intermediate_ack(
-        self,
-        user_message: str,
-        assistant_content: str,
-        messages: list[dict[str, Any]],
-        require_workspace: bool = True,
-    ) -> bool:
-        """Forwarder — see ``agent.agent_runtime_helpers.looks_like_codex_intermediate_ack``."""
-        from pcbdraft.agent.agent_runtime_helpers import (
-            looks_like_codex_intermediate_ack,
-        )
-
-        return looks_like_codex_intermediate_ack(
-            self, user_message, assistant_content, messages, require_workspace
-        )
-
-    def _extract_reasoning(self, assistant_message) -> str | None:
-        """Forwarder — see ``agent.agent_runtime_helpers.extract_reasoning``."""
-        from pcbdraft.agent.agent_runtime_helpers import extract_reasoning
-
-        return extract_reasoning(self, assistant_message)
 
     def _cleanup_task_resources(self, task_id: str) -> None:
         """Forwarder — see ``agent.chat_completion_helpers.cleanup_task_resources``."""
