@@ -108,7 +108,7 @@ import threading
 import time
 from collections.abc import Callable, Coroutine
 from datetime import datetime
-from types import SimpleNamespace
+from types import SimpleNamespace  # noqa: F401 -- injected utility-handler dependency
 from typing import Any, Optional
 
 from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
@@ -118,12 +118,16 @@ from pcbdraft.tools import mcp_runtime_loop as _mcp_runtime_loop
 from pcbdraft.tools import mcp_server_configuration as _mcp_server_configuration
 from pcbdraft.tools import mcp_tool_discovery as _mcp_tool_discovery
 from pcbdraft.tools import mcp_tool_schema as _mcp_tool_schema
+from pcbdraft.tools import mcp_utility_handlers as _mcp_utility_handlers
 from pcbdraft.tools.ansi_strip import strip_unicode_tags
 from pcbdraft.tools.mcp_task_lifecycle import MCPTaskLifecycleMixin
 from pcbdraft.tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
 _mcp_tool_discovery.configure_mcp_tool_discovery_runtime(namespace=lambda: globals())
+_mcp_utility_handlers.configure_mcp_utility_handlers_runtime(
+    namespace=lambda: globals()
+)
 
 # Upper bound for the OSV malware preflight during stdio MCP startup. The
 # check makes a blocking urllib HTTPS call whose own timeout can fail to
@@ -3564,300 +3568,16 @@ def _make_tool_handler(server_name: str, tool_name: str, tool_timeout: float):
     return _handler
 
 
-def _make_list_resources_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that lists resources from an MCP server."""
-
-    def _handler(args: dict, **kwargs) -> str:
-        server = _get_connected_server_for_call(server_name)
-        if not server or not server.session:
-            return tool_error(f"MCP server '{server_name}' is not connected")
-
-        async def _call():
-            _mark_server_call_started(server)
-            async with server._rpc_lock:
-                all_resources = await _paginate_full_list(
-                    server.session.list_resources, "resources", server_name
-                )
-            resources = []
-            for r in all_resources:
-                entry = {}
-                if hasattr(r, "uri"):
-                    entry["uri"] = str(r.uri)
-                if hasattr(r, "name"):
-                    entry["name"] = r.name
-                if hasattr(r, "description") and r.description:
-                    entry["description"] = r.description
-                # Key stays camelCase — this dict is the tool's own JSON
-                # output shape, not an SDK model.
-                _mime = mcp_field(r, "mime_type", "mimeType")
-                if _mime:
-                    entry["mimeType"] = _mime
-                resources.append(entry)
-            return json.dumps({"resources": resources}, ensure_ascii=False)
-
-        def _call_once():
-            return _run_on_mcp_loop(_call, timeout=tool_timeout)
-
-        try:
-            return _call_once()
-        except InterruptedError:
-            return _interrupted_call_result()
-        except Exception as exc:
-            recovered = _handle_auth_error_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "resources/list",
-            )
-            if recovered is not None:
-                return recovered
-            recovered = _handle_session_expired_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "resources/list",
-            )
-            if recovered is not None:
-                return recovered
-            logger.error(
-                "MCP %s/list_resources failed: %s",
-                server_name,
-                exc,
-            )
-            return tool_error(
-                _sanitize_error(
-                    f"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}"
-                )
-            )
-
-    return _handler
+_make_list_resources_handler = _mcp_utility_handlers._make_list_resources_handler
 
 
-def _make_read_resource_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that reads a resource by URI from an MCP server."""
-
-    def _handler(args: dict, **kwargs) -> str:
-        server = _get_connected_server_for_call(server_name)
-        if not server or not server.session:
-            return tool_error(f"MCP server '{server_name}' is not connected")
-
-        uri = args.get("uri")
-        if not uri:
-            return tool_error("Missing required parameter 'uri'")
-
-        async def _call():
-            _mark_server_call_started(server)
-            async with server._rpc_lock:
-                result = await server.session.read_resource(uri)
-            # read_resource returns ReadResourceResult with .contents list
-            parts: list[str] = []
-            contents = result.contents if hasattr(result, "contents") else []
-            for block in contents:
-                if getattr(block, "text", None) is not None:
-                    parts.append(strip_unicode_tags(block.text))
-                elif getattr(block, "blob", None) is not None:
-                    # Materialize binary resource contents into the document
-                    # cache instead of discarding them (same contract as
-                    # EmbeddedResource blocks in tool results).
-                    rendered = _render_mcp_resource_block(
-                        SimpleNamespace(type="resource", resource=block),
-                        server_name,
-                    )
-                    parts.append(rendered or f"[binary data, {len(block.blob)} bytes]")
-            return json.dumps(
-                {"result": "\n".join(parts) if parts else ""}, ensure_ascii=False
-            )
-
-        def _call_once():
-            return _run_on_mcp_loop(_call, timeout=tool_timeout)
-
-        try:
-            return _call_once()
-        except InterruptedError:
-            return _interrupted_call_result()
-        except Exception as exc:
-            recovered = _handle_auth_error_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "resources/read",
-            )
-            if recovered is not None:
-                return recovered
-            recovered = _handle_session_expired_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "resources/read",
-            )
-            if recovered is not None:
-                return recovered
-            logger.error(
-                "MCP %s/read_resource failed: %s",
-                server_name,
-                exc,
-            )
-            return tool_error(
-                _sanitize_error(
-                    f"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}"
-                )
-            )
-
-    return _handler
+_make_read_resource_handler = _mcp_utility_handlers._make_read_resource_handler
 
 
-def _make_list_prompts_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that lists prompts from an MCP server."""
-
-    def _handler(args: dict, **kwargs) -> str:
-        server = _get_connected_server_for_call(server_name)
-        if not server or not server.session:
-            return tool_error(f"MCP server '{server_name}' is not connected")
-
-        async def _call():
-            _mark_server_call_started(server)
-            async with server._rpc_lock:
-                all_prompts = await _paginate_full_list(
-                    server.session.list_prompts, "prompts", server_name
-                )
-            prompts = []
-            for p in all_prompts:
-                entry = {}
-                if hasattr(p, "name"):
-                    entry["name"] = p.name
-                if hasattr(p, "description") and p.description:
-                    entry["description"] = p.description
-                if hasattr(p, "arguments") and p.arguments:
-                    entry["arguments"] = [
-                        {
-                            "name": a.name,
-                            **(
-                                {"description": a.description}
-                                if hasattr(a, "description") and a.description
-                                else {}
-                            ),
-                            **(
-                                {"required": a.required}
-                                if hasattr(a, "required")
-                                else {}
-                            ),
-                        }
-                        for a in p.arguments
-                    ]
-                prompts.append(entry)
-            return json.dumps({"prompts": prompts}, ensure_ascii=False)
-
-        def _call_once():
-            return _run_on_mcp_loop(_call, timeout=tool_timeout)
-
-        try:
-            return _call_once()
-        except InterruptedError:
-            return _interrupted_call_result()
-        except Exception as exc:
-            recovered = _handle_auth_error_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "prompts/list",
-            )
-            if recovered is not None:
-                return recovered
-            recovered = _handle_session_expired_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "prompts/list",
-            )
-            if recovered is not None:
-                return recovered
-            logger.error(
-                "MCP %s/list_prompts failed: %s",
-                server_name,
-                exc,
-            )
-            return tool_error(
-                _sanitize_error(
-                    f"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}"
-                )
-            )
-
-    return _handler
+_make_list_prompts_handler = _mcp_utility_handlers._make_list_prompts_handler
 
 
-def _make_get_prompt_handler(server_name: str, tool_timeout: float):
-    """Return a sync handler that gets a prompt by name from an MCP server."""
-
-    def _handler(args: dict, **kwargs) -> str:
-        server = _get_connected_server_for_call(server_name)
-        if not server or not server.session:
-            return tool_error(f"MCP server '{server_name}' is not connected")
-
-        name = args.get("name")
-        if not name:
-            return tool_error("Missing required parameter 'name'")
-        arguments = args.get("arguments", {})
-
-        async def _call():
-            _mark_server_call_started(server)
-            async with server._rpc_lock:
-                result = await server.session.get_prompt(name, arguments=arguments)
-            # GetPromptResult has .messages list
-            messages = []
-            for msg in result.messages if hasattr(result, "messages") else []:
-                entry = {}
-                if hasattr(msg, "role"):
-                    entry["role"] = msg.role
-                if hasattr(msg, "content"):
-                    content = msg.content
-                    if hasattr(content, "text"):
-                        entry["content"] = strip_unicode_tags(content.text)
-                    elif isinstance(content, str):
-                        entry["content"] = strip_unicode_tags(content)
-                    else:
-                        entry["content"] = strip_unicode_tags(str(content))
-                messages.append(entry)
-            resp = {"messages": messages}
-            if hasattr(result, "description") and result.description:
-                resp["description"] = result.description
-            return json.dumps(resp, ensure_ascii=False)
-
-        def _call_once():
-            return _run_on_mcp_loop(_call, timeout=tool_timeout)
-
-        try:
-            return _call_once()
-        except InterruptedError:
-            return _interrupted_call_result()
-        except Exception as exc:
-            recovered = _handle_auth_error_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "prompts/get",
-            )
-            if recovered is not None:
-                return recovered
-            recovered = _handle_session_expired_and_retry(
-                server_name,
-                exc,
-                _call_once,
-                "prompts/get",
-            )
-            if recovered is not None:
-                return recovered
-            logger.error(
-                "MCP %s/get_prompt failed: %s",
-                server_name,
-                exc,
-            )
-            return tool_error(
-                _sanitize_error(
-                    f"MCP call failed: {type(exc).__name__}: {_exc_str(exc)}"
-                )
-            )
-
-    return _handler
+_make_get_prompt_handler = _mcp_utility_handlers._make_get_prompt_handler
 
 
 def _make_check_fn(server_name: str):
