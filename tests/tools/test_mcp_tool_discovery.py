@@ -7,7 +7,12 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from pcbdraft.tools import mcp_tool, mcp_tool_call, mcp_tool_discovery
+from pcbdraft.tools import (
+    mcp_server_task,
+    mcp_tool,
+    mcp_tool_call,
+    mcp_tool_discovery,
+)
 
 
 class _Registry:
@@ -65,7 +70,7 @@ class MCPToolDiscoveryCompatibilityTests(unittest.TestCase):
             mcp_tool_discovery._register_from_cache_sync,
         )
         self.assertIs(mcp_tool._CachedMCPTool, mcp_tool_discovery._CachedMCPTool)
-        self.assertIs(inspect.getmodule(mcp_tool.MCPServerTask.run), mcp_tool)
+        self.assertIs(inspect.getmodule(mcp_tool.MCPServerTask.run), mcp_server_task)
         self.assertIs(
             mcp_tool._make_tool_handler,
             mcp_tool_call._make_tool_handler,

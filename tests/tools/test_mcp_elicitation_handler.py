@@ -11,7 +11,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from pcbdraft.tools import mcp_elicitation_handler, mcp_tool
+from pcbdraft.tools import mcp_elicitation_handler, mcp_server_task, mcp_tool
 
 
 class _ElicitResult:
@@ -47,7 +47,7 @@ class MCPElicitationCompatibilityTests(unittest.TestCase):
         )
         self.assertIs(
             inspect.getmodule(mcp_tool.MCPServerTask.run),
-            mcp_tool,
+            mcp_server_task,
         )
         self.assertFalse(hasattr(mcp_elicitation_handler, "_servers"))
 
