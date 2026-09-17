@@ -85,6 +85,7 @@ from pcbdraft.services.application_agent_repair import ApplicationAgentRepairMix
 from pcbdraft.services.application_external_revision import (
     ApplicationExternalRevisionMixin,
 )
+from pcbdraft.services.application_message_inputs import ApplicationMessageInputMixin
 from pcbdraft.services.application_modification_preview import (
     ApplicationModificationPreviewMixin,
 )
@@ -393,6 +394,7 @@ _application_native_outputs._configure_legacy_application_hooks(
 
 class ApplicationService(
     ApplicationAgentRepairMixin,
+    ApplicationMessageInputMixin,
     ApplicationNativeOutputsMixin,
     ApplicationToolInspectionMixin,
     ApplicationProductSessionMixin,
@@ -406,6 +408,30 @@ class ApplicationService(
     ApplicationProjectStoreMixin,
 ):
     """Single write authority for product projects and their engineering runtime."""
+
+    @staticmethod
+    def _message_input_safe_text(value: Any, field: str, *, limit: int) -> str:
+        """Preserve the historical application._safe_text patch point."""
+
+        return _safe_text(value, field, limit=limit)
+
+    @staticmethod
+    def _message_input_sanitize_secret_text(value: str) -> str:
+        """Preserve the historical application sanitizer patch point."""
+
+        return _sanitize_secret_text(value)
+
+    @staticmethod
+    def _message_input_max_bytes() -> int:
+        """Resolve the historical application message limit dynamically."""
+
+        return MAX_USER_MESSAGE_BYTES
+
+    @staticmethod
+    def _message_input_validation_error(message: str) -> Exception:
+        """Preserve the historical application.ValidationError patch point."""
+
+        return ValidationError(message)
 
     @staticmethod
     def _project_query_error_type() -> type[BaseException]:
@@ -2868,36 +2894,22 @@ class ApplicationService(
         worker never duplicates a conversational message in the transcript.
         """
 
-        clean = _sanitize_secret_text(
-            _safe_text(text, "reply text", limit=MAX_USER_MESSAGE_BYTES)
-        )
+        clean = self._normalize_message_text(text, "reply text")
         project = self._open(project_id)
         with ResourceLock(project.root, self.locks_root):
             current = self._open(project_id)
             conversation = current.conversation
-            if turn_id is not None or index is not None:
-                if (
-                    not isinstance(turn_id, str)
-                    or isinstance(index, bool)
-                    or not (isinstance(index, int) and index >= 0)
-                ):
-                    raise ValidationError("reply delivery binding is invalid")
-                for message in conversation["messages"]:
-                    data = message.get("data") if isinstance(message, dict) else None
-                    if not isinstance(data, dict):
-                        continue
-                    if data.get("turn_id") == turn_id and data.get("index") == index:
-                        return self._public_project(current)
+            binding = self._reply_delivery_binding(turn_id, index)
+            if binding is not None and self._reply_already_delivered(
+                conversation, binding
+            ):
+                return self._public_project(current)
             self._append_message(
                 conversation,
                 "assistant",
                 "reply",
                 clean,
-                data=(
-                    {"turn_id": turn_id, "index": index}
-                    if turn_id is not None and index is not None
-                    else None
-                ),
+                data=binding,
             )
             self._write_records(current.root, current.state, conversation)
             return self._public_project(current)
@@ -2910,9 +2922,7 @@ class ApplicationService(
         timeout: float = 420.0,
         expected_revision: int | None = None,
     ) -> dict[str, Any]:
-        clean = _sanitize_secret_text(
-            _safe_text(text, "message", limit=MAX_USER_MESSAGE_BYTES)
-        )
+        clean = self._normalize_message_text(text, "message")
         project = self._open(project_id)
         expected_revision = self._bind_expected_revision(
             project, expected_revision, operation="message preparation"
