@@ -193,6 +193,11 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
   deactivation, and unknown-provider configuration diagnostics.
 - `model.auth_provider_endpoints` owns provider endpoint normalization,
   API-key discovery, and Z.AI endpoint probing and cached endpoint selection.
+- `model.auth_provider_policy` owns provider credential expiry parsing and TTL
+  normalization, plus Nous Portal and inference endpoint policy.
+- `model.auth_store_persistence` owns auth-store paths, cross-process locking,
+  atomic credential persistence, profile/global fallback reads, and provider
+  state write-through.
 - `model.auxiliary_cancellation` owns synchronous-call cancellation,
   request-scoped interrupt protection, progress callbacks, and its isolated
   worker.
@@ -205,9 +210,8 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
 
 `model.auxiliary_client` remains responsible for provider routing,
 authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
-`model.auth` remains the authentication-store and locking composition root and
-coordinates OAuth/token lifecycle, top-level `resolve_provider`, and runtime
-credential resolution.
+`model.auth` composes the authentication boundaries and coordinates OAuth/token
+lifecycle, top-level `resolve_provider`, and runtime credential resolution.
 
 #### MCP and terminal presentation
 
@@ -219,7 +223,9 @@ credential resolution.
   startup, caller-context propagation, and synchronous MCP call delivery;
   `tools.mcp_connection_recovery` owns connection cooldown and circuit-breaker
   state, trust metadata and approval gating, and reconnect signaling/readiness
-  waits. `tools.mcp_tool` remains the server-task, authentication-retry,
+  waits; `tools.mcp_task_lifecycle` owns server-task transport setup and
+  teardown, stdio subprocess cleanup, HTTP/SSE session lifecycle, keepalive,
+  and recycle behavior. `tools.mcp_tool` remains the authentication-retry,
   configuration, handler, registration, and lifecycle coordinator.
 - `terminal_client/src/commands.ts` owns slash-command resolution and unique
   prefix completion, `assistant-preview.ts` owns transient delta rendering and
