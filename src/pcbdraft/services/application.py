@@ -85,6 +85,9 @@ from pcbdraft.services.application_modification_preview import (
 from pcbdraft.services.application_modification_revert import (
     ApplicationModificationRevertMixin,
 )
+from pcbdraft.services.application_product_session import (
+    ApplicationProductSessionMixin,
+)
 from pcbdraft.services.application_progress import (
     _attach_progress,
     _progress_stage_evidence,
@@ -323,6 +326,7 @@ _sanitize_secret_text = sanitize_user_text
 
 
 class ApplicationService(
+    ApplicationProductSessionMixin,
     ApplicationProjectLifecycleMixin,
     ApplicationReleaseMixin,
     ApplicationModificationRevertMixin,
@@ -693,6 +697,90 @@ class ApplicationService(
             output,
             graph=graph,
         )
+
+    @staticmethod
+    def _product_session_process_status(
+        value: ProcessStatus | str,
+    ) -> ProcessStatus:
+        """Preserve the historical process-status conversion patch point."""
+
+        return ProcessStatus(value)
+
+    @staticmethod
+    def _product_session_validate_receipt_id(value: str) -> str:
+        """Preserve the historical explicit receipt-ID patch point."""
+
+        return validate_product_terminal_receipt_id(value)
+
+    @staticmethod
+    def _product_session_receipt_id(session_id: str, turn_id: str) -> str:
+        """Preserve the historical derived receipt-ID patch point."""
+
+        return product_terminal_receipt_id(session_id, turn_id)
+
+    @staticmethod
+    def _product_session_resource_lock(root: Path, locks_root: Path) -> Any:
+        """Preserve the historical product-session lock patch point."""
+
+        return ResourceLock(root, locks_root)
+
+    @staticmethod
+    def _product_session_load_json(path: Path, limit: int) -> Any:
+        """Preserve the historical retained-receipt loader patch point."""
+
+        return load_json_limited(path, limit)
+
+    @staticmethod
+    def _product_session_parse_receipt(value: Any) -> ProductSessionTerminalReceipt:
+        """Preserve the historical terminal-receipt parser patch point."""
+
+        return ProductSessionTerminalReceipt.from_dict(value)
+
+    @staticmethod
+    def _product_session_stage_projection(
+        stage: EngineeringStage,
+        release_gate_passed: bool,
+        blockers: tuple[str, ...],
+    ) -> StageProjection:
+        """Preserve the historical retained-stage projection patch point."""
+
+        return StageProjection(stage, release_gate_passed, blockers)
+
+    @staticmethod
+    def _product_session_terminal_outcome(
+        *,
+        process_status: ProcessStatus,
+        requested_reason: str | None,
+        stage: StageProjection,
+    ) -> tuple[Any, str]:
+        """Preserve the historical terminal-classification patch point."""
+
+        return terminal_outcome(
+            process_status=process_status,
+            requested_reason=requested_reason,
+            stage=stage,
+        )
+
+    @staticmethod
+    def _product_session_timestamp() -> str:
+        """Preserve the historical terminal-receipt timestamp patch point."""
+
+        return utc_timestamp()
+
+    @staticmethod
+    def _product_session_receipt(*args: Any) -> ProductSessionTerminalReceipt:
+        """Preserve the historical terminal-receipt constructor patch point."""
+
+        return ProductSessionTerminalReceipt(*args)
+
+    @staticmethod
+    def _product_session_store(
+        project_root: Path,
+        receipt: ProductSessionTerminalReceipt,
+    ) -> Path:
+        """Preserve the historical immutable receipt-store patch point."""
+
+        return store_product_session_terminal(project_root, receipt)
 
     def __init__(
         self,
@@ -2470,91 +2558,6 @@ class ApplicationService(
                 f"legacy modification {label} native consistency is unavailable or failing",
             )
         return report
-
-    def record_product_session_terminal(
-        self,
-        project_id: str,
-        *,
-        session_id: str,
-        turn_id: str,
-        process_status: ProcessStatus | str,
-        termination_reason: str | None = None,
-        receipt_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Write the one PCB-level outcome shared by durable and Hermes sessions."""
-
-        try:
-            process = ProcessStatus(process_status)
-        except ValueError as exc:
-            raise ValidationError("product session process status is invalid") from exc
-        resolved_receipt_id = (
-            validate_product_terminal_receipt_id(receipt_id)
-            if receipt_id is not None
-            else product_terminal_receipt_id(session_id, turn_id)
-        )
-        project = self._open(project_id)
-        with ResourceLock(project.root, self.locks_root):
-            project = self._open(project_id)
-            existing_path = (
-                project.root / "product-sessions" / f"{resolved_receipt_id}.json"
-            )
-            if existing_path.is_file() and not existing_path.is_symlink():
-                existing = ProductSessionTerminalReceipt.from_dict(
-                    load_json_limited(existing_path, APP_FILE_LIMIT)
-                )
-                if (
-                    existing.project_id != project_id
-                    or existing.session_id != session_id
-                    or existing.turn_id != turn_id
-                ):
-                    raise ValidationError(
-                        "product session receipt identity is already bound"
-                    )
-                retained_stage = StageProjection(
-                    existing.stage_reached,
-                    existing.release_gate_passed,
-                    () if existing.release_gate_passed else ("retained_terminal",),
-                )
-                requested_release_outcome, requested_termination = terminal_outcome(
-                    process_status=process,
-                    requested_reason=termination_reason,
-                    stage=retained_stage,
-                )
-                if (
-                    existing.process_status is not process
-                    or existing.release_outcome is not requested_release_outcome
-                    or existing.termination_reason != requested_termination
-                ):
-                    raise ValidationError(
-                        "product session terminal receipt facts conflict"
-                    )
-                result = existing.to_dict()
-                result["artifact"] = existing_path.relative_to(project.root).as_posix()
-                return result
-            progress, stage = self._current_progress_and_stage(project)
-            release_outcome, reason = terminal_outcome(
-                process_status=process,
-                requested_reason=termination_reason,
-                stage=stage,
-            )
-            receipt = ProductSessionTerminalReceipt(
-                resolved_receipt_id,
-                project_id,
-                session_id,
-                turn_id,
-                utc_timestamp(),
-                process,
-                release_outcome,
-                reason,
-                stage.stage,
-                stage.release_gate_passed,
-                progress.source_revision,
-                progress,
-            )
-            path = store_product_session_terminal(project.root, receipt)
-            result = receipt.to_dict()
-            result["artifact"] = path.relative_to(project.root).as_posix()
-            return result
 
     def apply_pcb_operation(
         self,
