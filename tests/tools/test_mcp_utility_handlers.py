@@ -9,7 +9,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, AsyncMock, patch
 
-from pcbdraft.tools import mcp_tool, mcp_utility_handlers
+from pcbdraft.tools import mcp_tool, mcp_tool_call, mcp_utility_handlers
 
 
 class _AsyncLock:
@@ -52,7 +52,10 @@ class MCPUtilityHandlerCompatibilityTests(unittest.TestCase):
                     getattr(mcp_tool, name),
                     getattr(mcp_utility_handlers, name),
                 )
-        self.assertIs(inspect.getmodule(mcp_tool._make_tool_handler), mcp_tool)
+        self.assertIs(
+            mcp_tool._make_tool_handler,
+            mcp_tool_call._make_tool_handler,
+        )
         self.assertIs(
             inspect.getmodule(mcp_tool._handle_auth_error_and_retry), mcp_tool
         )
