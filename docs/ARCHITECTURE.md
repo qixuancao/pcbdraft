@@ -289,7 +289,8 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
 - `tools.mcp_content` owns MCP content-block normalization, rendering, and local
   caching; `tools.mcp_connection_policy` owns remote URL/header/certificate and
   redirect/error policy; `tools.mcp_tool_schema` owns stateless tool naming,
-  filtering, schema conversion, and lifecycle-config parsing; and
+  filtering, recursive provider-compatible input-schema normalization, schema
+  conversion, and lifecycle-config parsing; and
   `tools.mcp_runtime_loop` owns process/discovery guards, dedicated event-loop
   startup, caller-context propagation, and synchronous MCP call delivery;
   `tools.mcp_connection_recovery` owns connection cooldown and circuit-breaker
@@ -302,8 +303,8 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   discovery, dynamic refresh, schema registration, and lazy-cache registration;
   and `tools.mcp_utility_handlers` owns resource/prompt utility dispatch,
   argument checks, and result normalization. `tools.mcp_tool` remains the
-  authentication-retry, generic tool handler, actual tool-call, and lifecycle
-  coordinator.
+  actual RPC and generic tool-call coordinator, including authentication retry,
+  connection orchestration, and registration dispatch.
 - `terminal_client/src/commands.ts` owns slash-command resolution and unique
   prefix completion, `assistant-preview.ts` owns transient delta rendering and
   saved-transcript reconciliation, `bridge.ts` owns the typed GUI API client,
