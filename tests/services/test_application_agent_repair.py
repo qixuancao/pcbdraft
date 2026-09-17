@@ -48,7 +48,6 @@ class ApplicationAgentRepairTests(unittest.TestCase):
             "prepare_agent_repair",
             "_record_failure",
             "apply_modification",
-            "confirm_project",
         ):
             with self.subTest(retained=retained):
                 self.assertIn(retained, ApplicationService.__dict__)

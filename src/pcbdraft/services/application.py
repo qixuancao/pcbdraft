@@ -72,6 +72,10 @@ from pcbdraft.services import (
     application_tool_inspection as _application_tool_inspection,
 )
 from pcbdraft.services.application_agent_repair import ApplicationAgentRepairMixin
+from pcbdraft.services.application_confirmation import (
+    ApplicationConfirmationMixin,
+    ConfirmationRuntime,
+)
 from pcbdraft.services.application_external_revision import (
     ApplicationExternalRevisionMixin,
 )
@@ -459,6 +463,7 @@ _application_pcb_operations._configure_legacy_application_hooks(
 
 class ApplicationService(
     ApplicationAgentRepairMixin,
+    ApplicationConfirmationMixin,
     ApplicationMessageInputMixin,
     ApplicationNativeOutputsMixin,
     ApplicationPCBOperationsMixin,
@@ -476,6 +481,38 @@ class ApplicationService(
     ApplicationProjectStoreMixin,
 ):
     """Single write authority for product projects and their engineering runtime."""
+
+    @staticmethod
+    def _confirmation_runtime() -> ConfirmationRuntime:
+        """Resolve confirmation dependencies through historical patch points."""
+
+        return ConfirmationRuntime(
+            validation_error=lambda message: ValidationError(message),
+            open_managed_project=lambda *args, **kwargs: open_managed_project(
+                *args, **kwargs
+            ),
+            request_from_dict=lambda value: AgentDesignRequest.from_dict(value),
+            plan_from_dict=lambda value: CircuitPlan.from_dict(value),
+            design_from_dict=lambda value: Design.from_dict(value),
+            graph_load=lambda path: PartGraph.load(path),
+            load_json_limited=lambda path, limit: load_json_limited(path, limit),
+            resource_lock=lambda *args, **kwargs: ResourceLock(*args, **kwargs),
+            timestamp=lambda: utc_timestamp(),
+            new_run_id=lambda: new_run_id(),
+            make_directory=lambda path: make_directory(path),
+            atomic_write_json=lambda path, value: atomic_write_json(path, value),
+            materialize_managed_design=lambda *args, **kwargs: (
+                materialize_managed_design(*args, **kwargs)
+            ),
+            sanitize_secret_text=lambda value: _sanitize_secret_text(value),
+            app_file_limit=APP_FILE_LIMIT,
+            pending_request_name=PENDING_REQUEST_NAME,
+            pending_plan_name=PENDING_PLAN_NAME,
+            pending_design_name=PENDING_DESIGN_NAME,
+            pending_parts_name=PENDING_PARTS_NAME,
+            attempt_schema=ATTEMPT_SCHEMA,
+            attempt_version=ATTEMPT_VERSION,
+        )
 
     @staticmethod
     def _tool_dispatch_validation_error(message: str) -> Exception:
@@ -2274,188 +2311,6 @@ class ApplicationService(
             )
             self._write_records(current.root, state, conversation)
         return self.open_project(project_id)
-
-    def confirm_project(
-        self,
-        project_id: str,
-        *,
-        validate: bool = True,
-        timeout: float = 180.0,
-        expected_revision: int | None = None,
-    ) -> dict[str, Any]:
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation="generation confirmation"
-        )
-        if project.state["status"] not in {
-            "awaiting_confirmation",
-            "generation_failed",
-            "interrupted",
-            "generated",
-        }:
-            raise ValidationError("project is not awaiting generation confirmation")
-        if project.design_root.is_dir() and not project.design_root.is_symlink():
-            open_managed_project(project.design_root).assert_synchronized()
-            preview = self.generate_project_previews(
-                project_id,
-                timeout=timeout,
-                expected_revision=expected_revision,
-            )
-            if validate:
-                return self.validate_project(
-                    project_id,
-                    timeout=timeout,
-                    expected_revision=int(preview["state"]["revision"]),
-                )
-            return preview
-        request = AgentDesignRequest.from_dict(
-            load_json_limited(project.root / PENDING_REQUEST_NAME, APP_FILE_LIMIT)
-        )
-        plan = CircuitPlan.from_dict(
-            load_json_limited(project.root / PENDING_PLAN_NAME, APP_FILE_LIMIT)
-        )
-        design = Design.from_dict(
-            load_json_limited(project.root / PENDING_DESIGN_NAME, APP_FILE_LIMIT)
-        )
-        graph = PartGraph.load(project.root / PENDING_PARTS_NAME)
-        if design.design_id != request.design_id or plan.design_id != request.design_id:
-            raise ValidationError(
-                "pending request, plan, and semantic design identities differ"
-            )
-        graph.assert_design(
-            design,
-            check_libraries=True,
-            allow_provisional=design.metadata.get("assurance") == "provisional",
-        )
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before confirmation")
-            if current.design_root.exists() or current.design_root.is_symlink():
-                raise ValidationError("confirmed project already has a design")
-            state = current.state
-            state["status"] = "generating"
-            state["revision"] += 1
-            state["updated_at"] = utc_timestamp()
-            self._event(
-                state,
-                current.root,
-                "generation.started",
-                "Generating native KiCad project",
-            )
-            self._write_records(current.root, state, current.conversation)
-            expected_revision = state["revision"]
-        attempt_dir: Path | None = None
-        attempt_record: dict[str, Any] | None = None
-        try:
-            attempt_id = new_run_id()
-            attempt_dir = make_directory(
-                make_directory(project.root / "attempts") / attempt_id
-            )
-            attempt_record = {
-                "schema": ATTEMPT_SCHEMA,
-                "version": ATTEMPT_VERSION,
-                "id": attempt_id,
-                "status": "running",
-                "phase": "native_generation",
-                "runtime": "agent_plan_v1",
-                "assurance": "unknown",
-                "started_at": utc_timestamp(),
-                "completed_at": None,
-                "part_ids": [],
-                "requested_parts": list(request.requested_parts),
-                "files": {
-                    "request": "request.json",
-                    "plan": "circuit-plan.json",
-                    "semantic_ir": "design.pcbir.json",
-                    "part_catalog": "parts.pcbdraft.json",
-                    "retained_native": None,
-                },
-                "error": None,
-            }
-            atomic_write_json(attempt_dir / "request.json", request.to_dict())
-            atomic_write_json(attempt_dir / "circuit-plan.json", plan.to_dict())
-            atomic_write_json(attempt_dir / "design.pcbir.json", design.to_dict())
-            atomic_write_json(attempt_dir / "parts.pcbdraft.json", graph.to_dict())
-            atomic_write_json(attempt_dir / "attempt.json", attempt_record)
-            attempt_record["assurance"] = str(
-                design.metadata.get("assurance", "provisional")
-            )
-            attempt_record["part_ids"] = sorted(
-                {component.part_id for component in design.components}
-            )
-            atomic_write_json(attempt_dir / "attempt.json", attempt_record)
-            generated = materialize_managed_design(
-                request,
-                design,
-                project.design_root,
-                graph=graph,
-                plan=plan,
-                retain_failed_attempt=attempt_dir / "native",
-            )
-        except BaseException as exc:
-            if attempt_dir is not None and attempt_record is not None:
-                attempt_record["status"] = "failed"
-                attempt_record["phase"] = "failed"
-                attempt_record["completed_at"] = utc_timestamp()
-                attempt_record["error"] = _sanitize_secret_text(str(exc))[:2048]
-                if (attempt_dir / "native").is_dir():
-                    attempt_record["files"]["retained_native"] = "native"
-                atomic_write_json(attempt_dir / "attempt.json", attempt_record)
-            self._record_failure(
-                project_id,
-                expected_revision,
-                "generation_failed",
-                "generation.failed",
-                str(exc),
-            )
-            raise
-        if attempt_dir is not None and attempt_record is not None:
-            attempt_record["status"] = "completed"
-            attempt_record["phase"] = "completed"
-            attempt_record["completed_at"] = utc_timestamp()
-            atomic_write_json(attempt_dir / "attempt.json", attempt_record)
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed while generation was running")
-            state = current.state
-            conversation = current.conversation
-            state["status"] = "generated"
-            state["design_revision"] = 1
-            state["revision"] += 1
-            state["updated_at"] = utc_timestamp()
-            self._append_message(
-                conversation,
-                "assistant",
-                "generation",
-                "Generated a native KiCad schematic and routed PCB. Validation results, when run, are reported separately.",
-                data={
-                    "design_content_hash": generated.project.design.content_hash(),
-                    "routing_state": generated.pcb.routing.state,
-                    "unrouted": list(generated.pcb.routing.unrouted),
-                },
-            )
-            self._event(
-                state,
-                current.root,
-                "generation.complete",
-                "Native KiCad schematic and routed PCB generated",
-            )
-            self._write_records(current.root, state, conversation)
-            expected_revision = int(state["revision"])
-        preview = self.generate_project_previews(
-            project_id,
-            timeout=timeout,
-            expected_revision=expected_revision,
-        )
-        if validate:
-            return self.validate_project(
-                project_id,
-                timeout=timeout,
-                expected_revision=int(preview["state"]["revision"]),
-            )
-        return preview
 
     def prepare_agent_repair(
         self,
