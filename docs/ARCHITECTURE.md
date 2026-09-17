@@ -245,6 +245,10 @@ historical method names and late-bound compatibility hooks without importing
   worker.
 - `model.auxiliary_adapters` owns the Codex, Anthropic, and Bedrock completion
   adapters, chat shims, and client wrappers used by auxiliary calls.
+- `model.auxiliary_response_projection` owns dict/object response text lookup,
+  Responses-to-chat-completions shape recovery, and visible-content versus
+  structured-reasoning text projection. It performs no network, credential,
+  routing, accounting, or relay work.
 - `model.auxiliary_provider_config` owns provider/model catalog rules, endpoint
   normalization, and request-header construction.
 - `model.auxiliary_provider_failures` owns provider-failure and recoverability
@@ -252,8 +256,10 @@ historical method names and late-bound compatibility hooks without importing
 - `model.auxiliary_fallbacks` owns auxiliary-provider health state, fallback
   destination planning, and synchronous/asynchronous fallback-chain execution.
 
-`model.auxiliary_client` remains responsible for provider routing,
-authentication, pooling, client/cache orchestration, and `call_llm`.
+`model.auxiliary_client` remains responsible for request construction and HTTP
+dispatch, credential resolution, provider selection and fallback-chain
+integration, pooling and client/cache orchestration, `call_llm`, usage
+accounting, and relay completion.
 `model.auth` composes the authentication boundaries and coordinates OAuth/token
 lifecycle, top-level `resolve_provider`, and runtime credential resolution.
 
