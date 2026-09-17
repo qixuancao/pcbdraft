@@ -168,6 +168,12 @@ from pcbdraft.agent.api_message_helpers import (
 from pcbdraft.agent.api_message_helpers import (
     configure_api_message_helper_runtime as _configure_api_message_helper_runtime,
 )
+from pcbdraft.agent.client_lifecycle import (
+    ClientLifecycleMixin,
+)
+from pcbdraft.agent.client_lifecycle import (
+    configure_client_lifecycle_runtime as _configure_client_lifecycle_runtime,
+)
 from pcbdraft.agent.context_compressor import (
     COMPRESSED_SUMMARY_METADATA_KEY,
     ContextCompressor,
@@ -292,6 +298,11 @@ _configure_activity_tracking_runtime(
     debug=lambda message, *args, **kwargs: logger.debug(message, *args, **kwargs),
     info=lambda message, *args, **kwargs: logger.info(message, *args, **kwargs),
     warning=lambda message, *args, **kwargs: logger.warning(message, *args, **kwargs),
+)
+_configure_client_lifecycle_runtime(
+    cleanup_vm=lambda task_id: cleanup_vm(task_id),
+    cleanup_browser=lambda task_id: cleanup_browser(task_id),
+    debug=lambda message, *args, **kwargs: logger.debug(message, *args, **kwargs),
 )
 
 # Internal flags that mark a message as ephemeral empty-response/prefill
@@ -481,6 +492,7 @@ class _StreamErrorEvent(Exception):
 
 
 class AIAgent(
+    ClientLifecycleMixin,
     ActivityTrackingMixin,
     MemoryLifecycleMixin,
     ApiMessageHelpersMixin,
@@ -3734,245 +3746,6 @@ class AIAgent(
 
         return apply_pending_steer_to_tool_results(self, messages, num_tool_msgs)
 
-    def release_clients(self) -> None:
-        """Release LLM client resources WITHOUT tearing down session tool state.
-
-        Used by the gateway when evicting this agent from _agent_cache for
-        memory-management reasons (LRU cap or idle TTL) — the session may
-        resume at any time with a freshly-built AIAgent that reuses the
-        same task_id / session_id, so we must NOT kill:
-          - process_registry entries for task_id (user's bg shells)
-          - terminal sandbox for task_id (cwd, env, shell state)
-          - browser daemon for task_id (open tabs, cookies)
-          - computer-use backend for task_id (native target and browser refs)
-          - memory provider (has its own lifecycle; keeps running)
-
-        We DO close:
-          - OpenAI/httpx client pool (big chunk of held memory + sockets;
-            the rebuilt agent gets a fresh client anyway)
-          - Active child subagents (per-turn artefacts; safe to drop)
-
-        Safe to call multiple times.  Distinct from close() — which is the
-        hard teardown for actual session boundaries (/new, /reset, session
-        expiry).
-        """
-        # Close active child agents (per-turn; no cross-turn persistence).
-        try:
-            with self._active_children_lock:
-                children = list(self._active_children)
-                self._active_children.clear()
-            for child in children:
-                try:
-                    child.release_clients()
-                except Exception:
-                    # Fall back to full close on children; they're per-turn.
-                    try:
-                        child.close()
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # Retire the OpenAI/httpx client to release sockets immediately.
-        # #70773: eviction runs on the gateway's memory-manager thread — a
-        # cross-thread hard close of the shared client can release TLS FDs
-        # under a still-unwinding worker (FD-recycle → SQLite corruption).
-        # Retirement shuts the pooled sockets down (the memory/socket win we
-        # want here) and lets GC release the FDs once no thread holds them.
-        try:
-            client = getattr(self, "client", None)
-            if client is not None:
-                self._retire_shared_openai_client(client, reason="cache_evict")
-                self.client = None
-        except Exception:
-            pass
-
-        # Also drop the cached per-request wire client (reused across
-        # sequential LLM calls) — same socket/memory rationale as above.
-        try:
-            self._close_cached_request_openai_client(reason="cache_evict")
-        except Exception:
-            pass
-        try:
-            self._close_cached_request_anthropic_client(reason="cache_evict")
-        except Exception:
-            pass
-
-    def close(self) -> None:
-        """Release all resources held by this agent instance.
-
-        Cleans up subprocess resources that would otherwise become orphans:
-        - Background processes tracked in ProcessRegistry
-        - Terminal sandbox environments
-        - Browser daemon sessions
-        - Computer-use backend sessions and target/ref state
-        - Active child agents (subagent delegation)
-        - OpenAI/httpx client connections
-
-        Safe to call multiple times (idempotent).  Each cleanup step is
-        independently guarded so a failure in one does not prevent the rest.
-        """
-        # AIAgent.close() is the hard owner boundary. Gateway cleanup may
-        # call shutdown_memory_provider() first; its idempotence prevents
-        # duplicate extraction while direct callers cannot skip provider close.
-        try:
-            session_messages = getattr(self, "_session_messages", None)
-            self.shutdown_memory_provider(
-                session_messages if isinstance(session_messages, list) else None
-            )
-        except Exception:
-            pass
-
-        task_id = getattr(self, "session_id", None) or ""
-
-        # 1. Kill background processes for this task
-        try:
-            from pcbdraft.tools.process_registry import process_registry
-
-            process_registry.kill_all(task_id=task_id)
-        except Exception:
-            pass
-
-        # 2. Clean terminal sandbox environments
-        try:
-            cleanup_vm(task_id)
-        except Exception:
-            pass
-
-        # 3. Clean browser daemon sessions
-        try:
-            cleanup_browser(task_id)
-        except Exception:
-            pass
-
-        # 4. Release the session-owned computer-use backend.  This ends the
-        # exact cua-driver session, drops typed-browser refs/grants, and stops
-        # a private embedded daemon when Hermes YOLO selected unrestricted
-        # mode.  The import is lazy so sessions without computer_use retain
-        # the narrow core footprint.
-        try:
-            from pcbdraft.tools.computer_use import release_computer_use_session
-
-            release_computer_use_session(task_id)
-        except Exception:
-            pass
-
-        # 5. Close active child agents
-        try:
-            with self._active_children_lock:
-                children = list(self._active_children)
-                self._active_children.clear()
-            for child in children:
-                try:
-                    child.close()
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-        # 6. Close the OpenAI/httpx client
-        try:
-            client = getattr(self, "client", None)
-            if client is not None:
-                self._close_openai_client(client, reason="agent_close", shared=True)
-                self.client = None
-        except Exception:
-            pass
-
-        # 6b. Close the cached per-request wire client (reused across
-        # sequential LLM calls; see _create_request_openai_client).
-        try:
-            self._close_cached_request_openai_client(reason="agent_close")
-        except Exception:
-            pass
-        try:
-            self._close_cached_request_anthropic_client(reason="agent_close")
-        except Exception:
-            pass
-
-        # 6c. Close the shared Anthropic client created during agent startup.
-        # Request-local Anthropic clients have their own owner-thread lifecycle
-        # above; this primary client is owned by the agent itself. Clear the
-        # reference before closing so a failing SDK close cannot leave a stale,
-        # reusable client behind and a repeated close remains idempotent.
-        try:
-            anthropic_client = getattr(self, "_anthropic_client", None)
-            if anthropic_client is not None:
-                self._anthropic_client = None
-                anthropic_client.close()
-        except Exception:
-            logger.debug("Shared Anthropic client close failed", exc_info=True)
-
-        # 6d. Close the Codex app-server session. The runtime already drops
-        # it on turn crash / retirement (agent/codex_runtime.py), but hard
-        # teardown had no owner — a /new, /reset, or session expiry left the
-        # app-server child process running until interpreter exit. Clear the
-        # attribute BEFORE close() so a concurrent reader can't grab a
-        # half-closed session, and so a raising close() can't strand a stale
-        # reference behind.
-        try:
-            codex_session = getattr(self, "_codex_session", None)
-            if codex_session is not None:
-                self._codex_session = None
-                codex_session.close()
-        except Exception:
-            pass
-
-        # 7. Free conversation history.  Mirrors _release_evicted_agent_soft's
-        # soft-eviction clear — close() is the hard teardown for true session
-        # boundaries (/new, /reset, session expiry), so the message list won't
-        # be reused.  Drops the reference proactively rather than waiting for
-        # the agent object itself to be collected, which matters when a caller
-        # still holds the closed agent (e.g. a draining background task).
-        try:
-            self._session_messages = []
-        except Exception:
-            pass
-
-        # The references above are now gone; on Linux/glibc, return their free
-        # heap pages immediately instead of retaining the process RSS high-water
-        # mark until exit.  This helper is a safe no-op on other allocators.
-        try:
-            from pcbdraft.interfaces.tui.mem_trim import trim_memory
-
-            trim_memory(force=True, reason="agent close")
-        except Exception:
-            pass
-
-        # 8. Finalize the owned SQLite session row unless this agent is only a
-        # temporary helper that deliberately handed session ownership forward
-        # (manual compression helpers that rotate to a continuation session_id,
-        # or background-review forks that share the live parent's session_id and
-        # must leave it open). end_session() is first-reason-wins and no-ops on
-        # an already-ended row, so this never clobbers a 'compression' /
-        # 'cron_complete' / 'cli_close' reason set by an earlier terminal path.
-        session_db = getattr(self, "_session_db", None)
-        try:
-            if getattr(self, "_end_session_on_close", True):
-                session_id = getattr(self, "session_id", None)
-                if session_db and session_id:
-                    session_db.end_session(session_id, "agent_close")
-        except Exception:
-            pass
-
-        # 9. Close the SQLite handle itself, but ONLY when this agent owns it.
-        # end_session() above finalizes the session ROW; it does not release the
-        # connection. For the shared launch handle that is correct — it outlives
-        # every agent — so _owns_session_db defaults False and this is a no-op.
-        # A DEDICATED handle (the gateway's per-profile state.db opens, and the
-        # lazy self-open in _get_session_db_for_recall) has no other owner: left
-        # unclosed it keeps its db/-wal/-shm fds and its background token-writer
-        # thread, and once that writer has started the instance pins ITSELF via
-        # atexit.register(_drain_token_queue_at_exit) — which only close()
-        # unregisters — so it survives for the life of the process.
-        # Cleared first so the documented idempotency of close() holds.
-        try:
-            if getattr(self, "_owns_session_db", False) and session_db is not None:
-                self._owns_session_db = False
-                session_db.close()
-        except Exception:
-            pass
-
     def _hydrate_todo_store(self, history: list[dict[str, Any]]) -> None:
         """
         Recover todo state from conversation history.
@@ -4522,30 +4295,6 @@ class AIAgent(
                 cache["in_use"] = False
         self._close_openai_client(client, reason=reason, shared=False)
 
-    def _close_cached_request_openai_client(self, *, reason: str) -> None:
-        """Teardown hook: really close the cached per-request wire client."""
-        with self._openai_client_lock():
-            cache = getattr(self, "_request_client_cache", None)
-            client = cache["client"] if cache else None
-            in_use = bool(cache["in_use"]) if cache else False
-            if cache is not None:
-                cache["client"] = None
-                cache["kwargs"] = None
-                cache["poisoned"] = False
-                cache["in_use"] = False
-        if client is None:
-            return
-        if in_use:
-            # A worker thread has this client checked out for an in-flight
-            # request (workers can outlive turns — see interruptible_api_call).
-            # client.close() here would release its FDs from a stranger thread,
-            # the #29507 race teardown must not reintroduce. Abort the sockets
-            # instead; the slot is already cleared, so the worker's own finally
-            # sees an untracked client and does the real close on its thread.
-            self._abort_request_openai_client(client, reason=f"{reason}_in_flight")
-            return
-        self._close_openai_client(client, reason=reason, shared=False)
-
     def _abort_request_openai_client(self, client: Any, *, reason: str) -> None:
         """Cross-thread abort: shut sockets down without releasing FDs.
 
@@ -4747,30 +4496,6 @@ class AIAgent(
                 getattr(self, "model", None),
                 exc,
             )
-
-    def _close_cached_request_anthropic_client(self, *, reason: str) -> None:
-        """Teardown hook: really close the cached per-request Anthropic client."""
-        with self._openai_client_lock():
-            cache = getattr(self, "_request_anthropic_client_cache", None)
-            client = cache["client"] if cache else None
-            in_use = bool(cache["in_use"]) if cache else False
-            if cache is not None:
-                cache["client"] = None
-                cache["key"] = None
-                cache["poisoned"] = False
-                cache["in_use"] = False
-        if client is None:
-            return
-        if in_use:
-            # A worker thread has this client checked out for an in-flight
-            # request — same #29507 reasoning as the OpenAI teardown hook.
-            self._abort_request_anthropic_client(client, reason=f"{reason}_in_flight")
-            return
-        try:
-            self._force_close_tcp_sockets(client)
-            client.close()
-        except Exception:
-            pass
 
     def _abort_request_anthropic_client(self, client: Any, *, reason: str) -> None:
         """Cross-thread abort for request-local Anthropic clients.
