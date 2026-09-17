@@ -103,7 +103,6 @@ import math
 import os
 import random
 import re
-import shutil
 import sys
 import threading
 import time
@@ -116,6 +115,7 @@ from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
 from pcbdraft.tools import mcp_connection_recovery as _mcp_connection_recovery
 from pcbdraft.tools import mcp_content as _mcp_content
 from pcbdraft.tools import mcp_runtime_loop as _mcp_runtime_loop
+from pcbdraft.tools import mcp_server_configuration as _mcp_server_configuration
 from pcbdraft.tools import mcp_tool_schema as _mcp_tool_schema
 from pcbdraft.tools.ansi_strip import strip_unicode_tags
 from pcbdraft.tools.mcp_task_lifecycle import MCPTaskLifecycleMixin
@@ -597,51 +597,9 @@ _MIN_KEEPALIVE_INTERVAL = 5  # clamp floor for configured intervals
 _MCP_LOOP_DRAIN_TIMEOUT = 3.0
 
 # Environment variables that are safe to pass to stdio subprocesses
-_SAFE_ENV_KEYS = frozenset(
-    {
-        "PATH",
-        "HOME",
-        "USER",
-        "LANG",
-        "LC_ALL",
-        "TERM",
-        "SHELL",
-        "TMPDIR",
-    }
-)
-
-_SAFE_ENV_KEYS_CASE_INSENSITIVE = frozenset(
-    {
-        # Windows process/location vars. These are needed by launcher-style tools
-        # such as Docker Desktop's MCP plugin discovery, and do not carry secrets.
-        "ALLUSERSPROFILE",
-        "APPDATA",
-        "COMMONPROGRAMFILES",
-        "COMMONPROGRAMFILES(X86)",
-        "COMMONPROGRAMW6432",
-        "COMPUTERNAME",
-        "COMSPEC",
-        "HOMEDRIVE",
-        "HOMEPATH",
-        "LOCALAPPDATA",
-        "NUMBER_OF_PROCESSORS",
-        "OS",
-        "PATHEXT",
-        "PROCESSOR_ARCHITECTURE",
-        "PROGRAMDATA",
-        "PROGRAMFILES",
-        "PROGRAMFILES(X86)",
-        "PROGRAMW6432",
-        "PUBLIC",
-        "SYSTEMDRIVE",
-        "SYSTEMROOT",
-        "TEMP",
-        "TMP",
-        "USERDOMAIN",
-        "USERNAME",
-        "USERPROFILE",
-        "WINDIR",
-    }
+_SAFE_ENV_KEYS = _mcp_server_configuration._SAFE_ENV_KEYS
+_SAFE_ENV_KEYS_CASE_INSENSITIVE = (
+    _mcp_server_configuration._SAFE_ENV_KEYS_CASE_INSENSITIVE
 )
 
 # Regex for credential patterns to strip from error messages
@@ -662,100 +620,16 @@ _CREDENTIAL_PATTERN = re.compile(
 # Pre-compiled pattern for ${VAR_NAME} style env-var interpolation.
 # Supports any non-} characters in the variable name (hyphens, dots, etc.)
 # so providers like MY-VAR or my.var work correctly.
-_ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
+_ENV_VAR_PATTERN = _mcp_server_configuration._ENV_VAR_PATTERN
 
 
-def _env_ref_name(ref: str) -> str:
-    """Normalize a ``${...}`` reference body into an env-var name.
-
-    Accepts Cursor-style ``${env:VAR}`` in addition to plain ``${VAR}`` by
-    stripping a leading ``env:`` prefix. The result is the bare variable name
-    to look up in the secret scope / ``os.environ``.
-    """
-    ref = ref.strip()
-    if ref.startswith("env:"):
-        ref = ref[len("env:") :].strip()
-    return ref
-
-
-def _workspace_folder() -> str:
-    """Best-effort absolute workspace root for ``${workspaceFolder}``.
-
-    Resolution order:
-
-      1. ``tools.file_tools._authoritative_workspace_root()`` — the session's
-         recorded terminal cwd, a registered task/session cwd override, or a
-         sentinel-free absolute ``$TERMINAL_CWD`` (in that order).
-      2. ``os.getcwd()`` as the final fallback when no session anchor exists.
-    """
-    try:
-        from pcbdraft.tools.file_tools import _authoritative_workspace_root
-
-        root = _authoritative_workspace_root()
-        if root:
-            return root
-    except Exception:
-        pass
-    return os.getcwd()
-
-
-def _context_var_value(ref: str) -> str | None:
-    """Resolve Cursor-style context variables in ``${...}`` references.
-
-    Supports the case-sensitive names Cursor's ``mcp.json`` interpolation
-    understands beyond env vars: ``${userHome}``, ``${workspaceFolder}``,
-    ``${workspaceFolderBasename}``, ``${pathSeparator}`` and its ``${/}``
-    shorthand. Returns ``None`` for anything else so unknown references keep
-    the existing env-var lookup semantics.
-    """
-    if ref == "userHome":
-        return os.path.expanduser("~")
-    if ref == "workspaceFolder":
-        return _workspace_folder()
-    if ref == "workspaceFolderBasename":
-        root = _workspace_folder()
-        return os.path.basename(root.rstrip("/\\")) or root
-    if ref in ("pathSeparator", "/"):
-        return os.sep
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Security helpers
-# ---------------------------------------------------------------------------
-
-
-def _build_safe_env(user_env: dict | None) -> dict:
-    """Build a filtered environment dict for stdio subprocesses.
-
-    Only passes through safe baseline variables (PATH, HOME, etc.) and XDG_*
-    variables from the current process environment, secrets injected by an
-    external secret source (Bitwarden, 1Password, plugin backends) that
-    Hermes explicitly tagged during dotenv loading, plus any variables
-    explicitly specified by the user in the server config.
-
-    This prevents accidentally leaking secrets like API keys, tokens, or
-    credentials to MCP server subprocesses.  Secret-source-injected vars are
-    an exception: users configured that backend specifically so Hermes and
-    its subprocesses can consume those credentials without duplicating them
-    in every MCP server's ``env:`` block.
-    """
-    try:
-        from pcbdraft.model.env_loader import get_secret_source
-    except Exception:  # pragma: no cover — early bootstrap/import fallback
-        get_secret_source = None
-    env = {}
-    for key, value in os.environ.items():
-        if (
-            key in _SAFE_ENV_KEYS
-            or key.upper() in _SAFE_ENV_KEYS_CASE_INSENSITIVE
-            or key.startswith("XDG_")
-            or (get_secret_source is not None and get_secret_source(key))
-        ):
-            env[key] = value
-    if user_env:
-        env.update(user_env)
-    return env
+_env_ref_name = _mcp_server_configuration._env_ref_name
+_workspace_folder = _mcp_server_configuration._workspace_folder
+_context_var_value = _mcp_server_configuration._context_var_value
+_build_safe_env = _mcp_server_configuration._build_safe_env
+_mcp_server_configuration.configure_mcp_server_configuration_runtime(
+    namespace=lambda: globals()
+)
 
 
 def _sanitize_error(text: str) -> str:
@@ -917,19 +791,7 @@ def _scan_mcp_description(
     return findings
 
 
-def _prepend_path(env: dict, directory: str) -> dict:
-    """Prepend *directory* to env PATH if it is not already present."""
-    updated = dict(env or {})
-    if not directory:
-        return updated
-
-    existing = updated.get("PATH", "")
-    parts = [part for part in existing.split(os.pathsep) if part]
-    if directory not in parts:
-        parts = [directory, *parts]
-    updated["PATH"] = os.pathsep.join(parts) if parts else directory
-    return updated
-
+_prepend_path = _mcp_server_configuration._prepend_path
 
 # Safety cap on nextCursor pagination loops so a misbehaving server that
 # returns a cursor forever cannot spin discovery indefinitely. 50 pages at
@@ -1013,109 +875,9 @@ def _mcp_types():
     return _t
 
 
-def _resolve_stdio_command(command: str, env: dict) -> tuple[str, dict]:
-    """Resolve a stdio MCP command against the exact subprocess environment.
+_resolve_stdio_command = _mcp_server_configuration._resolve_stdio_command
+_wrap_command_with_watchdog = _mcp_server_configuration._wrap_command_with_watchdog
 
-    This primarily exists to make bare ``npx``/``npm``/``node`` commands work
-    reliably even when MCP subprocesses run under a filtered PATH.
-    """
-    resolved_command = os.path.expanduser(str(command).strip())
-    resolved_env = dict(env or {})
-
-    if os.sep not in resolved_command:
-        path_arg = resolved_env["PATH"] if "PATH" in resolved_env else None
-        which_hit = shutil.which(resolved_command, path=path_arg)
-        if which_hit is None and sys.platform == "win32" and resolved_env:
-            # shutil.which(..., path=...) resolves extensions from the PARENT
-            # process PATHEXT, not the MCP subprocess env — so a config that
-            # supplies both PATH and PATHEXT can fail to resolve a command
-            # its own env can find (#56536). Retry with the config's PATHEXT
-            # (any key casing: PATHEXT / Pathext / pathext) applied.
-            cfg_pathext = next(
-                (
-                    v
-                    for k, v in resolved_env.items()
-                    if k.upper() == "PATHEXT" and isinstance(v, str) and v.strip()
-                ),
-                None,
-            )
-            if cfg_pathext and cfg_pathext != os.environ.get("PATHEXT"):
-                _saved = os.environ.get("PATHEXT")
-                try:
-                    os.environ["PATHEXT"] = cfg_pathext
-                    which_hit = shutil.which(resolved_command, path=path_arg)
-                finally:
-                    if _saved is None:
-                        os.environ.pop("PATHEXT", None)
-                    else:
-                        os.environ["PATHEXT"] = _saved
-        if which_hit:
-            resolved_command = which_hit
-        elif resolved_command in {"npx", "npm", "node"}:
-            from pcbdraft.core.runtime_environment import get_runtime_home
-
-            runtime_home = str(get_runtime_home())
-            candidates = [
-                os.path.join(runtime_home, "node", "bin", resolved_command),
-                os.path.join(
-                    os.path.expanduser("~"), ".local", "bin", resolved_command
-                ),
-                # /usr/local/bin is the canonical install location for Node on
-                # Linux from-source builds, the upstream node:bookworm-slim
-                # image (which the Hermes Docker image copies node + npm +
-                # corepack from since #4977), and macOS Homebrew on Intel.
-                # Without this candidate, any MCP server configured with an
-                # env.PATH that omits /usr/local/bin (a common pattern when
-                # users hand-author PATH for sandboxing) fails with ENOENT
-                # at execvp, and a naive symlink workaround into the user's
-                # PATH only fails one layer deeper because npx's shebang
-                # re-execs /usr/bin/env node which needs the same directory.
-                os.path.join(os.sep, "usr", "local", "bin", resolved_command),
-            ]
-            for candidate in candidates:
-                if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                    resolved_command = candidate
-                    break
-
-    command_dir = os.path.dirname(resolved_command)
-    if command_dir:
-        resolved_env = _prepend_path(resolved_env, command_dir)
-
-    return resolved_command, resolved_env
-
-
-def _wrap_command_with_watchdog(command: str, args: list) -> tuple[str, list]:
-    """Wrap a stdio MCP server command in the parent-death watchdog supervisor.
-
-    On POSIX, the watchdog records this process's PID and later detects parent
-    death directly through ``getppid()``. Returns the (command, args) unchanged
-    on non-POSIX platforms or if the PID cannot be read.
-    """
-    if os.name != "posix":
-        # Relies on process groups (os.getpgid/os.killpg); no POSIX
-        # equivalent wired up here yet, matching the existing killpg-based
-        # orphan cleanup's platform scope (Windows falls back to plain
-        # os.kill there too).
-        return command, args
-    try:
-        my_pid = os.getpid()
-    except Exception:
-        # Never let watchdog bookkeeping failure block a real MCP connection.
-        return command, args
-    watchdog_args = [
-        os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "mcp_stdio_watchdog.py"
-        ),
-        "--ppid",
-        str(my_pid),
-        "--",
-        command,
-        *args,
-    ]
-    return sys.executable, watchdog_args
-
-
-# ---------------------------------------------------------------------------
 # MCP ImageContent block → Hermes MEDIA tag
 # ---------------------------------------------------------------------------
 
@@ -3471,181 +3233,14 @@ def _interrupted_call_result() -> str:
 # ---------------------------------------------------------------------------
 
 
-def _interpolate_env_vars(value):
-    """Recursively resolve ``${VAR}`` placeholders.
+_interpolate_env_vars = _mcp_server_configuration._interpolate_env_vars
+_whitespace_warned = _mcp_server_configuration._whitespace_warned
+_warn_hidden_whitespace = _mcp_server_configuration._warn_hidden_whitespace
+_filter_suspicious_mcp_servers = (
+    _mcp_server_configuration._filter_suspicious_mcp_servers
+)
+_load_mcp_config = _mcp_server_configuration._load_mcp_config
 
-    Both ``${VAR}`` and Cursor-style ``${env:VAR}`` are accepted — the
-    ``env:`` prefix is stripped so a doc copied from a Cursor / Claude MCP
-    config resolves the same secret. Cursor's context variables are also
-    supported (case-sensitive): ``${userHome}``, ``${workspaceFolder}``,
-    ``${workspaceFolderBasename}``, ``${pathSeparator}`` and ``${/}`` — see
-    :func:`_context_var_value` / :func:`_workspace_folder` for resolution.
-    Env refs resolve from the active profile's secret scope when multiplexing
-    is on (so an MCP server config's ``${API_KEY}`` picks up the routed
-    profile's value, not the process-global ``os.environ`` which may hold
-    another profile's), falling back to ``os.environ`` otherwise. Unset vars
-    keep the literal placeholder, as before.
-    """
-    from pcbdraft.agent.secret_scope import get_secret as _get_secret
-
-    if isinstance(value, str):
-
-        def _replace(m):
-            ctx = _context_var_value(m.group(1).strip())
-            if ctx is not None:
-                return ctx
-            name = _env_ref_name(m.group(1))
-            return _get_secret(name, m.group(0)) or m.group(0)
-
-        return _ENV_VAR_PATTERN.sub(_replace, value)
-    if isinstance(value, dict):
-        return {k: _interpolate_env_vars(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_interpolate_env_vars(v) for v in value]
-    return value
-
-
-# (server_name, dotted key path) pairs already warned about — see
-# _warn_hidden_whitespace(); config loads happen on every discovery pass.
-_whitespace_warned: set[tuple[str, str]] = set()
-
-
-def _warn_hidden_whitespace(server_name: str, config: dict) -> list[str]:
-    """Warn about MCP config string values with hidden leading/trailing whitespace.
-
-    A token pasted with a trailing newline or a URL copied with a leading
-    space produces opaque auth/connect failures (the server rejects the
-    credential, TLS/DNS fails on ``"example.com "``), and the whitespace is
-    invisible when eyeballing config.yaml. Inspired by Claude Code v2.1.219,
-    which added the same startup warning for its MCP config values.
-
-    Advisory only — values are never mutated (whitespace could theoretically
-    be intentional in an arg). Returns the list of dotted key paths flagged,
-    for testability. Values themselves are never logged (they are often
-    secrets); only the key path is named. Each (server, key path) is warned
-    about once per process — ``_load_mcp_config()`` runs on every discovery/
-    status call and repeating the warning would be noise.
-    """
-    flagged: list[str] = []
-
-    def _walk(value: Any, path: str) -> None:
-        if isinstance(value, str):
-            if value != value.strip():
-                flagged.append(path)
-        elif isinstance(value, dict):
-            for k, v in value.items():
-                _walk(v, f"{path}.{k}" if path else str(k))
-        elif isinstance(value, list):
-            for i, v in enumerate(value):
-                _walk(v, f"{path}[{i}]")
-
-    _walk(config, "")
-    for key_path in flagged:
-        dedupe_key = (server_name, key_path)
-        if dedupe_key in _whitespace_warned:
-            continue
-        _whitespace_warned.add(dedupe_key)
-        logger.warning(
-            "MCP server '%s': config value '%s' has hidden leading or "
-            "trailing whitespace — this often causes authentication or "
-            "connection failures. Check for stray spaces/newlines in "
-            "config.yaml (or the referenced env var).",
-            server_name,
-            key_path,
-        )
-    return flagged
-
-
-def _filter_suspicious_mcp_servers(servers: dict[str, dict]) -> dict[str, dict]:
-    """Drop exfiltration-shaped MCP configs before any stdio spawn path."""
-    try:
-        from pcbdraft.interfaces.tui.mcp_security import (
-            validate_mcp_server_entry as _validate_mcp_server_entry,
-        )
-    except Exception:
-        _validate_mcp_server_entry: (
-            Callable[[str, dict[str, Any]], list[str]] | None
-        ) = None
-
-    if _validate_mcp_server_entry is None:
-        return servers
-
-    safe_servers = {}
-    for name, cfg in servers.items():
-        if not isinstance(cfg, dict):
-            safe_servers[name] = cfg
-            continue
-        issues = _validate_mcp_server_entry(name, cfg)
-        if issues:
-            logger.warning(
-                "Skipping suspicious MCP server '%s': %s",
-                name,
-                "; ".join(issues),
-            )
-            continue
-        safe_servers[name] = cfg
-    return safe_servers
-
-
-def _load_mcp_config() -> dict[str, dict]:
-    """Read ``mcp_servers`` from the Hermes config file.
-
-    Returns a dict of ``{server_name: server_config}`` or empty dict.
-    Server config can contain either ``command``/``args``/``env`` for stdio
-    transport or ``url``/``headers`` for HTTP transport, plus optional
-    ``timeout``, ``connect_timeout``, and ``auth`` overrides.
-
-    ``${ENV_VAR}`` placeholders in string values are resolved from
-    ``os.environ`` (which includes ``~/.hermes/.env`` loaded at startup).
-    """
-    try:
-        from pcbdraft.core.runtime_utils import env_var_enabled as _env_enabled
-        from pcbdraft.model.configuration import load_config
-
-        if _env_enabled("PCBDRAFT_RUNTIME_SAFE_MODE"):
-            return {}
-        config = load_config()
-        servers = config.get("mcp_servers")
-        if not isinstance(servers, dict):
-            servers = {}
-        # Ensure .env vars are available for interpolation
-        try:
-            from pcbdraft.model.env_loader import load_pcbdraft_dotenv
-
-            load_pcbdraft_dotenv()
-        except Exception:
-            pass
-        safe_servers: dict[str, dict] = {}
-        for name, cfg in _filter_suspicious_mcp_servers(servers).items():
-            interpolated = _interpolate_env_vars(cfg)
-            if isinstance(interpolated, dict):
-                _warn_hidden_whitespace(name, interpolated)
-                safe_servers[name] = interpolated
-        try:
-            from pcbdraft.agent.extensions.manager import (
-                discover_plugins,
-                get_plugin_manager,
-            )
-
-            discover_plugins()
-            portable = get_plugin_manager().get_portable_mcp_servers()
-            for name, cfg in _filter_suspicious_mcp_servers(portable).items():
-                if name in safe_servers:
-                    logger.warning(
-                        "Portable MCP server '%s' conflicts with native config; skipping",
-                        name,
-                    )
-                    continue
-                safe_servers[name] = dict(cfg)
-        except Exception:
-            logger.debug("Failed to load portable MCP servers", exc_info=True)
-        return safe_servers
-    except Exception as exc:
-        logger.debug("Failed to load MCP config: %s", exc)
-        return {}
-
-
-# ---------------------------------------------------------------------------
 # Server connection helper
 # ---------------------------------------------------------------------------
 
