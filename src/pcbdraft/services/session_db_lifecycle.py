@@ -2,8 +2,8 @@
 
 The mixin owns session creation, end/reopen/reset transitions, transcript
 replacement, and the public compaction commit gateways. Connection, search,
-listing, metadata, token accounting, and compression lease ownership remain on
-the host. This module never imports :mod:`pcbdraft.services.session_db`.
+listing, metadata, token accounting, and lease ownership remain outside this
+mixin. This module never imports :mod:`pcbdraft.services.session_db`.
 """
 
 # Lifecycle recovery and plugin-era compatibility keep their historical
@@ -414,8 +414,9 @@ class SessionLifecycleMixin:
             if child is not None:
                 return False
 
-            # Lease ownership remains in the host module; reclaim inside this
-            # same transaction so a later refresh cannot resurrect the old holder.
+            # Lease ownership remains in the dedicated host mixin; reclaim
+            # inside this same transaction so a later refresh cannot resurrect
+            # the old holder.
             if not self._reclaim_expired_compression_lease_on_conn(conn, session_id):
                 return False
 

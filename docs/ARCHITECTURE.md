@@ -193,15 +193,20 @@ records.
 - `services.session_db_lifecycle` owns session-row creation and enrichment,
   end/reopen/reset transitions, transcript replacement, and compaction commit
   gateways.
+- `services.session_db_compression_lease` owns compression lease acquisition,
+  renewal, inspection, release, and in-transaction fence/recovery helpers. It
+  uses the host write-transaction adapter and a late-bound process-liveness hook.
 
 `services.session_db.SessionDB` remains the authoritative durable session store
 and composition root. Callers still cross this host for connection, schema, and
 FTS behavior; the corresponding mixins receive their shared state, constants,
 and late-bound compatibility hooks from this boundary rather than forming a
 second store. Compression and session-turn lease acquisition, renewal, and
-release, plus gateway routing tables and peer/session lookup, remain in this
-host. The lineage read model owns none of those responsibilities, and none of
-the extracted modules imports the `session_db` coordinator back.
+release continue through the host API; compression leases are implemented by
+the dedicated mixin, while session-turn leases, gateway routing tables, and
+peer/session lookup remain in the host. The lineage read model owns none of
+those responsibilities, and none of the extracted modules imports the
+`session_db` coordinator back.
 
 #### AIAgent
 
