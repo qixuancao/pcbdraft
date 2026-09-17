@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,6 +42,10 @@ class MCPToolSchemaCompatibilityTests(unittest.TestCase):
         self.assertEqual(
             mcp_tool.MCP_TOOL_NAME_PREFIX,
             mcp_tool_schema.MCP_TOOL_NAME_PREFIX,
+        )
+        self.assertIs(
+            mcp_tool._normalize_mcp_input_schema,
+            mcp_tool_schema._normalize_mcp_input_schema,
         )
 
     def test_legacy_name_wrappers_preserve_sanitizer_patch_path(self):
@@ -117,6 +122,71 @@ class MCPToolSchemaCompatibilityTests(unittest.TestCase):
 
 
 class MCPToolSchemaTests(unittest.TestCase):
+    def test_input_schema_normalization_is_recursive_and_non_mutating(self):
+        schema = {
+            "type": "object",
+            "definitions": {
+                "Thing": {
+                    "type": "object",
+                    "required": ["known", "missing"],
+                    "properties": {"known": {"type": "string"}},
+                }
+            },
+            "properties": {
+                "definitions": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "item": {"$ref": "#/definitions/Thing"},
+                "mode": {
+                    "anyOf": [
+                        {"const": "a"},
+                        {"const": "b"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
+                "nested": {
+                    "required": ["kept", "missing"],
+                    "properties": {"kept": {"type": "string"}},
+                },
+            },
+            "required": ["item", "missing"],
+        }
+        original = copy.deepcopy(schema)
+
+        normalized = mcp_tool._normalize_mcp_input_schema(schema)
+
+        self.assertEqual(schema, original)
+        self.assertNotIn("definitions", normalized)
+        self.assertEqual(
+            normalized["properties"]["definitions"],
+            {"type": "array", "items": {"type": "string"}},
+        )
+        self.assertEqual(normalized["properties"]["item"]["$ref"], "#/$defs/Thing")
+        self.assertEqual(normalized["required"], ["item"])
+        self.assertEqual(normalized["$defs"]["Thing"]["required"], ["known"])
+        self.assertEqual(
+            normalized["properties"]["mode"],
+            {
+                "type": "string",
+                "enum": ["a", "b"],
+                "nullable": True,
+                "default": None,
+            },
+        )
+        self.assertEqual(normalized["properties"]["nested"]["type"], "object")
+        self.assertEqual(normalized["properties"]["nested"]["required"], ["kept"])
+
+    def test_input_schema_normalization_repairs_empty_top_level(self):
+        expected = {"type": "object", "properties": {}}
+
+        self.assertEqual(mcp_tool_schema._normalize_mcp_input_schema(None), expected)
+        self.assertEqual(
+            mcp_tool_schema._normalize_mcp_input_schema({"type": "object"}),
+            expected,
+        )
+
     def test_filters_boolish_and_lifecycle_parsing(self):
         patterns = mcp_tool_schema._normalize_name_filter(
             ["read_exact", "list_*"],
