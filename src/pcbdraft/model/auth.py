@@ -96,6 +96,7 @@ from pcbdraft.model import auth_error_formatting as _auth_error_formatting
 from pcbdraft.model import auth_provider_endpoints as _auth_provider_endpoints
 from pcbdraft.model import auth_provider_policy as _auth_provider_policy
 from pcbdraft.model import auth_provider_state as _auth_provider_state
+from pcbdraft.model import auth_store_persistence as _auth_store_persistence
 from pcbdraft.model.configuration import (
     get_config_path,
     get_runtime_home,
@@ -731,115 +732,53 @@ def _oauth_trace(event: str, *, sequence_id: str | None = None, **fields: Any) -
 
 
 def _auth_file_path() -> Path:
-    path = get_runtime_home() / "auth.json"
-    # Seat belt: if pytest is running and PCBDRAFT_RUNTIME_HOME resolves to the real
-    # user's auth store, refuse rather than silently corrupt it. This catches
-    # tests that forgot to monkeypatch PCBDRAFT_RUNTIME_HOME, tests invoked without the
-    # hermetic conftest, or sandbox escapes via threads/subprocesses. In
-    # production (no PYTEST_CURRENT_TEST) this is a single dict lookup.
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        real_home_auth = (default_runtime_home() / "auth.json").resolve(strict=False)
-        try:
-            resolved = path.resolve(strict=False)
-        except Exception:
-            resolved = path
-        if resolved == real_home_auth:
-            raise RuntimeError(
-                f"Refusing to touch real user auth store during test run: {path}. "
-                "Set PCBDRAFT_RUNTIME_HOME to a tmp_path in your test fixture, or run "
-                "via scripts/run_tests.sh for hermetic CI-parity env."
-            )
-    return path
+    """Compatibility wrapper for active auth-store path resolution."""
+
+    return _auth_store_persistence._auth_file_path(
+        runtime_home_getter=get_runtime_home,
+        default_runtime_home_getter=default_runtime_home,
+        environment=os.environ,
+    )
 
 
 def _global_auth_file_path() -> Path | None:
-    """Return the global-root auth.json when the process is in profile mode.
+    """Compatibility wrapper for profile-to-global fallback path resolution."""
 
-    Returns ``None`` when the profile and global root resolve to the same
-    directory (classic mode, or custom PCBDRAFT_RUNTIME_HOME that is not a profile).
-    Used by read-only fallback paths so providers authed at the root are
-    visible to profile processes that haven't configured them locally.
+    return _auth_store_persistence._global_auth_file_path(
+        runtime_home_getter=get_runtime_home,
+    )
 
-    See issue #18594 follow-up (credential_pool shadowing).
-    """
-    try:
-        from pcbdraft.core.runtime_environment import get_default_runtime_root
 
-        global_root = get_default_runtime_root()
-    except Exception:
-        return None
-    profile_home = get_runtime_home()
-    try:
-        if profile_home.resolve(strict=False) == global_root.resolve(strict=False):
-            return None
-    except Exception:
-        if profile_home == global_root:
-            return None
-    # No pytest seat belt here: this is a pure read-only path, and
-    # ``_load_global_auth_store()`` wraps the read in a try/except so an
-    # unreadable global file can never break the profile process.  The
-    # write-side seat belt still lives on ``_auth_file_path()`` where it
-    # belongs (that's what protects the real user's auth store from being
-    # corrupted by a mis-configured test).
-    return global_root / "auth.json"
+def _get_global_auth_store_cache() -> tuple[str, int, dict[str, Any]] | None:
+    return _global_auth_store_cache
+
+
+def _set_global_auth_store_cache(
+    value: tuple[str, int, dict[str, Any]] | None,
+) -> None:
+    global _global_auth_store_cache
+    _global_auth_store_cache = value
 
 
 def _load_global_auth_store() -> dict[str, Any]:
-    """Load the global-root auth store (read-only fallback).
+    """Compatibility wrapper for the cached global fallback store."""
 
-    Returns an empty dict when no global fallback exists (classic mode,
-    or the global auth.json is absent). Never raises on missing file.
-
-    Memoised keyed on the global auth file's path + mtime (same pattern as
-    ``_nous_auth_status_cache``): read_credential_pool() -> load_pool() runs
-    this once per provider row in the /model picker, and the path resolution
-    (``_global_auth_file_path()`` -> ``get_default_runtime_root()``) + JSON
-    parse cost ~105us+ per call even when nothing changed. The global
-    store only changes when the user authenticates at global scope (writes
-    always go through _save_auth_store, which touches the file), so the mtime
-    key keeps the memo freshness-correct. Callers must treat the returned
-    store as read-only (all current callers do — .get / dict() / list()
-    copies only).
-    """
-    global _global_auth_store_cache
-    global_path = _global_auth_file_path()
-    if global_path is None or not global_path.exists():
-        _global_auth_store_cache = None
-        return {}
-    try:
-        resolved_path = str(global_path.resolve(strict=False))
-        mtime_ns = global_path.stat().st_mtime_ns
-        cache_key: tuple[str, int] | None = (resolved_path, mtime_ns)
-    except Exception:
-        cache_key = None
-    if cache_key is not None and _global_auth_store_cache is not None:
-        cached_path, cached_mtime, cached_store = _global_auth_store_cache
-        if cached_path == cache_key[0] and cached_mtime == cache_key[1]:
-            return cached_store
-    if os.environ.get("PYTEST_CURRENT_TEST"):
-        real_home_env = os.environ.get("HOME", "")
-        if real_home_env:
-            real_root = default_runtime_home() / "auth.json"
-            try:
-                if global_path.resolve(strict=False) == real_root.resolve(strict=False):
-                    _global_auth_store_cache = None
-                    return {}
-            except Exception:
-                pass
-    try:
-        store = _load_auth_store(global_path)
-    except Exception:
-        # A malformed global store must not break profile reads. The
-        # profile's own auth store is still authoritative.
-        _global_auth_store_cache = None
-        return {}
-    if cache_key is not None:
-        _global_auth_store_cache = (cache_key[0], cache_key[1], store)
-    return store
+    return _auth_store_persistence._load_global_auth_store(
+        global_auth_file_path=_global_auth_file_path,
+        load_auth_store=_load_auth_store,
+        cache_getter=_get_global_auth_store_cache,
+        cache_setter=_set_global_auth_store_cache,
+        default_runtime_home_getter=default_runtime_home,
+        environment=os.environ,
+    )
 
 
 def _auth_lock_path() -> Path:
-    return _auth_file_path().with_suffix(".lock")
+    """Compatibility wrapper for the active auth lock path."""
+
+    return _auth_store_persistence._auth_lock_path(
+        auth_file_path=_auth_file_path,
+    )
 
 
 _auth_target_lock_holders: dict[str, threading.local] = {}
@@ -847,20 +786,20 @@ _auth_target_lock_holders_guard = threading.Lock()
 
 
 def _same_path(left: Path, right: Path) -> bool:
-    try:
-        return left.resolve(strict=False) == right.resolve(strict=False)
-    except Exception:
-        return left == right
+    """Compatibility wrapper for resilient canonical path comparison."""
+
+    return _auth_store_persistence._same_path(left, right)
 
 
 def _auth_lock_holder_for(target_path: Path) -> threading.local:
-    """Return a reentrancy tracker keyed to one canonical auth-store path."""
-    try:
-        key = str(target_path.resolve(strict=False))
-    except Exception:
-        key = str(target_path)
-    with _auth_target_lock_holders_guard:
-        return _auth_target_lock_holders.setdefault(key, threading.local())
+    """Compatibility wrapper preserving auth lock-holder state ownership."""
+
+    return _auth_store_persistence._auth_lock_holder_for(
+        target_path,
+        holders=_auth_target_lock_holders,
+        holders_guard=_auth_target_lock_holders_guard,
+        local_factory=threading.local,
+    )
 
 
 @contextmanager
@@ -870,69 +809,19 @@ def _file_lock(
     timeout_seconds: float,
     timeout_message: str,
 ):
-    """Cross-process advisory flock helper.
+    """Compatibility wrapper preserving platform lock and clock patch paths."""
 
-    Reentrant per-thread via ``holder.depth``. Falls back to a depth-only
-    guard when neither ``fcntl`` nor ``msvcrt`` is available (rare).
-    Callers supply their own ``threading.local`` so independent locks
-    (e.g. profile auth.json vs shared Nous store) don't share reentrancy
-    state — that would let one lock's reentrant acquisition silently skip
-    the other's kernel-level flock.
-    """
-    if getattr(holder, "depth", 0) > 0:
-        holder.depth += 1
-        try:
-            yield
-        finally:
-            holder.depth -= 1
-        return
-
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if fcntl is None and msvcrt is None:
-        holder.depth = 1
-        try:
-            yield
-        finally:
-            holder.depth = 0
-        return
-
-    # On Windows, msvcrt.locking needs the file to have content and the
-    # file pointer at position 0. Ensure the lock file has at least 1 byte.
-    if msvcrt and (not lock_path.exists() or lock_path.stat().st_size == 0):
-        lock_path.write_text(" ", encoding="utf-8")
-
-    with lock_path.open("r+" if msvcrt else "a+", encoding="utf-8") as lock_file:
-        deadline = time.monotonic() + max(1.0, timeout_seconds)
-        while True:
-            try:
-                if fcntl:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                else:
-                    lock_file.seek(0)
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_NBLCK, 1)
-                break
-            except (BlockingIOError, OSError, PermissionError) as exc:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError(timeout_message) from exc
-                time.sleep(0.05)
-
-        holder.depth = 1
-        try:
-            yield
-        finally:
-            holder.depth = 0
-            if fcntl:
-                try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                except OSError:
-                    pass
-            elif msvcrt:
-                try:
-                    lock_file.seek(0)
-                    msvcrt.locking(lock_file.fileno(), msvcrt.LK_UNLCK, 1)
-                except OSError:
-                    pass
+    with _auth_store_persistence._file_lock(
+        lock_path,
+        holder,
+        timeout_seconds,
+        timeout_message,
+        fcntl_module=fcntl,
+        msvcrt_module=msvcrt,
+        monotonic=time.monotonic,
+        sleep=time.sleep,
+    ):
+        yield
 
 
 @contextmanager
@@ -941,178 +830,52 @@ def _auth_store_lock(
     *,
     target_path: Path | None = None,
 ):
-    """Cross-process advisory lock for one auth.json read/write transaction.
+    """Compatibility wrapper for active and targeted auth-store locks."""
 
-    ``target_path`` is required for profile-to-global write-throughs. A profile
-    lock does not protect the distinct global auth store; each path therefore
-    uses its own reentrancy tracker and kernel lock.
-
-    Lock ordering invariant: when this lock is held together with
-    ``_nous_shared_store_lock``, acquire ``_auth_store_lock`` FIRST
-    (outer) and the shared Nous lock SECOND (inner). All runtime
-    refresh paths follow this order; violating it risks deadlock
-    against a concurrent import on the shared store.
-    """
-    auth_path = target_path if target_path is not None else _auth_file_path()
-    lock_path = (
-        auth_path.with_suffix(".lock") if target_path is not None else _auth_lock_path()
-    )
-    with _file_lock(
-        lock_path,
-        _auth_lock_holder_for(auth_path),
+    with _auth_store_persistence._auth_store_lock(
         timeout_seconds,
-        "Timed out waiting for auth store lock",
+        target_path=target_path,
+        auth_file_path=_auth_file_path,
+        auth_lock_path=_auth_lock_path,
+        auth_lock_holder_for=_auth_lock_holder_for,
+        file_lock=_file_lock,
     ):
         yield
 
 
 def _load_auth_store(auth_file: Path | None = None) -> dict[str, Any]:
-    auth_file = auth_file or _auth_file_path()
-    if not auth_file.exists():
-        return {"version": AUTH_STORE_VERSION, "providers": {}}
+    """Compatibility wrapper for auth-store loading and migration."""
 
-    try:
-        raw = json.loads(auth_file.read_text(encoding="utf-8-sig"))
-    except OSError:
-        # The file exists (checked above) but could not be READ: EMFILE under
-        # fd exhaustion, EACCES, EIO, a stalled network mount. None of those
-        # mean the contents are bad, and this module does read-modify-write in
-        # ~15 places, so degrading to an empty store here is one
-        # _save_auth_store() away from erasing every stored credential.
-        # Fail loudly instead and leave the file on disk untouched.
-        logger.warning(
-            "auth: could not read %s, leaving the store on disk untouched "
-            "rather than degrading to an empty one",
-            auth_file,
-            exc_info=True,
-        )
-        raise
-    except Exception as exc:
-        # Genuine corruption: unparseable JSON, or bytes that are not UTF-8.
-        corrupt_path = auth_file.with_suffix(".json.corrupt")
-        preserved = False
-        try:
-            import shutil
-
-            shutil.copy2(auth_file, corrupt_path)
-            preserved = True
-        except Exception:
-            logger.debug(
-                "auth: could not preserve a copy of the corrupt store at %s",
-                corrupt_path,
-                exc_info=True,
-            )
-        if preserved:
-            logger.warning(
-                "auth: failed to parse %s (%s), starting with empty store. "
-                "Corrupt file preserved at %s",
-                auth_file,
-                exc,
-                corrupt_path,
-            )
-        else:
-            # Do not advertise a backup that was never written.
-            logger.warning(
-                "auth: failed to parse %s (%s), starting with empty store. "
-                "A copy could NOT be preserved at %s",
-                auth_file,
-                exc,
-                corrupt_path,
-            )
-        return {"version": AUTH_STORE_VERSION, "providers": {}}
-
-    if isinstance(raw, dict) and (
-        isinstance(raw.get("providers"), dict)
-        or isinstance(raw.get("credential_pool"), dict)
-    ):
-        raw.setdefault("providers", {})
-        if isinstance(raw.get("providers"), dict):
-            _migrate_stale_nous_portal_url(raw["providers"])
-        normalize_auth_store_sources(raw)
-        return raw
-
-    # Migrate from PR's "systems" format if present
-    if isinstance(raw, dict) and isinstance(raw.get("systems"), dict):
-        systems = raw["systems"]
-        providers = {}
-        if "nous_portal" in systems:
-            providers["nous"] = systems["nous_portal"]
-        return {
-            "version": AUTH_STORE_VERSION,
-            "providers": providers,
-            "active_provider": "nous" if providers else None,
-        }
-
-    return {"version": AUTH_STORE_VERSION, "providers": {}}
+    return _auth_store_persistence._load_auth_store(
+        auth_file,
+        auth_file_path=_auth_file_path,
+        auth_store_version=AUTH_STORE_VERSION,
+        migrate_stale_nous_portal_url=_migrate_stale_nous_portal_url,
+        normalize_auth_store_sources=normalize_auth_store_sources,
+        runtime_logger=logger,
+    )
 
 
 def _save_auth_store(
     auth_store: dict[str, Any], target_path: Path | None = None
 ) -> Path:
-    # target_path=None preserves the existing contract (write the active
-    # store at _auth_file_path()). An explicit path lets callers persist a
-    # specific store — e.g. the global-root write-through for rotating xAI
-    # OAuth grants (#43589) — reusing this function's atomic O_EXCL + 0o600
-    # write so the root auth.json gets the same TOCTOU-safe treatment.
-    auth_file = target_path if target_path is not None else _auth_file_path()
-    auth_file.parent.mkdir(parents=True, exist_ok=True)
-    # Tighten parent dir to 0o700 so siblings can't traverse to creds.
-    # No-op on Windows (POSIX mode bits not enforced); ignore failures.
-    # secure_parent_dir refuses to chmod / or top-level dirs (#25821).
-    secure_parent_dir(auth_file)
-    auth_store["version"] = AUTH_STORE_VERSION
-    auth_store["updated_at"] = datetime.now(UTC).isoformat()
-    normalize_auth_store_sources(auth_store)
-    pool = auth_store.get("credential_pool")
-    if isinstance(pool, dict):
-        for provider, entries in pool.items():
-            if isinstance(entries, list):
-                pool[provider] = [
-                    sanitize_borrowed_credential_payload(entry, provider)
-                    if isinstance(entry, dict)
-                    else entry
-                    for entry in entries
-                ]
-    payload = json.dumps(auth_store, indent=2) + "\n"
-    tmp_path = auth_file.with_name(
-        f"{auth_file.name}.tmp.{os.getpid()}.{uuid.uuid4().hex}"
+    """Compatibility wrapper for atomic auth-store persistence."""
+
+    return _auth_store_persistence._save_auth_store(
+        auth_store,
+        target_path,
+        auth_file_path=_auth_file_path,
+        auth_store_version=AUTH_STORE_VERSION,
+        secure_parent=secure_parent_dir,
+        updated_at=lambda: datetime.now(UTC).isoformat(),
+        normalize_auth_store_sources=normalize_auth_store_sources,
+        sanitize_borrowed_credential_payload=sanitize_borrowed_credential_payload,
+        atomic_replace=atomic_replace,
+        os_module=os,
+        stat_module=stat,
+        json_dumps=json.dumps,
+        uuid4=uuid.uuid4,
     )
-    try:
-        # Create with 0o600 atomically via os.open(O_EXCL) + fdopen to close
-        # the TOCTOU window where default umask (often 0o644) briefly exposed
-        # OAuth tokens to other local users between open() and chmod().
-        # Mirrors agent/google_oauth.py (#19673) and tools/mcp_oauth.py (#21148).
-        fd = os.open(
-            str(tmp_path),
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
-            stat.S_IRUSR | stat.S_IWUSR,
-        )
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        atomic_replace(tmp_path, auth_file)
-        try:
-            dir_fd = os.open(str(auth_file.parent), os.O_RDONLY)
-        except OSError:
-            dir_fd = None
-        if dir_fd is not None:
-            try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-    finally:
-        try:
-            if tmp_path.exists():
-                tmp_path.unlink()
-        except OSError:
-            pass
-    # Restrict file permissions to owner only
-    try:
-        auth_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
-    except OSError:
-        pass
-    return auth_file
 
 
 def _load_provider_state_with_source(
@@ -1128,21 +891,13 @@ def _load_provider_state_with_source(
     the profile would leave the global/root store stale and cause the next
     process to replay an already-consumed refresh token.
     """
-    providers = auth_store.get("providers")
-    if isinstance(providers, dict):
-        state = providers.get(provider_id)
-        if isinstance(state, dict):
-            return dict(state), _auth_file_path()
-
-    global_path = _global_auth_file_path()
-    global_store = _load_global_auth_store()
-    if global_store:
-        global_providers = global_store.get("providers")
-        if isinstance(global_providers, dict):
-            global_state = global_providers.get(provider_id)
-            if isinstance(global_state, dict):
-                return dict(global_state), global_path
-    return None, None
+    return _auth_store_persistence._load_provider_state_with_source(
+        auth_store,
+        provider_id,
+        auth_file_path=_auth_file_path,
+        global_auth_file_path=_global_auth_file_path,
+        load_global_auth_store=_load_global_auth_store,
+    )
 
 
 @contextmanager
@@ -1154,26 +909,15 @@ def _provider_state_transaction(provider_id: str):
     target lock is acquired prevents both stale refreshes and whole-file lost
     updates without inverting the documented auth -> shared lock order.
     """
-    with _auth_store_lock():
-        auth_store = _load_auth_store()
-        state, source_path = _load_provider_state_with_source(
-            auth_store,
-            provider_id,
-        )
-        active_path = _auth_file_path()
-        if source_path is None or _same_path(source_path, active_path):
-            yield auth_store, state, source_path
-            return
-
-        with _auth_store_lock(target_path=source_path):
-            source_store = _load_auth_store(source_path)
-            source_providers = source_store.get("providers")
-            source_state = None
-            if isinstance(source_providers, dict):
-                raw_state = source_providers.get(provider_id)
-                if isinstance(raw_state, dict):
-                    source_state = dict(raw_state)
-            yield auth_store, source_state, source_path
+    with _auth_store_persistence._provider_state_transaction(
+        provider_id,
+        auth_store_lock=_auth_store_lock,
+        load_auth_store=_load_auth_store,
+        load_provider_state_with_source=_load_provider_state_with_source,
+        auth_file_path=_auth_file_path,
+        same_path=_same_path,
+    ) as transaction:
+        yield transaction
 
 
 def _load_provider_state(
@@ -1189,19 +933,19 @@ def _load_provider_state(
     the profile, the profile state fully shadows the global state on the next
     read. See issue #18594 follow-up.
     """
-    state, _source_path = _load_provider_state_with_source(auth_store, provider_id)
-    return state
+    return _auth_store_persistence._load_provider_state(
+        auth_store,
+        provider_id,
+        load_provider_state_with_source=_load_provider_state_with_source,
+    )
 
 
 def _save_provider_state(
     auth_store: dict[str, Any], provider_id: str, state: dict[str, Any]
 ) -> None:
-    providers = auth_store.setdefault("providers", {})
-    if not isinstance(providers, dict):
-        auth_store["providers"] = {}
-        providers = auth_store["providers"]
-    providers[provider_id] = state
-    auth_store["active_provider"] = provider_id
+    """Compatibility wrapper for storing the active provider state."""
+
+    _auth_store_persistence._save_provider_state(auth_store, provider_id, state)
 
 
 def _save_provider_state_to_source(
@@ -1211,25 +955,16 @@ def _save_provider_state_to_source(
     source_path: Path | None,
 ) -> None:
     """Persist provider state back to the auth store it was read from."""
-    active_path = _auth_file_path()
-    if source_path is None:
-        source_path = active_path
-    try:
-        same_store = source_path.resolve(strict=False) == active_path.resolve(
-            strict=False
-        )
-    except Exception:
-        same_store = source_path == active_path
-    if same_store:
-        _save_provider_state(auth_store, provider_id, state)
-        _save_auth_store(auth_store)
-        return
-
-    _persist_provider_state_to_store(
+    _auth_store_persistence._save_provider_state_to_source(
+        auth_store,
         provider_id,
         state,
         source_path,
-        set_active=True,
+        auth_file_path=_auth_file_path,
+        same_path=_same_path,
+        save_provider_state=_save_provider_state,
+        save_auth_store=_save_auth_store,
+        persist_provider_state_to_store=_persist_provider_state_to_store,
     )
 
 
@@ -1240,13 +975,14 @@ def _store_provider_state(
     *,
     set_active: bool = True,
 ) -> None:
-    providers = auth_store.setdefault("providers", {})
-    if not isinstance(providers, dict):
-        auth_store["providers"] = {}
-        providers = auth_store["providers"]
-    providers[provider_id] = state
-    if set_active:
-        auth_store["active_provider"] = provider_id
+    """Compatibility wrapper for in-memory provider-state updates."""
+
+    _auth_store_persistence._store_provider_state(
+        auth_store,
+        provider_id,
+        state,
+        set_active=set_active,
+    )
 
 
 # Compatibility re-exports for provider secret and endpoint resolution. The
@@ -1302,16 +1038,18 @@ def _persist_provider_state_to_store(
     *,
     set_active: bool = False,
 ) -> Path:
-    """Merge one provider into a specific auth store under that store's lock."""
-    with _auth_store_lock(target_path=target_path):
-        auth_store = _load_auth_store(target_path)
-        _store_provider_state(
-            auth_store,
-            provider_id,
-            dict(state),
-            set_active=set_active,
-        )
-        return _save_auth_store(auth_store, target_path=target_path)
+    """Compatibility wrapper for targeted provider-state persistence."""
+
+    return _auth_store_persistence._persist_provider_state_to_store(
+        provider_id,
+        state,
+        target_path,
+        set_active=set_active,
+        auth_store_lock=_auth_store_lock,
+        load_auth_store=_load_auth_store,
+        store_provider_state=_store_provider_state,
+        save_auth_store=_save_auth_store,
+    )
 
 
 def mark_provider_active_if_unset(provider_id: str) -> None:
