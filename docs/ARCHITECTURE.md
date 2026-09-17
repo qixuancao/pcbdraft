@@ -181,7 +181,8 @@ records.
   `services.session_db_search_metrics` own titles/visibility/read state, list and
   usage projections, search, and lightweight store metrics.
 - `services.session_db_deletion` and `services.session_db_pruning` own explicit
-  deletion/file cleanup and archive/prune/stale-marker maintenance.
+  deletion/file cleanup, archive/prune/stale-marker maintenance, empty TUI
+  ghost removal, and orphaned-compression finalization.
 - `services.session_db_maintenance` owns size measurement, compaction, FTS
   merging, checkpointing, and best-effort automatic maintenance workflows.
 - `services.session_db_meta_store` owns namespaced `state_meta` values and the
