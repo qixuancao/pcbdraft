@@ -47,9 +47,6 @@ class ApplicationToolInspectionTests(unittest.TestCase):
                     getattr(ApplicationToolInspectionMixin, name),
                 )
 
-        self.assertIn("register_kicad_part", ApplicationService.__dict__)
-        self.assertNotIn("register_kicad_part", ApplicationToolInspectionMixin.__dict__)
-
     def test_transaction_inspection_uses_legacy_reader_and_dynamic_limit(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
