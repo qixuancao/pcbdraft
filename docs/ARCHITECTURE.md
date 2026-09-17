@@ -105,6 +105,8 @@ whole-repository regression run or a release gate.
   and route-retry projections.
 - `services.application_project_store` owns bounded project-record loading,
   validated paths, atomic record/event writes, attempt reads, and public views.
+- `services.application_project_lifecycle` owns private draft construction and
+  publication of new project identities.
 - `services.application_semantic_operations` owns semantic-operation argument
   normalization and grouped-operation preflight checks.
 - `services.application_external_revision` owns review and explicit import of
@@ -117,6 +119,8 @@ whole-repository regression run or a release gate.
   project revision for review.
 - `services.application_modification_revert` owns discard and atomic undo flows
   for staged or applied project revisions.
+- `services.application_product_session` owns immutable terminal-outcome
+  receipts for product-session turns.
 
 `services.application.ApplicationService` remains the composition root and the
 only project mutation, transaction, publication, and project-state authority.
@@ -139,10 +143,14 @@ The extracted modules do not create a parallel application service.
   usage projections, search, and lightweight store metrics.
 - `services.session_db_deletion` and `services.session_db_pruning` own explicit
   deletion/file cleanup and archive/prune/stale-marker maintenance.
+- `services.session_db_maintenance` owns size measurement, compaction, FTS
+  merging, checkpointing, and best-effort automatic maintenance workflows.
 - `services.session_db_meta_store` owns namespaced `state_meta` values and the
   one-time kanban compatibility gates.
 - `services.session_db_telegram_topics` owns Telegram DM topic-mode opt-in state
   and durable chat/thread-to-session bindings.
+- `services.session_db_handoff` owns the durable cross-platform
+  pending-to-running-to-completed-or-failed handoff state machine.
 
 `services.session_db.SessionDB` remains the authoritative durable session store
 and composition root. It owns connection and schema lifecycle and supplies the
@@ -162,6 +170,9 @@ state and compatibility hooks used by these mixins; none imports the
 - `agent.memory_lifecycle`, `agent.activity_tracking`, and
   `agent.client_lifecycle` own external-memory synchronization, activity/rate
   limit/credit observations, and best-effort resource teardown.
+- `agent.session_persistence` owns persistence-time message cleanup, user-message
+  override projection, append batching and intrinsic-marker deduplication, plus
+  bounded adoption of a live compression continuation.
 
 `agent.loop.AIAgent` still composes those mixins and owns the model turn,
 conversation control, and tool loop. The extracted modules preserve historical
