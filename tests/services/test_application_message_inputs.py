@@ -46,7 +46,6 @@ class ApplicationMessageInputTests(unittest.TestCase):
             "reply_message",
             "send_message",
             "_record_failure",
-            "apply_modification",
             "verify_release",
         ):
             with self.subTest(retained=retained):

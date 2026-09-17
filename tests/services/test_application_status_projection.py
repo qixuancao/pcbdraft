@@ -52,8 +52,6 @@ class ApplicationStatusProjectionTests(unittest.TestCase):
             "_managed_progress_and_stage",
             "record_progress",
             "send_message",
-            "prepare_agent_repair",
-            "apply_modification",
             "verify_release",
         ):
             with self.subTest(retained=retained):

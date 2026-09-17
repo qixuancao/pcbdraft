@@ -50,7 +50,6 @@ class ApplicationProjectQueriesTests(unittest.TestCase):
             "_use_repository",
             "create_project",
             "record_progress",
-            "prepare_agent_repair",
         ):
             with self.subTest(retained=retained):
                 self.assertIn(retained, ApplicationService.__dict__)
