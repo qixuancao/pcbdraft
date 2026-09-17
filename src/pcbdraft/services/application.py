@@ -115,6 +115,9 @@ from pcbdraft.services.application_project_queries import (
     ApplicationProjectQueriesMixin,
 )
 from pcbdraft.services.application_release import ApplicationReleaseMixin
+from pcbdraft.services.application_status_projection import (
+    ApplicationStatusProjectionMixin,
+)
 from pcbdraft.services.application_tool_inspection import (
     ApplicationToolInspectionMixin,
 )
@@ -401,6 +404,7 @@ class ApplicationService(
     ApplicationProjectQueriesMixin,
     ApplicationProjectLifecycleMixin,
     ApplicationReleaseMixin,
+    ApplicationStatusProjectionMixin,
     ApplicationModificationRevertMixin,
     ApplicationModificationPreviewMixin,
     ApplicationValidationMixin,
@@ -408,6 +412,18 @@ class ApplicationService(
     ApplicationProjectStoreMixin,
 ):
     """Single write authority for product projects and their engineering runtime."""
+
+    @staticmethod
+    def _status_doctor_report() -> dict[str, Any]:
+        """Preserve the historical application.doctor_report patch point."""
+
+        return doctor_report()
+
+    @staticmethod
+    def _status_validation_run_id_matches(value: str) -> bool:
+        """Preserve the historical application.re patch point."""
+
+        return bool(re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}", value))
 
     @staticmethod
     def _message_input_safe_text(value: Any, field: str, *, limit: int) -> str:
@@ -966,65 +982,6 @@ class ApplicationService(
                 f"{expected_revision}, current {current_revision}"
             )
         return expected_revision
-
-    def diagnostics(self) -> dict[str, Any]:
-        from pcbdraft.model.tool_calls import provider_agent_protocol
-
-        tools = doctor_report()
-        library_tables = tools["library_tables"]
-        libraries_ready = all(item["configured"] for item in library_tables.values())
-        library_data_ready = all(
-            item["available"] for item in tools["library_data"].values()
-        )
-        return {
-            "schema": "pcbdraft-first-run-diagnostics",
-            "version": 1,
-            "workspace": str(self.root),
-            "repository": {
-                "root": str(self.root),
-                "projects_root": str(self.projects_root),
-                "source": self.repository_source,
-            },
-            "loopback_default": True,
-            "provider": (
-                self.provider.diagnostic()
-                if self.provider is not None
-                else {
-                    "id": "unconfigured",
-                    "available": False,
-                    "planning": (
-                        "no model provider configured; run `pcbdraft connect` or /connect"
-                    ),
-                }
-            ),
-            "agent_orchestration": {
-                "router": provider_agent_protocol(self.provider),
-                "workflow": "local-evidence-policy",
-                "model_decisions_per_turn": 1,
-                "parallel_tool_calls": False,
-                "engineering_authority": "local registry, permissions, revision CAS, and validation gates",
-            },
-            "tools": tools["tools"],
-            "kicad_library_tables": library_tables,
-            "kicad_library_data": tools["library_data"],
-            "ready_for_generation": (
-                tools["ok"] and libraries_ready and library_data_ready
-            ),
-            "generation_runtime": {
-                "architecture": "requirements -> circuit plan -> local KiCad symbols -> semantic IR -> transactional KiCad",
-                "product_path": "generic_agent_plan",
-                "component_libraries": "installed stock KiCad symbols and footprints only",
-                "validation_note": "results state only what PCBDraft and KiCad actually checked",
-            },
-            "credential_guidance": {
-                "config": "Use `pcbdraft connect` or /connect; credentials stay in PCBDraft's private Hermes home.",
-                "persistence": "Credential values are never written to project records or model receipts.",
-                "kicad": (
-                    "Run `pcbdraft setup` to detect a compatible KiCad 10.0.x "
-                    "runtime and initialize missing stock-library tables."
-                ),
-            },
-        }
 
     def create_project(self, name: str, request: str) -> dict[str, Any]:
         draft = self.create_draft(name)
@@ -1962,38 +1919,6 @@ class ApplicationService(
             revision,
         )
         return progress, stage
-
-    def inspect_engineering_stage(self, project_id: str) -> dict[str, Any]:
-        """Return the evidence-derived stage bound to both live revisions.
-
-        This internal adapter surface exists so provider schema projection can
-        cache a stage only while the project and design revisions are unchanged.
-        It deliberately returns no model-selectable stage input.  The evidence
-        identity is the bounded retained validation run id, not an additional
-        cryptographic audit digest.
-        """
-
-        project = self._open(project_id)
-        _progress, stage = self._current_progress_and_stage(project)
-        retained_validation = project.state.get("last_validation")
-        validation_run_id = (
-            retained_validation.get("run_id")
-            if isinstance(retained_validation, Mapping)
-            else None
-        )
-        evidence_source = (
-            f"validation-run:{validation_run_id}"
-            if isinstance(validation_run_id, str)
-            and re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}", validation_run_id)
-            else "validation-run:none"
-        )
-        return {
-            "project_id": project_id,
-            "live_revision": int(project.state["revision"]),
-            "design_revision": int(project.state["design_revision"]),
-            "evidence_source": evidence_source,
-            **stage.to_dict(),
-        }
 
     def _managed_progress_and_stage(
         self,
