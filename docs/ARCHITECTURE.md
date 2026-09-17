@@ -270,6 +270,10 @@ compatibility hooks without importing `agent.loop`.
   Responses-to-chat-completions shape recovery, and visible-content versus
   structured-reasoning text projection. It performs no network, credential,
   routing, accounting, or relay work.
+- `model.auxiliary_input_helpers` owns the defensive type probe and pure URL
+  query-default split used by auxiliary endpoint setup. It reads no runtime
+  state and owns no request, transport, credential, provider, fallback, cache,
+  accounting, or relay policy.
 - `model.auxiliary_provider_config` owns provider/model catalog rules, endpoint
   normalization, and request-header construction.
 - `model.auxiliary_provider_failures` owns provider-failure and recoverability
@@ -277,10 +281,10 @@ compatibility hooks without importing `agent.loop`.
 - `model.auxiliary_fallbacks` owns auxiliary-provider health state, fallback
   destination planning, and synchronous/asynchronous fallback-chain execution.
 
-`model.auxiliary_client` remains responsible for request construction and HTTP
-dispatch, credential resolution, provider selection and fallback-chain
-integration, pooling and client/cache orchestration, `call_llm`, usage
-accounting, and relay completion.
+`model.auxiliary_client` remains responsible for runtime state and endpoint or
+proxy validation, request construction and HTTP dispatch, credential
+resolution, provider selection and fallback-chain integration, pooling and
+client/cache orchestration, `call_llm`, usage accounting, and relay completion.
 `model.auth` composes the authentication boundaries and coordinates OAuth/token
 lifecycle, top-level `resolve_provider`, and runtime credential resolution.
 
