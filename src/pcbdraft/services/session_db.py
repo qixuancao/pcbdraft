@@ -69,6 +69,7 @@ from pcbdraft.services.session_db_fts_integrity import SessionFTSIntegrityMixin
 from pcbdraft.services.session_db_handoff import SessionHandoffMixin
 from pcbdraft.services.session_db_inspection import SessionInspectionMixin
 from pcbdraft.services.session_db_lifecycle import SessionLifecycleMixin
+from pcbdraft.services.session_db_lineage import SessionLineageMixin
 from pcbdraft.services.session_db_listing import SessionListingMixin
 from pcbdraft.services.session_db_maintenance import SessionMaintenanceMixin
 from pcbdraft.services.session_db_meta_store import SessionMetaStoreMixin
@@ -2380,6 +2381,7 @@ class SessionDB(
     SessionConnectionMixin,
     SessionLifecycleMixin,
     SessionInspectionMixin,
+    SessionLineageMixin,
     SessionFTSIntegrityMixin,
     SessionHandoffMixin,
     SessionMaintenanceMixin,
@@ -2423,6 +2425,13 @@ class SessionDB(
     @staticmethod
     def _inspection_escape_like(value: str) -> str:
         return _escape_like(value)
+
+    # Compatibility hook for lineage classification moved to a mixin.
+    # Resolve the legacy module JSON decoder at call time so established
+    # monkeypatch paths remain effective without a reverse import.
+    @staticmethod
+    def _lineage_json_loads(value: str) -> Any:
+        return json.loads(value)
 
     # Compatibility hook for handoff reads moved to a mixin. Resolve the
     # legacy module logger at call time so existing monkeypatch paths remain
@@ -4588,92 +4597,6 @@ class SessionDB(
         {"system_prompt", "system_prompt_hash", "git_metadata_generation"}
     )
     _session_compact_cols_sql: str | None = None
-
-    # =========================================================================
-    # Export and cleanup
-    # =========================================================================
-
-    def _is_explicit_fork_child_row(self, session: dict[str, Any]) -> bool:
-        """True when ``session`` is a branch, delegate, or tool child of its parent.
-
-        Markers only count as a fork when they point at ``parent_session_id``.
-        Compression copies ``model_config`` onto the continuation
-        (``publish_compression_child`` callers pass
-        ``agent._session_init_model_config``), so a delegate's continuation
-        carries ``_delegate_from=<the delegate's own parent>``. Presence-only
-        matching would treat that real continuation as a fork — the same
-        misclassification ``_NON_CONTINUATION_CHILD_FILTER_SQL`` already
-        avoids by binding both markers to the queried parent.
-        """
-        if session.get("source") == "tool":
-            return True
-        raw = session.get("model_config")
-        if not raw:
-            return False
-        try:
-            cfg = json.loads(raw) if isinstance(raw, str) else raw
-        except (TypeError, json.JSONDecodeError):
-            return False
-        if not isinstance(cfg, dict):
-            return False
-        parent_id = session.get("parent_session_id")
-        branched = cfg.get("_branched_from")
-        delegated = cfg.get("_delegate_from")
-        if parent_id:
-            return branched == parent_id or delegated == parent_id
-        return branched is not None or delegated is not None
-
-    def _is_compression_child_row(self, child: dict[str, Any]) -> bool:
-        parent_id = child.get("parent_session_id")
-        if not parent_id or self._is_explicit_fork_child_row(child):
-            return False
-        parent = self.get_session(parent_id)
-        return bool(parent and parent.get("end_reason") == "compression")
-
-    def get_compression_lineage(self, session_id: str) -> list[str]:
-        """Return compression ancestors through tip in chronological order."""
-        session = self.get_session(session_id)
-        if not session or self._is_explicit_fork_child_row(session):
-            return [session_id] if session else []
-
-        root = session
-        ancestors = {root["id"]}
-        while self._is_compression_child_row(root):
-            parent = self.get_session(root["parent_session_id"])
-            if not parent or parent["id"] in ancestors:
-                break
-            root = parent
-            ancestors.add(root["id"])
-
-        lineage = [root["id"]]
-        seen = {root["id"]}
-        current = root
-        while current.get("end_reason") == "compression":
-            with self._lock:
-                rows = self._conn.execute(
-                    """
-                    SELECT * FROM sessions
-                    WHERE parent_session_id = ?
-                    ORDER BY started_at ASC
-                    """,
-                    (current["id"],),
-                ).fetchall()
-            next_child = None
-            for row in rows:
-                candidate = dict(row)
-                if self._is_compression_child_row(candidate):
-                    next_child = candidate
-                    break
-            if not next_child or next_child["id"] in seen:
-                break
-            lineage.append(next_child["id"])
-            seen.add(next_child["id"])
-            current = next_child
-            if current["id"] == session_id:
-                # Continue to include later compression tips only when the
-                # requested session itself was compacted.
-                continue
-        return lineage if session_id in lineage else [session_id]
 
     # ── Space reclamation ──
 
