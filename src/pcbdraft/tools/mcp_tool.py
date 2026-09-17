@@ -95,9 +95,7 @@ Thread safety:
 """
 
 import asyncio
-import concurrent.futures
 import contextvars
-import errno
 import inspect
 import json
 import logging
@@ -116,6 +114,7 @@ from typing import Any, Optional
 
 from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
 from pcbdraft.tools import mcp_content as _mcp_content
+from pcbdraft.tools import mcp_runtime_loop as _mcp_runtime_loop
 from pcbdraft.tools import mcp_tool_schema as _mcp_tool_schema
 from pcbdraft.tools.ansi_strip import strip_unicode_tags
 from pcbdraft.tools.registry import tool_error
@@ -4624,7 +4623,7 @@ _lock = threading.Lock()
 # Advisory file lock that prevents N concurrent Hermes processes (e.g.
 # gateway + CLI + TUI) from all running MCP discovery simultaneously.
 # See issue #62771.
-_LOCK_UNAVAILABLE: Any = object()  # sentinel: locking broken/unavailable
+_LOCK_UNAVAILABLE: Any = _mcp_runtime_loop._LOCK_UNAVAILABLE
 _MCP_DISCOVERY_LOCK_PATH: str | None = None  # resolved lazily
 
 # Retry constants for the bounded wait when another process holds the lock.
@@ -4632,114 +4631,32 @@ _MCP_DISCOVERY_LOCK_MAX_RETRIES: int = 240
 _MCP_DISCOVERY_LOCK_RETRY_DELAY_S: float = 0.5
 
 
-class _LockCookie:
-    """Holds a cross-process file lock; release() drops it.
-
-    On Windows the underlying file handle MUST stay alive while the lock is
-    held (portalocker keeps the kernel lock on the fd).  On POSIX the fcntl
-    lockdown is similarly tied to the file-descriptor lifetime.  We keep the
-    file object in ``_fh`` and close it on release.
-    """
-
-    def __init__(self, fh: Any) -> None:
-        self._fh = fh
-
-    def release(self) -> None:
-        if self._fh is not None:
-            try:
-                fd = self._fh.fileno()
-                if os.name == "posix":
-                    import fcntl
-
-                    try:
-                        fcntl.flock(fd, fcntl.LOCK_UN)
-                    except Exception:
-                        pass
-                else:
-                    import portalocker
-
-                    try:
-                        portalocker.unlock(self._fh)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-            try:
-                self._fh.close()
-            except Exception:
-                pass
-            self._fh = None
+_LockCookie = _mcp_runtime_loop._LockCookie
 
 
 def _acquire_lock_on_fh(fh: Any) -> bool:
-    """Acquire a non-blocking exclusive lock on an open file handle.
+    """Compatibility wrapper for the extracted non-blocking file lock."""
 
-    Uses ``fcntl.flock`` on POSIX and ``portalocker.lock`` on Windows.
+    return _mcp_runtime_loop._acquire_lock_on_fh(fh)
 
-    Returns ``True`` if the lock was acquired, ``False`` if another process
-    holds it (non-blocking refusal).  Raises ``RuntimeError`` on unexpected
-    errors so the caller can treat lock acquisition as unavailable.
-    """
-    fd = fh.fileno()
-    if os.name == "posix":
-        import fcntl
 
-        try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            return True
-        except OSError as e:
-            if e.errno in (errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK):
-                return False
-            raise
-    else:
-        import portalocker
+def _cache_mcp_discovery_lock_path(lock_path: str) -> None:
+    """Update the legacy lock-path cache used by discovery and its tests."""
 
-        try:
-            portalocker.lock(fh, portalocker.LOCK_EX | portalocker.LOCK_NB)
-            return True
-        except portalocker.LockException:
-            return False
+    global _MCP_DISCOVERY_LOCK_PATH
+    _MCP_DISCOVERY_LOCK_PATH = lock_path
 
 
 def _try_acquire_mcp_discovery_lock() -> Any:
-    """Try to acquire an exclusive cross-process lock for MCP discovery.
+    """Compatibility wrapper preserving legacy lock hooks and cache state."""
 
-    Returns
-    -------
-    _LockCookie
-        Lock acquired successfully.
-    None
-        Another process holds the lock (non-blocking refusal).
-    _LOCK_UNAVAILABLE
-        Locking mechanism is broken or unavailable -- caller should run
-        discovery unguarded.
-    """
-    global _MCP_DISCOVERY_LOCK_PATH
-    try:
-        from pcbdraft.core.runtime_environment import get_runtime_home
-
-        if _MCP_DISCOVERY_LOCK_PATH is None:
-            _MCP_DISCOVERY_LOCK_PATH = str(get_runtime_home() / ".mcp-discovery.lock")
-        lock_path = _MCP_DISCOVERY_LOCK_PATH
-    except Exception:
-        return _LOCK_UNAVAILABLE
-
-    try:
-        fh = open(lock_path, "w", encoding="utf-8")
-    except Exception:
-        return _LOCK_UNAVAILABLE
-
-    try:
-        acquired = _acquire_lock_on_fh(fh)
-    except Exception:
-        fh.close()
-        return _LOCK_UNAVAILABLE
-
-    if acquired:
-        return _LockCookie(fh)
-    else:
-        fh.close()
-        return None
+    return _mcp_runtime_loop._try_acquire_mcp_discovery_lock(
+        lock_path=_MCP_DISCOVERY_LOCK_PATH,
+        cache_lock_path=_cache_mcp_discovery_lock_path,
+        lock_unavailable=_LOCK_UNAVAILABLE,
+        acquire_lock_on_fh=_acquire_lock_on_fh,
+        lock_cookie_factory=_LockCookie,
+    )
 
 
 # PIDs of stdio MCP server subprocesses.  Tracked so we can force-kill
@@ -4771,30 +4688,9 @@ _stdio_pgids: dict[int, int] = {}  # pid -> pgid
 
 
 def _snapshot_child_pids() -> set:
-    """Return a set of current child process PIDs.
+    """Compatibility wrapper for child-process snapshotting."""
 
-    Uses /proc on Linux, falls back to psutil, then empty set.
-    Used by _run_stdio to identify the subprocess spawned by stdio_client.
-    """
-    my_pid = os.getpid()
-
-    # Linux: read from /proc
-    try:
-        children_path = f"/proc/{my_pid}/task/{my_pid}/children"
-        with open(children_path, encoding="utf-8") as f:
-            return {int(p) for p in f.read().split() if p.strip()}
-    except (FileNotFoundError, OSError, ValueError):
-        pass
-
-    # Fallback: psutil
-    try:
-        import psutil
-
-        return {c.pid for c in psutil.Process(my_pid).children()}
-    except Exception:
-        pass
-
-    return set()
+    return _mcp_runtime_loop._snapshot_child_pids()
 
 
 # Non-MCP gateway children that can race into the _snapshot_child_pids() delta
@@ -4803,213 +4699,77 @@ def _snapshot_child_pids() -> set:
 # non-MCP child spawn that briefly appears in the MCP snapshot delta. Match
 # argv markers instead of argv[0] because Python/Java children begin with the
 # interpreter or binary path.
-_NON_MCP_CHILD_CMDLINE_MARKERS: tuple[str, ...] = (
-    "tui_gateway.slash_worker",
-    "tui_gateway.entry",
-    "-dorg.eclipse.equinox.launcher",  # jdtls (legacy arg style)
-    "eclipse.jdt.ls",
-    "org.eclipse.equinox.launcher_",
-)
+_NON_MCP_CHILD_CMDLINE_MARKERS = _mcp_runtime_loop._NON_MCP_CHILD_CMDLINE_MARKERS
 
 
 def _filter_mcp_children(pids: set) -> set:
-    """Remove non-MCP children from a PID snapshot delta.
+    """Compatibility wrapper preserving the legacy marker patch path."""
 
-    _snapshot_child_pids() returns *all* direct children of the gateway. When
-    a stdio MCP server spawns concurrently with a slash_worker or LSP server
-    spawn, the delta ``_snapshot_child_pids() - pids_before`` can include
-    PIDs that are NOT the MCP server. Tracking those PIDs in _stdio_pgids is
-    catastrophic if a future child lacks start_new_session: its pgid can be the
-    TUI parent's PID, so the shutdown sweep's killpg() kills the TUI itself.
-    """
-    if not pids:
-        return pids
-    try:
-        import psutil
-    except ImportError:
-        # psutil unavailable — keep all PIDs (preserves prior behavior).
-        return pids
-    filtered: set = set()
-    for pid in pids:
-        try:
-            argv = psutil.Process(pid).cmdline()
-        except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
-            # Process raced away or is a zombie — skip it; it cannot be the
-            # MCP server we just spawned and is not safe to track.
-            continue
-        if any(
-            marker in arg
-            for arg in argv[1:]
-            for marker in _NON_MCP_CHILD_CMDLINE_MARKERS
-        ):
-            continue
-        filtered.add(pid)
-    return filtered
+    return _mcp_runtime_loop._filter_mcp_children(
+        pids,
+        non_mcp_markers=_NON_MCP_CHILD_CMDLINE_MARKERS,
+    )
 
 
 def _mcp_loop_exception_handler(loop, context):
-    """Suppress benign 'Event loop is closed' noise during shutdown.
+    """Compatibility wrapper for the MCP loop exception policy."""
 
-    When the MCP event loop is stopped and closed, httpx/httpcore async
-    transports may fire __del__ finalizers that call call_soon() on the
-    dead loop.  asyncio catches that RuntimeError and routes it here.
-    We silence it because the connection is being torn down anyway; all
-    other exceptions are forwarded to the default handler.
-    """
-    exc = context.get("exception")
-    if isinstance(exc, RuntimeError) and "Event loop is closed" in str(exc):
-        return  # benign shutdown race — suppress
-    loop.default_exception_handler(context)
+    return _mcp_runtime_loop._mcp_loop_exception_handler(loop, context)
 
 
 def _ensure_mcp_loop():
-    """Start the background event loop thread if not already running."""
+    """Start the shared MCP loop while retaining legacy state ownership."""
+
     global _mcp_loop, _mcp_thread
     with _lock:
-        if _mcp_loop is not None and _mcp_loop.is_running():
-            return
-        _mcp_loop = asyncio.new_event_loop()
-        _mcp_loop.set_exception_handler(_mcp_loop_exception_handler)
-        _mcp_thread = threading.Thread(
-            target=_mcp_loop.run_forever,
-            name="mcp-event-loop",
-            daemon=True,
+        loop, thread = _mcp_runtime_loop._ensure_mcp_loop(
+            _mcp_loop,
+            exception_handler=_mcp_loop_exception_handler,
+            event_loop_factory=asyncio.new_event_loop,
+            thread_factory=threading.Thread,
         )
-        _mcp_thread.start()
+        if thread is None:
+            return
+        _mcp_loop = loop
+        _mcp_thread = thread
 
 
 def _wrap_with_home_override(coro: "Coroutine") -> "Coroutine":
-    """Carry the caller's context-local PCBDRAFT_RUNTIME_HOME override into ``coro``.
+    """Compatibility wrapper for runtime-home context propagation."""
 
-    Returns ``coro`` unchanged when no override is active. Otherwise wraps
-    it so the override is set inside the coroutine's own (task-local)
-    context on the MCP loop and reset when it completes — concurrent calls
-    carrying different scopes don't interfere.
-    """
-    try:
-        from pcbdraft.core.runtime_environment import (
-            get_runtime_home_override,
-            reset_runtime_home_override,
-            set_runtime_home_override,
-        )
-
-        home_override = get_runtime_home_override()
-    except Exception:
-        return coro
-    if not home_override:
-        return coro
-
-    async def _scoped():
-        token = set_runtime_home_override(home_override)
-        try:
-            return await coro
-        finally:
-            reset_runtime_home_override(token)
-
-    return _scoped()
+    return _mcp_runtime_loop._wrap_with_home_override(coro)
 
 
 def _wrap_with_dashboard_oauth_flow(coro):
-    """Propagate a dashboard OAuth flow onto the dedicated MCP loop task."""
-    try:
-        from pcbdraft.tools.mcp_dashboard_oauth import (
-            dashboard_oauth_flow,
-            get_dashboard_oauth_flow,
-        )
+    """Compatibility wrapper for dashboard OAuth context propagation."""
 
-        flow = get_dashboard_oauth_flow()
-    except Exception:
-        return coro
-    if flow is None:
-        return coro
-
-    async def _scoped():
-        with dashboard_oauth_flow(flow):
-            return await coro
-
-    return _scoped()
+    return _mcp_runtime_loop._wrap_with_dashboard_oauth_flow(coro)
 
 
 def _run_on_mcp_loop(coro_or_factory, timeout: float = 30):
-    """Schedule a coroutine on the MCP event loop and block until done.
+    """Compatibility wrapper preserving live loop and context patch paths."""
 
-    Accepts either a coroutine object or a zero-arg callable that returns one.
-    Callers can pass a factory to avoid constructing coroutine objects when
-    the MCP loop is unavailable (which would otherwise leak the coroutine
-    frame and emit ``"coroutine was never awaited"`` warnings).
-
-    Poll in short intervals so the calling agent thread can honor user
-    interrupts while the MCP work is still running on the background loop.
-    """
     from pcbdraft.agent.async_utils import safe_schedule_threadsafe
     from pcbdraft.tools.interrupt import is_interrupted
 
     with _lock:
         loop = _mcp_loop
-    if loop is None or not loop.is_running():
-        if asyncio.iscoroutine(coro_or_factory):
-            coro_or_factory.close()
-        raise RuntimeError("MCP event loop is not running")
-
-    coro = coro_or_factory() if callable(coro_or_factory) else coro_or_factory
-
-    # Propagate the context-local PCBDRAFT_RUNTIME_HOME override onto the MCP loop.
-    # Tasks scheduled via run_coroutine_threadsafe are created INSIDE the
-    # loop thread, so they copy the loop thread's context — not the
-    # scheduling thread's. A per-request profile scope (the dashboard's
-    # ?profile= endpoints, e.g. the MCP "Test server" probe) would silently
-    # vanish here: OAuth token stores and any other get_runtime_home()
-    # resolution inside the coroutine would read the process home instead
-    # of the selected profile's. Re-establish the override inside the
-    # task's own context (task-local — concurrent calls carrying different
-    # scopes don't interfere). No-op when no override is active.
-    coro = _wrap_with_home_override(coro)
-    coro = _wrap_with_dashboard_oauth_flow(coro)
-
-    future = safe_schedule_threadsafe(
-        coro,
-        loop,
-        logger=logger,
-        log_message="MCP scheduling failed",
+    return _mcp_runtime_loop._run_on_mcp_loop(
+        coro_or_factory,
+        timeout,
+        loop=loop,
+        schedule_threadsafe=safe_schedule_threadsafe,
+        is_interrupted=is_interrupted,
+        home_wrapper=_wrap_with_home_override,
+        dashboard_oauth_wrapper=_wrap_with_dashboard_oauth_flow,
+        runtime_logger=logger,
     )
-    if future is None:
-        raise RuntimeError("MCP event loop unavailable (failed to schedule)")
-    start_time = time.monotonic()
-    deadline = None if timeout is None else start_time + timeout
-
-    while True:
-        if is_interrupted():
-            future.cancel()
-            raise InterruptedError("User sent a new message")
-
-        wait_timeout = 0.1
-        if deadline is not None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                future.cancel()
-                elapsed = time.monotonic() - start_time
-                raise TimeoutError(
-                    f"MCP call timed out after {elapsed:.1f}s "
-                    f"(configured timeout: {float(timeout):.1f}s)"
-                )
-            wait_timeout = min(wait_timeout, remaining)
-
-        try:
-            return future.result(timeout=wait_timeout)
-        except concurrent.futures.TimeoutError:
-            # On supported Python versions, concurrent.futures.TimeoutError
-            # aliases the built-in TimeoutError, so result(timeout=...) also
-            # raises it for a coroutine's own timeout.
-            # Resolve a done future without a timeout to propagate its stored
-            # outcome, including completion racing with this polling timeout.
-            if future.done():
-                return future.result()
-            continue
 
 
 def _interrupted_call_result() -> str:
-    """Standardized JSON error for a user-interrupted MCP tool call."""
-    return tool_error("MCP call interrupted: user sent a new message")
+    """Compatibility wrapper preserving the legacy error-factory patch path."""
+
+    return _mcp_runtime_loop._interrupted_call_result(error_factory=tool_error)
 
 
 # ---------------------------------------------------------------------------
