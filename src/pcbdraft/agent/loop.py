@@ -252,6 +252,10 @@ from pcbdraft.agent.session_persistence import (
 from pcbdraft.agent.session_persistence import (
     configure_session_persistence_runtime as _configure_session_persistence_runtime,
 )
+from pcbdraft.agent.session_record_projection import SessionRecordProjectionMixin
+from pcbdraft.agent.session_record_projection import (
+    configure_session_record_projection_runtime as _configure_session_record_projection_runtime,
+)
 from pcbdraft.agent.status_delivery import StatusDeliveryMixin
 from pcbdraft.agent.stream_delivery import StreamDeliveryMixin
 from pcbdraft.agent.tool_dispatch_helpers import (
@@ -401,6 +405,13 @@ _configure_session_persistence_runtime(
     multimodal_text_summary=lambda content: _multimodal_text_summary(content),
     sanitize_content=lambda content: sanitize_context(content),
     warning=lambda message, *args, **kwargs: logger.warning(message, *args, **kwargs),
+)
+_configure_session_record_projection_runtime(
+    convert_scratchpad=lambda content: convert_scratchpad_to_think(content),
+    redact_text=lambda content: redact_sensitive_text(content),
+    regex_sub=lambda pattern, replacement, content: re.sub(
+        pattern, replacement, content
+    ),
 )
 _configure_turn_control_runtime(
     debug=lambda message, *args, **kwargs: logger.debug(message, *args, **kwargs),
@@ -557,6 +568,7 @@ class _StreamErrorEvent(Exception):
 class AIAgent(
     TurnControlMixin,
     SessionPersistenceMixin,
+    SessionRecordProjectionMixin,
     ErrorNormalizationMixin,
     ProviderCapabilitiesMixin,
     ResponseCleanupMixin,
@@ -1266,37 +1278,6 @@ class AIAgent(
         )
         t.start()
 
-    def _get_messages_up_to_last_assistant(self, messages: list[dict]) -> list[dict]:
-        """
-        Get messages up to (but not including) the last assistant turn.
-
-        This is used when we need to "roll back" to the last successful point
-        in the conversation, typically when the final assistant message is
-        incomplete or malformed.
-
-        Args:
-            messages: Full message list
-
-        Returns:
-            Messages up to the last complete assistant turn (ending with user/tool message)
-        """
-        if not messages:
-            return []
-
-        # Find the index of the last assistant message
-        last_assistant_idx = None
-        for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "assistant":
-                last_assistant_idx = i
-                break
-
-        if last_assistant_idx is None:
-            # No assistant message found, return all messages
-            return messages.copy()
-
-        # Return everything up to (not including) the last assistant message
-        return messages[:last_assistant_idx]
-
     def _format_tools_for_system_message(self) -> str:
         """Forwarder — see ``agent.system_prompt.format_tools_for_system_message``."""
         from pcbdraft.agent.system_prompt import format_tools_for_system_message
@@ -1327,46 +1308,6 @@ class AIAgent(
 
         trajectory = self._convert_to_trajectory_format(messages, user_query, completed)
         _save_trajectory_to_file(trajectory, self.model, completed)
-
-    @staticmethod
-    def _clean_session_content(content: str) -> str:
-        """Convert REASONING_SCRATCHPAD to think tags and clean up whitespace."""
-        if not content:
-            return content
-        content = convert_scratchpad_to_think(content)
-        content = re.sub(r"\n+(<think>)", r"\n\1", content)
-        content = re.sub(r"(</think>)\n+", r"\1\n", content)
-        return content.strip()
-
-    @staticmethod
-    def _redact_message_content(content):
-        """Apply secret redaction to message content (str or list-of-parts).
-
-        Handles both plain-string content and the OpenAI/Anthropic multimodal
-        shape where ``content`` is a list of ``{"type": "text", "text": ...}``
-        / ``{"type": "image_url", ...}`` / ``{"type": "input_text", "content": ...}``
-        parts. Image / binary parts are left untouched; only text fields are
-        passed through ``redact_sensitive_text``.
-
-        Respects ``PCBDRAFT_RUNTIME_REDACT_SECRETS`` via ``redact_sensitive_text`` —
-        when disabled the helper is effectively a no-op.
-        """
-        if content is None:
-            return content
-        if isinstance(content, str):
-            return redact_sensitive_text(content)
-        if isinstance(content, list):
-            redacted = []
-            for part in content:
-                if isinstance(part, dict):
-                    part = dict(part)
-                    if isinstance(part.get("text"), str):
-                        part["text"] = redact_sensitive_text(part["text"])
-                    if isinstance(part.get("content"), str):
-                        part["content"] = redact_sensitive_text(part["content"])
-                redacted.append(part)
-            return redacted
-        return content
 
     def _save_session_log(self, messages: list[dict[str, Any]] | None = None):
         """Optional per-session JSON snapshot writer.
