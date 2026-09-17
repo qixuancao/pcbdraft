@@ -123,6 +123,8 @@ whole-repository regression run or a release gate.
   receipts for product-session turns.
 - `services.application_tool_inspection` owns read-only PCB, transaction
   evidence, installed-library, and part-catalog inspection.
+- `services.application_native_outputs` owns individual native PCB check,
+  preview-render, and manufacturing-export result workflows.
 
 `services.application.ApplicationService` remains the composition root and the
 only project mutation, transaction, publication, and project-state authority.
@@ -179,6 +181,8 @@ supplies state and compatibility hooks used by these mixins; none imports the
   limit/credit observations, and best-effort resource teardown.
 - `agent.request_client_lifecycle` owns request-scoped OpenAI and Anthropic
   client cache keys, creation, owner-close, and cross-thread abort behavior.
+- `agent.api_hook_observability` owns bounded API request/response hook
+  payloads, recursive secret redaction, error-hook dispatch, and debug dumps.
 - `agent.session_persistence` owns persistence-time message cleanup, user-message
   override projection, append batching and intrinsic-marker deduplication, plus
   bounded adoption of a live compression continuation.
@@ -240,8 +244,10 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   interpolation, filtering, safe stdio environments, and command assembly;
   `tools.mcp_task_lifecycle` owns server-task transport setup and
   teardown, stdio subprocess cleanup, HTTP/SSE session lifecycle, keepalive,
-  and recycle behavior. `tools.mcp_tool` remains the authentication-retry,
-  configuration, handler, registration, and lifecycle coordinator.
+  and recycle behavior; `tools.mcp_tool_discovery` owns capability-aware
+  discovery, dynamic refresh, schema registration, and lazy-cache registration.
+  `tools.mcp_tool` remains the authentication-retry, handler, actual tool-call,
+  and lifecycle coordinator.
 - `terminal_client/src/commands.ts` owns slash-command resolution and unique
   prefix completion, `assistant-preview.ts` owns transient delta rendering and
   saved-transcript reconciliation, `bridge.ts` owns the typed GUI API client,
