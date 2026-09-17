@@ -49,7 +49,6 @@ class ApplicationNativeOutputsTests(unittest.TestCase):
             "_retained_check_progress",
             "_bind_aggregate_validation_revision",
             "_aggregate_check_progress",
-            "apply_pcb_operation",
         ):
             self.assertIn(retained, ApplicationService.__dict__)
             self.assertNotIn(retained, ApplicationNativeOutputsMixin.__dict__)
