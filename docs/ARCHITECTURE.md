@@ -200,6 +200,9 @@ records.
 - `services.session_db_compression_health` owns durable compression cooldown,
   fallback and ineffective-compaction counters, plus gateway hygiene streaks.
   Connection and write-transaction authority remain on the host.
+- `services.session_db_turn_lease` owns compression-lineage lease-key mapping
+  and cross-process turn acquire/wait/refresh/release behavior. Connection,
+  schema, and write-transaction authority remain on the host.
 - `services.session_db_gateway_queries` owns read-only gateway session listing,
   origin and peer recovery lookup, and orphan-adoption candidate projection.
 
@@ -209,11 +212,12 @@ FTS behavior; the corresponding mixins receive their shared state, constants,
 and late-bound compatibility hooks from this boundary rather than forming a
 second store. Compression and session-turn lease acquisition, renewal, and
 release continue through the host API; compression leases are implemented by
-the dedicated mixin, while session-turn leases, gateway routing tables, and
-gateway peer writes and orphan adoption remain in the host. Gateway peer reads
-use the dedicated query mixin without taking over routing-index authority. The
-lineage read model owns none of those responsibilities, and none of the
-extracted modules imports the `session_db` coordinator back.
+the dedicated compression mixin, and session-turn leases by their dedicated
+turn mixin. Gateway routing tables, gateway peer writes, and orphan adoption
+remain in the host. Gateway peer reads use the dedicated query mixin without
+taking over routing-index authority. The lineage read model owns none of those
+responsibilities, and none of the extracted modules imports the `session_db`
+coordinator back.
 
 #### AIAgent
 
