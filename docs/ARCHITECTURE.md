@@ -206,12 +206,19 @@ lookup, remain in this host; none of the extracted modules imports the
 - `agent.session_persistence` owns persistence-time message cleanup, user-message
   override projection, append batching and intrinsic-marker deduplication, plus
   bounded adoption of a live compression continuation.
+- `agent.session_record_projection` owns the pure in-memory projection used to
+  roll history back before its last assistant record, normalize persisted
+  assistant content, and redact text fields in plain or multimodal message
+  records. It performs no snapshot or database writes.
 - `agent.turn_control` owns cross-thread interrupt and hard-stop propagation,
   queued steering, and active-turn redirect coordination.
 
 `agent.loop.AIAgent` still composes those mixins and owns the model turn,
-conversation control, and tool loop. The extracted modules preserve historical
-method names and late-bound compatibility hooks without importing `agent.loop`.
+request/conversation and tool loops, model invocation, cancellation lifecycle
+entry points, and session or model switching. It also retains session snapshot
+save orchestration and all persistence writes. The extracted modules preserve
+historical method names and late-bound compatibility hooks without importing
+`agent.loop`.
 
 #### Model authentication and auxiliary clients
 
