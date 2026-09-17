@@ -107,6 +107,12 @@ whole-repository regression run or a release gate.
   validated paths, atomic record/event writes, attempt reads, and public views.
 - `services.application_project_lifecycle` owns private draft construction and
   publication of new project identities.
+- `services.application_project_queries` owns read-only project listing, public
+  project views, lock-consistent non-blocking snapshots, and validated project
+  root lookup.
+- `services.application_message_inputs` owns bounded message-text normalization,
+  exactly-once reply delivery binding validation, and read-only duplicate
+  delivery projection from retained conversation messages.
 - `services.application_semantic_operations` owns semantic-operation argument
   normalization and grouped-operation preflight checks.
 - `services.application_external_revision` owns review and explicit import of
@@ -132,7 +138,12 @@ whole-repository regression run or a release gate.
 only project mutation, transaction, publication, and project-state authority.
 Transactional repair execution and writes, including pending repair artifacts,
 project-state transitions, and failure publication, remain in this host. The
-extracted modules do not create a parallel application service.
+host also retains repository configuration and recovery, project creation,
+message delivery and transcript writes, provider dispatch, generation
+confirmation, modification application, and release verification. The project
+query and message-input modules receive late-bound host adapters for historical
+lock, validation, text-bound, and sanitizer patch points; they do not create a
+parallel application service or write project records.
 
 #### SessionDB
 
