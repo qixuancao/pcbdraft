@@ -94,6 +94,7 @@ from pcbdraft.core.runtime_utils import (
 from pcbdraft.model import auth_credential_pool_store as _auth_credential_pool_store
 from pcbdraft.model import auth_error_formatting as _auth_error_formatting
 from pcbdraft.model import auth_provider_endpoints as _auth_provider_endpoints
+from pcbdraft.model import auth_provider_policy as _auth_provider_policy
 from pcbdraft.model import auth_provider_state as _auth_provider_state
 from pcbdraft.model.configuration import (
     get_config_path,
@@ -1752,45 +1753,6 @@ def resolve_provider(
 # =============================================================================
 
 
-def _parse_iso_timestamp(value: Any) -> float | None:
-    if not isinstance(value, str) or not value:
-        return None
-    text = value.strip()
-    if not text:
-        return None
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except Exception:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=UTC)
-    return parsed.timestamp()
-
-
-def _is_expiring(expires_at_iso: Any, skew_seconds: int) -> bool:
-    expires_epoch = _parse_iso_timestamp(expires_at_iso)
-    if expires_epoch is None:
-        return True
-    return expires_epoch <= (time.time() + skew_seconds)
-
-
-def _coerce_ttl_seconds(expires_in: Any) -> int:
-    try:
-        ttl = int(expires_in)
-    except Exception:
-        ttl = 0
-    return max(0, ttl)
-
-
-def _optional_base_url(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    cleaned = value.strip().rstrip("/")
-    return cleaned if cleaned else None
-
-
 _NOUS_STALE_PORTAL_HOSTS: frozenset[str] = frozenset(
     {
         "api.nousresearch.com",
@@ -1809,22 +1771,6 @@ _NOUS_PORTAL_ALLOWED_HOSTS: frozenset[str] = frozenset(
 )
 
 
-def _migrate_stale_nous_portal_url(providers: dict[str, Any]) -> None:
-    nous = providers.get("nous")
-    if not isinstance(nous, dict):
-        return
-    stored = (nous.get("portal_base_url") or "").strip()
-    if stored:
-        parsed = urlparse(stored)
-        if parsed.hostname in _NOUS_STALE_PORTAL_HOSTS:
-            logger.warning(
-                "auth: migrating stale nous portal_base_url %s -> %s",
-                stored,
-                DEFAULT_NOUS_PORTAL_URL,
-            )
-            nous["portal_base_url"] = DEFAULT_NOUS_PORTAL_URL
-
-
 # Allowlist of hosts the Nous Portal proxy is willing to forward inference
 # JWTs to. Sending a bearer anywhere else would leak it.
 #
@@ -1840,87 +1786,30 @@ _ALLOWED_NOUS_INFERENCE_HOSTS: frozenset[str] = frozenset(
 )
 
 
-def _validate_nous_inference_url_from_network(url: str | None) -> str | None:
-    """Validate a Portal-returned inference URL against the host allowlist.
+_parse_iso_timestamp = _auth_provider_policy._parse_iso_timestamp
+_is_expiring = _auth_provider_policy._is_expiring
+_coerce_ttl_seconds = _auth_provider_policy._coerce_ttl_seconds
+_optional_base_url = _auth_provider_policy._optional_base_url
+_migrate_stale_nous_portal_url = _auth_provider_policy._migrate_stale_nous_portal_url
+_validate_nous_inference_url_from_network = (
+    _auth_provider_policy._validate_nous_inference_url_from_network
+)
+_nous_inference_env_override = _auth_provider_policy._nous_inference_env_override
+_nous_portal_env_override = _auth_provider_policy._nous_portal_env_override
 
-    Returns ``url`` (normalised by stripping trailing slashes) if it's a
-    well-formed ``https://<allowlisted-host>/...`` URL. Returns ``None``
-    if the URL is missing, malformed, non-https, or points at an
-    unexpected host — letting the caller fall back to the configured
-    default rather than persist or forward a poisoned value.
-
-    Defense-in-depth: a compromised refresh response from the Portal API
-    (MITM, malicious response injection) could otherwise redirect every
-    subsequent proxy request — bearing the user's inference JWT — to an
-    attacker-controlled endpoint.
-    Validating scheme + host at the source closes that loop before the
-    poisoned URL ever lands in ``auth.json``.
-
-    The env-var override path (``NOUS_INFERENCE_BASE_URL``) bypasses
-    this — env values come from the trusted OS user, not from the
-    network, and the override is documented for staging/dev use.
-
-    Co-authored-by: memosr <mehmet.sr35@gmail.com>
-    """
-    if not isinstance(url, str):
-        return None
-    cleaned = url.strip()
-    if not cleaned:
-        return None
-    try:
-        parsed = urlparse(cleaned)
-    except Exception:
-        return None
-    if parsed.scheme != "https":
-        logger.warning(
-            "nous: refusing non-https inference URL scheme %r from Portal response",
-            parsed.scheme,
-        )
-        return None
-    if parsed.hostname not in _ALLOWED_NOUS_INFERENCE_HOSTS:
-        logger.warning(
-            "nous: refusing inference URL host %r from Portal response "
-            "(not in allowlist); falling back to default",
-            parsed.hostname,
-        )
-        return None
-    return cleaned.rstrip("/")
-
-
-def _nous_inference_env_override() -> str | None:
-    """Return the user-set ``NOUS_INFERENCE_BASE_URL`` override, if any.
-
-    This is the documented dev/staging escape hatch. The env source is
-    trusted (the OS user set it themselves), so it is intentionally NOT
-    gated by the network host allowlist — unlike Portal-returned URLs.
-
-    Returns a trailing-slash-stripped non-empty string, or ``None`` when
-    the env var is unset/blank.
-    """
-    return _optional_base_url(os.getenv("NOUS_INFERENCE_BASE_URL"))
-
-
-def _nous_portal_env_override() -> str | None:
-    """Return the user/deployment-set Portal base URL override, if any.
-
-    Mirrors ``_nous_inference_env_override()``: ``PCBDRAFT_RUNTIME_PORTAL_BASE_URL`` /
-    ``NOUS_PORTAL_BASE_URL`` are the documented dev/staging escape hatch for
-    pointing Hermes at a non-production Nous Portal (e.g. a hosted agent
-    provisioned on nous-account-service's `staging` environment, which stamps
-    ``PCBDRAFT_RUNTIME_PORTAL_BASE_URL=https://portal.staging-nousresearch.com`` into
-    the container env). The env source is trusted (the OS user/deployment
-    set it themselves), so — like the inference override — it must NOT be
-    gated by ``_NOUS_PORTAL_ALLOWED_HOSTS``: that allowlist exists to reject
-    an untrusted NETWORK-provided value (a poisoned portal_base_url
-    persisted to auth.json), not a value the operator explicitly configured.
-
-    Returns a trailing-slash-stripped non-empty string, or ``None`` when
-    neither env var is set/blank.
-    """
-    return _optional_base_url(
-        os.getenv("PCBDRAFT_RUNTIME_PORTAL_BASE_URL")
-        or os.getenv("NOUS_PORTAL_BASE_URL")
-    )
+_auth_provider_policy._configure_legacy_auth_hooks(
+    datetime_type=lambda: datetime,
+    utc=lambda: UTC,
+    parse_iso_timestamp=lambda value: _parse_iso_timestamp(value),
+    now=lambda: time.time(),
+    parse_url=lambda value: urlparse(value),
+    stale_portal_hosts=lambda: _NOUS_STALE_PORTAL_HOSTS,
+    default_portal_url=lambda: DEFAULT_NOUS_PORTAL_URL,
+    allowed_inference_hosts=lambda: _ALLOWED_NOUS_INFERENCE_HOSTS,
+    logger=lambda: logger,
+    optional_base_url=lambda value: _optional_base_url(value),
+    environment_getter=lambda name: os.getenv(name),
+)
 
 
 def _decode_jwt_claims(token: Any) -> dict[str, Any]:
