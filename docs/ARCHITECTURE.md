@@ -304,12 +304,14 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   argument checks, and result normalization. `tools.mcp_tool` remains the
   authentication-retry, generic tool handler, actual tool-call, and lifecycle
   coordinator.
-- `terminal_client/src/commands.ts` owns slash-command resolution and unique
-  prefix completion, `assistant-preview.ts` owns transient delta rendering and
-  saved-transcript reconciliation, `bridge.ts` owns the typed GUI API client,
-  and `startup.ts` owns initial project selection. `main.ts` composes those
-  presentation responsibilities, while `interfaces.terminal_launcher` starts
-  the bundled client against the authoritative loopback GUI API.
+- `terminal_client/src/display.ts` owns pure formatting of saved transcript
+  messages and job-lifecycle status text; `assistant-preview.ts` owns transient
+  delta rendering and saved-transcript reconciliation. `commands.ts` retains
+  slash-command resolution and unique-prefix completion, `bridge.ts` retains
+  typed GUI API and SSE I/O, and `main.ts` retains interactive control flow and
+  composes those presentation responsibilities. `startup.ts` owns initial
+  project selection, while `interfaces.terminal_launcher` starts the bundled
+  client against the authoritative loopback GUI API.
 
 This ledger describes implemented, targeted-tested boundaries only. The broader
 modularization remains in progress: large coordinator modules and compatibility
