@@ -121,6 +121,8 @@ whole-repository regression run or a release gate.
   for staged or applied project revisions.
 - `services.application_product_session` owns immutable terminal-outcome
   receipts for product-session turns.
+- `services.application_tool_inspection` owns read-only PCB, transaction
+  evidence, installed-library, and part-catalog inspection.
 
 `services.application.ApplicationService` remains the composition root and the
 only project mutation, transaction, publication, and project-state authority.
@@ -175,6 +177,8 @@ supplies state and compatibility hooks used by these mixins; none imports the
 - `agent.memory_lifecycle`, `agent.activity_tracking`, and
   `agent.client_lifecycle` own external-memory synchronization, activity/rate
   limit/credit observations, and best-effort resource teardown.
+- `agent.request_client_lifecycle` owns request-scoped OpenAI and Anthropic
+  client cache keys, creation, owner-close, and cross-thread abort behavior.
 - `agent.session_persistence` owns persistence-time message cleanup, user-message
   override projection, append batching and intrinsic-marker deduplication, plus
   bounded adoption of a live compression continuation.
@@ -232,7 +236,9 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   startup, caller-context propagation, and synchronous MCP call delivery;
   `tools.mcp_connection_recovery` owns connection cooldown and circuit-breaker
   state, trust metadata and approval gating, and reconnect signaling/readiness
-  waits; `tools.mcp_task_lifecycle` owns server-task transport setup and
+  waits; `tools.mcp_server_configuration` owns configuration source loading,
+  interpolation, filtering, safe stdio environments, and command assembly;
+  `tools.mcp_task_lifecycle` owns server-task transport setup and
   teardown, stdio subprocess cleanup, HTTP/SSE session lifecycle, keepalive,
   and recycle behavior. `tools.mcp_tool` remains the authentication-retry,
   configuration, handler, registration, and lifecycle coordinator.
