@@ -184,8 +184,10 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
 
 - `model.auth_error_formatting` owns structured authentication errors,
   rate-limit classification, and user-facing authentication and entitlement
-  guidance. Credential, token, OAuth, and provider-routing state remain in
-  `model.auth`.
+  guidance.
+- `model.auth_credential_pool_store` owns the credential-pool portion of
+  `auth.json`, including profile/global fallback reads, concurrency-safe pool
+  writes and cooldown merging, and credential-source suppression state.
 - `model.auxiliary_cancellation` owns synchronous-call cancellation,
   request-scoped interrupt protection, progress callbacks, and its isolated
   worker.
@@ -198,6 +200,9 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
 
 `model.auxiliary_client` remains responsible for provider routing,
 authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
+`model.auth` remains the authentication-store and locking composition root and
+owns provider state, token/OAuth lifecycle, active-provider selection, and
+runtime credential routing.
 
 #### MCP and terminal presentation
 
@@ -206,9 +211,11 @@ authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
   redirect/error policy; `tools.mcp_tool_schema` owns stateless tool naming,
   filtering, schema conversion, and lifecycle-config parsing; and
   `tools.mcp_runtime_loop` owns process/discovery guards, dedicated event-loop
-  startup, caller-context propagation, and synchronous MCP call delivery.
-  `tools.mcp_tool` remains the connection, registration, task, and lifecycle
-  coordinator.
+  startup, caller-context propagation, and synchronous MCP call delivery;
+  `tools.mcp_connection_recovery` owns connection cooldown and circuit-breaker
+  state, trust metadata and approval gating, and reconnect signaling/readiness
+  waits. `tools.mcp_tool` remains the server-task, authentication-retry,
+  configuration, handler, registration, and lifecycle coordinator.
 - `terminal_client/src/commands.ts` owns slash-command resolution and unique
   prefix completion, `assistant-preview.ts` owns transient delta rendering and
   saved-transcript reconciliation, `bridge.ts` owns the typed GUI API client,
