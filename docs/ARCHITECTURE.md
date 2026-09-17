@@ -110,6 +110,9 @@ whole-repository regression run or a release gate.
   validated paths, atomic record/event writes, attempt reads, and public views.
 - `services.application_project_lifecycle` owns private draft construction and
   publication of new project identities.
+- `services.application_confirmation` owns confirmation, first native
+  generation, preview, and optional validation sequencing. The host still
+  owns project records, revision checks, locks, and failure publication.
 - `services.application_project_queries` owns read-only project listing, public
   project views, lock-consistent non-blocking snapshots, and validated project
   root lookup.
@@ -126,31 +129,38 @@ whole-repository regression run or a release gate.
   manufacturing-candidate release.
 - `services.application_modification_preview` owns staging an agent-planned
   project revision for review.
+- `services.application_modification_apply` owns staged receipt checks,
+  native/semantic preconditions, atomic candidate publication, rollback, and
+  preview refresh. Project state and event authority remain on the host.
 - `services.application_modification_revert` owns discard and atomic undo flows
   for staged or applied project revisions.
 - `services.application_product_session` owns immutable terminal-outcome
   receipts for product-session turns.
 - `services.application_tool_inspection` owns read-only PCB, transaction
   evidence, installed-library, and part-catalog inspection.
+- `services.application_part_registration` owns installed-part contract
+  inspection, staged native rematerialization, consistency/delta checks, and
+  publication rollback. The host remains the project lock, revision, and CAS
+  authority.
 - `services.application_native_outputs` owns individual native PCB check,
   preview-render, and manufacturing-export result workflows.
 - `services.application_agent_repair` owns read-only project-event projection
   and reviewable agent repair proposal normalization and preparation.
+- `services.application_repair_transaction` owns repair feedback
+  normalization, candidate staging/preflight, ready/rejected publication, and
+  rollback orchestration; the host retains authoritative records and locks.
 
 `services.application.ApplicationService` remains the composition root and the
 only project mutation, transaction, publication, and project-state authority.
-Transactional repair execution and writes, including pending repair artifacts,
-project-state transitions, and failure publication, remain in this host. The
-host also retains repository configuration and recovery, project creation,
-message delivery and transcript writes, provider dispatch, generation
-confirmation, modification application, and release verification. It also
-retains expected-revision validation, native/validation/transaction evidence
-reads, and progress-stage derivation consumed by the status projection. The
-project-query, message-input, and status-projection modules receive late-bound
-host adapters for their historical lock, validation, text-bound, sanitizer,
-doctor, and validation-run-id patch points; they do not create a parallel
-application service, lock projects, dispatch model requests, or write project
-records.
+ApplicationService retains authoritative project records, locks, revision/CAS
+checks, event/message writes, failure publication, and composition of the
+confirmation, registration, repair, and modification workflows. It also
+retains repository configuration and recovery, project creation, message
+delivery and transcript writes, provider dispatch, native/validation evidence
+reads, progress-stage derivation, and release verification. Extracted modules
+receive late-bound host adapters for historical patch points; they do not
+create a parallel application service, lock projects independently, dispatch
+model requests, or create a second project store.
 
 #### SessionDB
 
@@ -252,6 +262,10 @@ the `session_db` coordinator back.
   turn-completion explanations. It records no mutation or turn state.
 - `agent.turn_control` owns cross-thread interrupt and hard-stop propagation,
   queued steering, and active-turn redirect coordination.
+- `agent.provider_credential_refresh` owns provider credential refresh,
+  endpoint/header reapplication, credential swapping, and pool-recovery
+  forwarding. Provider auth authority and mutable client/pool state remain in
+  their existing owners.
 
 `agent.loop.AIAgent` still composes those mixins and owns the model turn,
 request/conversation and tool loops, model invocation, cancellation lifecycle
@@ -300,11 +314,18 @@ compatibility hooks without importing `agent.loop`.
   classification that does not require routing or cache state.
 - `model.auxiliary_fallbacks` owns auxiliary-provider health state, fallback
   destination planning, and synchronous/asynchronous fallback-chain execution.
+- `model.auxiliary_vision` owns vision capability checks, backend ordering, and
+  strict/automatic vision-client routing without taking client or credential
+  ownership.
+- `model.auxiliary_task_config` owns auxiliary task configuration, timeout,
+  extra-body, reasoning, concurrency, and semaphore cache policy.
 
 `model.auxiliary_client` remains responsible for runtime state and endpoint or
 proxy validation, request construction and HTTP dispatch, credential
 resolution, provider selection and fallback-chain integration, pooling and
 client/cache orchestration, `call_llm`, usage accounting, and relay completion.
+The vision and task-configuration modules are policy boundaries over this
+authority; they do not create another client/cache or transport layer.
 `model.auth` composes the authentication boundaries and coordinates OAuth/token
 lifecycle, top-level `resolve_provider`, and runtime credential resolution.
 
@@ -329,6 +350,11 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   argument checks, and result normalization. `tools.mcp_tool` remains the
   actual RPC and generic tool-call coordinator, including authentication retry,
   connection orchestration, and registration dispatch.
+- `tools.mcp_elicitation_handler` owns form/url elicitation approval callbacks;
+  `tools.mcp_sampling_handler` owns sampling/createMessage callbacks; and
+  `tools.mcp_server_task` owns per-server retry, park/revival, discovery
+  callbacks, and run coordination while reusing the lifecycle mixin. The
+  compatibility surface remains `mcp_tool`.
 - `terminal_client/src/display.ts` owns pure formatting of saved transcript
   messages and job-lifecycle status text; `assistant-preview.ts` owns transient
   delta rendering and saved-transcript reconciliation. `commands.ts` retains
@@ -338,10 +364,12 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   project selection, while `interfaces.terminal_launcher` starts the bundled
   client against the authoritative loopback GUI API.
 
-This ledger describes implemented, targeted-tested boundaries only. The broader
-modularization remains in progress: large coordinator modules and compatibility
-facades still exist, and this state must not be treated as whole-project
-completion, full regression evidence, or release readiness.
+This ledger describes implemented, targeted-tested boundaries. The current
+modularization pass is complete for the planned coordinator boundaries:
+remaining large files are deliberate composition roots for authoritative
+project/session state, provider transport, and the model conversation loop.
+This is a structural completion claim supported by focused tests, not a full
+repository regression result or a release-readiness claim.
 
 The dependency direction starts with `core` and `domain`. KiCad and model
 adapters implement external boundaries. Services orchestrate those capabilities,
