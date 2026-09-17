@@ -72,16 +72,15 @@ from pcbdraft.model.providers import (
     ProviderContext,
     resolve_provider,
 )
+from pcbdraft.services import application_project_store as _application_project_store
 from pcbdraft.services import (
     application_semantic_operations as _application_semantic_operations,
 )
-from pcbdraft.services import application_project_store as _application_project_store
 from pcbdraft.services.application_external_revision import (
     ApplicationExternalRevisionMixin,
 )
-from pcbdraft.services.application_validation import (
-    ApplicationValidationMixin,
-    _latest_drc_baseline as _latest_drc_baseline_impl,
+from pcbdraft.services.application_modification_preview import (
+    ApplicationModificationPreviewMixin,
 )
 from pcbdraft.services.application_progress import (
     _attach_progress,
@@ -92,6 +91,12 @@ from pcbdraft.services.application_progress import (
     _route_state_record,
     _routing_failure_retry_key,
     _transaction_progress_projection,
+)
+from pcbdraft.services.application_validation import (
+    ApplicationValidationMixin,
+)
+from pcbdraft.services.application_validation import (
+    _latest_drc_baseline as _latest_drc_baseline_impl,
 )
 from pcbdraft.services.doctor import doctor_report
 from pcbdraft.services.managed import (
@@ -311,6 +316,7 @@ _sanitize_secret_text = sanitize_user_text
 
 
 class ApplicationService(
+    ApplicationModificationPreviewMixin,
     ApplicationValidationMixin,
     ApplicationExternalRevisionMixin,
     ApplicationProjectStoreMixin,
@@ -437,6 +443,30 @@ class ApplicationService(
         """Preserve the historical validation timestamp patch point."""
 
         return utc_timestamp()
+
+    @staticmethod
+    def _modification_preview_open_managed_project(design_root: Path) -> Any:
+        """Preserve the historical managed-project patch point."""
+
+        return open_managed_project(design_root)
+
+    @staticmethod
+    def _modification_preview_resource_lock(root: Path, locks_root: Path) -> Any:
+        """Preserve the historical application resource-lock patch point."""
+
+        return ResourceLock(root, locks_root)
+
+    @staticmethod
+    def _modification_preview_timestamp() -> str:
+        """Preserve the historical application timestamp patch point."""
+
+        return utc_timestamp()
+
+    @staticmethod
+    def _modification_preview_feedback(request: str) -> dict[str, Any]:
+        """Preserve the historical repair-feedback patch point."""
+
+        return user_revision_feedback(request)
 
     def __init__(
         self,
@@ -4664,68 +4694,6 @@ class ApplicationService(
             record["completed_at"] = utc_timestamp()
             record["error"] = "Generation process stopped before completion."
             atomic_write_json(record_path, record)
-
-    def preview_modification(
-        self,
-        project_id: str,
-        request: str,
-        *,
-        timeout: float = 180.0,
-        expected_revision: int | None = None,
-    ) -> dict[str, Any]:
-        """Turn a follow-up message into a validated, staged replacement design.
-
-        The planning provider receives the retained semantic plan plus a bounded
-        user revision request.  It never edits native KiCad files: the replacement
-        is generated and checked inside a transaction before the runtime policy or
-        user can atomically apply it.
-        """
-
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation="revision staging"
-        )
-        managed = open_managed_project(project.design_root)
-        managed.assert_synchronized()
-        if managed.design.metadata.get("generator") != "agent_plan_v1":
-            raise ValidationError(
-                "this project was not generated from a retained agent circuit plan; use the semantic patch workflow"
-            )
-        if project.state["active_transaction"] is not None:
-            raise ValidationError(
-                "review, apply, or discard the staged PCB change before requesting another revision"
-            )
-        if project.state["status"] not in {
-            "generated",
-            "validated",
-            "validation_failed",
-            "repair_failed",
-            "released",
-            "release_failed",
-            "interrupted",
-        }:
-            raise ValidationError("the current project state cannot accept a revision")
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before the revision was staged")
-            self._append_message(current.conversation, "user", "revision", request)
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            self._event(
-                current.state,
-                current.root,
-                "repair.requested",
-                "Preparing a transactional PCB revision from the follow-up request",
-            )
-            self._write_records(current.root, current.state, current.conversation)
-            expected_revision = int(current.state["revision"])
-        return self.prepare_agent_repair(
-            project_id,
-            user_revision_feedback(request),
-            timeout=timeout,
-            expected_revision=expected_revision,
-        )
 
     def apply_modification(
         self,
