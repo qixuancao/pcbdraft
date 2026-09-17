@@ -103,6 +103,9 @@ whole-repository regression run or a release gate.
   postconditions, routing-failure normalization, and native delta checks.
 - `services.application_progress` owns immutable progress, stage, convergence,
   and route-retry projections.
+- `services.application_status_projection` owns first-run/runtime diagnostics
+  views and evidence-bound engineering-stage dictionaries. It combines
+  read-only doctor, provider-capability, revision, and stage observations.
 - `services.application_project_store` owns bounded project-record loading,
   validated paths, atomic record/event writes, attempt reads, and public views.
 - `services.application_project_lifecycle` owns private draft construction and
@@ -140,10 +143,14 @@ Transactional repair execution and writes, including pending repair artifacts,
 project-state transitions, and failure publication, remain in this host. The
 host also retains repository configuration and recovery, project creation,
 message delivery and transcript writes, provider dispatch, generation
-confirmation, modification application, and release verification. The project
-query and message-input modules receive late-bound host adapters for historical
-lock, validation, text-bound, and sanitizer patch points; they do not create a
-parallel application service or write project records.
+confirmation, modification application, and release verification. It also
+retains expected-revision validation, native/validation/transaction evidence
+reads, and progress-stage derivation consumed by the status projection. The
+project-query, message-input, and status-projection modules receive late-bound
+host adapters for their historical lock, validation, text-bound, sanitizer,
+doctor, and validation-run-id patch points; they do not create a parallel
+application service, lock projects, dispatch model requests, or write project
+records.
 
 #### SessionDB
 
