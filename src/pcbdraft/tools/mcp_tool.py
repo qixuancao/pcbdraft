@@ -113,6 +113,7 @@ from types import SimpleNamespace
 from typing import Any, Optional
 
 from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
+from pcbdraft.tools import mcp_connection_recovery as _mcp_connection_recovery
 from pcbdraft.tools import mcp_content as _mcp_content
 from pcbdraft.tools import mcp_runtime_loop as _mcp_runtime_loop
 from pcbdraft.tools import mcp_tool_schema as _mcp_tool_schema
@@ -3870,33 +3871,36 @@ _CONNECT_RETRY_MAX_BACKOFF_SEC = 600.0
 
 
 def _record_connect_failure(server_name: str) -> None:
-    """Stamp an exponential-backoff cooldown after a failed connect.
+    """Compatibility wrapper for failed-connection cooldown tracking."""
 
-    Called (under ``_lock``) when a server fails its discovery/connect
-    attempt. The cooldown grows geometrically with the consecutive
-    failure count and is capped at :data:`_CONNECT_RETRY_MAX_BACKOFF_SEC`,
-    so a permanently-broken server settles into infrequent retries
-    rather than a tight respawn loop.
-    """
-    n = _server_connect_failures.get(server_name, 0) + 1
-    _server_connect_failures[server_name] = n
-    backoff = min(
-        _CONNECT_RETRY_BASE_BACKOFF_SEC * (2 ** (n - 1)),
-        _CONNECT_RETRY_MAX_BACKOFF_SEC,
+    _mcp_connection_recovery._record_connect_failure(
+        server_name,
+        failures=_server_connect_failures,
+        retry_after=_server_connect_retry_after,
+        base_backoff=_CONNECT_RETRY_BASE_BACKOFF_SEC,
+        max_backoff=_CONNECT_RETRY_MAX_BACKOFF_SEC,
+        monotonic=time.monotonic,
     )
-    _server_connect_retry_after[server_name] = time.monotonic() + backoff
 
 
 def _clear_connect_failure(server_name: str) -> None:
-    """Clear the connect-cooldown state after a successful connection."""
-    _server_connect_failures.pop(server_name, None)
-    _server_connect_retry_after.pop(server_name, None)
+    """Compatibility wrapper for clearing connection cooldown state."""
+
+    _mcp_connection_recovery._clear_connect_failure(
+        server_name,
+        failures=_server_connect_failures,
+        retry_after=_server_connect_retry_after,
+    )
 
 
 def _connect_cooldown_active(server_name: str) -> bool:
-    """Return True if ``server_name`` is still within its retry cooldown."""
-    deadline = _server_connect_retry_after.get(server_name)
-    return deadline is not None and time.monotonic() < deadline
+    """Compatibility wrapper preserving the legacy monotonic patch path."""
+
+    return _mcp_connection_recovery._connect_cooldown_active(
+        server_name,
+        retry_after=_server_connect_retry_after,
+        monotonic=time.monotonic,
+    )
 
 
 # Circuit breaker: consecutive error counts per server.  After
@@ -3956,174 +3960,95 @@ _TRUST_UNTRUSTED = "untrusted"
 
 
 def _normalize_server_trust(value: Any) -> str:
-    """Normalize a config ``trust`` value to ``full`` or ``untrusted``.
+    """Compatibility wrapper preserving legacy trust constants and logging."""
 
-    Missing (None) → ``full`` (backward-compatible default, documented
-    above). Any string other than the two known tiers → ``untrusted``:
-    a misspelled tier must fail closed, never silently disable gating.
-    """
-    if value is None:
-        return _TRUST_FULL
-    text = str(value).strip().lower()
-    if text == _TRUST_FULL:
-        return _TRUST_FULL
-    if text == _TRUST_UNTRUSTED:
-        return _TRUST_UNTRUSTED
-    logger.warning(
-        "MCP trust: unrecognized trust value %r — treating as 'untrusted' "
-        "(valid values: full, untrusted)",
+    return _mcp_connection_recovery._normalize_server_trust(
         value,
+        warning=logger.warning,
+        trust_full=_TRUST_FULL,
+        trust_untrusted=_TRUST_UNTRUSTED,
     )
-    return _TRUST_UNTRUSTED
 
 
 def _annotation_read_only_hint(mcp_tool: Any) -> bool:
-    """Return True only when the tool's annotations carry readOnlyHint=True.
+    """Compatibility wrapper for discovery annotation classification."""
 
-    Accepts both SDK annotation objects (attribute access) and plain dicts
-    (schema-cache JSON). Anything else — missing annotations, missing key,
-    non-bool truthy values — is False: unknown metadata means the tool must
-    be treated as write-capable.
-    """
-    annotations = getattr(mcp_tool, "annotations", None)
-    if annotations is None:
-        return False
-    if isinstance(annotations, dict):
-        hint = annotations.get("readOnlyHint")
-    else:
-        hint = getattr(annotations, "readOnlyHint", None)
-    return hint is True
+    return _mcp_connection_recovery._annotation_read_only_hint(mcp_tool)
 
 
 def _record_tool_trust_metadata(
     server_name: str, config: dict, tools: list[Any]
 ) -> None:
-    """Capture per-server trust and per-tool readOnlyHint at discovery."""
-    with _lock:
-        _server_trust_levels[server_name] = _normalize_server_trust(
-            (config or {}).get("trust")
-        )
-        hints = _tool_read_only_hints.setdefault(server_name, {})
-        for tool in tools:
-            name = getattr(tool, "name", None)
-            if name:
-                hints[name] = _annotation_read_only_hint(tool)
+    """Compatibility wrapper preserving trust-classifier patch paths."""
+
+    _mcp_connection_recovery._record_tool_trust_metadata(
+        server_name,
+        config,
+        tools,
+        lock=_lock,
+        server_trust_levels=_server_trust_levels,
+        tool_read_only_hints=_tool_read_only_hints,
+        normalize_trust=_normalize_server_trust,
+        annotation_read_only_hint=_annotation_read_only_hint,
+    )
 
 
 def _trust_gate_check(server_name: str, tool_name: str) -> str | None:
-    """Consult the approval path for write-capable tools on untrusted servers.
+    """Compatibility wrapper preserving trust state and error formatting."""
 
-    Returns None when the call may proceed, or an error string (already
-    formatted via ``tool_error``) when the call is blocked. Fail-closed:
-    approval-system errors block the call.
-    """
-    trust = _server_trust_levels.get(server_name, _TRUST_FULL)
-    if trust != _TRUST_UNTRUSTED:
-        return None
-    if _tool_read_only_hints.get(server_name, {}).get(tool_name) is True:
-        return None
-
-    # Lazy import mirrors the elicitation handler's pattern: tools.approval
-    # routes the prompt to whichever surface owns the session (CLI, TUI,
-    # Telegram, Slack, ...) and normalizes the answer.
-    try:
-        from pcbdraft.tools.approval import request_elicitation_consent
-
-        answer = request_elicitation_consent(
-            (
-                f"MCP tool '{tool_name}' on UNTRUSTED server "
-                f"'{server_name}' wants to run. This tool is write-capable "
-                f"(no readOnlyHint=true annotation) and may modify external "
-                f"state."
-            ),
-            (
-                f"Server '{server_name}' is configured 'trust: untrusted'. "
-                f"Approve to run '{tool_name}' once, or deny to block it."
-            ),
-            surface=f"mcp-trust/{server_name}",
-        )
-    except Exception as exc:
-        logger.exception(
-            "MCP trust gate: approval check failed for %s.%s: %s",
-            server_name,
-            tool_name,
-            exc,
-        )
-        return tool_error(
-            f"MCP tool '{tool_name}' on untrusted server '{server_name}' "
-            f"was blocked: the approval system was unavailable "
-            f"(fail-closed)."
-        )
-
-    if answer == "accept":
-        return None
-    logger.info(
-        "MCP trust gate: user %s '%s' on untrusted server '%s'",
-        "cancelled" if answer == "cancel" else "denied",
-        tool_name,
+    return _mcp_connection_recovery._trust_gate_check(
         server_name,
-    )
-    return tool_error(
-        f"The user did not approve running write-capable MCP tool "
-        f"'{tool_name}' on untrusted server '{server_name}'. The command "
-        f"was NOT run. Do not retry without explicit user direction."
+        tool_name,
+        server_trust_levels=_server_trust_levels,
+        tool_read_only_hints=_tool_read_only_hints,
+        error_factory=tool_error,
+        runtime_logger=logger,
+        trust_full=_TRUST_FULL,
+        trust_untrusted=_TRUST_UNTRUSTED,
     )
 
 
 def _bump_server_error(server_name: str) -> None:
-    """Increment the consecutive-failure count for ``server_name``.
+    """Compatibility wrapper preserving circuit-breaker state ownership."""
 
-    When the count crosses :data:`_CIRCUIT_BREAKER_THRESHOLD`, stamp the
-    breaker-open timestamp so the cooldown clock starts (or re-starts,
-    for probe failures in the half-open state).
-    """
-    n = _server_error_counts.get(server_name, 0) + 1
-    _server_error_counts[server_name] = n
-    if n >= _CIRCUIT_BREAKER_THRESHOLD:
-        _server_breaker_opened_at[server_name] = time.monotonic()
+    _mcp_connection_recovery._bump_server_error(
+        server_name,
+        error_counts=_server_error_counts,
+        breaker_opened_at=_server_breaker_opened_at,
+        threshold=_CIRCUIT_BREAKER_THRESHOLD,
+        monotonic=time.monotonic,
+    )
 
 
 def _reset_server_error(server_name: str) -> None:
-    """Fully close the breaker for ``server_name``.
+    """Compatibility wrapper for closing a server circuit breaker."""
 
-    Clears both the failure count and the breaker-open timestamp. Call
-    this on any unambiguous success signal (successful tool call,
-    successful reconnect, manual /mcp refresh).
-    """
-    _server_error_counts[server_name] = 0
-    _server_breaker_opened_at.pop(server_name, None)
+    _mcp_connection_recovery._reset_server_error(
+        server_name,
+        error_counts=_server_error_counts,
+        breaker_opened_at=_server_breaker_opened_at,
+    )
 
 
 def _signal_reconnect(server: Any) -> bool:
-    """Ask a server task to rebuild its transport, thread-safely.
+    """Compatibility wrapper preserving the legacy loop and event type."""
 
-    The tool handlers run on caller threads, while the server task and its
-    ``_reconnect_event`` live on the background MCP loop. Setting an
-    asyncio.Event from another thread must go through
-    ``loop.call_soon_threadsafe``; non-async adapters and tests without a
-    running loop can use a direct ``.set()``.
-
-    Returns True if a reconnect signal was delivered, False if the server
-    has no reconnect machinery (nothing to revive).
-    """
-    event = getattr(server, "_reconnect_event", None)
-    if event is None:
-        return False
-    loop = _mcp_loop
-    if isinstance(event, asyncio.Event) and loop is not None and loop.is_running():
-        loop.call_soon_threadsafe(event.set)
-    else:
-        event.set()
-    return True
+    return _mcp_connection_recovery._signal_reconnect(
+        server,
+        loop=_mcp_loop,
+        asyncio_event_type=asyncio.Event,
+    )
 
 
 def reconnect_mcp_server(server_name: str) -> bool:
-    """Ask a currently-live MCP server to rebuild after external re-auth."""
-    with _lock:
-        server = _servers.get(server_name)
-    if server is None:
-        return False
-    return _signal_reconnect(server)
+    """Compatibility wrapper preserving server ownership and signal hooks."""
+
+    return _mcp_connection_recovery.reconnect_mcp_server(
+        server_name,
+        lock=_lock,
+        servers=_servers,
+        signal_reconnect=_signal_reconnect,
+    )
 
 
 def _wait_for_server_session_ready(
@@ -4132,39 +4057,14 @@ def _wait_for_server_session_ready(
     old_session: Any = None,
     timeout: float = 15.0,
 ) -> bool:
-    """Wait for an MCP server to expose a usable session.
+    """Compatibility wrapper preserving the legacy sleep patch path."""
 
-    Tool handlers run in normal worker threads while the MCP transport lives on
-    the module's background asyncio loop. During a reconnect there is a short
-    window where ``srv.session`` is ``None`` (or still points at the stale
-    session until the lifecycle coroutine has left the transport context). A
-    handler that blindly retries in that window can burn circuit-breaker strikes
-    and return ``not connected`` even though the reconnect is already in
-    progress.
-
-    When ``old_session`` is supplied, require the observed session object to be
-    different so callers do not mistake the pre-reconnect, stale session for a
-    fresh one.
-    """
-    # Iteration-bounded rather than deadline-bounded: several tests (and the
-    # circuit-breaker cooldown logic) monkeypatch time.monotonic to a frozen
-    # clock, which would make a monotonic-deadline loop spin forever.
-    poll_interval = 0.25
-    iterations = max(1, int(max(float(timeout), 0.0) / poll_interval))
-    for i in range(iterations):
-        session = getattr(srv, "session", None)
-        ready = getattr(srv, "_ready", None)
-        is_ready = True
-        if ready is not None and hasattr(ready, "is_set"):
-            try:
-                is_ready = bool(ready.is_set())
-            except Exception:
-                is_ready = True
-        if session is not None and session is not old_session and is_ready:
-            return True
-        if i < iterations - 1:
-            time.sleep(poll_interval)
-    return False
+    return _mcp_connection_recovery._wait_for_server_session_ready(
+        srv,
+        old_session=old_session,
+        timeout=timeout,
+        sleep=time.sleep,
+    )
 
 
 def _signal_reconnect_and_wait(
@@ -4174,40 +4074,16 @@ def _signal_reconnect_and_wait(
     op_description: str,
     timeout: float = 15.0,
 ) -> bool:
-    """Ask a live MCP server task to rebuild its transport session.
+    """Compatibility wrapper preserving loop, waiter, and logger patch paths."""
 
-    The important detail is clearing ``_ready`` on the MCP event loop before
-    setting ``_reconnect_event``. Older code left ``_ready`` set across
-    reconnects, so the caller's readiness poll could return immediately and
-    retry against the same dead HTTP/stream session. That was observed as
-    repeated ``Session terminated`` / ``not connected`` / circuit-breaker
-    failures in long-lived gateway sessions even though a fresh CLI process
-    could connect successfully.
-    """
-    loop = _mcp_loop
-    if loop is None or not loop.is_running():
-        return False
-
-    old_session = getattr(srv, "session", None)
-
-    def _request_reconnect() -> None:
-        ready = getattr(srv, "_ready", None)
-        if ready is not None and hasattr(ready, "clear"):
-            ready.clear()
-        reconnect_event = getattr(srv, "_reconnect_event", None)
-        if reconnect_event is not None and hasattr(reconnect_event, "set"):
-            reconnect_event.set()
-
-    logger.info(
-        "MCP server '%s': %s requesting transport reconnect",
+    return _mcp_connection_recovery._signal_reconnect_and_wait(
         server_name,
-        op_description,
-    )
-    loop.call_soon_threadsafe(_request_reconnect)
-    return _wait_for_server_session_ready(
         srv,
-        old_session=old_session,
+        op_description=op_description,
+        loop=_mcp_loop,
+        wait_for_session_ready=_wait_for_server_session_ready,
         timeout=timeout,
+        runtime_logger=logger,
     )
 
 
