@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import ast
-import inspect
 import re
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from pcbdraft.tools import mcp_protocol_policy, mcp_tool
+from pcbdraft.tools import mcp_protocol_policy, mcp_tool, mcp_tool_call
 
 
 class MCPProtocolPolicyCompatibilityTests(unittest.TestCase):
@@ -43,7 +42,10 @@ class MCPProtocolPolicyCompatibilityTests(unittest.TestCase):
             mcp_tool._CREDENTIAL_PATTERN,
             mcp_protocol_policy._CREDENTIAL_PATTERN,
         )
-        self.assertIs(inspect.getmodule(mcp_tool._make_tool_handler), mcp_tool)
+        self.assertIs(
+            mcp_tool._make_tool_handler,
+            mcp_tool_call._make_tool_handler,
+        )
 
     def test_error_shaping_reads_legacy_pattern_patch_path(self):
         with patch.object(
