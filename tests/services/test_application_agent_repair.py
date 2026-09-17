@@ -44,11 +44,9 @@ class ApplicationAgentRepairTests(unittest.TestCase):
                     getattr(ApplicationAgentRepairMixin, name),
                 )
 
-        for retained in (
-            "prepare_agent_repair",
-            "_record_failure",
-            "apply_modification",
-        ):
+        self.assertNotIn("prepare_agent_repair", ApplicationAgentRepairMixin.__dict__)
+
+        for retained in ("_record_failure", "apply_modification"):
             with self.subTest(retained=retained):
                 self.assertIn(retained, ApplicationService.__dict__)
                 self.assertNotIn(retained, ApplicationAgentRepairMixin.__dict__)
