@@ -49,12 +49,7 @@ class ApplicationToolInspectionTests(unittest.TestCase):
 
         self.assertIn("register_kicad_part", ApplicationService.__dict__)
         self.assertNotIn("register_kicad_part", ApplicationToolInspectionMixin.__dict__)
-        for retained in (
-            "run_pcb_check",
-            "render_pcb_output",
-            "export_pcb_output",
-            "apply_pcb_operation",
-        ):
+        for retained in ("apply_pcb_operation",):
             self.assertIn(retained, ApplicationService.__dict__)
             self.assertNotIn(retained, ApplicationToolInspectionMixin.__dict__)
 

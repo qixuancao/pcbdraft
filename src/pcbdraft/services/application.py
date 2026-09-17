@@ -72,6 +72,7 @@ from pcbdraft.model.providers import (
     ProviderContext,
     resolve_provider,
 )
+from pcbdraft.services import application_native_outputs as _application_native_outputs
 from pcbdraft.services import application_project_store as _application_project_store
 from pcbdraft.services import (
     application_semantic_operations as _application_semantic_operations,
@@ -87,6 +88,9 @@ from pcbdraft.services.application_modification_preview import (
 )
 from pcbdraft.services.application_modification_revert import (
     ApplicationModificationRevertMixin,
+)
+from pcbdraft.services.application_native_outputs import (
+    ApplicationNativeOutputsMixin,
 )
 from pcbdraft.services.application_product_session import (
     ApplicationProductSessionMixin,
@@ -344,8 +348,33 @@ _application_tool_inspection._configure_legacy_application_hooks(
     ),
 )
 
+_application_native_outputs._configure_legacy_application_hooks(
+    open_managed_project_hook=lambda *args, **kwargs: open_managed_project(
+        *args, **kwargs
+    ),
+    new_run_id_hook=lambda *args, **kwargs: new_run_id(*args, **kwargs),
+    run_individual_check_hook=lambda *args, **kwargs: run_individual_check(
+        *args, **kwargs
+    ),
+    load_json_limited_hook=lambda *args, **kwargs: load_json_limited(*args, **kwargs),
+    atomic_write_json_hook=lambda *args, **kwargs: atomic_write_json(*args, **kwargs),
+    count_severities_hook=lambda *args, **kwargs: count_severities(*args, **kwargs),
+    structured_violations_hook=lambda *args, **kwargs: structured_violations(
+        *args, **kwargs
+    ),
+    resource_lock_hook=lambda *args, **kwargs: ResourceLock(*args, **kwargs),
+    utc_timestamp_hook=lambda *args, **kwargs: utc_timestamp(*args, **kwargs),
+    generate_preview_hook=lambda *args, **kwargs: generate_preview(*args, **kwargs),
+    export_manufacturing_output_hook=lambda *args, **kwargs: (
+        export_manufacturing_output(*args, **kwargs)
+    ),
+    app_file_limit_hook=lambda: APP_FILE_LIMIT,
+    gate_json_limit_hook=lambda: GATE_JSON_LIMIT,
+)
+
 
 class ApplicationService(
+    ApplicationNativeOutputsMixin,
     ApplicationToolInspectionMixin,
     ApplicationProductSessionMixin,
     ApplicationProjectLifecycleMixin,
@@ -1557,245 +1586,6 @@ class ApplicationService(
                 "progress_delta": receipt["progress_delta"],
                 "stage": receipt["stage_after"],
             },
-        )
-
-    def run_pcb_check(
-        self,
-        project_id: str,
-        kind: str,
-        *,
-        timeout: float,
-        expected_revision: int,
-    ) -> dict[str, Any]:
-        """Run and retain exactly one source-bound flat-toolbox check."""
-
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation=kind
-        )
-        managed = open_managed_project(project.design_root)
-        managed.assert_synchronized()
-        run_id = new_run_id()
-        output = project.root / "validation" / run_id
-        result = run_individual_check(
-            managed,
-            kind,
-            output=output,
-            timeout=timeout,
-        )
-        check_receipt_path = output / "receipt.json"
-        check_receipt = load_json_limited(check_receipt_path, APP_FILE_LIMIT)
-        if (
-            not isinstance(check_receipt, dict)
-            or check_receipt.get("schema") != "pcbdraft-individual-check-receipt"
-            or check_receipt.get("status") != "complete"
-        ):
-            raise ValidationError("individual PCB check receipt is incomplete")
-        # The low-level checker is reusable outside ApplicationService and binds
-        # itself to content.  The product boundary additionally binds its
-        # evidence to the exact semantic revision before it can advance a stage.
-        check_receipt["source_revision"] = expected_revision
-        check_receipt["source_design_revision"] = project.state["design_revision"]
-        atomic_write_json(check_receipt_path, check_receipt)
-        summary = {
-            "run_id": run_id,
-            "check": kind,
-            "report": result.report_path.relative_to(project.root).as_posix(),
-            "report_sha256": result.report_sha256,
-            "state": result.state,
-            "outcome": result.outcome,
-            "design_content_hash": result.design_content_hash,
-            "source_revision": expected_revision,
-            "source_design_revision": project.state["design_revision"],
-            "production_ready": False,
-            "production_claimed": False,
-        }
-        report = load_json_limited(result.report_path, GATE_JSON_LIMIT)
-        details = report.get("details", {}) if isinstance(report, dict) else {}
-        if isinstance(details, dict):
-            violations = details.get("violations")
-            issues = details.get("issues")
-            if isinstance(violations, list):
-                errors, warnings = count_severities(violations)
-                diagnostics = {
-                    "counts": {
-                        "error": errors,
-                        "warning": warnings,
-                        "total": errors + warnings,
-                    },
-                    **structured_violations(violations, max_violations=20),
-                    "full_details_report": summary["report"],
-                }
-                shown = diagnostics["violations"]
-                total_seen = diagnostics["violation_count_seen"]
-                diagnostics["details_truncated"] = diagnostics["violations_truncated"]
-                diagnostics["remaining_violation_count"] = max(
-                    0, total_seen - len(shown)
-                )
-                tool_run = report.get("tool_run") if isinstance(report, dict) else None
-                raw_report = (
-                    tool_run.get("raw_report")
-                    if isinstance(tool_run, Mapping)
-                    else None
-                )
-                if (
-                    isinstance(raw_report, str)
-                    and raw_report
-                    and Path(raw_report).name == raw_report
-                ):
-                    diagnostics["raw_report"] = (
-                        (result.report_path.parent / raw_report)
-                        .relative_to(project.root)
-                        .as_posix()
-                    )
-                summary["diagnostics"] = diagnostics
-            elif isinstance(issues, list):
-                summary["diagnostics"] = {
-                    "issue_count_seen": len(issues),
-                    "issues": issues[:20],
-                    "issues_truncated": len(issues) > 20,
-                }
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed while the check was running")
-            current_managed = open_managed_project(current.design_root)
-            current_managed.assert_synchronized()
-            if current_managed.design.content_hash() != result.design_content_hash:
-                raise ValidationError("design changed while the check was running")
-            current.state["last_validation"] = summary
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            self._event(
-                current.state,
-                current.root,
-                "pcb.check_complete",
-                f"Completed individual PCB check {kind}",
-                level="error" if result.outcome == "fail" else "info",
-            )
-            self._write_records(current.root, current.state, current.conversation)
-        return self._with_tool_result(
-            self.open_project(project_id),
-            {**summary, "revision": current.state["revision"]},
-        )
-
-    def render_pcb_output(
-        self,
-        project_id: str,
-        kind: str,
-        *,
-        timeout: float,
-        expected_revision: int,
-    ) -> dict[str, Any]:
-        """Generate and retain only one requested preview family."""
-
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation=kind
-        )
-        managed = open_managed_project(project.design_root)
-        managed.assert_synchronized()
-        run_id = new_run_id()
-        bundle = generate_preview(
-            managed,
-            project.root / "previews" / run_id,
-            kind,
-            timeout=timeout,
-        )
-        summary = {
-            "run_id": run_id,
-            "render": kind,
-            "root": bundle.root.relative_to(project.root).as_posix(),
-            "receipt": bundle.receipt_path.relative_to(project.root).as_posix(),
-            "design_content_hash": bundle.design_content_hash,
-            "source_revision": expected_revision,
-            "source_design_revision": project.state["design_revision"],
-            "files": {
-                key: path.relative_to(project.root).as_posix()
-                for key, path in bundle.files.items()
-            },
-        }
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed while the preview was rendered")
-            if (
-                open_managed_project(current.design_root).design.content_hash()
-                != bundle.design_content_hash
-            ):
-                raise ValidationError("design changed while the preview was rendered")
-            current.state["last_preview"] = summary
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            self._event(
-                current.state,
-                current.root,
-                "pcb.render_complete",
-                f"Completed individual PCB render {kind}",
-            )
-            self._write_records(current.root, current.state, current.conversation)
-        return self._with_tool_result(
-            self.open_project(project_id),
-            {**summary, "revision": current.state["revision"]},
-        )
-
-    def export_pcb_output(
-        self,
-        project_id: str,
-        kind: str,
-        *,
-        timeout: float,
-        expected_revision: int,
-    ) -> dict[str, Any]:
-        """Generate and retain only one requested manufacturing export."""
-
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation=kind
-        )
-        managed = open_managed_project(project.design_root)
-        managed.assert_synchronized()
-        run_id = new_run_id()
-        exported = export_manufacturing_output(
-            managed,
-            project.root / "releases" / run_id,
-            kind,
-            timeout=timeout,
-        )
-        summary = {
-            "id": run_id,
-            "export": kind,
-            "root": exported.root.relative_to(project.root).as_posix(),
-            "receipt": exported.receipt_path.relative_to(project.root).as_posix(),
-            "design_content_hash": exported.design_content_hash,
-            "source_revision": expected_revision,
-            "source_design_revision": project.state["design_revision"],
-            "artifacts": list(exported.artifacts),
-            "production_ready": False,
-            "production_claimed": False,
-        }
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed while the export was generated")
-            if (
-                open_managed_project(current.design_root).design.content_hash()
-                != exported.design_content_hash
-            ):
-                raise ValidationError("design changed while the export was generated")
-            current.state["last_release"] = summary
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            self._event(
-                current.state,
-                current.root,
-                "pcb.export_complete",
-                f"Completed individual PCB export {kind}",
-            )
-            self._write_records(current.root, current.state, current.conversation)
-        return self._with_tool_result(
-            self.open_project(project_id),
-            {**summary, "revision": current.state["revision"]},
         )
 
     @staticmethod
