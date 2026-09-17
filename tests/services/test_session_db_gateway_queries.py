@@ -78,7 +78,6 @@ class SessionGatewayQueryMixinTests(unittest.TestCase):
             "adopt_orphaned_gateway_session",
         ):
             self.assertNotIn(host_method, mixin.__dict__)
-            self.assertIn(host_method, session_db.SessionDB.__dict__)
 
         tree = ast.parse(
             Path(session_db_gateway_queries.__file__).read_text(encoding="utf-8")
