@@ -130,6 +130,11 @@ The extracted modules do not create a parallel application service.
 
 - `services.session_db_runtime` owns reusable SQLite journal negotiation,
   runtime PRAGMAs, and persistence-error classification.
+- `services.session_db_connection` owns connection construction, the bounded
+  WAL read pool, write transaction retry and reconnect policy, checkpoints,
+  and deterministic close behavior.
+- `services.session_db_fts_integrity` owns FTS capability probes, trigger and
+  schema self-healing, and runtime corrupt-index recovery decisions.
 - `services.session_db_metadata` and `services.session_db_token_accounting` own
   mutable activity/model metadata and asynchronous token/model accounting.
 - `services.session_db_transcript_write`,
@@ -153,8 +158,8 @@ The extracted modules do not create a parallel application service.
   pending-to-running-to-completed-or-failed handoff state machine.
 
 `services.session_db.SessionDB` remains the authoritative durable session store
-and composition root. It owns connection and schema lifecycle and supplies the
-state and compatibility hooks used by these mixins; none imports the
+and composition root. It owns schema and session-domain coordination and
+supplies state and compatibility hooks used by these mixins; none imports the
 `session_db` coordinator back.
 
 #### AIAgent
@@ -198,6 +203,8 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
 - `model.auth_store_persistence` owns auth-store paths, cross-process locking,
   atomic credential persistence, profile/global fallback reads, and provider
   state write-through.
+- `model.auth_qwen_oauth` owns the existing Qwen CLI token read/write, refresh,
+  runtime credential, and status lifecycle.
 - `model.auxiliary_cancellation` owns synchronous-call cancellation,
   request-scoped interrupt protection, progress callbacks, and its isolated
   worker.
@@ -207,9 +214,11 @@ method names and late-bound compatibility hooks without importing `agent.loop`.
   normalization, and request-header construction.
 - `model.auxiliary_provider_failures` owns provider-failure and recoverability
   classification that does not require routing or cache state.
+- `model.auxiliary_fallbacks` owns auxiliary-provider health state, fallback
+  destination planning, and synchronous/asynchronous fallback-chain execution.
 
 `model.auxiliary_client` remains responsible for provider routing,
-authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
+authentication, pooling, client/cache orchestration, and `call_llm`.
 `model.auth` composes the authentication boundaries and coordinates OAuth/token
 lifecycle, top-level `resolve_provider`, and runtime credential resolution.
 
