@@ -197,6 +197,8 @@ records.
 - `services.session_db_compression_lease` owns compression lease acquisition,
   renewal, inspection, release, and in-transaction fence/recovery helpers. It
   uses the host write-transaction adapter and a late-bound process-liveness hook.
+- `services.session_db_gateway_queries` owns read-only gateway session listing,
+  origin and peer recovery lookup, and orphan-adoption candidate projection.
 
 `services.session_db.SessionDB` remains the authoritative durable session store
 and composition root. Callers still cross this host for connection, schema, and
@@ -205,9 +207,10 @@ and late-bound compatibility hooks from this boundary rather than forming a
 second store. Compression and session-turn lease acquisition, renewal, and
 release continue through the host API; compression leases are implemented by
 the dedicated mixin, while session-turn leases, gateway routing tables, and
-peer/session lookup remain in the host. The lineage read model owns none of
-those responsibilities, and none of the extracted modules imports the
-`session_db` coordinator back.
+gateway peer writes and orphan adoption remain in the host. Gateway peer reads
+use the dedicated query mixin without taking over routing-index authority. The
+lineage read model owns none of those responsibilities, and none of the
+extracted modules imports the `session_db` coordinator back.
 
 #### AIAgent
 
