@@ -1,4 +1,4 @@
-"""Session archive, prune, and stale-marker maintenance for SessionDB.
+"""Session archive, prune, and cleanup maintenance for SessionDB.
 
 ``SessionPruningMixin`` is composed into ``SessionDB`` and owns no connection
 state. The host supplies SQLite access, presentation/deletion methods, and
@@ -479,3 +479,80 @@ class SessionPruningMixin:
             "row_ids": affected_ids,
             "backup_path": backup_path,
         }
+
+    def prune_empty_ghost_sessions(
+        self,
+        sessions_dir: "Path | None" = None,  # noqa: UP037
+    ) -> int:
+        """Remove empty TUI ghost sessions (no messages, no title, >24hr old)."""
+        cutoff = self._pruning_now() - 86400  # Only sessions older than 24 hours
+
+        def _do(conn):
+            rows = conn.execute(
+                """
+                SELECT id FROM sessions
+                WHERE source = 'tui'
+                  AND title IS NULL
+                  AND ended_at IS NOT NULL
+                  AND started_at < ?
+                  AND NOT EXISTS (
+                      SELECT 1 FROM messages WHERE messages.session_id = sessions.id
+                  )
+            """,
+                (cutoff,),
+            ).fetchall()
+            ids = [r[0] if isinstance(r, (tuple, list)) else r["id"] for r in rows]
+            if ids:
+                placeholders = ",".join("?" * len(ids))
+                conn.execute(
+                    f"DELETE FROM sessions WHERE id IN ({placeholders})",  # noqa: S608
+                    ids,
+                )
+                self._delete_unreferenced_system_prompts(conn)
+            return ids
+
+        removed_ids = self._execute_write(_do) or []
+        # Clean up any on-disk session files (belt-and-suspenders)
+        if sessions_dir and removed_ids:
+            for sid in removed_ids:
+                self._remove_session_files(sessions_dir, sid)
+        return len(removed_ids)
+
+    def finalize_orphaned_compression_sessions(self) -> int:
+        """Mark orphaned compression continuation sessions as ended.
+
+        Targets child sessions that were never finalized: parent is ended
+        with reason='compression', child has messages but no end_reason/ended_at
+        and api_call_count=0.  Non-destructive: preserves all messages and sets
+        end_reason='orphaned_compression'.  Fix for #20001.
+        """
+        cutoff = self._pruning_now() - 604800  # 7 days
+
+        def _do(conn):
+            now = self._pruning_now()
+            result = conn.execute(
+                """
+                UPDATE sessions
+                SET ended_at = ?,
+                    end_reason = 'orphaned_compression'
+                WHERE api_call_count = 0
+                  AND end_reason IS NULL
+                  AND ended_at IS NULL
+                  AND started_at < ?
+                  AND parent_session_id IS NOT NULL
+                  AND EXISTS (
+                      SELECT 1 FROM sessions p
+                      WHERE p.id = sessions.parent_session_id
+                        AND p.end_reason = 'compression'
+                        AND p.ended_at IS NOT NULL
+                  )
+                  AND EXISTS (
+                      SELECT 1 FROM messages m
+                      WHERE m.session_id = sessions.id
+                  )
+                """,
+                (now, cutoff),
+            )
+            return result.rowcount
+
+        return self._execute_write(_do) or 0

@@ -91,6 +91,8 @@ class SessionPruningMixinTests(unittest.TestCase):
             "archive_stale_sessions",
             "prune_sessions",
             "purge_stale_tool_call_markers",
+            "prune_empty_ghost_sessions",
+            "finalize_orphaned_compression_sessions",
         ):
             with self.subTest(name=name):
                 self.assertIs(
@@ -274,6 +276,62 @@ class SessionPruningMixinTests(unittest.TestCase):
             }
         self.assertEqual(rows[marker_id], "")
         self.assertEqual(rows[normal_id], "normal text")
+
+    def test_prune_empty_tui_ghosts_removes_files_and_preserves_content(self) -> None:
+        self.db.create_session("ghost", "tui")
+        self._set_started_at("ghost", 1)
+        self.db.end_session("ghost", "complete")
+        ghost_files = self._write_session_files("ghost")
+
+        self.db.create_session("titled", "tui")
+        self._set_started_at("titled", 1)
+        self.db.set_session_title("titled", "Keep me")
+        self.db.end_session("titled", "complete")
+
+        self.db.create_session("with-message", "tui")
+        self._set_started_at("with-message", 1)
+        self.db.append_message("with-message", "user", "keep", timestamp=1)
+        self.db.end_session("with-message", "complete")
+
+        with patch.object(session_db.time, "time", return_value=200_000.0) as now:
+            removed = self.db.prune_empty_ghost_sessions(self.sessions_dir)
+
+        self.assertEqual(removed, 1)
+        self.assertEqual(now.call_count, 1)
+        self.assertIsNone(self.db.get_session("ghost"))
+        self.assertTrue(all(not path.exists() for path in ghost_files))
+        self.assertIsNotNone(self.db.get_session("titled"))
+        self.assertIsNotNone(self.db.get_session("with-message"))
+
+    def test_finalize_only_old_message_bearing_compression_orphan(self) -> None:
+        self.db.create_session("parent", "cli")
+        self.db.end_session("parent", "compression")
+
+        self.db.create_session("old-child", "cli", parent_session_id="parent")
+        self._set_started_at("old-child", 1)
+        self.db.append_message("old-child", "user", "preserve", timestamp=1)
+
+        self.db.create_session("empty-child", "cli", parent_session_id="parent")
+        self._set_started_at("empty-child", 1)
+
+        self.db.create_session("recent-child", "cli", parent_session_id="parent")
+        self._set_started_at("recent-child", 999_999)
+        self.db.append_message("recent-child", "user", "recent", timestamp=999_999)
+
+        with patch.object(session_db.time, "time", return_value=1_000_000.0) as now:
+            finalized = self.db.finalize_orphaned_compression_sessions()
+
+        self.assertEqual(finalized, 1)
+        self.assertEqual(now.call_count, 2)
+        old_child = self.db.get_session("old-child")
+        self.assertEqual(old_child["end_reason"], "orphaned_compression")
+        self.assertEqual(old_child["ended_at"], 1_000_000.0)
+        self.assertEqual(
+            [message["content"] for message in self.db.get_messages("old-child")],
+            ["preserve"],
+        )
+        self.assertIsNone(self.db.get_session("empty-child")["ended_at"])
+        self.assertIsNone(self.db.get_session("recent-child")["ended_at"])
 
 
 if __name__ == "__main__":
