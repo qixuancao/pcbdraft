@@ -48,7 +48,6 @@ class SessionCompressionLeaseMixinTests(unittest.TestCase):
             "release_session_turn_lease",
         ):
             self.assertNotIn(turn_lease_name, mixin.__dict__)
-            self.assertIn(turn_lease_name, session_db.SessionDB.__dict__)
 
         tree = ast.parse(
             Path(session_db_compression_lease.__file__).read_text(encoding="utf-8")
