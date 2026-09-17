@@ -102,7 +102,6 @@ import logging
 import math
 import os
 import random
-import re
 import sys
 import threading
 import time
@@ -114,6 +113,7 @@ from typing import Any, Optional
 from pcbdraft.tools import mcp_connection_policy as _mcp_connection_policy
 from pcbdraft.tools import mcp_connection_recovery as _mcp_connection_recovery
 from pcbdraft.tools import mcp_content as _mcp_content
+from pcbdraft.tools import mcp_protocol_policy as _mcp_protocol_policy
 from pcbdraft.tools import mcp_runtime_loop as _mcp_runtime_loop
 from pcbdraft.tools import mcp_server_configuration as _mcp_server_configuration
 from pcbdraft.tools import mcp_tool_discovery as _mcp_tool_discovery
@@ -124,6 +124,7 @@ from pcbdraft.tools.mcp_task_lifecycle import MCPTaskLifecycleMixin
 from pcbdraft.tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
+_mcp_protocol_policy.configure_mcp_protocol_policy_runtime(namespace=lambda: globals())
 _mcp_tool_discovery.configure_mcp_tool_discovery_runtime(namespace=lambda: globals())
 _mcp_utility_handlers.configure_mcp_utility_handlers_runtime(
     namespace=lambda: globals()
@@ -609,19 +610,7 @@ _SAFE_ENV_KEYS_CASE_INSENSITIVE = (
 )
 
 # Regex for credential patterns to strip from error messages
-_CREDENTIAL_PATTERN = re.compile(
-    r"(?:"
-    r"ghp_[A-Za-z0-9_]{1,255}"  # GitHub PAT
-    r"|sk-[A-Za-z0-9_]{1,255}"  # OpenAI-style key
-    r"|Bearer\s+\S+"  # Bearer token
-    r"|token=[^\s&,;\"']{1,255}"  # token=...
-    r"|key=[^\s&,;\"']{1,255}"  # key=...
-    r"|API_KEY=[^\s&,;\"']{1,255}"  # API_KEY=...
-    r"|password=[^\s&,;\"']{1,255}"  # password=...
-    r"|secret=[^\s&,;\"']{1,255}"  # secret=...
-    r")",
-    re.IGNORECASE,
-)
+_CREDENTIAL_PATTERN = _mcp_protocol_policy._CREDENTIAL_PATTERN
 
 # Pre-compiled pattern for ${VAR_NAME} style env-var interpolation.
 # Supports any non-} characters in the variable name (hyphens, dots, etc.)
@@ -638,25 +627,10 @@ _mcp_server_configuration.configure_mcp_server_configuration_runtime(
 )
 
 
-def _sanitize_error(text: str) -> str:
-    """Strip credential-like patterns from error text before returning to LLM.
-
-    Replaces tokens, keys, and other secrets with [REDACTED] to prevent
-    accidental credential exposure in tool error responses.
-    """
-    return _CREDENTIAL_PATTERN.sub("[REDACTED]", text)
+_sanitize_error = _mcp_protocol_policy._sanitize_error
 
 
-def _exc_str(exc: BaseException) -> str:
-    """Return a non-empty human-readable string for *exc*.
-
-    Some exception classes (e.g. ``anyio.ClosedResourceError``) are raised
-    without a message argument, so ``str(exc)`` is ``""``.  This helper
-    falls back to ``repr(exc)`` so that error messages shown to the user
-    and logged to disk always carry *some* diagnostic information.
-    """
-    text = str(exc).strip()
-    return text if text else repr(exc)
+_exc_str = _mcp_protocol_policy._exc_str
 
 
 # JSON-RPC "method not found" — the error a server returns when it does not
@@ -664,67 +638,21 @@ def _exc_str(exc: BaseException) -> str:
 # the optional ``ping`` utility). -32601 is the JSON-RPC 2.0 spec constant;
 # _ensure_mcp_sdk() overrides it from mcp.types when the SDK is loaded (kept
 # lazy so this module never triggers the ~260ms `mcp` import at import time).
-_JSONRPC_METHOD_NOT_FOUND = -32601
+_JSONRPC_METHOD_NOT_FOUND = _mcp_protocol_policy._JSONRPC_METHOD_NOT_FOUND
 
 # 2026-07-28 stateless servers answering a legacy ``initialize`` reject it
 # with one of these: UnsupportedProtocolVersion (-32022, spec-reserved range)
 # or plain method-not-found when the handshake methods are gone entirely.
 # Structural codes only — checked via _handshake_rejected_as_modern().
-_JSONRPC_UNSUPPORTED_PROTOCOL_VERSION = -32022
+_JSONRPC_UNSUPPORTED_PROTOCOL_VERSION = (
+    _mcp_protocol_policy._JSONRPC_UNSUPPORTED_PROTOCOL_VERSION
+)
 
 
-def _handshake_rejected_as_modern(exc: BaseException) -> bool:
-    """True when a failed ``initialize`` signals a 2026-07-28-only server.
-
-    Mirrors :func:`_is_method_not_found_error`'s structural-then-substring
-    shape (never ``isinstance`` on SDK exception types — the SDK wraps
-    task-group errors in ``ExceptionGroup`` and symbols drift across
-    generations; see references/sdk-exceptiongroup-wrapping.md).
-    """
-    err = getattr(exc, "error", None)
-    code = getattr(err, "code", None) or getattr(exc, "code", None)
-    if code in (_JSONRPC_UNSUPPORTED_PROTOCOL_VERSION, _JSONRPC_METHOD_NOT_FOUND):
-        return True
-    msg = str(exc).lower()
-    if not msg:
-        return False
-    return (
-        "unsupported protocol version" in msg
-        or str(_JSONRPC_UNSUPPORTED_PROTOCOL_VERSION) in msg
-        or _is_method_not_found_error(exc)
-    )
+_handshake_rejected_as_modern = _mcp_protocol_policy._handshake_rejected_as_modern
 
 
-def _is_method_not_found_error(exc: BaseException) -> bool:
-    """Return True if *exc* is a JSON-RPC ``method not found`` (-32601).
-
-    ``ping`` is an *optional* MCP utility (spec: "optional ping mechanism").
-    A server that doesn't implement it answers a ping with -32601 rather than
-    an empty result. Structurally inspect ``MCPError.error.code`` first, then
-    fall back to a substring match so detection survives SDK version drift and
-    servers that surface the condition as a plain message.
-
-    The substring fallback matters when a server reports method-not-found
-    without a structural ``-32601`` code (e.g. surfaced as a plain exception
-    string). Besides the canonical "method not found", many JSON-RPC
-    implementations phrase it as "Unknown method: <name>" — agentmemory's MCP
-    server is one such case (#50028). Without matching that phrasing the
-    ping→list_tools fallback never latches and the keepalive reconnect-loops.
-    """
-    # Structural: mcp.shared.exceptions.MCPError carries ErrorData.code.
-    err = getattr(exc, "error", None)
-    code = getattr(err, "code", None)
-    if code == _JSONRPC_METHOD_NOT_FOUND:
-        return True
-    msg = str(exc).lower()
-    if not msg:
-        return False
-    return (
-        str(_JSONRPC_METHOD_NOT_FOUND) in msg
-        or "method not found" in msg
-        or "unknown method" in msg
-        or "not found: ping" in msg
-    )
+_is_method_not_found_error = _mcp_protocol_policy._is_method_not_found_error
 
 
 # ---------------------------------------------------------------------------
@@ -734,67 +662,10 @@ def _is_method_not_found_error(exc: BaseException) -> bool:
 # Patterns that indicate potential prompt injection in MCP tool descriptions.
 # These are WARNING-level — we log but don't block, since false positives
 # would break legitimate MCP servers.
-_MCP_INJECTION_PATTERNS = [
-    (
-        re.compile(r"ignore\s+(all\s+)?previous\s+instructions", re.IGNORECASE),
-        "prompt override attempt ('ignore previous instructions')",
-    ),
-    (
-        re.compile(r"you\s+are\s+now\s+a", re.IGNORECASE),
-        "identity override attempt ('you are now a...')",
-    ),
-    (
-        re.compile(r"your\s+new\s+(task|role|instructions?)\s+(is|are)", re.IGNORECASE),
-        "task override attempt",
-    ),
-    (re.compile(r"system\s*:\s*", re.IGNORECASE), "system prompt injection attempt"),
-    (
-        re.compile(r"<\s*(system|human|assistant)\s*>", re.IGNORECASE),
-        "role tag injection attempt",
-    ),
-    (
-        re.compile(r"do\s+not\s+(tell|inform|mention|reveal)", re.IGNORECASE),
-        "concealment instruction",
-    ),
-    (
-        re.compile(r"(curl|wget|fetch)\s+https?://", re.IGNORECASE),
-        "network command in description",
-    ),
-    (
-        re.compile(r"base64\.(b64decode|decodebytes)", re.IGNORECASE),
-        "base64 decode reference",
-    ),
-    (re.compile(r"exec\s*\(|eval\s*\(", re.IGNORECASE), "code execution reference"),
-    (
-        re.compile(r"import\s+(subprocess|os|shutil|socket)", re.IGNORECASE),
-        "dangerous import reference",
-    ),
-]
+_MCP_INJECTION_PATTERNS = _mcp_protocol_policy._MCP_INJECTION_PATTERNS
 
 
-def _scan_mcp_description(
-    server_name: str, tool_name: str, description: str
-) -> list[str]:
-    """Scan an MCP tool description for prompt injection patterns.
-
-    Returns a list of finding strings (empty = clean).
-    """
-    findings = []
-    if not description:
-        return findings
-    for pattern, reason in _MCP_INJECTION_PATTERNS:
-        if pattern.search(description):
-            findings.append(reason)
-    if findings:
-        logger.warning(
-            "MCP server '%s' tool '%s': suspicious description content — %s. "
-            "Description: %.200s",
-            server_name,
-            tool_name,
-            "; ".join(findings),
-            description,
-        )
-    return findings
+_scan_mcp_description = _mcp_protocol_policy._scan_mcp_description
 
 
 _prepend_path = _mcp_server_configuration._prepend_path
