@@ -159,6 +159,8 @@ records.
 - `services.session_db_connection` owns connection construction, the bounded
   WAL read pool, write transaction retry and reconnect policy, checkpoints,
   and deterministic close behavior.
+- `services.session_db_schema` owns schema creation, column reconciliation,
+  FTS DDL, and compatibility backfills.
 - `services.session_db_fts_integrity` owns FTS capability probes, trigger and
   schema self-healing, and runtime corrupt-index recovery decisions.
 - `services.session_db_metadata` and `services.session_db_token_accounting` own
@@ -166,7 +168,13 @@ records.
 - `services.session_db_transcript_write`,
   `services.session_db_transcript_query`, and
   `services.session_db_conversation` own transcript serialization/writes,
-  bounded transcript queries, and resume/lineage reads.
+  bounded transcript queries, and resume reads.
+- `services.session_db_inspection` owns single-session row projection, exact or
+  unique-prefix ID resolution, dominant model-route reads, and the archived-row
+  existence probe.
+- `services.session_db_lineage` owns the read-only classification of explicit
+  branch/delegate/tool children versus compression continuations and projects
+  compression ancestor-to-tip chains. It performs no lifecycle or lease writes.
 - `services.session_db_rewind` owns duplicate-replay detection and transcript
   tail soft-delete/restore behavior.
 - `services.session_db_presentation`, `services.session_db_listing`, and
@@ -187,11 +195,13 @@ records.
   gateways.
 
 `services.session_db.SessionDB` remains the authoritative durable session store
-and composition root. It owns schema and session-domain coordination and
-supplies state and compatibility hooks used by these mixins. Compression lease
-acquisition, renewal, and release, plus gateway routing tables and peer/session
-lookup, remain in this host; none of the extracted modules imports the
-`session_db` coordinator back.
+and composition root. Callers still cross this host for connection, schema, and
+FTS behavior; the corresponding mixins receive their shared state, constants,
+and late-bound compatibility hooks from this boundary rather than forming a
+second store. Compression and session-turn lease acquisition, renewal, and
+release, plus gateway routing tables and peer/session lookup, remain in this
+host. The lineage read model owns none of those responsibilities, and none of
+the extracted modules imports the `session_db` coordinator back.
 
 #### AIAgent
 
