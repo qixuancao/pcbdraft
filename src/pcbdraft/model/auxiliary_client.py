@@ -68,6 +68,9 @@ from pcbdraft.model import auxiliary_cancellation as _auxiliary_cancellation
 from pcbdraft.model import auxiliary_fallbacks as _auxiliary_fallbacks
 from pcbdraft.model import auxiliary_provider_config as _auxiliary_provider_config
 from pcbdraft.model import auxiliary_provider_failures as _auxiliary_provider_failures
+from pcbdraft.model import (
+    auxiliary_response_projection as _auxiliary_response_projection,
+)
 from pcbdraft.model.auxiliary_adapters import (
     AnthropicAuxiliaryClient,
     AsyncAnthropicAuxiliaryClient,
@@ -6313,55 +6316,21 @@ def _recover_aux_response_message(response: Any) -> Any | None:
     endpoints return text outside ``choices`` (for example ``output_text`` or
     ``output`` items).  Preserve that response before declaring it malformed.
     """
-    text = _extract_aux_response_text(response)
-    if not text:
-        return None
-
-    choice = SimpleNamespace(
-        message=SimpleNamespace(content=text),
-        finish_reason=getattr(response, "finish_reason", None) or "stop",
+    return _auxiliary_response_projection._recover_aux_response_message(
+        response,
+        extract_text=_extract_aux_response_text,
     )
-    try:
-        response.choices = [choice]
-        return response
-    except Exception:
-        return SimpleNamespace(
-            id=getattr(response, "id", ""),
-            model=getattr(response, "model", ""),
-            object=getattr(response, "object", "chat.completion"),
-            choices=[choice],
-            usage=getattr(response, "usage", None),
-        )
 
 
 def _extract_aux_response_text(response: Any) -> str:
-    output_text = _obj_get(response, "output_text")
-    if isinstance(output_text, str) and output_text.strip():
-        return output_text.strip()
-
-    output = _obj_get(response, "output")
-    if not isinstance(output, list):
-        return ""
-
-    parts: list[str] = []
-    for item in output:
-        item_type = _obj_get(item, "type")
-        if item_type and item_type != "message":
-            continue
-        for part in _obj_get(item, "content") or []:
-            part_type = _obj_get(part, "type")
-            if part_type in {"output_text", "text", None}:
-                text = _obj_get(part, "text")
-                if isinstance(text, str) and text.strip():
-                    parts.append(text.strip())
-    return "\n".join(parts).strip()
+    return _auxiliary_response_projection._extract_aux_response_text(
+        response,
+        object_get=lambda obj, key: _obj_get(obj, key),
+    )
 
 
 def _obj_get(obj: Any, key: str, default: Any = None) -> Any:
-    value = getattr(obj, key, default)
-    if value is default and isinstance(obj, dict):
-        value = obj.get(key, default)
-    return value
+    return _auxiliary_response_projection._obj_get(obj, key, default)
 
 
 # ── Streamed aggregation for progress-hooked auxiliary calls ─────────────
@@ -7639,62 +7608,21 @@ def _call_llm_impl(
         raise
 
 
-def extract_content_or_reasoning(response) -> str:
+def extract_content_or_reasoning(response: Any) -> str:
     """Extract content from an LLM response, falling back to reasoning fields.
 
     Mirrors the main agent loop's behavior when a reasoning model (DeepSeek-R1,
     Qwen-QwQ, etc.) returns ``content=None`` with reasoning in structured fields.
 
     Resolution order:
-      1. ``message.content`` — strip inline think/reasoning blocks, check for
-         remaining non-whitespace text.
-      2. ``message.reasoning`` / ``message.reasoning_content`` — direct
-         structured reasoning fields (DeepSeek, Moonshot, NovitaAI, etc.).
-      3. ``message.reasoning_details`` — OpenRouter unified array format.
+      1. ``message.content`` after inline reasoning blocks are removed.
+      2. ``message.reasoning`` / ``message.reasoning_content``.
+      3. ``message.reasoning_details`` in the OpenRouter unified array format.
 
-    Returns the best available text, or ``""`` if nothing found.
+    Returns the best available text, or ``""`` if nothing is present.
     """
-    import re
 
-    msg = response.choices[0].message
-    content = (msg.content or "").strip()
-
-    if content:
-        # Strip inline think/reasoning blocks (mirrors _strip_think_blocks)
-        cleaned = re.sub(
-            r"<(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)>"
-            r".*?"
-            r"</(?:think|thinking|reasoning|thought|REASONING_SCRATCHPAD)>",
-            "",
-            content,
-            flags=re.DOTALL | re.IGNORECASE,
-        ).strip()
-        if cleaned:
-            return cleaned
-
-    # Content is empty or reasoning-only — try structured reasoning fields
-    reasoning_parts: list[str] = []
-    for field in ("reasoning", "reasoning_content"):
-        val = getattr(msg, field, None)
-        if val and isinstance(val, str) and val.strip() and val not in reasoning_parts:
-            reasoning_parts.append(val.strip())
-
-    details = getattr(msg, "reasoning_details", None)
-    if details and isinstance(details, list):
-        for detail in details:
-            if isinstance(detail, dict):
-                summary = (
-                    detail.get("summary") or detail.get("content") or detail.get("text")
-                )
-                if summary and summary not in reasoning_parts:
-                    reasoning_parts.append(
-                        summary.strip() if isinstance(summary, str) else str(summary)
-                    )
-
-    if reasoning_parts:
-        return "\n\n".join(reasoning_parts)
-
-    return ""
+    return _auxiliary_response_projection.extract_content_or_reasoning(response)
 
 
 @_relay_auxiliary_call_async
