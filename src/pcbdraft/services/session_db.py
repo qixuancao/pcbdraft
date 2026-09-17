@@ -67,6 +67,7 @@ from pcbdraft.services.session_db_conversation import SessionConversationMixin
 from pcbdraft.services.session_db_deletion import SessionDeletionMixin
 from pcbdraft.services.session_db_fts_integrity import SessionFTSIntegrityMixin
 from pcbdraft.services.session_db_handoff import SessionHandoffMixin
+from pcbdraft.services.session_db_inspection import SessionInspectionMixin
 from pcbdraft.services.session_db_lifecycle import SessionLifecycleMixin
 from pcbdraft.services.session_db_listing import SessionListingMixin
 from pcbdraft.services.session_db_maintenance import SessionMaintenanceMixin
@@ -2378,6 +2379,7 @@ _session_db_lifecycle.configure_session_lifecycle_hooks(
 class SessionDB(
     SessionConnectionMixin,
     SessionLifecycleMixin,
+    SessionInspectionMixin,
     SessionFTSIntegrityMixin,
     SessionHandoffMixin,
     SessionMaintenanceMixin,
@@ -2413,6 +2415,13 @@ class SessionDB(
 
     @staticmethod
     def _meta_store_escape_like(value: str) -> str:
+        return _escape_like(value)
+
+    # Compatibility hook for read-only inspection methods moved to a mixin.
+    # Resolve the legacy module helper at call time so existing monkeypatch
+    # paths remain effective without a reverse import from the mixin.
+    @staticmethod
+    def _inspection_escape_like(value: str) -> str:
         return _escape_like(value)
 
     # Compatibility hook for handoff reads moved to a mixin. Resolve the
@@ -2715,15 +2724,6 @@ class SessionDB(
     _IMPORT_MAX_TOTAL_MESSAGES = 50_000
     _IMPORT_MAX_SESSION_BYTES = 5 * 1024 * 1024
     _IMPORT_MAX_TOTAL_BYTES = 25 * 1024 * 1024
-
-    @staticmethod
-    def _session_row_dict(row: sqlite3.Row) -> dict[str, Any]:
-        data = dict(row)
-        if "_system_prompt_resolved" in data:
-            resolved = data.pop("_system_prompt_resolved")
-            if "system_prompt" in data:
-                data["system_prompt"] = resolved
-        return data
 
     # ── Chunked FTS rebuild engine (v23 opt-in optimize) ──
     #
@@ -4578,75 +4578,6 @@ class SessionDB(
 
         return self._execute_write(_do) or 0
 
-    def get_session(self, session_id: str) -> dict[str, Any] | None:
-        """Get a session by ID."""
-        # Cost/usage readers (/status, /usage, gateway endpoints) reach the
-        # row through here; drain queued token deltas so they see exact
-        # totals. No-op attribute check when nothing is queued.
-        self.flush_token_counts()
-        with self._read_ctx() as conn:
-            cursor = conn.execute(
-                "SELECT s.*, "
-                "COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved "
-                "FROM sessions s "
-                "LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash "
-                "WHERE s.id = ?",
-                (session_id,),
-            )
-            row = cursor.fetchone()
-        return self._session_row_dict(row) if row else None
-
-    def get_dominant_session_model_route(
-        self, session_id: str
-    ) -> dict[str, Any] | None:
-        """Return the main-loop model route that served most API calls.
-
-        ``sessions`` is a legacy aggregate row and can hold model/provider fields
-        written by different route changes. ``session_model_usage`` keeps the
-        coherent per-call tuple, so persisted status and billing reads should use
-        its dominant main-loop route when one is available.
-        """
-        self.flush_token_counts()
-        with self._read_ctx() as conn:
-            row = conn.execute(
-                """SELECT model, billing_provider, billing_base_url, billing_mode,
-                          api_call_count
-                     FROM session_model_usage
-                    WHERE session_id = ?
-                      AND task = ''
-                      AND model <> 'unknown'
-                      AND billing_provider <> ''
-                    ORDER BY api_call_count DESC,
-                             (input_tokens + output_tokens + cache_read_tokens +
-                              cache_write_tokens + reasoning_tokens) DESC,
-                             last_seen DESC
-                    LIMIT 1""",
-                (session_id,),
-            ).fetchone()
-        return dict(row) if row else None
-
-    def resolve_session_id(self, session_id_or_prefix: str) -> str | None:
-        """Resolve an exact or uniquely prefixed session ID to the full ID.
-
-        Returns the exact ID when it exists. Otherwise treats the input as a
-        prefix and returns the single matching session ID if the prefix is
-        unambiguous. Returns None for no matches or ambiguous prefixes.
-        """
-        exact = self.get_session(session_id_or_prefix)
-        if exact:
-            return exact["id"]
-
-        escaped = _escape_like(session_id_or_prefix)
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT id FROM sessions WHERE id LIKE ? ESCAPE '\\' ORDER BY started_at DESC LIMIT 2",
-                (f"{escaped}%",),
-            )
-            matches = [row["id"] for row in cursor.fetchall()]
-        if len(matches) == 1:
-            return matches[0]
-        return None
-
     # Columns excluded from compact_rows projections: only the payload-heavy
     # blob no list consumer renders. Everything else — including gateway
     # routing fields and desktop sidebar fields like git_branch — stays, and
@@ -4657,21 +4588,6 @@ class SessionDB(
         {"system_prompt", "system_prompt_hash", "git_metadata_generation"}
     )
     _session_compact_cols_sql: str | None = None
-
-    def has_archived_messages(self, session_id: str) -> bool:
-        """Return True if the session has any soft-archived (``active = 0``) rows.
-
-        Cheap existence probe — does not load rows. NOTE: production rewrite
-        paths no longer branch on this (they pass ``active_only=True``
-        unconditionally — a probe can fail open or race a concurrent
-        ``archive_and_compact``, #80216); kept for tests and diagnostics.
-        """
-        with self._lock:
-            cursor = self._conn.execute(
-                "SELECT 1 FROM messages WHERE session_id = ? AND active = 0 LIMIT 1",
-                (session_id,),
-            )
-            return cursor.fetchone() is not None
 
     # =========================================================================
     # Export and cleanup
