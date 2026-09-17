@@ -216,6 +216,12 @@ from pcbdraft.agent.prompt_builder import (
     build_skills_system_prompt,
     load_soul_md,
 )
+from pcbdraft.agent.provider_capabilities import (
+    ProviderCapabilitiesMixin,
+)
+from pcbdraft.agent.provider_capabilities import (
+    configure_provider_capabilities_runtime as _configure_provider_capabilities_runtime,
+)
 from pcbdraft.agent.redact import redact_sensitive_text
 from pcbdraft.agent.response_cleanup import (
     ResponseCleanupMixin,
@@ -311,6 +317,26 @@ _configure_client_lifecycle_runtime(
     debug=lambda message, *args, **kwargs: logger.debug(message, *args, **kwargs),
 )
 _configure_response_cleanup_runtime(
+    regex_search=lambda pattern, text: re.search(pattern, text),
+)
+_configure_provider_capabilities_runtime(
+    base_url_host_matches_fn=lambda url, host: base_url_host_matches(url, host),
+    base_url_hostname_fn=lambda url: base_url_hostname(url),
+    env_float_fn=lambda name, default: env_float(name, default),
+    env_get=lambda name: os.getenv(name),
+    is_local_endpoint_fn=lambda url: is_local_endpoint(url),
+    model_forces_max_completion_tokens_fn=(
+        lambda model: model_forces_max_completion_tokens(model)
+    ),
+    model_requires_responses_api=(
+        lambda model: AIAgent._model_requires_responses_api(model)
+    ),
+    provider_request_timeout=(
+        lambda provider, model: get_provider_request_timeout(provider, model)
+    ),
+    provider_stale_timeout=(
+        lambda provider, model: get_provider_stale_timeout(provider, model)
+    ),
     regex_search=lambda pattern, text: re.search(pattern, text),
 )
 
@@ -501,6 +527,7 @@ class _StreamErrorEvent(Exception):
 
 
 class AIAgent(
+    ProviderCapabilitiesMixin,
     ResponseCleanupMixin,
     ClientLifecycleMixin,
     ActivityTrackingMixin,
@@ -1116,336 +1143,6 @@ class AIAgent(
         from pcbdraft.agent.conversation_compression import replay_compression_warning
 
         replay_compression_warning(self)
-
-    def _is_direct_openai_url(self, base_url: str | None = None) -> bool:
-        """Return True when a base URL targets OpenAI's native API."""
-        if base_url is not None:
-            hostname = base_url_hostname(base_url)
-        else:
-            hostname = getattr(self, "_base_url_hostname", "") or base_url_hostname(
-                getattr(self, "_base_url_lower", "")
-            )
-        return hostname == "api.openai.com"
-
-    def _is_azure_openai_url(self, base_url: str | None = None) -> bool:
-        """Return True when a base URL targets Azure OpenAI.
-
-        Azure OpenAI exposes an OpenAI-compatible endpoint at
-        ``{resource}.openai.azure.com/openai/v1`` that accepts the
-        standard ``openai`` Python client.  Unlike api.openai.com it
-        does NOT support the Responses API — gpt-5.x models are served
-        on the regular ``/chat/completions`` path — so routing decisions
-        must treat Azure separately from direct OpenAI.
-        """
-        if base_url is not None:
-            url = str(base_url).lower()
-        else:
-            url = getattr(self, "_base_url_lower", "") or ""
-        return base_url_host_matches(url, "openai.azure.com")
-
-    def _is_github_copilot_url(self, base_url: str | None = None) -> bool:
-        """Return True when a base URL targets GitHub Copilot's OpenAI-compatible API."""
-        if base_url is not None:
-            hostname = base_url_hostname(base_url)
-        else:
-            hostname = getattr(self, "_base_url_hostname", "") or base_url_hostname(
-                getattr(self, "_base_url_lower", "")
-            )
-        if not hostname:
-            return False
-        return hostname == "api.githubcopilot.com" or hostname.endswith(
-            ".githubcopilot.com"
-        )
-
-    def _resolved_api_call_timeout(self) -> float:
-        """Resolve the effective per-call request timeout in seconds.
-
-        Priority:
-          1. ``providers.<id>.models.<model>.timeout_seconds`` (per-model override)
-          2. ``providers.<id>.request_timeout_seconds`` (provider-wide)
-          3. ``PCBDRAFT_RUNTIME_API_TIMEOUT`` env var (legacy escape hatch)
-          4. 1800.0s default
-
-        Used by OpenAI-wire chat completions (streaming and non-streaming) so
-        the per-provider config knob wins over the 1800s default.  Without this
-        helper, the hardcoded ``PCBDRAFT_RUNTIME_API_TIMEOUT`` fallback would always be
-        passed as a per-call ``timeout=`` kwarg, overriding the client-level
-        timeout the AIAgent.__init__ path configured.
-        """
-        cfg = get_provider_request_timeout(self.provider, self.model)
-        if cfg is not None:
-            return cfg
-        return env_float("PCBDRAFT_RUNTIME_API_TIMEOUT", 1800.0)
-
-    def _resolved_api_call_stale_timeout_base(self) -> tuple[float, bool]:
-        """Resolve the base non-stream stale timeout and whether it is implicit.
-
-        Priority:
-          1. ``providers.<id>.models.<model>.stale_timeout_seconds``
-          2. ``providers.<id>.stale_timeout_seconds``
-          3. ``PCBDRAFT_RUNTIME_API_CALL_STALE_TIMEOUT`` env var
-          4. 90.0s default (time-to-first-byte for non-streaming / Codex
-             internal-streaming requests; lowered from 300s in May 2026 so
-             fallback providers kick in faster when upstream providers
-             stall).  The detector still scales up for large contexts in
-             ``_compute_non_stream_stale_timeout``.
-
-        Returns ``(timeout_seconds, uses_implicit_default)`` so the caller can
-        preserve legacy behaviors that only apply when the user has *not*
-        explicitly configured a stale timeout, such as auto-disabling the
-        detector for local endpoints.
-        """
-        cfg = get_provider_stale_timeout(self.provider, self.model)
-        if cfg is not None:
-            return cfg, False
-
-        env_timeout = os.getenv("PCBDRAFT_RUNTIME_API_CALL_STALE_TIMEOUT")
-        if env_timeout is not None:
-            return float(env_timeout), False
-
-        # Reasoning-model floor: auto-mitigation for known reasoning models
-        # (Nemotron 3 Ultra, OpenAI o1/o3, Anthropic Opus 4.x thinking,
-        # DeepSeek R1, Qwen QwQ, xAI Grok reasoning, etc.) whose cloud
-        # gateways idle-kill before the model's thinking phase ends.
-        # uses_implicit_default is False here so the local-endpoint
-        # short-circuit in _compute_non_stream_stale_timeout does not
-        # disable stale detection for users running reasoning models on a
-        # local NIM endpoint.
-        from pcbdraft.agent.reasoning_timeouts import get_reasoning_stale_timeout_floor
-
-        reasoning_floor = get_reasoning_stale_timeout_floor(self.model)
-        if reasoning_floor is not None:
-            return reasoning_floor, False
-
-        return 90.0, True
-
-    def _compute_non_stream_stale_timeout(self, api_payload: Any) -> float:
-        """Compute the effective non-stream stale timeout for this request.
-
-        Accepts either the full ``api_kwargs`` dict (Chat Completions or
-        Responses API) or a legacy ``messages`` list.  Context-size scaling
-        applies the same way to both shapes via
-        :func:`agent.chat_completion_helpers.estimate_request_context_tokens`.
-        """
-        stale_base, uses_implicit_default = self._resolved_api_call_stale_timeout_base()
-        base_url = getattr(self, "_base_url", None) or self.base_url or ""
-        if uses_implicit_default and base_url and is_local_endpoint(base_url):
-            return float("inf")
-
-        from pcbdraft.agent.chat_completion_helpers import (
-            estimate_request_context_tokens,
-        )
-
-        est_tokens = estimate_request_context_tokens(api_payload)
-        if est_tokens > 100_000:
-            return max(stale_base, 240.0)
-        if est_tokens > 50_000:
-            return max(stale_base, 150.0)
-        return stale_base
-
-    def _codex_silent_hang_hint(self, model: str | None = None) -> str | None:
-        """Return an actionable hint when this request matches a known
-        Codex silent-reject configuration, else ``None``.
-
-        The ChatGPT Codex backend (``chatgpt.com/backend-api/codex``) has
-        historically silently dropped certain model requests: the connection
-        is accepted but no stream events are emitted and no error is raised.
-        The stale-call detector ends the hang, but a generic "timed out"
-        message gives the user no path forward.
-
-        This helper substitutes an actionable hint into the stale-timeout
-        warning when the request matches a known silent-reject pattern.
-        Currently flagged: ``gpt-5.5`` family on the Codex backend.  See
-        hermes-agent #21444 for the symptom history.  The upstream backend
-        behavior has historically come and gone with ChatGPT entitlement
-        changes — the heuristic stays in place as future-proofing even when
-        the symptom is dormant.
-
-        Does NOT fix the backend issue.  Only converts an opaque stale-timeout
-        into actionable text so users learn the workaround in seconds rather
-        than digging through logs.
-        """
-        if self.api_mode != "codex_responses":
-            return None
-        is_codex_backend = self.provider == "openai-codex" or (
-            getattr(self, "_base_url_hostname", "") == "chatgpt.com"
-            and "/backend-api/codex" in (getattr(self, "_base_url_lower", "") or "")
-        )
-        if not is_codex_backend:
-            return None
-        eff_model = (model if model is not None else self.model) or ""
-        model_lower = eff_model.lower()
-        # Match the gpt-5.5 family — bare ``gpt-5.5``, ``gpt-5.5-codex``,
-        # vendor-prefixed variants like ``openai/gpt-5.5``, and any future
-        # ``gpt-5.5-*`` SKU.  Anchor at a word boundary on either side so
-        # unrelated tokens like ``gpt-5.50`` do not match.
-        if not re.search(r"(?:^|[/\-_])gpt-5\.5(?:$|[\-_])", model_lower):
-            return None
-        return (
-            f"Codex backend appears to be silently rejecting {eff_model!r} "
-            "on chatgpt.com/backend-api/codex (no stream events, no error). "
-            "This is a known backend-side pattern that has affected ChatGPT "
-            "Plus accounts intermittently. "
-            "Workaround: try `gpt-5.4` on the same OAuth profile, or `gpt-5.3-codex`, "
-            "or switch to a different model/provider in your fallback chain. "
-            "Some ChatGPT Codex accounts do not support `gpt-5.4-codex`. "
-            "See hermes-agent#21444 for symptom history."
-        )
-
-    def _is_openrouter_url(self) -> bool:
-        """Return True when the base URL targets OpenRouter."""
-        return base_url_host_matches(self._base_url_lower, "openrouter.ai")
-
-    def _is_copilot_url(self) -> bool:
-        """Return True when the base URL targets GitHub Copilot or GitHub Models."""
-        return base_url_host_matches(
-            self._base_url_lower, "api.githubcopilot.com"
-        ) or base_url_host_matches(self._base_url_lower, "models.github.ai")
-
-    def _is_copilot_provider(self) -> bool:
-        """True when the active provider is GitHub Copilot, however spelled.
-
-        ``self.provider`` is not always the normalized slug: ``/model`` and
-        profile configs can leave the alias ``github-copilot`` (or ``github``)
-        in place — a single session log can show both ``provider=copilot`` and
-        ``provider=github-copilot`` for the same account. A bare
-        ``provider == "copilot"`` gate silently skips credential recovery for
-        the alias spellings, so this is the single owner of the check; the
-        Copilot base URL is accepted as a fallback signal.
-        """
-        if (self.provider or "").strip().lower() in {
-            "copilot",
-            "github-copilot",
-            "github",
-        }:
-            return True
-        return self._is_copilot_url()
-
-    def _is_codex_backend(self) -> bool:
-        """Return True for the ChatGPT OAuth Codex Responses backend."""
-        return (
-            getattr(self, "api_mode", None) == "codex_responses"
-            and getattr(self, "_base_url_hostname", "") == "chatgpt.com"
-            and "/backend-api/codex" in (getattr(self, "_base_url_lower", "") or "")
-        )
-
-    def _anthropic_prompt_cache_policy(
-        self,
-        *,
-        provider: str | None = None,
-        base_url: str | None = None,
-        api_mode: str | None = None,
-        model: str | None = None,
-    ) -> tuple[bool, bool]:
-        """Forwarder — see ``agent.agent_runtime_helpers.anthropic_prompt_cache_policy``."""
-        from pcbdraft.agent.agent_runtime_helpers import anthropic_prompt_cache_policy
-
-        return anthropic_prompt_cache_policy(
-            self, provider=provider, base_url=base_url, api_mode=api_mode, model=model
-        )
-
-    def _direct_native_anthropic_tool_cache_capability(
-        self,
-        *,
-        provider: str | None = None,
-        base_url: str | None = None,
-        api_mode: str | None = None,
-        model: str | None = None,
-    ) -> bool:
-        """Forwarder for the request-local native Anthropic tool capability."""
-        from pcbdraft.agent.agent_runtime_helpers import (
-            _direct_native_anthropic_tool_cache_capability,
-        )
-
-        return _direct_native_anthropic_tool_cache_capability(
-            self,
-            provider=provider,
-            base_url=base_url,
-            api_mode=api_mode,
-            model=model,
-        )
-
-    @staticmethod
-    def _model_requires_responses_api(model: str) -> bool:
-        """Return True for models that require the Responses API path.
-
-        GPT-5.x models are rejected on /v1/chat/completions by both
-        OpenAI and OpenRouter (error: ``unsupported_api_for_model``).
-        Detect these so the correct api_mode is set regardless of
-        which provider is serving the model.
-        """
-        m = model.lower()
-        # Strip vendor prefix (e.g. "openai/gpt-5.4" → "gpt-5.4")
-        if "/" in m:
-            m = m.rsplit("/", 1)[-1]
-        return m.startswith("gpt-5")
-
-    @staticmethod
-    def _provider_model_requires_responses_api(
-        model: str,
-        *,
-        provider: str | None = None,
-    ) -> bool:
-        """Return True when this provider/model pair should use Responses API."""
-        normalized_provider = (provider or "").strip().lower()
-        # Nous serves GPT-5.x models via its OpenAI-compatible chat
-        # completions endpoint; its /v1/responses endpoint returns 404.
-        if normalized_provider == "nous":
-            return False
-        if normalized_provider == "custom":
-            # Generic custom endpoints are conservative by default. They may
-            # relay GPT-5 models without full Responses semantics, so only
-            # direct OpenAI/xAI URL detection should auto-upgrade them.
-            return False
-        if normalized_provider == "copilot":
-            try:
-                from pcbdraft.model.catalog import _should_use_copilot_responses_api
-
-                return _should_use_copilot_responses_api(model)
-            except Exception:
-                # Fall back to the generic GPT-5 rule if Copilot-specific
-                # logic is unavailable for any reason.
-                pass
-        return AIAgent._model_requires_responses_api(model)
-
-    def _max_tokens_param(self, value: int) -> dict:
-        """Return the correct max tokens kwarg for the current provider.
-
-        OpenAI's newer models (gpt-4o, gpt-4.1, gpt-5+, o-series) require
-        'max_completion_tokens'. Azure OpenAI and GitHub Copilot also require
-        'max_completion_tokens' for those families served via their
-        OpenAI-compatible endpoints. OpenRouter, local models, and older
-        OpenAI models use 'max_tokens'.
-
-        The check is URL-first (api.openai.com / Azure / Copilot all use the
-        new kwarg), then falls back to a model-name check so third-party
-        OpenAI-compatible endpoints fronting those models are recognised —
-        URL-only detection misses that case and silently sends the wrong
-        kwarg, which the upstream model rejects with a 400.
-        """
-        if (
-            self._is_direct_openai_url()
-            or self._is_azure_openai_url()
-            or self._is_github_copilot_url()
-            or model_forces_max_completion_tokens(self.model)
-        ):
-            return {"max_completion_tokens": value}
-        return {"max_tokens": value}
-
-    @staticmethod
-    def _requested_output_cap_from_api_kwargs(api_kwargs: Any) -> int | None:
-        """Extract the outgoing response token cap from a prepared request."""
-        if not isinstance(api_kwargs, dict):
-            return None
-        for key in ("max_output_tokens", "max_completion_tokens", "max_tokens"):
-            raw = api_kwargs.get(key)
-            try:
-                value = int(raw)
-            except (TypeError, ValueError):
-                continue
-            if value > 0:
-                return value
-        return None
 
     def _cleanup_task_resources(self, task_id: str) -> None:
         """Forwarder — see ``agent.chat_completion_helpers.cleanup_task_resources``."""
