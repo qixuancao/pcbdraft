@@ -93,6 +93,7 @@ from pcbdraft.core.runtime_utils import (
 )
 from pcbdraft.model import auth_credential_pool_store as _auth_credential_pool_store
 from pcbdraft.model import auth_error_formatting as _auth_error_formatting
+from pcbdraft.model import auth_provider_endpoints as _auth_provider_endpoints
 from pcbdraft.model.configuration import (
     get_config_path,
     get_runtime_home,
@@ -210,38 +211,6 @@ SERVICE_PROVIDER_NAMES: dict[str, str] = {
 # any remote service.
 LMSTUDIO_NOAUTH_PLACEHOLDER = "dummy-lm-api-key"
 ACTUAL_LOCAL_NOAUTH_PLACEHOLDER = "dummy-actual-local-api-key"
-
-
-def is_actual_local_base_url(base_url: str) -> bool:
-    """Return True for Actual's loopback local API endpoint."""
-    try:
-        host = (urlparse(base_url or "").hostname or "").lower().rstrip(".")
-    except Exception:
-        return False
-    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
-
-
-def normalize_actual_base_url(base_url: str) -> str:
-    """Return Actual's OpenAI-compatible base URL.
-
-    Actual hosted inference is exposed at api.actual.inc, while the Actual
-    client's offline local server binds a loopback host. Both use a /v1 API
-    surface for Hermes' Responses transport.
-    """
-    url = str(base_url or "").strip().rstrip("/")
-    if not url:
-        return DEFAULT_ACTUAL_BASE_URL
-    try:
-        parsed = urlparse(url)
-        host = (parsed.hostname or "").lower().rstrip(".")
-        path = parsed.path.rstrip("/")
-    except Exception:
-        return url
-    if host == "api.actual.inc" and path in {"", "/"}:
-        return url + "/v1"
-    if is_actual_local_base_url(url) and path in {"", "/"}:
-        return url + "/v1"
-    return url
 
 
 # =============================================================================
@@ -636,31 +605,6 @@ except Exception:
 
 
 # =============================================================================
-# Anthropic Key Helper
-# =============================================================================
-
-
-def get_anthropic_key() -> str:
-    """Return the first usable Anthropic credential, or ``""``.
-
-    Checks both the ``.env`` file and the process environment, preferring
-    ``~/.hermes/.env`` so a deliberate key rotation isn't shadowed by a stale
-    shell export (matches the api-key resolution path — see #20591).  The
-    order mirrors the ``PROVIDER_REGISTRY["anthropic"].api_key_env_vars``
-    tuple:
-
-        ANTHROPIC_API_KEY -> ANTHROPIC_TOKEN -> CLAUDE_CODE_OAUTH_TOKEN
-    """
-    from pcbdraft.model.configuration import get_env_value_prefer_dotenv
-
-    for var in PROVIDER_REGISTRY["anthropic"].api_key_env_vars:
-        value = get_env_value_prefer_dotenv(var) or ""
-        if value:
-            return value
-    return ""
-
-
-# =============================================================================
 # Kimi Code Endpoint Detection
 # =============================================================================
 
@@ -677,22 +621,6 @@ def get_anthropic_key() -> str:
 KIMI_CODE_BASE_URL = "https://api.kimi.com/coding"
 
 
-def _resolve_kimi_base_url(api_key: str, default_url: str, env_override: str) -> str:
-    """Return the correct Kimi base URL based on the API key prefix.
-
-    If the user has explicitly set KIMI_BASE_URL, that always wins.
-    Otherwise, sk-kimi- prefixed keys route to api.kimi.com/coding/v1.
-    """
-    if env_override:
-        return env_override
-    # No key → nothing to infer from.  Return default without inspecting.
-    if not api_key:
-        return default_url
-    if api_key.startswith("sk-kimi-"):
-        return KIMI_CODE_BASE_URL
-    return default_url
-
-
 _PLACEHOLDER_SECRET_VALUES = {
     "*",
     "**",
@@ -707,68 +635,6 @@ _PLACEHOLDER_SECRET_VALUES = {
     "null",
     "none",
 }
-
-
-def has_usable_secret(value: Any, *, min_length: int = 4) -> bool:
-    """Return True when a configured secret looks usable, not empty/placeholder."""
-    if not isinstance(value, str):
-        return False
-    cleaned = value.strip()
-    if len(cleaned) < min_length:
-        return False
-    return cleaned.lower() not in _PLACEHOLDER_SECRET_VALUES
-
-
-def _resolve_api_key_provider_secret(
-    provider_id: str, pconfig: ProviderConfig
-) -> tuple[str, str]:
-    """Resolve an API-key provider's token and indicate where it came from."""
-    if provider_id == "copilot":
-        # Use the dedicated copilot auth module for proper token validation
-        try:
-            from pcbdraft.interfaces.tui.copilot_auth import (
-                get_copilot_api_token,
-                resolve_copilot_token,
-            )
-
-            token, source = resolve_copilot_token()
-            if token:
-                api_token, _base_url = get_copilot_api_token(token)
-                return api_token, source
-        except ValueError as exc:
-            logger.warning("Copilot token validation failed: %s", exc)
-        except Exception:
-            pass
-        return "", ""
-
-    from pcbdraft.model.configuration import get_env_value_prefer_dotenv
-
-    for env_var in pconfig.api_key_env_vars:
-        # Prefer ~/.hermes/.env over os.environ so a deliberate key rotation
-        # in the user's .env file isn't shadowed by a stale shell export
-        # inherited from a parent process (Codex CLI, test runners, etc.).
-        val = (get_env_value_prefer_dotenv(env_var) or "").strip()
-        if has_usable_secret(val):
-            return val, env_var
-
-    # Fallback: try credential pool (e.g. zai key stored via auth.json)
-    try:
-        from pcbdraft.model.credential_pool import load_pool
-
-        pool = load_pool(provider_id)
-        if pool and pool.has_credentials():
-            entry = pool.peek()
-            if entry:
-                key = getattr(entry, "access_token", "") or getattr(
-                    entry, "runtime_api_key", ""
-                )
-                key = str(key).strip()
-                if has_usable_secret(key):
-                    return key, f"credential_pool:{provider_id}"
-    except Exception:
-        pass
-
-    return "", ""
 
 
 # =============================================================================
@@ -799,196 +665,6 @@ ZAI_ENDPOINTS = [
         "China (Coding Plan)",
     ),
 ]
-
-
-def _probe_single_zai_endpoint(
-    api_key: str,
-    endpoint: tuple,
-    timeout: float,
-) -> dict[str, str] | None:
-    """Probe a single Z.AI endpoint. Returns endpoint info dict or None.
-
-    Preserves the per-endpoint candidate-model loop: endpoints carry a
-    ``probe_models`` LIST and each model is tried in order until one
-    succeeds (some plans only accept newer/older GLM slugs).
-    """
-    ep_id, base_url, probe_models, label = endpoint
-    for model in probe_models:
-        try:
-            resp = httpx.post(
-                f"{base_url}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": model,
-                    "stream": False,
-                    "max_tokens": 1,
-                    "messages": [{"role": "user", "content": "ping"}],
-                },
-                timeout=timeout,
-            )
-            if resp.status_code == 200:
-                logger.debug(
-                    "Z.AI endpoint probe: %s (%s) model=%s OK", ep_id, base_url, model
-                )
-                return {
-                    "id": ep_id,
-                    "base_url": base_url,
-                    "model": model,
-                    "label": label,
-                }
-            logger.debug(
-                "Z.AI endpoint probe: %s model=%s returned %s",
-                ep_id,
-                model,
-                resp.status_code,
-            )
-        except Exception as exc:
-            logger.debug(
-                "Z.AI endpoint probe: %s model=%s failed: %s", ep_id, model, exc
-            )
-    return None
-
-
-def detect_zai_endpoint(api_key: str, timeout: float = 8.0) -> dict[str, str] | None:
-    """Probe z.ai endpoints in parallel to find one that accepts this API key.
-
-    Returns {"id": ..., "base_url": ..., "model": ..., "label": ...} for the
-    first working endpoint (in ZAI_ENDPOINTS priority order), or None if all
-    fail.  For endpoints with multiple candidate models, each worker tries
-    its endpoint's models in order and returns the first that succeeds.
-    """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
-    # No `with` block: a context manager would join ALL probe threads on
-    # exit, defeating the early return below. shutdown(wait=False) lets the
-    # surviving daemon-style probes drain in the background instead of
-    # blocking the caller on slow/unreachable endpoints.
-    pool = ThreadPoolExecutor(max_workers=len(ZAI_ENDPOINTS))
-    try:
-        futures = {
-            pool.submit(_probe_single_zai_endpoint, api_key, ep, timeout): ep[0]
-            for ep in ZAI_ENDPOINTS
-        }
-        by_id = {ep_id: f for f, ep_id in futures.items()}
-        results: dict[str, dict[str, str]] = {}
-        for future in as_completed(futures):
-            ep_id = futures[future]
-            try:
-                result = future.result()
-                if result is not None:
-                    results[ep_id] = result
-            except Exception:
-                pass
-            # Early exit in PRIORITY order: walk endpoints highest-priority
-            # first; if one has succeeded and every higher-priority probe
-            # has already finished (without success), no later completion
-            # can win — return now instead of waiting out slow endpoints
-            # (main's sequential loop also stopped at first success).
-            for ep in ZAI_ENDPOINTS:
-                if not by_id[ep[0]].done():
-                    break  # a higher-priority probe is still in flight
-                if ep[0] in results:
-                    return results[ep[0]]
-
-        # All probes finished: first match in priority order, if any.
-        for ep in ZAI_ENDPOINTS:
-            if ep[0] in results:
-                return results[ep[0]]
-        return None
-    finally:
-        pool.shutdown(wait=False)
-
-
-def _resolve_zai_base_url(api_key: str, default_url: str, env_override: str) -> str:
-    """Return the correct Z.AI base URL by probing endpoints.
-
-    If the user has explicitly set GLM_BASE_URL, that always wins.
-    Otherwise, probe the candidate endpoints to find one that accepts the
-    key.  The detected endpoint is cached in provider state (auth.json) keyed
-    on a hash of the API key so subsequent starts skip the probe.
-    """
-    if env_override:
-        return env_override
-
-    # No API key set → don't probe (would fire N×M HTTPS requests with an
-    # empty Bearer token, all returning 401).  This path is hit during
-    # auxiliary-client auto-detection when the user has no Z.AI credentials
-    # at all — the caller discards the result immediately, so the probe is
-    # pure latency for every AIAgent construction.
-    if not api_key:
-        return default_url
-
-    # Check provider-state cache for a previously-detected endpoint.
-    auth_store = _load_auth_store()
-    state = _load_provider_state(auth_store, "zai") or {}
-    cached = state.get("detected_endpoint")
-    if isinstance(cached, dict) and cached.get("base_url"):
-        key_hash = cached.get("key_hash", "")
-        if key_hash == hashlib.sha256(api_key.encode()).hexdigest()[:16]:
-            logger.debug("Z.AI: using cached endpoint %s", cached["base_url"])
-            return cached["base_url"]
-
-    # Probe — may take up to ~8s per endpoint.
-    detected = detect_zai_endpoint(api_key)
-    if detected and detected.get("base_url"):
-        # Persist the detection result keyed on the API key hash.
-        key_hash = hashlib.sha256(api_key.encode()).hexdigest()[:16]
-        detected_endpoint = {
-            "base_url": detected["base_url"],
-            "endpoint_id": detected.get("id", ""),
-            "model": detected.get("model", ""),
-            "label": detected.get("label", ""),
-            "key_hash": key_hash,
-        }
-        # Persist failure (disk full, permissions, lock timeout) must not
-        # break resolution — detection already succeeded; worst case the
-        # next start re-probes.
-        try:
-            with _auth_store_lock():
-                # Reload auth_store under lock to avoid overwriting concurrent changes
-                auth_store = _load_auth_store()
-                state_under_lock = _load_provider_state(auth_store, "zai") or {}
-                state_under_lock["detected_endpoint"] = detected_endpoint
-                # set_active=False: this runs from credential-pool env seeding
-                # (agent/credential_pool.py) for ANY user with a Z.AI key in env,
-                # and caching a probe result must not flip their active provider.
-                _store_provider_state(
-                    auth_store, "zai", state_under_lock, set_active=False
-                )
-                _save_auth_store(auth_store)
-        except Exception as exc:
-            logger.warning(
-                "Z.AI: could not persist detected endpoint (%s); will re-probe next start",
-                exc,
-            )
-        logger.info(
-            "Z.AI: auto-detected endpoint %s (%s)",
-            detected["label"],
-            detected["base_url"],
-        )
-        return detected["base_url"]
-
-    logger.debug("Z.AI: probe failed, falling back to default %s", default_url)
-    return default_url
-
-
-def _normalize_lmstudio_runtime_base_url(base_url: str) -> str:
-    """Return the OpenAI-compatible LM Studio runtime base URL.
-
-    LM Studio's native management API lives under ``/api/v1`` while its
-    OpenAI-compatible chat endpoint lives under ``/v1``. Users often paste
-    either form into ``LM_BASE_URL`` or ``model.base_url``; normalize before
-    the OpenAI SDK appends ``/chat/completions``.
-    """
-    root = str(base_url or "").strip().rstrip("/")
-    for suffix in ("/api/v1", "/api", "/v1"):
-        if root.endswith(suffix):
-            root = root[: -len(suffix)].rstrip("/")
-            break
-    return (root or "http://127.0.0.1:1234") + "/v1"
 
 
 # =============================================================================
@@ -1569,6 +1245,52 @@ def _store_provider_state(
     providers[provider_id] = state
     if set_active:
         auth_store["active_provider"] = provider_id
+
+
+# Compatibility re-exports for provider secret and endpoint resolution. The
+# hooks resolve legacy module globals at call time so established monkeypatch
+# paths continue to affect the extracted implementation without a reverse
+# import or moving provider-state ownership out of this module.
+is_actual_local_base_url = _auth_provider_endpoints.is_actual_local_base_url
+normalize_actual_base_url = _auth_provider_endpoints.normalize_actual_base_url
+get_anthropic_key = _auth_provider_endpoints.get_anthropic_key
+_resolve_kimi_base_url = _auth_provider_endpoints._resolve_kimi_base_url
+has_usable_secret = _auth_provider_endpoints.has_usable_secret
+_resolve_api_key_provider_secret = (
+    _auth_provider_endpoints._resolve_api_key_provider_secret
+)
+_probe_single_zai_endpoint = _auth_provider_endpoints._probe_single_zai_endpoint
+detect_zai_endpoint = _auth_provider_endpoints.detect_zai_endpoint
+_resolve_zai_base_url = _auth_provider_endpoints._resolve_zai_base_url
+_normalize_lmstudio_runtime_base_url = (
+    _auth_provider_endpoints._normalize_lmstudio_runtime_base_url
+)
+
+_auth_provider_endpoints._configure_legacy_auth_hooks(
+    actual_default_base_url=lambda: DEFAULT_ACTUAL_BASE_URL,
+    parse_url=lambda value: urlparse(value),
+    is_actual_local_base_url_hook=lambda value: is_actual_local_base_url(value),
+    provider_registry=lambda: PROVIDER_REGISTRY,
+    kimi_code_base_url=lambda: KIMI_CODE_BASE_URL,
+    placeholder_secret_values=lambda: _PLACEHOLDER_SECRET_VALUES,
+    has_usable_secret_hook=lambda value, **kwargs: has_usable_secret(value, **kwargs),
+    logger=lambda: logger,
+    httpx_module=lambda: httpx,
+    zai_endpoints=lambda: ZAI_ENDPOINTS,
+    probe_single_zai_endpoint=lambda: _probe_single_zai_endpoint,
+    load_auth_store=lambda: _load_auth_store(),
+    load_provider_state=lambda store, provider_id: _load_provider_state(
+        store, provider_id
+    ),
+    detect_zai_endpoint_hook=lambda api_key, **kwargs: detect_zai_endpoint(
+        api_key, **kwargs
+    ),
+    auth_store_lock=lambda: _auth_store_lock(),
+    store_provider_state=lambda store, provider_id, state, **kwargs: (
+        _store_provider_state(store, provider_id, state, **kwargs)
+    ),
+    save_auth_store=lambda store: _save_auth_store(store),
+)
 
 
 def _persist_provider_state_to_store(
