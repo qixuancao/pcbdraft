@@ -125,10 +125,14 @@ whole-repository regression run or a release gate.
   evidence, installed-library, and part-catalog inspection.
 - `services.application_native_outputs` owns individual native PCB check,
   preview-render, and manufacturing-export result workflows.
+- `services.application_agent_repair` owns read-only project-event projection
+  and reviewable agent repair proposal normalization and preparation.
 
 `services.application.ApplicationService` remains the composition root and the
 only project mutation, transaction, publication, and project-state authority.
-The extracted modules do not create a parallel application service.
+Transactional repair execution and writes, including pending repair artifacts,
+project-state transitions, and failure publication, remain in this host. The
+extracted modules do not create a parallel application service.
 
 #### SessionDB
 
@@ -160,10 +164,15 @@ The extracted modules do not create a parallel application service.
   and durable chat/thread-to-session bindings.
 - `services.session_db_handoff` owns the durable cross-platform
   pending-to-running-to-completed-or-failed handoff state machine.
+- `services.session_db_lifecycle` owns session-row creation and enrichment,
+  end/reopen/reset transitions, transcript replacement, and compaction commit
+  gateways.
 
 `services.session_db.SessionDB` remains the authoritative durable session store
 and composition root. It owns schema and session-domain coordination and
-supplies state and compatibility hooks used by these mixins; none imports the
+supplies state and compatibility hooks used by these mixins. Compression lease
+acquisition, renewal, and release, plus gateway routing tables and peer/session
+lookup, remain in this host; none of the extracted modules imports the
 `session_db` coordinator back.
 
 #### AIAgent
@@ -245,9 +254,11 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   `tools.mcp_task_lifecycle` owns server-task transport setup and
   teardown, stdio subprocess cleanup, HTTP/SSE session lifecycle, keepalive,
   and recycle behavior; `tools.mcp_tool_discovery` owns capability-aware
-  discovery, dynamic refresh, schema registration, and lazy-cache registration.
-  `tools.mcp_tool` remains the authentication-retry, handler, actual tool-call,
-  and lifecycle coordinator.
+  discovery, dynamic refresh, schema registration, and lazy-cache registration;
+  and `tools.mcp_utility_handlers` owns resource/prompt utility dispatch,
+  argument checks, and result normalization. `tools.mcp_tool` remains the
+  authentication-retry, generic tool handler, actual tool-call, and lifecycle
+  coordinator.
 - `terminal_client/src/commands.ts` owns slash-command resolution and unique
   prefix completion, `assistant-preview.ts` owns transient delta rendering and
   saved-transcript reconciliation, `bridge.ts` owns the typed GUI API client,
