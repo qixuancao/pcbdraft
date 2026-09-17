@@ -68,6 +68,9 @@ from pcbdraft.services import (
 from pcbdraft.services import application_pcb_operations as _application_pcb_operations
 from pcbdraft.services import application_project_store as _application_project_store
 from pcbdraft.services import (
+    application_repair_transaction as _application_repair_transaction,
+)
+from pcbdraft.services import (
     application_semantic_operations as _application_semantic_operations,
 )
 from pcbdraft.services import (
@@ -117,6 +120,9 @@ from pcbdraft.services.application_project_queries import (
     ApplicationProjectQueriesMixin,
 )
 from pcbdraft.services.application_release import ApplicationReleaseMixin
+from pcbdraft.services.application_repair_transaction import (
+    ApplicationRepairTransactionMixin,
+)
 from pcbdraft.services.application_status_projection import (
     ApplicationStatusProjectionMixin,
 )
@@ -372,6 +378,61 @@ _application_agent_repair._configure_legacy_application_hooks(
     ),
 )
 
+_application_repair_transaction._configure_legacy_application_hooks(
+    normalize_repair_feedback_hook=lambda *args, **kwargs: normalize_repair_feedback(
+        *args, **kwargs
+    ),
+    validation_error_hook=lambda message: ValidationError(message),
+    pcbdraft_error_hook=lambda message: PCBDraftError(message),
+    pcbdraft_error_type_hook=lambda: PCBDraftError,
+    agent_design_request_from_dict_hook=lambda value: AgentDesignRequest.from_dict(
+        value
+    ),
+    circuit_plan_from_dict_hook=lambda value: CircuitPlan.from_dict(value),
+    load_json_limited_hook=lambda *args, **kwargs: load_json_limited(*args, **kwargs),
+    pending_request_name_hook=lambda: PENDING_REQUEST_NAME,
+    pending_plan_name_hook=lambda: PENDING_PLAN_NAME,
+    pending_design_name_hook=lambda: PENDING_DESIGN_NAME,
+    pending_parts_name_hook=lambda: PENDING_PARTS_NAME,
+    app_file_limit_hook=lambda: APP_FILE_LIMIT,
+    open_managed_project_hook=lambda *args, **kwargs: open_managed_project(
+        *args, **kwargs
+    ),
+    resource_lock_hook=lambda *args, **kwargs: ResourceLock(*args, **kwargs),
+    utc_timestamp_hook=lambda: utc_timestamp(),
+    planner_symbol_context_hook=lambda *args, **kwargs: planner_symbol_context(
+        *args, **kwargs
+    ),
+    new_run_id_hook=lambda: new_run_id(),
+    compile_agent_plan_hook=lambda *args, **kwargs: compile_agent_plan(*args, **kwargs),
+    atomic_write_json_hook=lambda *args, **kwargs: atomic_write_json(*args, **kwargs),
+    make_directory_hook=lambda *args, **kwargs: make_directory(*args, **kwargs),
+    attach_progress_hook=lambda *args, **kwargs: _attach_progress(*args, **kwargs),
+    materialize_managed_design_hook=lambda *args, **kwargs: materialize_managed_design(
+        *args, **kwargs
+    ),
+    validate_managed_project_hook=lambda *args, **kwargs: validate_managed_project(
+        *args, **kwargs
+    ),
+    validation_feedback_from_levels_hook=lambda *args, **kwargs: (
+        validation_feedback_from_levels(*args, **kwargs)
+    ),
+    semantic_diff_hook=lambda *args, **kwargs: semantic_diff(*args, **kwargs),
+    unavailable_consistency_report_hook=lambda *args, **kwargs: (
+        _unavailable_consistency_report(*args, **kwargs)
+    ),
+    sanitize_secret_text_hook=lambda value: _sanitize_secret_text(value),
+    operation_failure_code_hook=lambda *args, **kwargs: _operation_failure_code(
+        *args, **kwargs
+    ),
+    progress_vector_unknown_hook=lambda revision: ProgressVector.unknown(revision),
+    engineering_stage_not_started_hook=lambda: EngineeringStage.NOT_STARTED,
+    stage_projection_hook=lambda *args, **kwargs: StageProjection(*args, **kwargs),
+    transaction_progress_projection_hook=lambda value: _transaction_progress_projection(
+        value
+    ),
+)
+
 _application_native_outputs._configure_legacy_application_hooks(
     open_managed_project_hook=lambda *args, **kwargs: open_managed_project(
         *args, **kwargs
@@ -530,6 +591,7 @@ _application_pcb_operations._configure_legacy_application_hooks(
 
 class ApplicationService(
     ApplicationAgentRepairMixin,
+    ApplicationRepairTransactionMixin,
     ApplicationConfirmationMixin,
     ApplicationMessageInputMixin,
     ApplicationNativeOutputsMixin,
@@ -1912,457 +1974,6 @@ class ApplicationService(
             )
             self._write_records(current.root, state, conversation)
         return self.open_project(project_id)
-
-    def prepare_agent_repair(
-        self,
-        project_id: str,
-        feedback: dict[str, Any],
-        *,
-        timeout: float = 180.0,
-        expected_revision: int | None = None,
-    ) -> dict[str, Any]:
-        """Revise a plan from bounded tool evidence and stage it transactionally.
-
-        A project without an authoritative design receives a replacement pending
-        plan.  A generated project is never edited in place: its replacement is
-        generated and validated under ``transactions/`` before it can be applied.
-        """
-
-        normalized = normalize_repair_feedback(feedback)
-        project = self._open(project_id)
-        expected_revision = self._bind_expected_revision(
-            project, expected_revision, operation="plan repair"
-        )
-        if project.state["status"] not in {
-            "generation_failed",
-            "generated",
-            "validated",
-            "validation_failed",
-            "repair_failed",
-            "released",
-            "release_failed",
-            "interrupted",
-        }:
-            raise ValidationError("project is not eligible for automatic plan repair")
-        if project.state["active_transaction"] is not None:
-            raise ValidationError("project already has a staged semantic change")
-        request = AgentDesignRequest.from_dict(
-            load_json_limited(project.root / PENDING_REQUEST_NAME, APP_FILE_LIMIT)
-        )
-        previous_plan = CircuitPlan.from_dict(
-            load_json_limited(project.root / PENDING_PLAN_NAME, APP_FILE_LIMIT)
-        )
-        if request.design_id != previous_plan.design_id:
-            raise ValidationError("pending repair request and plan identities differ")
-        authoritative = None
-        baseline_design_revision = int(project.state["design_revision"])
-        before_progress: ProgressVector | None = None
-        before_stage: StageProjection | None = None
-        before_consistency: NativeConsistencyReport | None = None
-        if project.design_root.is_dir() and not project.design_root.is_symlink():
-            authoritative = open_managed_project(project.design_root)
-            authoritative.assert_synchronized()
-            if authoritative.design.design_id != request.design_id:
-                raise ValidationError(
-                    "authoritative design identity differs from the pending repair plan"
-                )
-            before_progress, before_stage, before_consistency = (
-                self._managed_progress_and_stage(
-                    project,
-                    authoritative,
-                    baseline_design_revision,
-                )
-            )
-        prior_status = project.state["status"]
-        prior_validation = project.state["last_validation"]
-        prior_preview = project.state["last_preview"]
-        prior_release = project.state["last_release"]
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError("project changed before plan repair started")
-            current.state["status"] = "repairing"
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            self._event(
-                current.state,
-                current.root,
-                "repair.started",
-                f"Revising the circuit plan (attempt {normalized['attempt']})",
-            )
-            self._write_records(current.root, current.state, current.conversation)
-            expected_revision = current.state["revision"]
-
-        reviser = getattr(self.provider, "revise_plan", None)
-        try:
-            if not callable(reviser) or not getattr(
-                self.provider, "supports_planning", True
-            ):
-                raise PCBDraftError(
-                    "the selected provider cannot revise a circuit plan from tool feedback"
-                )
-            revised_plan = reviser(
-                request,
-                previous_plan,
-                normalized,
-                symbol_context=planner_symbol_context(request),
-                project_dir=project.root,
-                run_dir=project.root / "provider-runs" / new_run_id(),
-                timeout=timeout,
-            )
-            if revised_plan.canonical_bytes() == previous_plan.canonical_bytes():
-                raise ValidationError(
-                    "repair provider returned the unchanged circuit plan"
-                )
-            compilation = compile_agent_plan(request, revised_plan)
-        except BaseException as exc:
-            self._record_failure(
-                project_id,
-                expected_revision,
-                "repair_failed",
-                "repair.failed",
-                str(exc),
-            )
-            raise
-
-        proposal = project.conversation.get("proposal")
-        revised_proposal = (
-            self._attach_plan(proposal, compilation)
-            if isinstance(proposal, dict)
-            else None
-        )
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            if current.state["revision"] != expected_revision:
-                raise ValidationError(
-                    "project changed while its plan was being revised"
-                )
-            atomic_write_json(
-                current.root / PENDING_REQUEST_NAME, compilation.request.to_dict()
-            )
-            atomic_write_json(
-                current.root / PENDING_PLAN_NAME, compilation.plan.to_dict()
-            )
-            atomic_write_json(
-                current.root / PENDING_DESIGN_NAME, compilation.design.to_dict()
-            )
-            atomic_write_json(
-                current.root / PENDING_PARTS_NAME, compilation.graph.to_dict()
-            )
-            if revised_proposal is not None:
-                current.conversation["proposal"] = revised_proposal
-            current.state["revision"] += 1
-            current.state["updated_at"] = utc_timestamp()
-            if authoritative is None:
-                current.state["status"] = "awaiting_confirmation"
-                text = (
-                    "A replacement circuit plan was compiled from retained tool "
-                    "evidence and is ready for native KiCad generation."
-                )
-                self._append_message(
-                    current.conversation,
-                    "assistant",
-                    "repair_plan",
-                    text,
-                    data={"attempt": normalized["attempt"]},
-                )
-                self._event(current.state, current.root, "repair.plan_ready", text)
-            self._write_records(current.root, current.state, current.conversation)
-            expected_revision = current.state["revision"]
-        if authoritative is None:
-            return self.open_project(project_id)
-
-        transaction_id = new_run_id()
-        transaction = make_directory(project.root / "transactions" / transaction_id)
-        staged = transaction / "staged"
-        receipt_path = transaction / "receipt.json"
-        receipt: dict[str, Any] = {
-            "schema": "pcbdraft-agent-repair-transaction",
-            "version": 2,
-            "status": "preparing",
-            "created_at": utc_timestamp(),
-            "request": normalized["summary"],
-            "feedback": normalized,
-            "before_hash": authoritative.design.content_hash(),
-            "after_hash": compilation.design.content_hash(),
-            "prior_status": prior_status,
-            "prior_validation": prior_validation,
-            "prior_preview": prior_preview,
-            "prior_release": prior_release,
-            "validation": None,
-            "result_status": None,
-            "baseline_design_revision": baseline_design_revision,
-            "candidate_revision": baseline_design_revision + 1,
-            "postconditions": [],
-            "artifact": {},
-        }
-        if before_progress is None or before_stage is None:
-            raise ValidationError("repair transaction lacks authoritative progress")
-        _attach_progress(
-            receipt,
-            before_progress,
-            before_progress,
-            before_stage,
-            before_stage,
-        )
-        receipt["convergence_classification"] = receipt["progress_delta"][
-            "classification"
-        ]
-        atomic_write_json(receipt_path, receipt)
-        try:
-            materialize_managed_design(
-                compilation.request,
-                compilation.design,
-                staged,
-                graph=compilation.graph,
-                plan=compilation.plan,
-                retain_failed_attempt=transaction / "failed-native",
-            )
-            candidate = open_managed_project(staged)
-            candidate.assert_synchronized()
-            validation_run = validate_managed_project(
-                candidate,
-                output=transaction / "validation",
-                timeout=timeout,
-                canonical_revision=expected_revision,
-                design_revision=baseline_design_revision + 1,
-            )
-            self._bind_aggregate_validation_revision(
-                transaction / "validation",
-                candidate.design.content_hash(),
-                baseline_design_revision + 1,
-            )
-            validation_report = load_json_limited(
-                validation_run.report_path, APP_FILE_LIMIT
-            )
-            levels = validation_report["levels"]
-            candidate_feedback = validation_feedback_from_levels(
-                levels, attempt=normalized["attempt"]
-            )
-            validation_summary = {
-                "report": validation_run.report_path.relative_to(
-                    transaction
-                ).as_posix(),
-                "report_sha256": validation_run.report_sha256,
-                "candidate_ready": validation_run.candidate_ready,
-                "production_evidence_complete": (
-                    validation_run.production_evidence_complete
-                ),
-                "production_ready": validation_run.production_ready,
-                "production_claimed": False,
-                "source_design_revision": baseline_design_revision + 1,
-                "assurance": str(
-                    candidate.design.metadata.get("assurance", "provisional")
-                ),
-            }
-            atomic_write_json(
-                transaction / "semantic-diff.json",
-                semantic_diff(authoritative.design, candidate.design),
-            )
-            candidate_progress, candidate_stage, candidate_consistency = (
-                self._managed_progress_and_stage(
-                    project,
-                    candidate,
-                    baseline_design_revision + 1,
-                    validation_root=transaction / "validation",
-                    include_routing_failures=False,
-                )
-            )
-            verified_candidate = self._require_current_native_consistency(
-                candidate_consistency,
-                baseline_design_revision + 1,
-                label="staged candidate",
-            )
-            atomic_write_json(
-                transaction / "native-consistency-before.json",
-                (
-                    before_consistency.to_dict()
-                    if before_consistency is not None
-                    else _unavailable_consistency_report(
-                        baseline_design_revision
-                    ).to_dict()
-                ),
-            )
-            atomic_write_json(
-                transaction / "native-consistency-candidate.json",
-                verified_candidate.to_dict(),
-            )
-            receipt["artifact"] = {
-                "semantic_diff": "semantic-diff.json",
-                "native_consistency_before": "native-consistency-before.json",
-                "native_consistency_candidate": "native-consistency-candidate.json",
-                "validation": "validation",
-            }
-            receipt["candidate_progress"] = candidate_progress.to_dict()
-            receipt["candidate_stage"] = candidate_stage.to_dict()
-            receipt["postconditions"] = [
-                {
-                    "name": "candidate_native_consistency",
-                    "passed": verified_candidate.consistency_passed,
-                }
-            ]
-        except BaseException as exc:
-            receipt["status"] = "failed"
-            receipt["failed_at"] = utc_timestamp()
-            receipt["failure"] = _sanitize_secret_text(str(exc))[:2048]
-            receipt["error_code"] = _operation_failure_code(
-                exc, stage="native_consistency", tool_name="repair_candidate"
-            )
-            _attach_progress(
-                receipt,
-                before_progress,
-                before_progress,
-                before_stage,
-                before_stage,
-            )
-            receipt["convergence_classification"] = receipt["progress_delta"][
-                "classification"
-            ]
-            atomic_write_json(receipt_path, receipt)
-            self._record_failure(
-                project_id,
-                expected_revision,
-                "repair_failed",
-                "repair.failed",
-                str(exc),
-            )
-            raise
-
-        receipt["validation"] = validation_summary
-        rejected = candidate_feedback is not None
-        if rejected:
-            receipt["repair_feedback"] = candidate_feedback
-        else:
-            receipt["result_status"] = (
-                "validated" if validation_run.candidate_ready else "generated"
-            )
-        # Candidate-only evidence may be durable while the top-level live
-        # progress remains neutral.  The terminal ready/rejected fact is
-        # published only after matching project records and its event.
-        prepublication_receipt = copy.deepcopy(receipt)
-        atomic_write_json(receipt_path, prepublication_receipt)
-        with ResourceLock(project.root, self.locks_root):
-            current = self._open(project_id)
-            original_state = copy.deepcopy(current.state)
-            original_conversation = copy.deepcopy(current.conversation)
-            event_path: Path | None = None
-            try:
-                if current.state["revision"] != expected_revision:
-                    raise ValidationError(
-                        "project changed while a repair candidate was validated"
-                    )
-                current_managed = open_managed_project(current.design_root)
-                current_managed.assert_synchronized()
-                if current_managed.design.content_hash() != receipt["before_hash"]:
-                    raise ValidationError(
-                        "authoritative design changed while a repair was staged"
-                    )
-                current.state["status"] = (
-                    "repair_failed" if rejected else "change_ready"
-                )
-                if not rejected:
-                    current.state["active_transaction"] = transaction_id
-                current.state["revision"] += 1
-                current.state["updated_at"] = utc_timestamp()
-                text = (
-                    "The repair candidate retained deterministic L1-L3 failures; "
-                    "the authoritative design was not changed."
-                    if rejected
-                    else "A replacement design passed deterministic L1-L3 repair "
-                    "gates and is staged for atomic application."
-                )
-                self._append_message(
-                    current.conversation,
-                    "assistant",
-                    "repair_rejected" if rejected else "repair_ready",
-                    text,
-                    data=(
-                        {
-                            "transaction_id": transaction_id,
-                            "repair_feedback": candidate_feedback,
-                        }
-                        if rejected
-                        else {"transaction_id": transaction_id}
-                    ),
-                )
-                event_path = (
-                    current.root
-                    / "events"
-                    / f"{current.state['event_sequence'] + 1:08d}.json"
-                )
-                self._event(
-                    current.state,
-                    current.root,
-                    "repair.candidate_failed" if rejected else "repair.ready",
-                    text,
-                    level="error" if rejected else "info",
-                )
-                self._write_records(current.root, current.state, current.conversation)
-                terminal = "rejected" if rejected else "ready"
-                receipt["status"] = terminal
-                receipt[f"{terminal}_at"] = utc_timestamp()
-                receipt["publication"] = {
-                    "status": "committed",
-                    "rollback": {
-                        "state": "committed",
-                        "performed": False,
-                        "live_unchanged": True,
-                    },
-                }
-                atomic_write_json(receipt_path, receipt)
-            except BaseException as exc:
-                rollback_failures: list[BaseException] = []
-                try:
-                    atomic_write_json(
-                        current.root / "conversation.json", original_conversation
-                    )
-                    atomic_write_json(current.root / "project.json", original_state)
-                    if event_path is not None and event_path.is_file():
-                        event_path.unlink()
-                except BaseException as rollback_exc:  # noqa: BLE001 - audit rollback
-                    rollback_failures.append(rollback_exc)
-                receipt.clear()
-                receipt.update(copy.deepcopy(prepublication_receipt))
-                receipt["publication"] = {
-                    "status": (
-                        "rollback_incomplete" if rollback_failures else "failed"
-                    ),
-                    "error_code": "publication_failed",
-                    "failure": _sanitize_secret_text(str(exc))[:2048],
-                    "rollback": {
-                        "state": "incomplete" if rollback_failures else "restored",
-                        "performed": not rollback_failures,
-                        "live_unchanged": not rollback_failures,
-                    },
-                }
-                if rollback_failures:
-                    receipt["status"] = "rollback_incomplete"
-                    _attach_progress(
-                        receipt,
-                        before_progress,
-                        ProgressVector.unknown(before_progress.source_revision),
-                        before_stage,
-                        StageProjection(
-                            EngineeringStage.NOT_STARTED,
-                            False,
-                            ("rollback_state_unknown",),
-                        ),
-                    )
-                    receipt["convergence_classification"] = receipt["progress_delta"][
-                        "classification"
-                    ]
-                try:
-                    atomic_write_json(receipt_path, receipt)
-                except PCBDraftError:
-                    pass
-                if rollback_failures:
-                    raise PCBDraftError(
-                        "repair candidate publication failed and rollback was incomplete"
-                    ) from exc
-                raise
-        result = self.open_project(project_id)
-        result["transaction_progress"] = _transaction_progress_projection(receipt)
-        return result
 
     def _record_failure(
         self,
