@@ -61,7 +61,7 @@ from collections.abc import Callable
 from pathlib import Path  # noqa: F401 — used by test mocks
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
-from urllib.parse import parse_qs, urlparse, urlunparse
+from urllib.parse import urlparse
 
 from pcbdraft.agent.portal_tags import nous_portal_tags as _nous_portal_tags
 from pcbdraft.model import auxiliary_cancellation as _auxiliary_cancellation
@@ -93,6 +93,10 @@ from pcbdraft.model.auxiliary_adapters import (
 )
 from pcbdraft.model.auxiliary_adapters import (
     configure_auxiliary_adapter_runtime as _configure_auxiliary_adapter_runtime,
+)
+from pcbdraft.model.auxiliary_input_helpers import (
+    _extract_url_query_params,
+    _safe_isinstance,
 )
 
 # NOTE: `from openai import OpenAI` is deliberately NOT at module top — the
@@ -337,24 +341,6 @@ aux_progress_hook = _auxiliary_cancellation.aux_progress_hook
 _run_protected_sync_provider_call = (
     _auxiliary_cancellation._run_protected_sync_provider_call
 )
-
-
-def _safe_isinstance(obj: Any, maybe_type: Any) -> bool:
-    """Return False instead of raising when a patched symbol is not a type."""
-    try:
-        return isinstance(obj, maybe_type)
-    except TypeError:
-        return False
-
-
-def _extract_url_query_params(url: str):
-    """Extract query params from URL, return (clean_url, default_query dict or None)."""
-    parsed = urlparse(url)
-    if parsed.query:
-        clean = urlunparse(parsed._replace(query=""))
-        params = {k: v[0] for k, v in parse_qs(parsed.query).items()}
-        return clean, params
-    return url, None
 
 
 # Module-level flag: only warn once per process about stale OPENAI_BASE_URL.
