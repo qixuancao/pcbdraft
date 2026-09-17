@@ -93,6 +93,7 @@ from pcbdraft.core.runtime_utils import (
 )
 from pcbdraft.model import auth_credential_pool_store as _auth_credential_pool_store
 from pcbdraft.model import auth_error_formatting as _auth_error_formatting
+from pcbdraft.model import auth_provider_state as _auth_provider_state
 from pcbdraft.model.configuration import (
     get_config_path,
     get_runtime_home,
@@ -1670,199 +1671,56 @@ _auth_credential_pool_store._configure_legacy_auth_hooks(
 
 
 def get_provider_auth_state(provider_id: str) -> dict[str, Any] | None:
-    """Return persisted auth state for a provider, or None.
+    """Compatibility wrapper for persisted provider authentication state."""
 
-    In profile mode, ``_load_provider_state`` already falls back to the
-    global-root ``auth.json`` per-provider when the profile has no entry —
-    so this is now a thin convenience wrapper. Profile state always wins
-    when present. Writes (``_save_auth_store`` / ``persist_*_credentials``)
-    are unchanged — they still target the profile only. This mirrors
-    ``read_credential_pool``'s per-provider shadowing semantics so that
-    ``_seed_from_singletons`` can reseed a profile's credential pool from
-    global-scope provider state (e.g. a globally-authenticated Anthropic
-    OAuth or Nous device-code session). See issue #18594 follow-up.
-    """
-    auth_store = _load_auth_store()
-    return _load_provider_state(auth_store, provider_id)
+    return _auth_provider_state.get_provider_auth_state(
+        provider_id,
+        load_auth_store=_load_auth_store,
+        load_provider_state=_load_provider_state,
+    )
 
 
 def get_active_provider() -> str | None:
-    """Return the currently active provider ID from auth store."""
-    auth_store = _load_auth_store()
-    return auth_store.get("active_provider")
+    """Compatibility wrapper for the active provider projection."""
+
+    return _auth_provider_state.get_active_provider(
+        load_auth_store=_load_auth_store,
+    )
 
 
 def is_provider_explicitly_configured(provider_id: str) -> bool:
-    """Return True only if the user has explicitly configured this provider.
+    """Compatibility wrapper preserving explicit-provider patch paths."""
 
-    Checks:
-      1. active_provider in auth.json matches
-      2. model.provider in config.yaml matches
-      3. Provider-specific env vars are set (e.g. ANTHROPIC_API_KEY)
-
-    This is used to gate auto-discovery of external credentials (e.g.
-    Claude Code's ~/.claude/.credentials.json) so they are never used
-    without the user's explicit choice.  See PR #4210 for the same
-    pattern applied to the setup wizard gate.
-    """
-    normalized = (provider_id or "").strip().lower()
-
-    # 1. Check auth.json active_provider
-    try:
-        auth_store = _load_auth_store()
-        active = (auth_store.get("active_provider") or "").strip().lower()
-        if active and active == normalized:
-            return True
-    except Exception:
-        pass
-
-    # 2. Check config.yaml model.provider and other explicit provider slots.
-    try:
-        from pcbdraft.model.configuration import load_config
-
-        cfg = load_config()
-        model_cfg = cfg.get("model")
-        if isinstance(model_cfg, dict):
-            cfg_provider = (model_cfg.get("provider") or "").strip().lower()
-            if cfg_provider == normalized:
-                return True
-
-        # MoA presets are explicit model selections too.  A user who configured
-        # ``provider: anthropic`` as a MoA advisor/aggregator has opted Hermes
-        # into using Anthropic credentials for that slot even when the main
-        # session model is another provider.  Without this, Claude Code OAuth
-        # entries are pruned/ignored by credential_pool.load_pool("anthropic"),
-        # so MoA Anthropic advisors fail with "no ANTHROPIC_API_KEY" while the
-        # normal model picker says Anthropic is logged in.
-        def _slot_matches_provider(slot):
-            return (
-                isinstance(slot, dict)
-                and (slot.get("provider") or "").strip().lower() == normalized
-            )
-
-        moa_cfg = cfg.get("moa")
-        if isinstance(moa_cfg, dict):
-            for slot in moa_cfg.get("reference_models") or []:
-                if _slot_matches_provider(slot):
-                    return True
-            if _slot_matches_provider(moa_cfg.get("aggregator")):
-                return True
-            presets = moa_cfg.get("presets")
-            if isinstance(presets, dict):
-                for preset in presets.values():
-                    if not isinstance(preset, dict):
-                        continue
-                    for slot in preset.get("reference_models") or []:
-                        if _slot_matches_provider(slot):
-                            return True
-                    if _slot_matches_provider(preset.get("aggregator")):
-                        return True
-    except Exception:
-        pass
-
-    # 3. Check provider-specific env vars
-    # Exclude CLAUDE_CODE_OAUTH_TOKEN — it's set by Claude Code itself,
-    # not by the user explicitly configuring anthropic in Hermes.
-    _IMPLICIT_ENV_VARS = {"CLAUDE_CODE_OAUTH_TOKEN"}
-    pconfig = PROVIDER_REGISTRY.get(normalized)
-    # Fallback to ProviderDef from models.dev catalog when the provider
-    # isn't in the manually-maintained PROVIDER_REGISTRY (e.g. openrouter).
-    # Both expose .auth_type and .api_key_env_vars with the same shape.
-    if pconfig is None:
-        from pcbdraft.model.provider_config import get_provider
-
-        pconfig = get_provider(normalized)
-    if pconfig and pconfig.auth_type == "api_key":
-        for env_var in pconfig.api_key_env_vars:
-            if env_var in _IMPLICIT_ENV_VARS:
-                continue
-            if has_usable_secret(os.getenv(env_var, "")):
-                return True
-
-    # 4. Check persisted credential-pool entries that came from EXPLICIT flows
-    # the user initiated inside Hermes (manual add / device-code / PKCE), plus
-    # env-backed pool entries. This intentionally excludes ambient borrowed
-    # sources like gh_cli / claude_code / qwen-cli.
-    try:
-        for entry in read_credential_pool(normalized):
-            if not isinstance(entry, dict):
-                continue
-            source = normalize_credential_source(
-                str(entry.get("source") or "").strip().lower()
-            )
-            if not source:
-                continue
-            if source.startswith("env:"):
-                # A stale env-seeded pool entry survives in auth.json after
-                # the user deletes the env var (#55790) — only count it when
-                # the referenced var still resolves to a usable secret NOW.
-                env_var = entry.get("source", "").split(":", 1)[1].strip()
-                if env_var and has_usable_secret(os.getenv(env_var, "")):
-                    return True
-                continue
-            if source in {
-                "device_code",
-                "loopback_pkce",
-                "pcbdraft_pkce",
-                "manual",
-            } or source.startswith("manual:"):
-                return True
-    except Exception:
-        pass
-
-    return False
+    return _auth_provider_state.is_provider_explicitly_configured(
+        provider_id,
+        load_auth_store=_load_auth_store,
+        provider_registry=PROVIDER_REGISTRY,
+        environment_getter=os.getenv,
+        has_usable_secret=has_usable_secret,
+        read_credential_pool=read_credential_pool,
+        normalize_credential_source=normalize_credential_source,
+    )
 
 
 def clear_provider_auth(provider_id: str | None = None) -> bool:
-    """
-    Clear auth state for a provider. Used by `hermes logout`.
-    If provider_id is None, clears the active provider.
-    Returns True if something was cleared.
-    """
-    with _auth_store_lock():
-        auth_store = _load_auth_store()
-        target = provider_id or auth_store.get("active_provider")
-        if not target:
-            return False
+    """Compatibility wrapper for scoped provider credential removal."""
 
-        providers = auth_store.get("providers", {})
-        if not isinstance(providers, dict):
-            providers = {}
-            auth_store["providers"] = providers
-
-        pool = auth_store.get("credential_pool")
-        if not isinstance(pool, dict):
-            pool = {}
-            auth_store["credential_pool"] = pool
-
-        cleared = False
-        if target in providers:
-            del providers[target]
-            cleared = True
-        if target in pool:
-            del pool[target]
-            cleared = True
-
-        if auth_store.get("active_provider") == target:
-            auth_store["active_provider"] = None
-            cleared = True
-
-        if not cleared:
-            return False
-        _save_auth_store(auth_store)
-    return True
+    return _auth_provider_state.clear_provider_auth(
+        provider_id,
+        auth_store_lock=_auth_store_lock,
+        load_auth_store=_load_auth_store,
+        save_auth_store=_save_auth_store,
+    )
 
 
 def deactivate_provider() -> None:
-    """
-    Clear active_provider in auth.json without deleting credentials.
-    Used when the user switches to a non-OAuth provider (OpenRouter, custom)
-    so auto-resolution doesn't keep picking the OAuth provider.
-    """
-    with _auth_store_lock():
-        auth_store = _load_auth_store()
-        auth_store["active_provider"] = None
-        _save_auth_store(auth_store)
+    """Compatibility wrapper for clearing the active provider selection."""
+
+    _auth_provider_state.deactivate_provider(
+        auth_store_lock=_auth_store_lock,
+        load_auth_store=_load_auth_store,
+        save_auth_store=_save_auth_store,
+    )
 
 
 # =============================================================================
@@ -1871,29 +1729,9 @@ def deactivate_provider() -> None:
 
 
 def _get_config_hint_for_unknown_provider(provider_name: str) -> str:
-    """Return a helpful hint string when provider resolution fails.
+    """Compatibility wrapper for provider-resolution configuration hints."""
 
-    Checks for common config.yaml mistakes (malformed custom_providers, etc.)
-    and returns a human-readable diagnostic, or empty string if nothing found.
-    """
-    try:
-        from pcbdraft.model.configuration import validate_config_structure
-
-        issues = validate_config_structure()
-        if not issues:
-            return ""
-
-        lines = ["Config issue detected — run 'pcbdraft doctor' for full diagnostics:"]
-        for ci in issues:
-            prefix = "ERROR" if ci.severity == "error" else "WARNING"
-            lines.append(f"  [{prefix}] {ci.message}")
-            # Show first line of hint
-            first_hint = ci.hint.splitlines()[0] if ci.hint else ""
-            if first_hint:
-                lines.append(f"    → {first_hint}")
-        return "\n".join(lines)
-    except Exception:
-        return ""
+    return _auth_provider_state._get_config_hint_for_unknown_provider(provider_name)
 
 
 def resolve_provider(
