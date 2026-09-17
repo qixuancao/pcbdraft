@@ -173,13 +173,19 @@ state and compatibility hooks used by these mixins; none imports the
 - `agent.session_persistence` owns persistence-time message cleanup, user-message
   override projection, append batching and intrinsic-marker deduplication, plus
   bounded adoption of a live compression continuation.
+- `agent.turn_control` owns cross-thread interrupt and hard-stop propagation,
+  queued steering, and active-turn redirect coordination.
 
 `agent.loop.AIAgent` still composes those mixins and owns the model turn,
 conversation control, and tool loop. The extracted modules preserve historical
 method names and late-bound compatibility hooks without importing `agent.loop`.
 
-#### Auxiliary model clients
+#### Model authentication and auxiliary clients
 
+- `model.auth_error_formatting` owns structured authentication errors,
+  rate-limit classification, and user-facing authentication and entitlement
+  guidance. Credential, token, OAuth, and provider-routing state remain in
+  `model.auth`.
 - `model.auxiliary_cancellation` owns synchronous-call cancellation,
   request-scoped interrupt protection, progress callbacks, and its isolated
   worker.
@@ -198,7 +204,9 @@ authentication, pooling, client/cache orchestration, fallback, and `call_llm`.
 - `tools.mcp_content` owns MCP content-block normalization, rendering, and local
   caching; `tools.mcp_connection_policy` owns remote URL/header/certificate and
   redirect/error policy; `tools.mcp_tool_schema` owns stateless tool naming,
-  filtering, schema conversion, and lifecycle-config parsing.
+  filtering, schema conversion, and lifecycle-config parsing; and
+  `tools.mcp_runtime_loop` owns process/discovery guards, dedicated event-loop
+  startup, caller-context propagation, and synchronous MCP call delivery.
   `tools.mcp_tool` remains the connection, registration, task, and lifecycle
   coordinator.
 - `terminal_client/src/commands.ts` owns slash-command resolution and unique
