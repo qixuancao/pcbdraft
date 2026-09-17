@@ -45,7 +45,6 @@ class ApplicationMessageInputTests(unittest.TestCase):
             "record_progress",
             "reply_message",
             "send_message",
-            "confirm_project",
             "_record_failure",
             "apply_modification",
             "verify_release",
