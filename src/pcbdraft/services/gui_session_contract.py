@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, NotRequired, TypedDict
 
 SESSION_SCHEMA = "pcbdraft-gui-session"
-SESSION_VERSION = 2
+SESSION_VERSION = 3
 
 
 class GuiActionResponse(TypedDict):
@@ -56,6 +56,14 @@ class GuiActiveTurn(TypedDict):
     started_at: str | None
 
 
+class GuiProductStatus(TypedDict):
+    """Product-level progress shown alongside the conversation transcript."""
+
+    conversation: str
+    candidate_gate: dict[str, Any]
+    task_coverage: dict[str, Any]
+
+
 class GuiSessionResponse(TypedDict):
     """Stable reconnect payload shared by local GUI/TUI clients."""
 
@@ -67,6 +75,7 @@ class GuiSessionResponse(TypedDict):
     pending_approval: dict[str, Any] | None
     messages: list[GuiSessionMessage]
     legacy_session_id: str | None
+    product_status: GuiProductStatus
     jobs: list[GuiVisibleJob]
     canonical_revision: int | None
     design_revision: int | None
@@ -159,8 +168,16 @@ def session_response(
     canonical_revision: int | None,
     design_revision: int | None,
     content_hash: str | None,
+    product_status: GuiProductStatus | None = None,
 ) -> GuiSessionResponse:
     """Serialize complete reconnect state using the versioned public schema."""
+
+    if product_status is None:
+        product_status = {
+            "conversation": "not_started",
+            "candidate_gate": {"outcome": "incomplete", "passed": False},
+            "task_coverage": {"outcome": "incomplete", "complete": False},
+        }
 
     return {
         "schema": SESSION_SCHEMA,
@@ -171,6 +188,7 @@ def session_response(
         "pending_approval": pending_approval,
         "messages": messages,
         "legacy_session_id": legacy_session_id,
+        "product_status": product_status,
         "jobs": jobs,
         "canonical_revision": canonical_revision,
         "design_revision": design_revision,

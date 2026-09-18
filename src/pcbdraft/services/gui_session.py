@@ -164,6 +164,25 @@ class GuiSessionManager:
             except PCBDraftError:
                 pending = None
         state = view.get("state") if isinstance(view, dict) else None
+        raw_product = view.get("product_status") if isinstance(view, dict) else None
+        candidate_gate = (
+            raw_product.get("candidate_gate")
+            if isinstance(raw_product, dict)
+            else None
+        )
+        task_coverage = (
+            raw_product.get("task_coverage")
+            if isinstance(raw_product, dict)
+            else None
+        )
+        latest_turn = turns[0] if turns else None
+        conversation_status = (
+            str(active["status"])
+            if active is not None
+            else latest_turn.status.value
+            if latest_turn is not None
+            else "not_started"
+        )
         return session_response(
             project_id=project_id,
             status=active["status"] if active is not None else "idle",
@@ -176,6 +195,15 @@ class GuiSessionManager:
             messages=messages,
             legacy_session_id=legacy_session_id,
             jobs=[visible_job(job) for job in jobs[:MAX_VISIBLE_JOBS]],
+            product_status={
+                "conversation": conversation_status,
+                "candidate_gate": dict(candidate_gate)
+                if isinstance(candidate_gate, dict)
+                else {"outcome": "incomplete", "passed": False},
+                "task_coverage": dict(task_coverage)
+                if isinstance(task_coverage, dict)
+                else {"outcome": "incomplete", "complete": False},
+            },
             canonical_revision=(
                 state.get("revision") if isinstance(state, dict) else None
             ),

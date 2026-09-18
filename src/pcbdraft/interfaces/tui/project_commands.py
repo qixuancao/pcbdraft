@@ -283,6 +283,24 @@ def handle_review(raw_args: str) -> str:
             f"design revision: {state.get('design_revision', 0)}"
         ),
     ]
+    product = view.get("product_status") or {}
+    terminal = product.get("conversation_terminal")
+    candidate = product.get("candidate_gate") or {}
+    coverage = product.get("task_coverage") or {}
+    lines.extend(
+        [
+            (
+                "  conversation: "
+                + (
+                    str(terminal.get("process_status", "unknown"))
+                    if isinstance(terminal, dict)
+                    else "no terminal receipt"
+                )
+            ),
+            f"  candidate gate: {candidate.get('outcome', 'incomplete')}",
+            f"  user task coverage: {coverage.get('outcome', 'incomplete')}",
+        ]
+    )
     validation = state.get("last_validation")
     if isinstance(validation, dict):
         verdict = "passing" if validation.get("candidate_ready") else "not passing"

@@ -100,7 +100,8 @@ vm.createContext(dom);
 vm.runInContext(chat.replace("export function createConversation", "function createConversation"), dom);
 const elements = Object.fromEntries([
   "tabs", "form", "input", "stop", "send", "activityType", "activityState",
-  "chatLog", "chatEmpty", "turnState", "activityList", "activityEmpty", "conversationPane", "activityPane",
+  "chatLog", "chatEmpty", "turnState", "candidateState", "taskState",
+  "activityList", "activityEmpty", "conversationPane", "activityPane",
 ].map((name) => [name, node()]));
 const sessionReads = [];
 const conversation = dom.createConversation({ elements, t: (x) => x, onToast() { assert.fail("unexpected conversation error"); }, api: {
@@ -110,11 +111,19 @@ const conversation = dom.createConversation({ elements, t: (x) => x, onToast() {
 } });
 const loadA = conversation.setProject("board-a");
 const loadB = conversation.setProject("board-b");
-sessionReads[1].resolve({ status: "queued", messages: [] });
+sessionReads[1].resolve({
+  status: "queued", messages: [], product_status: {
+    conversation: "completed",
+    candidate_gate: { outcome: "passed" },
+    task_coverage: { outcome: "incomplete" },
+  },
+});
 await loadB;
 sessionReads[0].resolve({ status: "idle", messages: [] });
 await loadA;
-assert.equal(elements.turnState.textContent, "queued");
+assert.equal(elements.turnState.textContent, "product.conversation: completed");
+assert.equal(elements.candidateState.textContent, "product.candidate: passed");
+assert.equal(elements.taskState.textContent, "product.task: incomplete");
 for (const status of ["queued", "running", "cancel_requested"]) {
   conversation.setSession({ status, messages: [] });
   assert.equal(elements.send.disabled, true, status);

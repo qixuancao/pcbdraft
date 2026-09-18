@@ -72,6 +72,11 @@ class GuiSessionContractTests(unittest.TestCase):
             canonical_revision=7,
             design_revision=3,
             content_hash="a" * 64,
+            product_status={
+                "conversation": "running",
+                "candidate_gate": {"outcome": "incomplete", "passed": False},
+                "task_coverage": {"outcome": "incomplete", "complete": False},
+            },
         )
 
         self.assertEqual(
@@ -85,6 +90,7 @@ class GuiSessionContractTests(unittest.TestCase):
                 "pending_approval",
                 "messages",
                 "legacy_session_id",
+                "product_status",
                 "jobs",
                 "canonical_revision",
                 "design_revision",
@@ -92,8 +98,9 @@ class GuiSessionContractTests(unittest.TestCase):
             },
         )
         self.assertEqual(response["schema"], "pcbdraft-gui-session")
-        self.assertEqual(response["version"], 2)
+        self.assertEqual(response["version"], 3)
         self.assertEqual(response["legacy_session_id"], "legacy-session")
+        self.assertEqual(response["product_status"]["conversation"], "running")
         self.assertEqual(response["active_turn"]["job_id"], "job-1")
         self.assertEqual(response["jobs"][0]["project_revision"], 7)
         self.assertNotIn("private", response["jobs"][0])

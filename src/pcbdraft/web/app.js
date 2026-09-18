@@ -308,7 +308,7 @@ inspector = createInspector({
 const conversation = createConversation({
   elements: {
     tabs: element("#drawer-tabs"), conversationPane: element("#conversation-pane"), activityPane: element("#activity-pane"),
-    chatLog: element("#chat-log"), chatEmpty: element("#chat-empty"), turnState: element("#turn-state"),
+    chatLog: element("#chat-log"), chatEmpty: element("#chat-empty"), turnState: element("#turn-state"), candidateState: element("#candidate-state"), taskState: element("#task-state"),
     form: element("#message-form"), input: element("#message-input"), send: element("#send-message"), stop: element("#stop-turn"),
     activityList: element("#activity-list"), activityEmpty: element("#activity-empty"), activityType: element("#activity-type-filter"), activityState: element("#activity-state-filter"),
   },

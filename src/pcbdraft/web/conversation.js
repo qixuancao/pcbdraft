@@ -109,8 +109,14 @@ function richText(value, onToast, t) {
 function normalizeSession(payload) {
   const source = payload && typeof payload === "object" ? payload : {};
   const messages = Array.isArray(source.messages) ? source.messages : [];
+  const product = source.product_status && typeof source.product_status === "object" ? source.product_status : {};
+  const candidate = product.candidate_gate && typeof product.candidate_gate === "object" ? product.candidate_gate : {};
+  const coverage = product.task_coverage && typeof product.task_coverage === "object" ? product.task_coverage : {};
   return {
     status: clean(source.status, 32) || "idle",
+    conversationStatus: clean(product.conversation, 32) || "not_started",
+    candidateOutcome: clean(candidate.outcome, 32) || "incomplete",
+    taskOutcome: clean(coverage.outcome, 32) || "incomplete",
     messages: messages.slice(-MAX_CHAT_MESSAGES).flatMap((item) => {
       if (!item || typeof item !== "object") return [];
       const role = item.role === "user" ? "user" : item.role === "assistant" ? "assistant" : "system";
@@ -173,7 +179,11 @@ export function createConversation({ elements, api, t, onToast }) {
     }
     elements.chatLog.replaceChildren(fragment);
     elements.chatEmpty.hidden = session.messages.length > 0;
-    elements.turnState.textContent = localizedState(session.status, t);
+    elements.turnState.textContent = `${t("product.conversation")}: ${localizedState(session.conversationStatus, t)}`;
+    elements.candidateState.textContent = `${t("product.candidate")}: ${localizedState(session.candidateOutcome, t)}`;
+    elements.taskState.textContent = `${t("product.task")}: ${localizedState(session.taskOutcome, t)}`;
+    elements.candidateState.dataset.state = session.candidateOutcome;
+    elements.taskState.dataset.state = session.taskOutcome;
     const active = isActive();
     elements.stop.disabled = !projectId || !active;
     elements.send.disabled = !projectId || active || sendPending;

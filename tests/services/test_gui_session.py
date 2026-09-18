@@ -151,7 +151,7 @@ class GuiSessionManagerTests(unittest.TestCase):
                 "board-one"
             )
 
-        self.assertEqual(reconnected["version"], 2)
+        self.assertEqual(reconnected["version"], 3)
         self.assertEqual(reconnected["status"], "idle")
         self.assertEqual(
             [message["role"] for message in reconnected["messages"]],
@@ -161,6 +161,15 @@ class GuiSessionManagerTests(unittest.TestCase):
         self.assertEqual(reconnected["content_hash"], "a" * 64)
         self.assertEqual(reconnected["jobs"][0]["project_revision"], 7)
         self.assertIsNone(reconnected["legacy_session_id"])
+        self.assertEqual(reconnected["product_status"]["conversation"], "completed")
+        self.assertEqual(
+            reconnected["product_status"]["candidate_gate"]["outcome"],
+            "incomplete",
+        )
+        self.assertEqual(
+            reconnected["product_status"]["task_coverage"]["outcome"],
+            "incomplete",
+        )
 
     def test_empty_native_session_projects_verified_legacy_history(self) -> None:
         legacy = (
