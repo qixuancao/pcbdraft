@@ -124,7 +124,6 @@ from pcbdraft.tools import mcp_tool_discovery as _mcp_tool_discovery
 from pcbdraft.tools import mcp_tool_schema as _mcp_tool_schema
 from pcbdraft.tools import mcp_utility_handlers as _mcp_utility_handlers
 from pcbdraft.tools.ansi_strip import strip_unicode_tags
-from pcbdraft.tools.mcp_task_lifecycle import MCPTaskLifecycleMixin
 from pcbdraft.tools.registry import tool_error
 
 logger = logging.getLogger(__name__)
