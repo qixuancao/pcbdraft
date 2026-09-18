@@ -69,12 +69,7 @@ package root:
       services/      application use cases, jobs, managed projects, transactions
       tools/         reusable tool implementations and external tool adapters
       verification/  evidence, validation, review, benchmark, and release gates
-      interfaces/    the ``pcbdraft`` CLI, loopback GUI API, and legacy terminal facade
-      terminal_client/  canonical TypeScript interactive terminal source
-
-The canonical supported TypeScript terminal source is
-`src/pcbdraft/terminal_client`; packaging includes that directory as an installed
-resource used by the terminal launcher.
+      interfaces/    the ``pcbdraft`` CLI, loopback GUI API, and native Python TUI
 
 ### Module ownership map
 
@@ -355,14 +350,10 @@ lifecycle, top-level `resolve_provider`, and runtime credential resolution.
   `tools.mcp_server_task` owns per-server retry, park/revival, discovery
   callbacks, and run coordination while reusing the lifecycle mixin. The
   compatibility surface remains `mcp_tool`.
-- `terminal_client/src/display.ts` owns pure formatting of saved transcript
-  messages and job-lifecycle status text; `assistant-preview.ts` owns transient
-  delta rendering and saved-transcript reconciliation. `commands.ts` retains
-  slash-command resolution and unique-prefix completion, `bridge.ts` retains
-  typed GUI API and SSE I/O, and `main.ts` retains interactive control flow and
-  composes those presentation responsibilities. `startup.ts` owns initial
-  project selection, while `interfaces.terminal_launcher` starts the bundled
-  client against the authoritative loopback GUI API.
+- `interfaces.tui.app` remains the stable Python TUI facade and delegates to
+  `interfaces.tui.legacy_app`; the focused TUI modules own prompt-toolkit
+  rendering, input, slash commands, project/session history, and model lifecycle.
+  `interfaces.terminal` owns native terminal startup and model-wizard handoff.
 
 This ledger describes implemented, targeted-tested boundaries. The current
 modularization pass is complete for the planned coordinator boundaries:
@@ -378,11 +369,12 @@ input without becoming a second business-logic layer. See
 [`PROJECT_STRUCTURE.md`](PROJECT_STRUCTURE.md) for placement rules and the
 compatibility policy for historical module paths.
 
-The TypeScript terminal and local Web workbench are presentation clients. Both
-use the loopback GUI HTTP/SSE API, whose reconnect payload is defined by the
-versioned types in `services.gui_session_contract`. This is the sole supported
-client protocol: neither client imports Python service internals or creates a
-second project, job, or transcript store.
+The native Python TUI and local Web workbench are the supported presentation
+clients. The Web workbench uses the loopback GUI HTTP/SSE API, whose reconnect
+payload is defined by the versioned types in `services.gui_session_contract`;
+the TUI uses the native Python runtime and SessionDB directly. They share the
+same project authority while retaining distinct conversation paths; neither
+creates a second project store.
 
 BoardBench follows the same boundary: a thin repository script invokes the
 verification-owned runner, evaluator, evidence importers, correction diff, and
@@ -425,21 +417,25 @@ contain prescriptive `next_step` or `required_workflow_stage` fields; project
 status (`draft`, `generated`, `validation_failed`, `validated`, ...) is an
 engineering fact, not a router for the next tool call.
 
-## Product path
+## Web product path
 
-    TypeScript terminal                    local Web workbench
-             |                                    |
-             +----- loopback GUI HTTP/SSE API ----+
-                                  |
-                       typed gui_session_contract
-                                  |
-                         GUI session adapter
-                                  |
-                JobRunner / ConversationOrchestrator
-                                  |
-                         agent.loop.AIAgent
-                               |
-                     model selects each tool
+The native TUI path is `interfaces.tui` -> `agent.loop.AIAgent` and SessionDB
+-> tool bindings and `ApplicationService`. The Web workbench follows the
+loopback path below; both paths use the same project authority.
+
+    local Web workbench
+             |
+    loopback GUI HTTP/SSE API
+             |
+    typed gui_session_contract
+             |
+       GUI session adapter
+             |
+    JobRunner / ConversationOrchestrator
+             |
+       agent.loop.AIAgent
+             |
+       model selects each tool
                                |
                per-conversation tool_session context
                (project, permission policy, application service)
@@ -460,7 +456,7 @@ engineering fact, not a router for the next tool call.
                                        v
                   ApplicationService: projects, events, locks,
                   confirmation, recovery, retained attempts
-                  - emits the project event stream used by both clients
+                  - emits the project event stream used by the Web client
                         |
                         v
               requirement interpretation
@@ -511,13 +507,12 @@ owns durable turn and tool records. The GUI session adapter persists none of
 that state. It exposes bounded presentation data through the versioned
 `gui_session_contract` and the loopback GUI API.
 
-The TypeScript terminal owns rendering, input, slash-command resolution, and
-reconnect behavior only. During a turn it displays lifecycle events and bounded,
-redacted `assistant.delta` previews exposed by the GUI SSE stream. Those preview
-events are transient presentation hints rather than transcript authority. When
-a terminal `job.complete` or `job.failed` event arrives, the client fetches the
-session again and reconciles the display with the assistant message saved by the
-Python runtime.
+The Python TUI owns terminal rendering, input, slash-command resolution, and
+the native conversation lifecycle. The Web workbench displays bounded,
+redacted lifecycle and `assistant.delta` events exposed by the GUI SSE stream;
+those preview events are transient presentation hints rather than transcript
+authority. The Python runtime remains authoritative for the saved assistant
+response and all project state.
 
 `AgentRuntime` and `JobRunner` turn synchronous, transactional application
 operations into durable background turns and UI-neutral activity events.
@@ -577,12 +572,11 @@ stored as an interrupted, non-replayable outcome rather than a normal failed cal
 A model-selected direct intent that fails or is denied is also fail-closed: local
 state policy cannot reinterpret it as a different operation during retry.
 
-The bundled TypeScript terminal (`src/pcbdraft/terminal_client`) and local Web
-workbench use the same loopback GUI API and therefore the same native
-`agent.loop.AIAgent`, model
-configuration, authentication, and project/session authority. Terminal
-commands select projects through that trusted boundary; jobs bind their own
-project and permission context, including in propagated tool-worker contexts.
+The native Python TUI and local Web workbench use the same Python model
+configuration, authentication, and project authority. Terminal commands select
+projects through the native interface and persist conversation history through
+SessionDB; Web jobs use the GUI session contract and bind their own project and
+permission context, including in propagated tool-worker contexts.
 `ConversationOrchestrator` records each model-selected tool before dispatch,
 retains model conversation history in the project session database, and writes
 assistant replies to the durable turn. Approval resumes the exact pending tool
@@ -603,20 +597,12 @@ lacks an exact matching result receipt is ambiguous even when the project
 revision did not advance; it is failed closed and is never dispatched again.
 The user must inspect the retained project and submit a new turn.
 
-The historical Python terminal is isolated behind
-`interfaces.tui.app`, a compatibility facade that forwards existing imports to
-`interfaces.tui.legacy_app`. It remains available for compatibility but is not
-the client protocol or the implementation of the supported TypeScript terminal.
-Bare `pcbdraft` is the supported TypeScript terminal entrypoint;
-`pcbdraft terminal` is its explicit alias. The terminal source ships once as a
-Python package resource, so source checkouts, wheels, and sdists use the same
-files. The launcher validates Bun, starts a GUI service on `127.0.0.1` when the
-selected port is free, or reuses an already healthy PCBDraft GUI on that
-loopback port. It forwards an initial `--project` selection to the client and
-never accepts a non-PCBDraft service occupying the selected port. Legacy
-permission modes remain available through the explicit
-`pcbdraft legacy-terminal` compatibility entrypoint; unsupported provider and
-timeout flags fail clearly instead of being discarded.
+The native Python terminal is exposed through `interfaces.tui.app`, a stable
+facade that forwards existing imports to `interfaces.tui.legacy_app`. Bare
+`pcbdraft` and `pcbdraft terminal` launch this TUI, while the local Web
+workbench remains available through the loopback GUI API. The facade preserves
+historical imports while the implementation remains organized under focused
+TUI modules.
 
 ## Goal Mode
 

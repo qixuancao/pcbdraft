@@ -770,6 +770,8 @@ class CommandSurfaceTests(unittest.TestCase):
         self.assertIn(PCBDRAFT_CATEGORY, commands.COMMANDS_BY_CATEGORY)
         self.assertIn("/projects", commands.COMMANDS_BY_CATEGORY[PCBDRAFT_CATEGORY])
         self.assertIn("new", commands.GATEWAY_KNOWN_COMMANDS)
+        self.assertEqual(commands.resolve_tui_command("/res").name, "resume")
+        self.assertIsNone(commands.resolve_tui_command("/re"))
 
 
 class RuntimePathsTests(unittest.TestCase):

@@ -26,7 +26,6 @@ class PackageStructureTests(unittest.TestCase):
             "kicad",
             "model",
             "services",
-            "terminal_client",
             "tools",
             "verification",
         }
@@ -229,7 +228,6 @@ class PackageStructureTests(unittest.TestCase):
                 "gui.py",
                 "gui_worker.py",
                 "terminal.py",
-                "terminal_launcher.py",
                 "terminal_text.py",
             },
         )

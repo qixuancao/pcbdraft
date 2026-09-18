@@ -82,8 +82,8 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
             f"{PRODUCT_NAME}: generate native KiCad projects from reviewable circuit plans."
         ),
         epilog=(
-            "Run without a subcommand to launch the TypeScript terminal. Use "
-            "`legacy-terminal` only for Python TUI compatibility."
+            "Run without a subcommand, or use `terminal`, to launch the native "
+            "Python terminal."
         ),
     )
     parser.add_argument(
@@ -224,24 +224,10 @@ def build_parser(*, prog: str | None = None) -> argparse.ArgumentParser:
         action="store_true",
         help="enable the optional read-only KiCad desktop companion (default: off)",
     )
-    terminal = subcommands.add_parser(
-        "terminal",
-        help="start the TypeScript terminal client and local GUI API (default)",
-    )
-    terminal.add_argument(
-        "--port",
-        type=tcp_port,
-        default=9130,
-        help="loopback GUI API port (default: 9130)",
-    )
-    terminal.add_argument(
-        "--no-start-gui",
-        action="store_true",
-        help="require an already-running healthy PCBDraft GUI API",
-    )
+    subcommands.add_parser("terminal", help="start the native Python terminal")
     subcommands.add_parser(
         "legacy-terminal",
-        help="start the compatibility Python terminal",
+        help="compatibility alias for the native Python terminal",
     )
     return parser
 
@@ -359,12 +345,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     tokens = list(argv) if argv is not None else sys.argv[1:]
     args = parser.parse_args(tokens)
     try:
-        if args.command is None:
-            _validate_typescript_terminal_options(args, tokens)
+        if args.command is None or args.command in {"terminal", "legacy-terminal"}:
+            if _option_was_supplied(tokens, "--timeout"):
+                raise ValidationError(
+                    "--timeout is not supported by the Python terminal; "
+                    "the previous launcher ignored this option"
+                )
             _set_terminal_workspace(args.workspace)
-            from pcbdraft.interfaces.terminal_launcher import launch_terminal
+            from pcbdraft.agent.tool_bindings import get_service, set_current_project_id
 
-            return launch_terminal(initial_project_id=args.project_id)
+            if args.project_id:
+                view = get_service(
+                    recover_interrupted=args.approval_mode != "read_only"
+                ).open_project(args.project_id)
+                set_current_project_id(str(view["project"]["id"]))
+            legacy_args: list[str] = []
+            if _option_was_supplied(tokens, "--provider") and args.provider != "auto":
+                legacy_args.extend(("--provider", args.provider))
+            return launch_cli(legacy_args, permission_mode=args.approval_mode)
         if args.command == "trace":
             return _print_trace(args.lines, args.as_json)
         if args.command == "doctor":
@@ -407,34 +405,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project_id=args.gui_project_id,
                 kicad_ipc=args.kicad_ipc,
             )
-        if args.command == "terminal":
-            _validate_typescript_terminal_options(args, tokens)
-            _set_terminal_workspace(args.workspace)
-            from pcbdraft.interfaces.terminal_launcher import launch_terminal
-
-            return launch_terminal(
-                port=args.port,
-                no_start_gui=args.no_start_gui,
-                initial_project_id=args.project_id,
-            )
-        if args.command == "legacy-terminal":
-            if _option_was_supplied(tokens, "--timeout"):
-                raise ValidationError(
-                    "--timeout is not supported by the compatibility terminal; "
-                    "the previous launcher ignored this option"
-                )
-            _set_terminal_workspace(args.workspace)
-            from pcbdraft.agent.tool_bindings import get_service, set_current_project_id
-
-            if args.project_id:
-                view = get_service(
-                    recover_interrupted=args.approval_mode != "read_only"
-                ).open_project(args.project_id)
-                set_current_project_id(str(view["project"]["id"]))
-            legacy_args: list[str] = []
-            if _option_was_supplied(tokens, "--provider") and args.provider != "auto":
-                legacy_args.extend(("--provider", args.provider))
-            return launch_cli(legacy_args, permission_mode=args.approval_mode)
         if args.command == "repository":
             repository = (
                 configure_repository(args.DIRECTORY)
@@ -465,28 +435,6 @@ def _set_terminal_workspace(workspace: str | None) -> None:
 
     if workspace:
         os.environ["PCBDRAFT_HOME"] = workspace
-
-
-def _validate_typescript_terminal_options(
-    args: argparse.Namespace, tokens: Sequence[str]
-) -> None:
-    """Reject legacy-only root options instead of silently discarding them."""
-
-    if args.approval_mode != "workspace":
-        raise ValidationError(
-            "TypeScript terminal currently supports only --approval-mode workspace; "
-            "use `pcbdraft --approval-mode "
-            f"{args.approval_mode} legacy-terminal` for compatibility"
-        )
-    if _option_was_supplied(tokens, "--provider"):
-        raise ValidationError(
-            "TypeScript terminal uses the connected provider and does not accept "
-            "--provider; run `pcbdraft connect` to switch providers"
-        )
-    if _option_was_supplied(tokens, "--timeout"):
-        raise ValidationError(
-            "TypeScript terminal does not support the legacy --timeout option"
-        )
 
 
 def _emit(value: dict, as_json: bool, text: str) -> None:
