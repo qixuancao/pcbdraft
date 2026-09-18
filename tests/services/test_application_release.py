@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.core.locking import ResourceLock
+from pcbdraft.core.project import sha256_file
 from pcbdraft.services import application, application_release
 from pcbdraft.services.application import ApplicationService
 from pcbdraft.services.application_release import ApplicationReleaseMixin
@@ -39,6 +40,30 @@ class ApplicationReleaseTests(unittest.TestCase):
         baseline = project_root / "validation" / "run" / "drc.evidence.json"
         baseline.parent.mkdir(parents=True)
         baseline.write_text("{}\n", encoding="utf-8")
+        report = baseline.parent / "validation.json"
+        report.write_text(
+            json.dumps(
+                {
+                    "schema": "pcbdraft-validation",
+                    "version": 2,
+                    "readiness": {"engineering_candidate": True},
+                    "design": {"content_hash": digest},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (baseline.parent / "receipt.json").write_text(
+            json.dumps(
+                {
+                    "schema": "pcbdraft-validation-receipt",
+                    "status": "complete",
+                    "candidate_ready": True,
+                    "design_content_hash": digest,
+                    "source_design_revision": 2,
+                }
+            ),
+            encoding="utf-8",
+        )
         state_path = project_root / "project.json"
         state = json.loads(state_path.read_text(encoding="utf-8"))
         state.update(
@@ -49,6 +74,8 @@ class ApplicationReleaseTests(unittest.TestCase):
                 "last_validation": {
                     "candidate_ready": True,
                     "drc_evidence": baseline.relative_to(project_root).as_posix(),
+                    "report": report.relative_to(project_root).as_posix(),
+                    "report_sha256": sha256_file(report),
                     "source_design_revision": 2,
                     "source_content_hash": digest,
                 },

@@ -25,6 +25,8 @@ CHANGE_VERSION = 1
 MAX_OPERATIONS = 256
 MAX_CHANGE_BYTES = 4 * 1024 * 1024
 SUPPORTED_OPERATIONS = {
+    "upsert_requirement",
+    "remove_requirement",
     "add_block",
     "remove_block",
     "add_component",
@@ -451,11 +453,41 @@ def _required_id(args: Mapping[str, Any], name: str = "id") -> str:
     return _identifier(args[name], f"args.{name}")
 
 
+def _invalidate_native_routing(
+    document: dict[str, Any],
+    net_ids: set[str],
+    *,
+    bump_geometry_revision: bool,
+) -> None:
+    """Retire copper whose endpoint or footprint geometry is no longer valid."""
+
+    if not net_ids:
+        return
+    native = document.get("native_intent")
+    if not isinstance(native, dict):
+        raise ValidationError("design native intent is malformed")
+    routes = native.get("routes")
+    vias = native.get("vias")
+    unrouted = native.get("unrouted_nets")
+    if not isinstance(routes, list) or not isinstance(vias, list):
+        raise ValidationError("native routing intent is malformed")
+    if not isinstance(unrouted, list):
+        raise ValidationError("native unrouted-net intent is malformed")
+    native["routes"] = [item for item in routes if item.get("net") not in net_ids]
+    native["vias"] = [item for item in vias if item.get("net") not in net_ids]
+    for net_id in sorted(net_ids):
+        if net_id not in unrouted:
+            unrouted.append(net_id)
+    if bump_geometry_revision:
+        native["geometry_revision"] = int(native.get("geometry_revision", 0)) + 1
+
+
 def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
     document: dict[str, Any], operation: SemanticOperation
 ) -> None:
     op, args, expected = operation.op, operation.args, operation.expected
     if op in {
+        "upsert_requirement",
         "add_block",
         "add_component",
         "add_net",
@@ -463,6 +495,7 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
         "upsert_interface",
     }:
         collection_name = {
+            "upsert_requirement": "requirements",
             "add_block": "blocks",
             "add_component": "components",
             "add_net": "nets",
@@ -504,6 +537,7 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
         "remove_power_domain",
         "remove_interface",
         "remove_constraint",
+        "remove_requirement",
     }:
         collection_name = {
             "remove_block": "blocks",
@@ -512,6 +546,7 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
             "remove_power_domain": "power_domains",
             "remove_interface": "interfaces",
             "remove_constraint": "constraints",
+            "remove_requirement": "requirements",
         }[op]
         entry_id = _required_id(args)
         entries = _collection(document, collection_name)
@@ -705,6 +740,11 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
                     "cannot disconnect a pin with a different endpoint role"
                 )
             endpoints.remove(matching[0])
+        _invalidate_native_routing(
+            document,
+            {net_id},
+            bump_geometry_revision=True,
+        )
         return
 
     if op == "rename_net":
@@ -809,6 +849,20 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
             _expect(component, expected, label=f"components.{component_id}")
             if component is None:
                 raise ValidationError(f"component is absent: {component_id}")
+            connected_net_ids = {
+                str(net["id"])
+                for net in _collection(document, "nets")
+                if isinstance(net.get("id"), str)
+                and any(
+                    endpoint.get("component") == component_id
+                    for endpoint in net.get("endpoints", [])
+                )
+            }
+            _invalidate_native_routing(
+                document,
+                connected_net_ids,
+                bump_geometry_revision=False,
+            )
             poses = native.get("footprint_poses")
             if not isinstance(poses, list):
                 raise ValidationError("native footprint poses are malformed")

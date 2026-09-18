@@ -14,6 +14,7 @@ from typing import Any
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.domain.assertions import evaluate_assertion
+from pcbdraft.domain.constraint_support import constraint_support
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.scope import evaluate_scope
@@ -95,7 +96,18 @@ def evaluate_semantic_rules(
     findings.extend(_coverage_findings(design, graph, kinds))
     for constraint in constraints.values():
         try:
-            if constraint.kind == "decoupling":
+            if constraint_support(constraint.kind) is None:
+                finding = _finding(
+                    "intent.unsupported_constraint",
+                    constraint.id,
+                    (
+                        f"Constraint kind {constraint.kind!r} is unsupported and "
+                        "was not treated as verified."
+                    ),
+                    constraint_kind=constraint.kind,
+                    constraint_severity=constraint.severity,
+                )
+            elif constraint.kind == "decoupling":
                 finding = _decoupling_finding(
                     design,
                     graph,
@@ -156,8 +168,13 @@ def evaluate_semantic_rules(
                     if failure is not None
                     else None
                 )
-            else:
-                finding = None
+            else:  # pragma: no cover - registry/dispatcher drift is fail-closed
+                finding = _finding(
+                    "intent.constraint_dispatch_missing",
+                    constraint.id,
+                    f"Registered constraint kind {constraint.kind!r} has no semantic dispatch.",
+                    constraint_kind=constraint.kind,
+                )
         except (KeyError, TypeError, ValueError, OverflowError) as exc:
             finding = _finding(
                 "intent.invalid_constraint_params",

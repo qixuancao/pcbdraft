@@ -67,6 +67,10 @@ def _schema_example(schema: Mapping[str, Any]) -> Any:
         return schema["enum"][0]
     if isinstance(schema.get("anyOf"), (list, tuple)):
         return _schema_example(schema["anyOf"][0])
+    if schema.get("pattern") == (
+        r"^(?:check|constraint|manual|unsupported):[a-z][a-z0-9_.-]{0,127}$"
+    ):
+        return "check:l0.semantic_ir"
     schema_type = schema.get("type")
     if schema_type == "object":
         properties = schema.get("properties") or {}
@@ -215,7 +219,7 @@ class PCBToolingTests(unittest.TestCase):
     def test_registry_is_closed_and_declares_effect_and_risk(self) -> None:
         specs = {spec.name: spec for spec in DEFAULT_PCB_TOOL_REGISTRY.specs}
 
-        self.assertEqual(len(specs), 62)
+        self.assertEqual(len(specs), 66)
         self.assertTrue(
             {
                 "create_project",
@@ -224,6 +228,7 @@ class PCBToolingTests(unittest.TestCase):
                 "search_parts",
                 "describe_part",
                 "register_kicad_part",
+                "add_requirement",
                 "add_component",
                 "connect_group",
                 "place_group",
@@ -231,6 +236,7 @@ class PCBToolingTests(unittest.TestCase):
                 "set_board_outline",
                 "route_net",
                 "run_drc",
+                "validate_candidate",
                 "render_board",
                 "observe_board_region",
                 "export_gerbers",
@@ -253,7 +259,7 @@ class PCBToolingTests(unittest.TestCase):
         self.assertEqual(specs["set_board_outline"].risk, "high")
         self.assertEqual(
             DEFAULT_PCB_TOOL_REGISTRY.schema_fingerprint(),
-            "69b07a1769d4857fff15d49d76684fd75e5c98e33516999a4131d29ad3a6ca00",
+            "261ff54392cae36c07a655d741eca4084aea3789595fa3b7b79f7eb0e7361f11",
         )
         self.assertTrue(
             all(

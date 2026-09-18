@@ -281,6 +281,7 @@ class ApplicationNativeOutputsMixin:
         )
         managed = open_managed_project(project.design_root)
         managed.assert_synchronized()
+        self._require_current_candidate_validation(project, managed.design)
         run_id = new_run_id()
         exported = export_manufacturing_output(
             managed,

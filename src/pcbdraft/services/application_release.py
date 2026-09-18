@@ -56,18 +56,18 @@ class ApplicationReleaseMixin:
         expected_revision = self._bind_expected_revision(
             project, expected_revision, operation="release build"
         )
-        validation = project.state["last_validation"]
-        if (
-            project.state["status"]
-            not in {"validated", "released", "release_failed", "interrupted"}
-            or not isinstance(validation, dict)
-            or not validation.get("candidate_ready")
-        ):
+        if project.state["status"] not in {
+            "validated",
+            "released",
+            "release_failed",
+            "interrupted",
+        }:
             raise ValidationError(
                 "release requires a passing engineering-candidate validation"
             )
         managed = self._release_open_managed_project(project.design_root)
         managed.assert_synchronized()
+        validation = self._require_current_candidate_validation(project, managed.design)
         baseline_relative = validation.get("drc_evidence")
         baseline_revision = validation.get("source_design_revision")
         baseline_hash = validation.get("source_content_hash")

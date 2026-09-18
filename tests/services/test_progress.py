@@ -253,10 +253,10 @@ class ProductTerminalTests(unittest.TestCase):
             self.assertEqual(receipt["process_status"], "exited")
             self.assertNotIn("task_outcome", receipt)
             self.assertEqual(receipt["release_outcome"], "incomplete")
-            self.assertEqual(receipt["scoped_task_outcome"], "unknown")
+            self.assertEqual(receipt["scoped_task_outcome"], "incomplete")
             self.assertEqual(
                 receipt["scoped_task_evidence"],
-                {"kind": "unavailable", "source_revision": 0},
+                {"kind": "task_contract", "source_revision": 0},
             )
             self.assertEqual(
                 receipt["termination_reason"], "agent_returned_before_gate"
@@ -454,6 +454,126 @@ class ProductTerminalTests(unittest.TestCase):
         oversized_session["session_id"] = "s" * 513
         with self.assertRaisesRegex(ValidationError, "session id"):
             ProductSessionTerminalReceipt.from_dict(oversized_session)
+
+    def test_scoped_override_cannot_contradict_terminal_facts(self) -> None:
+        cases = (
+            (
+                ProcessStatus.CRASHED,
+                TaskOutcome.FAILED,
+                "crashed",
+            ),
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.BLOCKED,
+                "no_progress",
+            ),
+            (
+                ProcessStatus.CANCELLED,
+                TaskOutcome.INCOMPLETE,
+                "cancelled",
+            ),
+            (
+                ProcessStatus.TIMED_OUT,
+                TaskOutcome.INCOMPLETE,
+                "timed_out",
+            ),
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.INCOMPLETE,
+                "budget_exhausted:wall_clock",
+            ),
+        )
+        for process, release, reason in cases:
+            with self.subTest(process=process, reason=reason):
+                receipt = ProductSessionTerminalReceipt(
+                    "receipt-1",
+                    "board-1",
+                    "session:one",
+                    "turn:one",
+                    "2026-08-23T00:00:00Z",
+                    process,
+                    release,
+                    reason,
+                    EngineeringStage.NOT_STARTED,
+                    False,
+                    5,
+                    _vector(5),
+                )
+                serialized = receipt.to_dict()
+                serialized["scoped_task_outcome"] = "passed"
+                serialized["scoped_task_evidence"]["kind"] = "task_contract"
+                with self.assertRaisesRegex(ValidationError, "scoped task evidence"):
+                    ProductSessionTerminalReceipt.from_dict(serialized)
+
+    def test_non_contract_override_must_match_deterministic_scope(self) -> None:
+        cases = (
+            (
+                ProcessStatus.EXITED,
+                TaskOutcome.PASSED,
+                "release_gate_passed",
+                True,
+                "passed",
+                "release_gate",
+            ),
+            (
+                ProcessStatus.CRASHED,
+                TaskOutcome.FAILED,
+                "crashed",
+                False,
+                "unknown",
+                "unavailable",
+            ),
+        )
+        for process, release, reason, gate, outcome, evidence in cases:
+            with self.subTest(process=process, reason=reason):
+                receipt = ProductSessionTerminalReceipt(
+                    "receipt-1",
+                    "board-1",
+                    "session:one",
+                    "turn:one",
+                    "2026-08-23T00:00:00Z",
+                    process,
+                    release,
+                    reason,
+                    EngineeringStage.RELEASE_GATE
+                    if gate
+                    else EngineeringStage.NOT_STARTED,
+                    gate,
+                    5,
+                    _vector(5),
+                )
+                serialized = receipt.to_dict()
+                serialized["scoped_task_outcome"] = outcome
+                serialized["scoped_task_evidence"]["kind"] = evidence
+                with self.assertRaisesRegex(ValidationError, "scoped task evidence"):
+                    ProductSessionTerminalReceipt.from_dict(serialized)
+
+    def test_clean_return_task_contract_outcomes_round_trip(self) -> None:
+        for outcome in (ScopedTaskOutcome.PASSED, ScopedTaskOutcome.INCOMPLETE):
+            with self.subTest(outcome=outcome):
+                receipt = ProductSessionTerminalReceipt(
+                    "receipt-1",
+                    "board-1",
+                    "session:one",
+                    "turn:one",
+                    "2026-08-23T00:00:00Z",
+                    ProcessStatus.EXITED,
+                    TaskOutcome.INCOMPLETE,
+                    "agent_returned_before_gate",
+                    EngineeringStage.NOT_STARTED,
+                    False,
+                    5,
+                    _vector(5),
+                    outcome,
+                    ScopedTaskEvidenceKind.TASK_CONTRACT,
+                )
+                restored = ProductSessionTerminalReceipt.from_dict(receipt.to_dict())
+                self.assertEqual(restored, receipt)
+                self.assertEqual(restored.scoped_task_outcome, outcome)
+                self.assertEqual(
+                    restored.scoped_task_evidence_kind,
+                    ScopedTaskEvidenceKind.TASK_CONTRACT,
+                )
 
     def test_retained_checks_require_the_exact_design_revision(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

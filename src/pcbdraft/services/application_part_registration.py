@@ -390,7 +390,7 @@ class ApplicationPartRegistrationMixin:
                 _progress_stage_evidence(
                     candidate,
                     candidate_revision,
-                    requirements_frozen=staged_project.requirements_path.is_file(),
+                    requirements_frozen=bool(staged_project.design.requirements),
                     consistency=consistency,
                     progress=after_progress,
                     erc_check=EvidenceCheck.unknown(candidate_revision),

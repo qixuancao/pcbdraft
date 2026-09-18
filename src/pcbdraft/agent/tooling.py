@@ -34,11 +34,13 @@ from pcbdraft.agent.repair import (
 )
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.redaction import sanitize_user_text
+from pcbdraft.domain.constraint_support import SUPPORTED_CONSTRAINT_KINDS
 from pcbdraft.domain.operations import (
     SEMANTIC_TRANSACTION_POLICY,
     parse_connect_group,
     parse_place_group,
 )
+from pcbdraft.domain.task_contract import ACCEPTANCE_BINDING_PATTERN
 
 ToolSource = Literal["runtime_policy", "model", "mcp", "user"]
 ToolEffect = Literal[
@@ -1024,6 +1026,9 @@ _PROJECT_CATALOG_READ_TOOL_NAMES = frozenset({"search_parts", "describe_part"})
 _PROJECT_CATALOG_WRITE_TOOL_NAMES = frozenset({"register_kicad_part"})
 _EARLY_DESIGN_TOOL_NAMES = frozenset(
     {
+        "add_requirement",
+        "update_requirement",
+        "remove_requirement",
         "add_block",
         "remove_block",
         "add_power_domain",
@@ -1049,7 +1054,13 @@ _PLACEMENT_TOOL_NAMES = frozenset(
 )
 _ROUTING_TOOL_NAMES = frozenset({"route_net", "unroute_net", "add_via", "remove_via"})
 _CHECK_TOOL_NAMES = frozenset(
-    {"check_semantics", "check_connectivity", "run_erc", "run_drc"}
+    {
+        "check_semantics",
+        "check_connectivity",
+        "run_erc",
+        "run_drc",
+        "validate_candidate",
+    }
 )
 _PREVIEW_TOOL_NAMES = frozenset(
     {"render_schematic", "render_board", "observe_board_region", "render_3d"}
@@ -1070,6 +1081,7 @@ _UNKNOWN_STAGE_CORRECTIVE_TOOL_NAMES = frozenset(
         "inspect_transaction",
         "search_parts",
         "describe_part",
+        "add_requirement",
         # Keep one bounded set of backwards-corrective semantic, placement,
         # routing, and verification actions.  Stage projection is context
         # shaping only; the full registry remains the execution authority.
@@ -1177,7 +1189,9 @@ def _flat_stage_contract(
     if name in _ROUTING_TOOL_NAMES:
         return cast(frozenset[EvidenceStage], _ROUTING_STAGES), frozenset({"routing"})
     if name in _CHECK_TOOL_NAMES:
-        if name in {"check_semantics", "check_connectivity"}:
+        if name == "validate_candidate":
+            stages = _PLACEMENT_STAGES
+        elif name in {"check_semantics", "check_connectivity"}:
             stages = _EVIDENCE_STAGES
         elif name == "run_erc":
             stages = _ERC_STAGES
@@ -1386,9 +1400,25 @@ _INTERFACE_PROPERTIES: dict[str, Any] = {
     "params": _PARAMETERS_SCHEMA,
     "intent": _TEXT_SCHEMA,
 }
+_REQUIREMENT_PROPERTIES: dict[str, Any] = {
+    "id": _TEXT_SCHEMA,
+    "text": _TEXT_SCHEMA,
+    "acceptance": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+            "type": "string",
+            "pattern": ACCEPTANCE_BINDING_PATTERN,
+        },
+    },
+    "risk": {
+        "type": "string",
+        "enum": ["low", "medium", "high", "critical", "unknown"],
+    },
+}
 _CONSTRAINT_PROPERTIES: dict[str, Any] = {
     "id": _TEXT_SCHEMA,
-    "kind": _TEXT_SCHEMA,
+    "kind": {"type": "string", "enum": list(SUPPORTED_CONSTRAINT_KINDS)},
     "targets": {"type": "array", "items": _TEXT_SCHEMA},
     "params": _PARAMETERS_SCHEMA,
     "severity": {
@@ -1551,6 +1581,24 @@ PCB_TOOL_SPECS = (
                 _KICAD_PART_PROPERTIES,
             ),
         ),
+    ),
+    *tuple(
+        _flat_spec(
+            name,
+            description,
+            effect="authoritative_write",
+            risk="medium",
+            arguments=(
+                _object_argument("value", "Explicit requirement", _REQUIREMENT_PROPERTIES)
+                if action != "remove"
+                else _ID("id", "Stable requirement identity"),
+            ),
+        )
+        for name, description, action in (
+            ("add_requirement", "Add one explicit user acceptance requirement", "upsert"),
+            ("update_requirement", "Replace one explicit user acceptance requirement", "upsert"),
+            ("remove_requirement", "Remove one explicit user acceptance requirement", "remove"),
+        )
     ),
     _flat_spec(
         "add_block",
@@ -1929,6 +1977,10 @@ PCB_TOOL_SPECS = (
             ("check_connectivity", "Run only component/pin/net connectivity checks"),
             ("run_erc", "Run only KiCad electrical-rules checking"),
             ("run_drc", "Run only KiCad board design-rules checking"),
+            (
+                "validate_candidate",
+                "Run the aggregate revision-bound engineering-candidate validation",
+            ),
             ("render_schematic", "Render only schematic preview outputs"),
             (
                 "render_board",

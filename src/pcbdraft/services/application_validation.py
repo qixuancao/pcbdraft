@@ -13,6 +13,9 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.core.io import atomic_write_json
+from pcbdraft.core.project import sha256_file
+from pcbdraft.domain.task_contract import evaluate_task_coverage
 
 
 def _latest_drc_baseline(
@@ -187,6 +190,21 @@ class ApplicationValidationMixin:
             "assurance": str(managed.design.metadata.get("assurance", "verified")),
             "levels": report["levels"],
         }
+        if hasattr(managed.design, "requirements"):
+            task_coverage = evaluate_task_coverage(
+                managed.design,
+                summary,
+                design_revision=source_design_revision,
+            )
+            task_coverage_path = output / "task-coverage.json"
+            atomic_write_json(task_coverage_path, task_coverage)
+            summary["task_coverage"] = {
+                **task_coverage,
+                "artifact": task_coverage_path.relative_to(project.root).as_posix(),
+                "artifact_sha256": sha256_file(
+                    task_coverage_path, max_bytes=4 * 1024 * 1024
+                ),
+            }
         with self._validation_resource_lock(project.root, self.locks_root):
             current = self._open(project_id)
             if current.state["revision"] != expected_revision:

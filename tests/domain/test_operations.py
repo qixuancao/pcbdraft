@@ -238,6 +238,130 @@ class SemanticOperationTests(unittest.TestCase):
         self.assertEqual(unrouted.native_intent.unrouted_nets, ("net_out",))
         self.assertEqual(unrouted.native_intent.geometry_revision, 2)
 
+    def test_connectivity_and_placement_retire_only_affected_routing(self) -> None:
+        value = minimal_design_dict()
+        value["version"] = 2
+        value["native_intent"] = {
+            "outline": [],
+            "footprint_poses": [],
+            "routes": [
+                {
+                    "id": "route_3v3",
+                    "net": "net_3v3",
+                    "layer": 0,
+                    "x1_mm": 8.0,
+                    "y1_mm": 10.0,
+                    "x2_mm": 10.0,
+                    "y2_mm": 10.0,
+                    "width_mm": 0.25,
+                },
+                {
+                    "id": "route_out",
+                    "net": "net_out",
+                    "layer": 0,
+                    "x1_mm": 10.0,
+                    "y1_mm": 10.0,
+                    "x2_mm": 12.0,
+                    "y2_mm": 10.0,
+                    "width_mm": 0.25,
+                },
+            ],
+            "vias": [
+                {
+                    "id": "via_out",
+                    "net": "net_out",
+                    "x_mm": 11.0,
+                    "y_mm": 10.0,
+                    "diameter_mm": 0.6,
+                    "drill_mm": 0.3,
+                    "from_layer": 0,
+                    "to_layer": 1,
+                }
+            ],
+            "unrouted_nets": [],
+            "provenance": "pcbdraft",
+            "geometry_revision": 7,
+        }
+        routed = Design.from_dict(value)
+        disconnected = apply_change_set(
+            routed,
+            change_set(
+                routed,
+                [
+                    operation(
+                        "disconnect",
+                        {
+                            "net_id": "net_out",
+                            "endpoint": {
+                                "component": "load_r",
+                                "pin": "2",
+                                "role": "signal",
+                            },
+                        },
+                    )
+                ],
+            ),
+        )
+
+        self.assertEqual(
+            tuple(item.id for item in disconnected.native_intent.routes),
+            ("route_3v3",),
+        )
+        self.assertEqual(disconnected.native_intent.vias, ())
+        self.assertEqual(disconnected.native_intent.unrouted_nets, ("net_out",))
+        self.assertEqual(disconnected.native_intent.geometry_revision, 8)
+
+        reconnected = apply_change_set(
+            disconnected,
+            change_set(
+                disconnected,
+                [
+                    operation(
+                        "connect",
+                        {
+                            "net_id": "net_out",
+                            "endpoint": {
+                                "component": "load_r",
+                                "pin": "2",
+                                "role": "signal",
+                            },
+                        },
+                    )
+                ],
+                change_id="change_2",
+            ),
+        )
+        self.assertEqual(reconnected.native_intent.unrouted_nets, ("net_out",))
+        self.assertEqual(reconnected.native_intent.geometry_revision, 9)
+
+        moved = apply_change_set(
+            routed,
+            change_set(
+                routed,
+                [
+                    operation(
+                        "place_footprint",
+                        {
+                            "component_id": "load_r",
+                            "x_mm": 11.0,
+                            "y_mm": 10.0,
+                            "rotation_deg": 0.0,
+                            "side": "front",
+                            "fixed": True,
+                        },
+                    )
+                ],
+                change_id="change_3",
+            ),
+        )
+        self.assertEqual(moved.native_intent.routes, ())
+        self.assertEqual(moved.native_intent.vias, ())
+        self.assertEqual(
+            moved.native_intent.unrouted_nets,
+            ("net_3v3", "net_out"),
+        )
+        self.assertEqual(moved.native_intent.geometry_revision, 8)
+
     def test_update_preview_has_object_and_field_level_impact(self) -> None:
         before = Design.from_dict(minimal_design_dict())
         changes = change_set(

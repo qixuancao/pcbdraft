@@ -741,6 +741,20 @@ exposed as a semantic diff and atomically applied by the agent; the exact previo
 managed project remains available for undo. Unknown, heuristic, and
 human-required evidence never causes an automatic repair loop.
 
+### Candidate validation and task coverage
+
+Candidate readiness and user-task completion are separate results. Manufacturing
+export and release require a passing validation report and receipt bound to the
+current design revision and content hash. Task coverage evaluates the declared
+requirement acceptance bindings against current validation checks; missing,
+manual, unsupported, or stale bindings do not count as completed work. A passing
+candidate gate permits export but does not certify that every user requirement
+has been met. Terminal and Web status present these results separately.
+
+Persisted task outcomes must also agree with deterministic terminal facts:
+failure, cancellation, timeout, and budget exhaustion cannot be overwritten by
+a task-coverage success claim.
+
 ## Replaceable planning providers
 
 Planning providers implement the same three operations: interpret requirements,

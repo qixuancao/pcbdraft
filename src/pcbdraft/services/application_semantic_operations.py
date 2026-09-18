@@ -21,7 +21,6 @@ from pcbdraft.domain.operations import (
     parse_place_group,
 )
 from pcbdraft.domain.parts import PartGraph
-from pcbdraft.services.native_operations import _routed_component_nets
 
 
 def _entry_mapping(value: Any, field: str) -> dict[str, Any]:
@@ -111,11 +110,9 @@ def _validate_place_group(
     design: Design,
     graph: PartGraph,
     *,
-    routed_component_nets: Callable[[Design, str], tuple[str, ...]] = (
-        _routed_component_nets
-    ),
+    routed_component_nets: Callable[[Design, str], tuple[str, ...]] | None = None,
 ) -> None:
-    """Resolve every absolute pose, board bound, and copper conflict first."""
+    """Resolve every absolute pose and board bound before creating a candidate."""
 
     components = {item.id: item for item in design.components}
     for entry in entries:
@@ -157,12 +154,13 @@ def _validate_place_group(
                 "semantic_transaction_duplicate: place_group pose is already applied: "
                 f"{entry.component_id}"
             )
-        routed_nets = routed_component_nets(design, entry.component_id)
-        if routed_nets:
-            raise ValidationError(
-                "semantic_transaction_conflict: place_group component retains routed "
-                f"copper on {', '.join(routed_nets)}: {entry.component_id}"
-            )
+        if routed_component_nets is not None:
+            routed_nets = routed_component_nets(design, entry.component_id)
+            if routed_nets:
+                raise ValidationError(
+                    "semantic_transaction_conflict: place_group component retains routed "
+                    f"copper on {', '.join(routed_nets)}: {entry.component_id}"
+                )
 
 
 def _flat_semantic_operation(
@@ -224,11 +222,11 @@ def _flat_semantic_operation(
         }
     elif any(
         tool_name.endswith(suffix)
-        for suffix in ("power_domain", "interface", "constraint")
+        for suffix in ("requirement", "power_domain", "interface", "constraint")
     ):
         collection = next(
             name
-            for name in ("power_domain", "interface", "constraint")
+            for name in ("requirement", "power_domain", "interface", "constraint")
             if tool_name.endswith(name)
         )
         if tool_name.startswith("remove_"):
@@ -238,6 +236,8 @@ def _flat_semantic_operation(
             op = (
                 "upsert_constraint"
                 if collection == "constraint"
+                else "upsert_requirement"
+                if collection == "requirement"
                 else f"upsert_{collection}"
             )
             value = deep_copy(arguments["value"])
@@ -245,11 +245,13 @@ def _flat_semantic_operation(
                 value["params"] = parameter_mapping(
                     value["params"], f"{collection}.params"
                 )
-            if collection == "constraint":
+            if collection in {"constraint", "requirement"}:
                 value["provenance"] = []
             entry_id = str(value["id"])
             exists = (
-                any(item.id == entry_id for item in design.power_domains)
+                any(item.id == entry_id for item in design.requirements)
+                if collection == "requirement"
+                else any(item.id == entry_id for item in design.power_domains)
                 if collection == "power_domain"
                 else any(item.id == entry_id for item in design.interfaces)
                 if collection == "interface"

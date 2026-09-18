@@ -25,8 +25,10 @@ from pcbdraft.core.locking import ResourceLock
 from pcbdraft.core.process import run_command
 from pcbdraft.core.project import sha256_file
 from pcbdraft.core.runs import utc_timestamp
+from pcbdraft.domain.constraint_support import constraint_support
+from pcbdraft.domain.ir import Constraint
 from pcbdraft.domain.parts import PartGraph
-from pcbdraft.domain.semantic_rules import evaluate_semantic_rules
+from pcbdraft.domain.semantic_rules import RuleFinding, evaluate_semantic_rules
 from pcbdraft.kicad.pcb import FootprintInspection, inspect_footprints
 from pcbdraft.kicad.runtime import find_kicad_cli
 from pcbdraft.services.managed import (
@@ -204,20 +206,31 @@ def run_individual_check(
             timeout=min(10.0, timeout),
         ):
             if kind in {"check_semantics", "check_connectivity"}:
-                issues = sorted(
-                    {
-                        *project.design.issues(),
-                        *resolved_graph.validate_design(
+                if kind == "check_semantics":
+                    issues = list(
+                        evaluate_semantic_rules(
                             project.design,
-                            check_libraries=kind == "check_semantics",
+                            resolved_graph,
                             allow_provisional=(
                                 project.design.metadata.get("assurance")
                                 == "provisional"
                             ),
-                        ),
-                    }
-                )
-                if kind == "check_connectivity":
+                        )
+                    )
+                else:
+                    issues = sorted(
+                        {
+                            *project.design.issues(),
+                            *resolved_graph.validate_design(
+                                project.design,
+                                check_libraries=False,
+                                allow_provisional=(
+                                    project.design.metadata.get("assurance")
+                                    == "provisional"
+                                ),
+                            ),
+                        }
+                    )
                     issues = [
                         issue
                         for issue in issues
@@ -1325,6 +1338,22 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
         approximate_geometry=False,
         allow_provisional=project.design.metadata.get("assurance") == "provisional",
     )
+    findings_by_constraint = {
+        constraint.id: [
+            finding
+            for finding in semantic_findings
+            if finding.object_id == constraint.id
+        ]
+        for constraint in design.constraints
+    }
+    for constraint in design.constraints:
+        checks.append(
+            _constraint_registry_check(
+                constraint,
+                findings_by_constraint[constraint.id],
+                project.ir_path.name,
+            )
+        )
     checks.append(
         CheckResult(
             "l3.semantic_intent_registry",
@@ -1351,6 +1380,40 @@ def _constraint_checks(project: ManagedProject, graph: PartGraph) -> list[CheckR
             )
         )
     return checks
+
+
+def _constraint_registry_check(
+    constraint: Constraint,
+    findings: list[RuleFinding],
+    ir_evidence: str,
+) -> CheckResult:
+    """Project one declared constraint into an explicit L3 evidence state."""
+
+    support = constraint_support(constraint.kind)
+    blocking = constraint.severity in {"required", "release_blocking"}
+    return CheckResult(
+        f"l3.constraint.{constraint.id}",
+        "L3",
+        "unavailable" if support is None else "completed",
+        "unknown" if support is None else "fail" if findings else "pass",
+        (
+            f"Constraint kind {constraint.kind!r} is unsupported; it was not verified."
+            if support is None
+            else f"Deterministic constraint {constraint.id} passed."
+            if not findings
+            else f"Deterministic constraint {constraint.id} failed."
+        ),
+        (ir_evidence, "semantic intent registry"),
+        {
+            "constraint_kind": constraint.kind,
+            "verification_support": (
+                support.verification if support is not None else "unsupported"
+            ),
+            "findings": [item.to_dict() for item in findings],
+        },
+        blocking,
+        blocking,
+    )
 
 
 def _pin_positions(

@@ -246,6 +246,7 @@ class ApplicationModificationApplyMixin:
                             "production_ready",
                             "production_claimed",
                             "source_design_revision",
+                            "source_content_hash",
                         )
                     },
                     "assurance": receipt["validation"].get("assurance", "provisional"),

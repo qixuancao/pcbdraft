@@ -65,7 +65,7 @@ class ApplicationStatusProjectionMixin:
                 "validation_note": "results state only what PCBDraft and KiCad actually checked",
             },
             "credential_guidance": {
-                "config": "Use `pcbdraft connect` or /connect; credentials stay in PCBDraft's private Hermes home.",
+                "config": "Use `pcbdraft connect` or /connect; credentials stay in PCBDraft's private runtime directory.",
                 "persistence": "Credential values are never written to project records or model receipts.",
                 "kicad": (
                     "Run `pcbdraft setup` to detect a compatible KiCad 10.0.x "

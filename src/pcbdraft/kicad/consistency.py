@@ -19,6 +19,9 @@ from pcbdraft.kicad.schematic import inspect_native_schematic
 NATIVE_CONSISTENCY_SCHEMA = "native-consistency-v1"
 NATIVE_DRC_STATUSES = frozenset({"failed", "not_evaluated", "passed"})
 NATIVE_OPERATION_POLICIES: Mapping[str, str] = {
+    "add_requirement": "semantic_only",
+    "update_requirement": "semantic_only",
+    "remove_requirement": "semantic_only",
     "add_block": "semantic_only",
     "remove_block": "semantic_only",
     "add_power_domain": "semantic_only",
@@ -914,6 +917,22 @@ def compare_native_operation_delta(
     if operation == "place_group":
         placement_entries = parse_place_group(arguments.get("placements"))
         components = {item.id: item for item in candidate_design.components}
+        target_component_ids = {entry.component_id for entry in placement_entries}
+        affected_net_ids = {
+            net.id
+            for design in (before_design, candidate_design)
+            for net in design.nets
+            if any(
+                endpoint.component in target_component_ids for endpoint in net.endpoints
+            )
+        }
+        affected_net_names = {
+            net.name
+            for design in (before_design, candidate_design)
+            for net in design.nets
+            if net.id in affected_net_ids
+        }
+        ignored_nets.update(affected_net_names)
         observed_poses = {item.reference: item for item in after.footprint_poses}
         mismatched: list[str] = []
         for entry in placement_entries:
@@ -939,6 +958,14 @@ def compare_native_operation_delta(
                 ),
             )
         )
+        checks.extend(
+            _routing_invalidation_checks(
+                "native_group",
+                before,
+                after,
+                frozenset(affected_net_names),
+            )
+        )
     elif operation in {
         "place_footprint",
         "move_footprint",
@@ -953,6 +980,19 @@ def compare_native_operation_delta(
         if component is None:
             raise ValidationError(f"component is absent: {component_id}")
         ignored_references.add(component.reference)
+        affected_net_ids = {
+            net.id
+            for design in (before_design, candidate_design)
+            for net in design.nets
+            if any(endpoint.component == component_id for endpoint in net.endpoints)
+        }
+        affected_net_names = {
+            net.name
+            for design in (before_design, candidate_design)
+            for net in design.nets
+            if net.id in affected_net_ids
+        }
+        ignored_nets.update(affected_net_names)
         allow_zone_refill = True
         expected_pose = _expected_native_pose(component.reference, component.placement)
         actual_pose = next(
@@ -969,6 +1009,14 @@ def compare_native_operation_delta(
                 actual_pose == expected_pose,
                 _pose_text(expected_pose),
                 _pose_text(actual_pose),
+            )
+        )
+        checks.extend(
+            _routing_invalidation_checks(
+                "native_footprint",
+                before,
+                after,
+                frozenset(affected_net_names),
             )
         )
     elif operation == "move_footprint_reference":
@@ -1206,35 +1254,12 @@ def compare_native_operation_delta(
                 ),
             )
         )
-        # Preserve copper per semantic net instead of comparing one aggregate
-        # union.  An aggregate would accept unchanged geometry whose native net
-        # identities were swapped between two group targets.
-        before_group_copper = tuple(
-            (
-                net_id,
-                _net_copper_geometry(before, frozenset({before_nets[net_id].name})),
-            )
-            for net_id in sorted(net_ids)
-        )
-        after_group_copper = tuple(
-            (
-                net_id,
-                _net_copper_geometry(after, frozenset({candidate_nets[net_id].name})),
-            )
-            for net_id in sorted(net_ids)
-        )
-        before_target_copper_count = sum(
-            len(items) for _net_id, items in before_group_copper
-        )
-        after_target_copper_count = sum(
-            len(items) for _net_id, items in after_group_copper
-        )
-        checks.append(
-            NativeDeltaCheck(
-                "native_group_net_copper_preserved",
-                before_group_copper == after_group_copper,
-                f"{before_target_copper_count} target copper objects with unchanged net identity and geometry",
-                f"{after_target_copper_count} target copper objects after operation",
+        checks.extend(
+            _routing_invalidation_checks(
+                "native_group_net",
+                before,
+                after,
+                frozenset(item.name for item in candidate_nets.values()),
             )
         )
         allow_zone_refill = True
@@ -1322,14 +1347,28 @@ def compare_native_operation_delta(
                 else frozenset()
             ),
         )
-        checks.append(
-            NativeDeltaCheck(
-                "native_net_copper_preserved",
-                before_target_copper == after_target_copper,
-                f"{len(before_target_copper)} target copper objects with unchanged geometry",
-                f"{len(after_target_copper)} target copper objects after operation",
+        if policy == "connectivity":
+            checks.extend(
+                _routing_invalidation_checks(
+                    "native_net",
+                    before,
+                    after,
+                    (
+                        frozenset({candidate_net.name})
+                        if candidate_net is not None
+                        else frozenset()
+                    ),
+                )
             )
-        )
+        else:
+            checks.append(
+                NativeDeltaCheck(
+                    "native_net_copper_preserved",
+                    before_target_copper == after_target_copper,
+                    f"{len(before_target_copper)} target copper objects with unchanged geometry",
+                    f"{len(after_target_copper)} target copper objects after operation",
+                )
+            )
     elif operation in {"add_via", "remove_via"}:
         allow_zone_refill = True
         via_id = str(arguments.get("via_id", ""))
@@ -1714,6 +1753,35 @@ def _net_zone_geometry(
 ) -> tuple[tuple[str, float, tuple[str, ...]], ...]:
     return tuple(
         item for item in _net_copper_geometry(projection, names) if item[0] == "zone"
+    )
+
+
+def _routing_invalidation_checks(
+    prefix: str,
+    before: NativeBoardProjection,
+    after: NativeBoardProjection,
+    names: frozenset[str],
+) -> tuple[NativeDeltaCheck, NativeDeltaCheck]:
+    before_zones = _net_zone_geometry(before, names)
+    after_zones = _net_zone_geometry(after, names)
+    after_routing = tuple(
+        item
+        for item in _net_copper_geometry(after, names)
+        if item[0] in {"segment", "via"}
+    )
+    return (
+        NativeDeltaCheck(
+            f"{prefix}_routing_invalidated",
+            not after_routing,
+            "no stale target segments or vias",
+            f"{len(after_routing)} target segments or vias after operation",
+        ),
+        NativeDeltaCheck(
+            f"{prefix}_zones_preserved",
+            before_zones == after_zones,
+            f"{len(before_zones)} target zones with unchanged identity",
+            f"{len(after_zones)} target zones after operation",
+        ),
     )
 
 

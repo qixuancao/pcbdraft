@@ -22,6 +22,7 @@ from pcbdraft.agent.repair import (
 from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, load_json_limited, make_directory
 from pcbdraft.core.locking import ResourceLock
+from pcbdraft.core.project import sha256_file
 from pcbdraft.core.redaction import sanitize_user_text
 from pcbdraft.core.repository import (
     ProjectRepository,
@@ -42,6 +43,7 @@ from pcbdraft.domain.operations import (
 )
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.scope import evaluate_scope
+from pcbdraft.domain.task_contract import candidate_gate_status
 from pcbdraft.kicad.consistency import (
     NativeBoardProjection,
     NativeConsistencyReport,
@@ -157,7 +159,6 @@ from pcbdraft.services.native_operations import (
     _operation_failure_code,
     _PCBOperationPostconditionError,
     _reject_stale_copper_transform,
-    _routed_component_nets,
     _routing_failure_context,
     _unavailable_consistency_report,
 )
@@ -295,6 +296,12 @@ def _native_schematic_projection(managed: Any) -> NativeSchematicProjection:
         inspector=inspect_native_schematic,
         is_complete=_native_schematic_projection_complete,
     )
+
+
+def _routed_component_nets(_design: Design, _component_id: str) -> tuple[str, ...]:
+    """Compatibility patch point; native stale-copper checks run at commit time."""
+
+    return ()
 
 
 def default_application_home() -> Path:
@@ -1410,6 +1417,79 @@ class ApplicationService(
         )
 
     @staticmethod
+    def _require_current_candidate_validation(
+        project: ApplicationProject, design: Design
+    ) -> dict[str, Any]:
+        """Return the current aggregate candidate gate or fail before exporting."""
+
+        validation = project.state.get("last_validation")
+        gate = candidate_gate_status(
+            validation,
+            design_revision=int(project.state["design_revision"]),
+            design_content_hash=design.content_hash(),
+        )
+        if not gate["passed"] or not isinstance(validation, dict):
+            raise ValidationError(
+                "manufacturing export requires a passing candidate validation "
+                "bound to the current design revision and content hash; run "
+                "pcb_validate_candidate"
+            )
+        report_relative = validation.get("report")
+        report_sha256 = validation.get("report_sha256")
+        if (
+            not isinstance(report_relative, str)
+            or not isinstance(report_sha256, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", report_sha256)
+        ):
+            raise ValidationError(
+                "candidate validation evidence is missing its retained report binding"
+            )
+        report_path = project.root / report_relative
+        try:
+            report_path.resolve(strict=False).relative_to(project.root.resolve())
+        except ValueError as exc:
+            raise ValidationError(
+                "candidate validation report is outside the project"
+            ) from exc
+        if (
+            report_path.is_symlink()
+            or not report_path.is_file()
+            or sha256_file(report_path, max_bytes=APP_FILE_LIMIT) != report_sha256
+        ):
+            raise ValidationError(
+                "candidate validation report is missing or does not match its digest"
+            )
+        report = load_json_limited(report_path, APP_FILE_LIMIT)
+        readiness = report.get("readiness") if isinstance(report, Mapping) else None
+        report_design = report.get("design") if isinstance(report, Mapping) else None
+        if (
+            not isinstance(report, Mapping)
+            or report.get("schema") != "pcbdraft-validation"
+            or report.get("version") != 2
+            or not isinstance(readiness, Mapping)
+            or readiness.get("engineering_candidate") is not True
+            or not isinstance(report_design, Mapping)
+            or report_design.get("content_hash") != design.content_hash()
+        ):
+            raise ValidationError(
+                "candidate validation report does not prove the current candidate gate"
+            )
+        receipt = load_json_limited(report_path.parent / "receipt.json", APP_FILE_LIMIT)
+        if (
+            not isinstance(receipt, Mapping)
+            or receipt.get("schema") != "pcbdraft-validation-receipt"
+            or receipt.get("status") != "complete"
+            or receipt.get("candidate_ready") is not True
+            or receipt.get("design_content_hash") != design.content_hash()
+            or receipt.get("source_design_revision")
+            != int(project.state["design_revision"])
+        ):
+            raise ValidationError(
+                "candidate validation receipt is missing, stale, or incomplete"
+            )
+        return dict(validation)
+
+    @staticmethod
     def _aggregate_check_progress(
         validation_root: Path,
         design_hash: str,
@@ -1672,7 +1752,7 @@ class ApplicationService(
             _progress_stage_evidence(
                 managed.design,
                 revision,
-                requirements_frozen=managed.requirements_path.is_file(),
+                requirements_frozen=bool(managed.design.requirements),
                 consistency=consistency,
                 progress=progress,
                 erc_check=erc_check,
@@ -1756,7 +1836,7 @@ class ApplicationService(
         design: Design,
         graph: PartGraph,
     ) -> None:
-        """Preserve the historical routed-copper patch path."""
+        """Preserve the historical place-group validation boundary."""
 
         _application_semantic_operations._validate_place_group(
             entries,

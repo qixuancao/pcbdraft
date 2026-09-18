@@ -440,6 +440,9 @@ class NativeConsistencyTests(unittest.TestCase):
                 if policy == "semantic_only"
             },
             {
+                "add_requirement",
+                "update_requirement",
+                "remove_requirement",
                 "add_block",
                 "remove_block",
                 "add_power_domain",
@@ -507,6 +510,11 @@ class NativeConsistencyTests(unittest.TestCase):
         next(item for item in connected_value["nets"] if item["id"] == "net_out")[
             "endpoints"
         ].append({"component": "load_r2", "pin": "2", "role": "signal"})
+        connected_value["native_intent"]["routes"] = []
+        connected_value["native_intent"]["unrouted_nets"] = [
+            "net_3v3",
+            "net_out",
+        ]
         connected = Design.from_dict(connected_value)
         connect_arguments = {
             "connections": {
@@ -542,39 +550,27 @@ class NativeConsistencyTests(unittest.TestCase):
         self.assertTrue(connect_report.passed, connect_report.to_dict())
         self.assertEqual(connect_report.policy, "connectivity_group")
 
-        swapped_target_copper = replace(
+        stale_target_copper = replace(
             connected_board,
-            copper=tuple(
-                replace(
-                    item,
-                    net=(
-                        "OUT"
-                        if item.net == "3V3"
-                        else "3V3"
-                        if item.net == "OUT"
-                        else item.net
-                    ),
-                )
-                for item in connected_board.copper
-            ),
+            copper=before_connect_board.copper,
         )
-        swapped_report = compare_native_operation_delta(
+        stale_report = compare_native_operation_delta(
             "connect_group",
             connect_arguments,
             before_connect,
             connected,
             before_connect_board,
-            swapped_target_copper,
+            stale_target_copper,
             before_schematic=_delta_schematic(before_connect),
             after_schematic=_delta_schematic(connected),
             graph=PartGraph.bundled().with_footprint_overrides(connected),
         )
-        self.assertFalse(swapped_report.passed)
+        self.assertFalse(stale_report.passed)
         self.assertFalse(
             next(
                 item.passed
-                for item in swapped_report.checks
-                if item.name == "native_group_net_copper_preserved"
+                for item in stale_report.checks
+                if item.name == "native_group_net_routing_invalidated"
             )
         )
 
@@ -1074,6 +1070,103 @@ class NativeConsistencyTests(unittest.TestCase):
             "native_projection=not_applicable_empty_net,name=OUT",
         )
         self.assertIn("board_net=False", projection.observed)
+
+    def test_disconnect_invalidates_tracks_but_preserves_reference_zone(self) -> None:
+        connected_value = _native_design().to_dict()
+        connected_value["native_intent"]["routes"] = [
+            {
+                "id": "route_3v3",
+                "net": "net_3v3",
+                "layer": 0,
+                "x1_mm": 8.0,
+                "y1_mm": 10.0,
+                "x2_mm": 10.0,
+                "y2_mm": 10.0,
+                "width_mm": 0.25,
+            }
+        ]
+        connected = Design.from_dict(connected_value)
+        candidate_value = connected.to_dict()
+        net = next(item for item in candidate_value["nets"] if item["id"] == "net_3v3")
+        net["endpoints"] = [
+            item for item in net["endpoints"] if item["component"] != "load_r"
+        ]
+        candidate_value["native_intent"]["routes"] = []
+        candidate_value["native_intent"]["unrouted_nets"] = ["net_3v3"]
+        candidate = Design.from_dict(candidate_value)
+        zone = NativeCopper(
+            "zone",
+            "3V3",
+            10.0,
+            ("layer=1", "pad_connection=thermal", "area=10"),
+        )
+        before_board = replace(
+            _delta_board(connected),
+            copper=(*_delta_board(connected).copper, zone),
+        )
+        after_board = replace(_delta_board(candidate), copper=(zone,))
+        arguments = {
+            "net_id": "net_3v3",
+            "component_id": "load_r",
+            "pin": "1",
+            "role": "load",
+        }
+
+        report = compare_native_operation_delta(
+            "disconnect_pin",
+            arguments,
+            connected,
+            candidate,
+            before_board,
+            after_board,
+            before_schematic=_delta_schematic(connected),
+            after_schematic=_delta_schematic(candidate),
+            graph=PartGraph.bundled().with_footprint_overrides(candidate),
+        )
+        self.assertTrue(report.passed, report.to_dict())
+        self.assertTrue(
+            next(
+                item.passed
+                for item in report.checks
+                if item.name == "native_net_routing_invalidated"
+            )
+        )
+        self.assertTrue(
+            next(
+                item.passed
+                for item in report.checks
+                if item.name == "native_net_zones_preserved"
+            )
+        )
+
+        for label, copper, failed_check in (
+            (
+                "stale_track",
+                before_board.copper,
+                "native_net_routing_invalidated",
+            ),
+            ("missing_zone", (), "native_net_zones_preserved"),
+        ):
+            with self.subTest(label=label):
+                rejected = compare_native_operation_delta(
+                    "disconnect_pin",
+                    arguments,
+                    connected,
+                    candidate,
+                    before_board,
+                    replace(after_board, copper=copper),
+                    before_schematic=_delta_schematic(connected),
+                    after_schematic=_delta_schematic(candidate),
+                    graph=PartGraph.bundled().with_footprint_overrides(candidate),
+                )
+                self.assertFalse(rejected.passed)
+                self.assertFalse(
+                    next(
+                        item.passed
+                        for item in rejected.checks
+                        if item.name == failed_check
+                    )
+                )
 
     def test_empty_disconnected_net_rejects_native_electrical_membership(
         self,

@@ -152,6 +152,11 @@ def _native_board_snapshot(design: Design) -> dict[str, Any]:
                     component.placement.rotation_deg if component.placement else 0.0
                 ),
                 "side": component.placement.side if component.placement else "front",
+                "reference_text": {
+                    "visible": True,
+                    "x_mm": component.placement.x_mm if component.placement else 0.0,
+                    "y_mm": component.placement.y_mm if component.placement else 0.0,
+                },
                 "pads": [
                     {
                         "number": pin.footprint_pad,
@@ -831,7 +836,7 @@ class FlatPCBServiceTests(unittest.TestCase):
                 )
             materialize.assert_not_called()
 
-    def test_group_resolves_all_targets_and_rejects_retained_copper_up_front(
+    def test_group_resolves_all_targets_and_defers_copper_invalidation_to_reducer(
         self,
     ) -> None:
         design = _group_design()
@@ -896,19 +901,17 @@ class FlatPCBServiceTests(unittest.TestCase):
             }
         ]
         routed = Design.from_dict(routed_value)
-        with self.assertRaisesRegex(ValidationError, "semantic_transaction_conflict"):
-            ApplicationService._flat_semantic_operations(
-                "place_group",
-                {
-                    "placements": {
-                        "entries": [
-                            _place_group_arguments()["placements"]["entries"][0]
-                        ]
-                    }
-                },
-                routed,
-                graph=PartGraph.bundled().with_footprint_overrides(routed),
-            )
+        operations = ApplicationService._flat_semantic_operations(
+            "place_group",
+            {
+                "placements": {
+                    "entries": [_place_group_arguments()["placements"]["entries"][0]]
+                }
+            },
+            routed,
+            graph=PartGraph.bundled().with_footprint_overrides(routed),
+        )
+        self.assertEqual([item["op"] for item in operations], ["place_footprint"])
 
     def test_connect_group_native_failure_keeps_the_entire_group_uncommitted(
         self,
@@ -2046,6 +2049,8 @@ class FlatPCBServiceTests(unittest.TestCase):
             next(item for item in candidate_value["nets"] if item["id"] == "net_out")[
                 "endpoints"
             ] = []
+            candidate_value["native_intent"]["unrouted_nets"] = ["net_out"]
+            candidate_value["native_intent"]["geometry_revision"] += 1
             candidate = Design.from_dict(candidate_value)
             arguments = {
                 "net_id": "net_out",
@@ -2345,7 +2350,7 @@ class FlatPCBServiceTests(unittest.TestCase):
                         self.assertEqual(receipt["rollback"]["state"], "not_required")
                         self.assertTrue(receipt["rollback"]["live_unchanged"])
 
-    def test_routed_footprint_transform_is_rejected_before_materialization(
+    def test_routed_footprint_move_invalidates_copper_before_materialization(
         self,
     ) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -2368,7 +2373,6 @@ class FlatPCBServiceTests(unittest.TestCase):
             atomic_write_json(
                 project.design_root / "mock-design.json", before.to_dict()
             )
-            original = service._open(project_id)
             materialize = Mock(side_effect=_materialize_project)
             with (
                 patch(
@@ -2383,62 +2387,157 @@ class FlatPCBServiceTests(unittest.TestCase):
                     "pcbdraft.services.application.materialize_managed_design",
                     materialize,
                 ),
+                patch(
+                    "pcbdraft.services.application.inspect_native_consistency",
+                    return_value=_passing_consistency(),
+                ),
             ):
-                cases = (
-                    (
-                        "move_footprint",
-                        {"component_id": "load_r", "x_mm": 14.0, "y_mm": 10.0},
-                    ),
-                    (
-                        "rotate_footprint",
-                        {"component_id": "load_r", "rotation_deg": 90.0},
-                    ),
-                    ("unplace_footprint", {"component_id": "load_r"}),
-                    (
-                        "assign_footprint",
-                        {
-                            "component_id": "load_r",
-                            "footprint": "Resistor_SMD:R_0805_2012Metric",
-                        },
-                    ),
+                result = service.apply_pcb_operation(
+                    project_id,
+                    "move_footprint",
+                    {"component_id": "load_r", "x_mm": 14.0, "y_mm": 10.0},
+                    timeout=12.0,
+                    expected_revision=0,
                 )
-                for tool_name, arguments in cases:
-                    with (
-                        self.subTest(tool=tool_name),
-                        self.assertRaisesRegex(
-                            ValidationError,
-                            "blocked until associated retained copper",
-                        ),
-                    ):
-                        service.apply_pcb_operation(
-                            project_id,
-                            tool_name,
-                            arguments,
-                            timeout=12.0,
-                            expected_revision=0,
-                        )
 
-            materialize.assert_not_called()
+            materialize.assert_called_once()
+            restored = service._open(project_id)
+            after = _managed(restored.design_root).design
+            self.assertEqual(result["tool_result"]["revision"], 1)
+            self.assertEqual(after.native_intent.routes, ())
+            self.assertEqual(
+                after.native_intent.unrouted_nets,
+                ("net_3v3", "net_out"),
+            )
+            self.assertEqual(
+                next(
+                    item for item in after.components if item.id == "load_r"
+                ).placement.x_mm,
+                14.0,
+            )
+
+    def test_failed_routed_footprint_move_leaves_live_design_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            service, project_id, before = _seed_managed_project(Path(temp))
+            value = before.to_dict()
+            value["native_intent"]["routes"] = [
+                {
+                    "id": "route_out",
+                    "net": "net_out",
+                    "layer": 0,
+                    "x1_mm": 10.0,
+                    "y1_mm": 10.0,
+                    "x2_mm": 12.0,
+                    "y2_mm": 10.0,
+                    "width_mm": 0.25,
+                }
+            ]
+            before = Design.from_dict(value)
+            project = service._open(project_id)
+            atomic_write_json(
+                project.design_root / "mock-design.json", before.to_dict()
+            )
+            original = service._open(project_id)
+            original_tree = _tree_bytes(original.design_root)
+            with (
+                patch(
+                    "pcbdraft.services.application.open_managed_project",
+                    side_effect=lambda path: _managed(Path(path)),
+                ),
+                patch(
+                    "pcbdraft.services.application.load_generation_request",
+                    return_value=object(),
+                ),
+                patch(
+                    "pcbdraft.services.application.materialize_managed_design",
+                    side_effect=ValidationError("focused materialization failure"),
+                ),
+                self.assertRaisesRegex(
+                    ValidationError, "focused materialization failure"
+                ),
+            ):
+                service.apply_pcb_operation(
+                    project_id,
+                    "move_footprint",
+                    {"component_id": "load_r", "x_mm": 14.0, "y_mm": 10.0},
+                    timeout=12.0,
+                    expected_revision=0,
+                )
+
             restored = service._open(project_id)
             self.assertEqual(restored.state, original.state)
+            self.assertEqual(_tree_bytes(restored.design_root), original_tree)
             self.assertEqual(_managed(restored.design_root).design, before)
-            receipts = [
-                load_json_limited(path, 1024 * 1024)
-                for path in (restored.root / "transactions").glob("*/receipt.json")
+            receipt_path = next((restored.root / "transactions").glob("*/receipt.json"))
+            receipt = load_json_limited(receipt_path, 1024 * 1024)
+            self.assertEqual(receipt["status"], "failed")
+            self.assertTrue(receipt["rollback"]["live_unchanged"])
+
+    def test_footprint_contract_change_with_routing_remains_blocked(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            service, project_id, before = _seed_managed_project(Path(temp))
+            value = before.to_dict()
+            value["native_intent"]["routes"] = [
+                {
+                    "id": "route_out",
+                    "net": "net_out",
+                    "layer": 0,
+                    "x1_mm": 10.0,
+                    "y1_mm": 10.0,
+                    "x2_mm": 12.0,
+                    "y2_mm": 10.0,
+                    "width_mm": 0.25,
+                }
             ]
-            self.assertEqual(
-                [
-                    receipt["error_code"]
-                    for receipt in receipts
-                    if receipt["operation"]
-                    in {
-                        "assign_footprint",
-                        "move_footprint",
-                        "rotate_footprint",
-                        "unplace_footprint",
-                    }
-                ],
-                ["routed_footprint_transform_unsupported"] * 4,
+            before = Design.from_dict(value)
+            project = service._open(project_id)
+            atomic_write_json(
+                project.design_root / "mock-design.json", before.to_dict()
+            )
+            materialize = Mock(side_effect=_materialize_project)
+            with (
+                patch(
+                    "pcbdraft.services.application.open_managed_project",
+                    side_effect=lambda path: _managed(Path(path)),
+                ),
+                patch(
+                    "pcbdraft.services.application.load_generation_request",
+                    return_value=object(),
+                ),
+                patch(
+                    "pcbdraft.services.application.materialize_managed_design",
+                    materialize,
+                ),
+                self.assertRaisesRegex(
+                    ValidationError,
+                    "blocked until associated retained copper",
+                ),
+            ):
+                service.apply_pcb_operation(
+                    project_id,
+                    "assign_footprint",
+                    {
+                        "component_id": "load_r",
+                        "footprint": "Resistor_SMD:R_0805_2012Metric",
+                    },
+                    timeout=12.0,
+                    expected_revision=0,
+                )
+            materialize.assert_not_called()
+
+    def test_explicit_reference_plane_unroute_remains_blocked(self) -> None:
+        value = _v2_design().to_dict()
+        next(item for item in value["nets"] if item["id"] == "net_out")["name"] = "GND"
+        design = Design.from_dict(value)
+
+        with self.assertRaisesRegex(
+            ValidationError,
+            "required reference-plane net cannot be unrouted",
+        ):
+            ApplicationService._flat_semantic_operation(
+                "unroute_net",
+                {"net_id": "net_out"},
+                design,
             )
 
     def test_route_tool_selects_only_its_requested_net_for_materialization(
@@ -2958,6 +3057,20 @@ class FlatPCBServiceTests(unittest.TestCase):
                     "board", kind, timeout=12.0, expected_revision=4
                 )
                 aggregate.assert_not_called()
+
+    def test_individual_render_clamps_larger_job_timeout_to_preview_limit(self) -> None:
+        service = object.__new__(ApplicationService)
+        with patch.object(
+            service, "render_pcb_output", return_value={"kind": "render_board"}
+        ) as individual:
+            result = service.execute_pcb_tool(
+                "board", "render_board", {}, timeout=900.0, expected_revision=4
+            )
+
+        self.assertEqual(result, {"kind": "render_board"})
+        individual.assert_called_once_with(
+            "board", "render_board", timeout=600.0, expected_revision=4
+        )
 
     def test_flat_board_tool_maps_to_one_typed_operation(self) -> None:
         design = _v2_design()

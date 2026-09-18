@@ -113,6 +113,7 @@ class ScopedTaskEvidenceKind(str, Enum):
     TERMINAL_FAILURE = "terminal_failure"
     TERMINAL_BLOCK = "terminal_block"
     TERMINAL_INCOMPLETE = "terminal_incomplete"
+    TASK_CONTRACT = "task_contract"
 
 
 TERMINATION_REASONS = frozenset(
@@ -749,6 +750,8 @@ class ProductSessionTerminalReceipt:
     release_gate_passed: bool
     source_revision: int
     progress: ProgressVector
+    scoped_outcome_override: ScopedTaskOutcome | None = None
+    scoped_evidence_override: ScopedTaskEvidenceKind | None = None
 
     def __post_init__(self) -> None:
         _identity(self.receipt_id, "product receipt id")
@@ -780,6 +783,63 @@ class ProductSessionTerminalReceipt:
         _revision(self.source_revision, "product receipt source revision")
         if self.progress.source_revision != self.source_revision:
             raise ValidationError("product receipt progress revision differs")
+        if (self.scoped_outcome_override is None) != (
+            self.scoped_evidence_override is None
+        ):
+            raise ValidationError("product receipt scoped task override is incomplete")
+        if self.scoped_outcome_override is not None and (
+            not isinstance(self.scoped_outcome_override, ScopedTaskOutcome)
+            or not isinstance(self.scoped_evidence_override, ScopedTaskEvidenceKind)
+        ):
+            raise ValidationError("product receipt scoped task override is invalid")
+        if self.scoped_outcome_override is not None:
+            allowed_scoped_pairs = {
+                (ScopedTaskOutcome.UNKNOWN, ScopedTaskEvidenceKind.UNAVAILABLE),
+                (ScopedTaskOutcome.PASSED, ScopedTaskEvidenceKind.RELEASE_GATE),
+                (ScopedTaskOutcome.FAILED, ScopedTaskEvidenceKind.TERMINAL_FAILURE),
+                (ScopedTaskOutcome.BLOCKED, ScopedTaskEvidenceKind.TERMINAL_BLOCK),
+                (
+                    ScopedTaskOutcome.INCOMPLETE,
+                    ScopedTaskEvidenceKind.TERMINAL_INCOMPLETE,
+                ),
+                *{
+                    (outcome, ScopedTaskEvidenceKind.TASK_CONTRACT)
+                    for outcome in ScopedTaskOutcome
+                    if outcome is not ScopedTaskOutcome.UNKNOWN
+                },
+            }
+            if (
+                self.scoped_outcome_override,
+                self.scoped_evidence_override,
+            ) not in allowed_scoped_pairs:
+                raise ValidationError(
+                    "product receipt scoped task evidence is inconsistent"
+                )
+            deterministic_scoped = scoped_task_status(
+                process_status=self.process_status,
+                release_outcome=self.release_outcome,
+                termination_reason=self.termination_reason,
+                release_gate_passed=self.release_gate_passed,
+            )
+            if self.scoped_evidence_override is ScopedTaskEvidenceKind.TASK_CONTRACT:
+                terminal_contract_facts = (
+                    self.release_outcome
+                    in {TaskOutcome.FAILED, TaskOutcome.BLOCKED}
+                    or self.process_status
+                    in {ProcessStatus.CANCELLED, ProcessStatus.TIMED_OUT}
+                    or self.termination_reason.startswith("budget_exhausted:")
+                )
+                if terminal_contract_facts:
+                    raise ValidationError(
+                        "product receipt scoped task evidence is inconsistent"
+                    )
+            elif (
+                self.scoped_outcome_override,
+                self.scoped_evidence_override,
+            ) != deterministic_scoped:
+                raise ValidationError(
+                    "product receipt scoped task evidence is inconsistent"
+                )
         release_facts = (
             self.release_gate_passed,
             self.release_outcome is TaskOutcome.PASSED,
@@ -828,6 +888,8 @@ class ProductSessionTerminalReceipt:
 
     @property
     def scoped_task_outcome(self) -> ScopedTaskOutcome:
+        if self.scoped_outcome_override is not None:
+            return self.scoped_outcome_override
         return scoped_task_status(
             process_status=self.process_status,
             release_outcome=self.release_outcome,
@@ -837,6 +899,8 @@ class ProductSessionTerminalReceipt:
 
     @property
     def scoped_task_evidence_kind(self) -> ScopedTaskEvidenceKind:
+        if self.scoped_evidence_override is not None:
+            return self.scoped_evidence_override
         return scoped_task_status(
             process_status=self.process_status,
             release_outcome=self.release_outcome,
@@ -932,6 +996,15 @@ class ProductSessionTerminalReceipt:
                 raise ValidationError(
                     "product receipt scoped task evidence is malformed"
                 ) from exc
+            default_scoped = scoped_task_status(
+                process_status=process,
+                release_outcome=release_outcome,
+                termination_reason=value["termination_reason"],
+                release_gate_passed=value["release_gate_passed"],
+            )
+            if (scoped_outcome, scoped_evidence_kind) == default_scoped:
+                scoped_outcome = None
+                scoped_evidence_kind = None
         receipt = cls(
             value["receipt_id"],
             value["project_id"],
@@ -945,10 +1018,13 @@ class ProductSessionTerminalReceipt:
             value["release_gate_passed"],
             value["source_revision"],
             ProgressVector.from_dict(value["progress"]),
+            scoped_outcome,
+            scoped_evidence_kind,
         )
         if not legacy and (
-            receipt.scoped_task_outcome is not scoped_outcome
-            or receipt.scoped_task_evidence_kind is not scoped_evidence_kind
+            receipt.scoped_task_outcome.value != value["scoped_task_outcome"]
+            or receipt.scoped_task_evidence_kind.value
+            != value["scoped_task_evidence"]["kind"]
         ):
             raise ValidationError(
                 "product receipt scoped task evidence is inconsistent"
@@ -1008,6 +1084,7 @@ def scoped_task_status(
     release_outcome: TaskOutcome,
     termination_reason: str,
     release_gate_passed: bool,
+    task_coverage_outcome: ScopedTaskOutcome | str | None = None,
 ) -> tuple[ScopedTaskOutcome, ScopedTaskEvidenceKind]:
     """Classify bounded-task state only from deterministic terminal facts.
 
@@ -1029,6 +1106,12 @@ def scoped_task_status(
             ScopedTaskOutcome.INCOMPLETE,
             ScopedTaskEvidenceKind.TERMINAL_INCOMPLETE,
         )
+    if task_coverage_outcome is not None:
+        try:
+            coverage = ScopedTaskOutcome(task_coverage_outcome)
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("task coverage outcome is invalid") from exc
+        return coverage, ScopedTaskEvidenceKind.TASK_CONTRACT
     return ScopedTaskOutcome.UNKNOWN, ScopedTaskEvidenceKind.UNAVAILABLE
 
 

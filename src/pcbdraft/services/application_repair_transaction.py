@@ -398,6 +398,7 @@ class ApplicationRepairTransactionMixin:
                 "production_ready": validation_run.production_ready,
                 "production_claimed": False,
                 "source_design_revision": baseline_design_revision + 1,
+                "source_content_hash": candidate.design.content_hash(),
                 "assurance": str(
                     candidate.design.metadata.get("assurance", "provisional")
                 ),

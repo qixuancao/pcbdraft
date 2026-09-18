@@ -296,7 +296,7 @@ class ApplicationPCBOperationsMixin:
         before_stage_evidence = _progress_stage_evidence(
             authoritative.design,
             baseline_design_revision,
-            requirements_frozen=authoritative.requirements_path.is_file(),
+            requirements_frozen=bool(authoritative.design.requirements),
             consistency=before_consistency,
             progress=before_progress,
             erc_check=before_erc_check,
@@ -463,7 +463,7 @@ class ApplicationPCBOperationsMixin:
             after_stage_evidence = _progress_stage_evidence(
                 candidate,
                 candidate_design_revision,
-                requirements_frozen=staged_project.requirements_path.is_file(),
+                requirements_frozen=bool(staged_project.design.requirements),
                 consistency=consistency,
                 progress=after_progress,
                 erc_check=before_erc_check.for_revision(candidate_design_revision),

@@ -91,11 +91,17 @@ class ApplicationPCBToolDispatchMixin:
                 timeout=timeout,
                 expected_revision=expected_revision,
             )
+        if tool_name == "validate_candidate":
+            return self.validate_project(
+                project_id,
+                timeout=timeout,
+                expected_revision=expected_revision,
+            )
         if tool_name in {"render_schematic", "render_board", "render_3d"}:
             return self.render_pcb_output(
                 project_id,
                 tool_name,
-                timeout=timeout,
+                timeout=min(timeout, 600.0),
                 expected_revision=expected_revision,
             )
         if tool_name in {

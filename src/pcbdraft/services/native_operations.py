@@ -330,15 +330,12 @@ def _native_schematic_projection_complete(
     )
 
 
-def _routed_component_nets(design: Design, component_id: str) -> tuple[str, ...]:
-    connected = {
+def _component_net_ids(design: Design, component_id: str) -> set[str]:
+    return {
         net.id
         for net in design.nets
         if any(endpoint.component == component_id for endpoint in net.endpoints)
     }
-    retained = {route.net for route in design.native_intent.routes}
-    retained.update(via.net for via in design.native_intent.vias)
-    return tuple(sorted(connected & retained))
 
 
 def _reject_stale_copper_transform(
@@ -385,12 +382,20 @@ def _reject_stale_copper_transform(
             ) != _component_footprint_contract(after_component, candidate_graph)
         if not changed:
             continue
-        routed_nets = _routed_component_nets(before, component_id)
-        if routed_nets:
+        affected_net_ids = _component_net_ids(before, component_id) | _component_net_ids(
+            candidate, component_id
+        )
+        retained_net_ids = {route.net for route in candidate.native_intent.routes}
+        retained_net_ids.update(via.net for via in candidate.native_intent.vias)
+        stale_net_ids = affected_net_ids & retained_net_ids
+        if stale_net_ids:
+            net_names = {net.id: net.name for net in (*before.nets, *candidate.nets)}
             raise _PCBOperationPostconditionError(
                 "routed_footprint_transform_unsupported",
                 "footprint geometry change is blocked until associated retained copper is unrouted: "
-                + ", ".join(routed_nets),
+                + ", ".join(
+                    sorted(net_names.get(net_id, net_id) for net_id in stale_net_ids)
+                ),
             )
 
 

@@ -18,7 +18,9 @@ from pcbdraft.core.errors import PCBDraftError, ValidationError
 from pcbdraft.core.io import atomic_write_json, load_json_limited
 from pcbdraft.core.runs import utc_timestamp
 from pcbdraft.domain.ir import Design
+from pcbdraft.domain.task_contract import candidate_gate_status, evaluate_task_coverage
 from pcbdraft.services.managed import IR_NAME
+from pcbdraft.services.progress import ProductSessionTerminalReceipt
 
 APP_PROJECT_SCHEMA = "pcbdraft-application-project"
 APP_PROJECT_VERSION = 1
@@ -303,8 +305,30 @@ class ApplicationProjectStoreMixin:
             and (value.get("error") is None or isinstance(value.get("error"), str))
         )
 
+    @staticmethod
+    def _latest_product_terminal(project: ApplicationProject) -> dict[str, Any] | None:
+        directory = project.root / "product-sessions"
+        if not directory.is_dir() or directory.is_symlink():
+            return None
+        latest: tuple[str, dict[str, Any]] | None = None
+        for path in directory.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix != ".json":
+                continue
+            try:
+                receipt = ProductSessionTerminalReceipt.from_dict(
+                    load_json_limited(path, APP_FILE_LIMIT)
+                ).to_dict()
+            except PCBDraftError:
+                continue
+            created_at = str(receipt["created_at"])
+            if latest is None or created_at > latest[0]:
+                receipt["artifact"] = path.relative_to(project.root).as_posix()
+                latest = (created_at, receipt)
+        return latest[1] if latest is not None else None
+
     def _public_project(self, project: ApplicationProject) -> dict[str, Any]:
         design: dict[str, Any] | None = None
+        managed = None
         if project.design_root.is_dir() and not project.design_root.is_symlink():
             managed = self._project_store_open_managed_project(project.design_root)
             design = {
@@ -343,6 +367,62 @@ class ApplicationProjectStoreMixin:
         public_state["last_release"] = self._project_store_public_readiness(
             project.state["last_release"]
         )
+        if managed is None:
+            candidate_gate = {
+                "outcome": "incomplete",
+                "passed": False,
+                "reason": "design_missing",
+                "source_design_revision": None,
+                "source_content_hash": None,
+            }
+            task_coverage = {
+                "schema": "pcbdraft-task-coverage",
+                "version": 1,
+                "outcome": "incomplete",
+                "complete": False,
+                "reason": "design_missing",
+                "source_design_revision": int(project.state["design_revision"]),
+                "source_content_hash": None,
+                "validation_run_id": None,
+                "items": [],
+            }
+        else:
+            candidate_gate = candidate_gate_status(
+                project.state.get("last_validation"),
+                design_revision=int(project.state["design_revision"]),
+                design_content_hash=managed.design.content_hash(),
+            )
+            if candidate_gate["passed"]:
+                try:
+                    self._require_current_candidate_validation(project, managed.design)
+                except PCBDraftError:
+                    candidate_gate = {
+                        **candidate_gate,
+                        "outcome": "incomplete",
+                        "passed": False,
+                        "reason": "candidate_validation_evidence_invalid",
+                    }
+            if hasattr(managed.design, "requirements"):
+                task_coverage = evaluate_task_coverage(
+                    managed.design,
+                    None
+                    if candidate_gate["reason"]
+                    == "candidate_validation_evidence_invalid"
+                    else project.state.get("last_validation"),
+                    design_revision=int(project.state["design_revision"]),
+                )
+            else:
+                task_coverage = {
+                    "schema": "pcbdraft-task-coverage",
+                    "version": 1,
+                    "outcome": "incomplete",
+                    "complete": False,
+                    "reason": "task_contract_unavailable",
+                    "source_design_revision": int(project.state["design_revision"]),
+                    "source_content_hash": managed.design.content_hash(),
+                    "validation_run_id": None,
+                    "items": [],
+                }
         return {
             "schema": "pcbdraft-application-view",
             "version": 1,
@@ -350,6 +430,11 @@ class ApplicationProjectStoreMixin:
             "state": public_state,
             "conversation": project.conversation,
             "design": design,
+            "product_status": {
+                "conversation_terminal": self._latest_product_terminal(project),
+                "candidate_gate": candidate_gate,
+                "task_coverage": task_coverage,
+            },
             "artifacts": {
                 "previews": project.state["last_preview"],
                 "validation": public_state["last_validation"],

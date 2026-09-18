@@ -12,8 +12,14 @@ from pathlib import Path
 from typing import Any
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.domain.task_contract import evaluate_task_coverage
 from pcbdraft.services.application_project_store import APP_FILE_LIMIT
-from pcbdraft.services.progress import ProcessStatus
+from pcbdraft.services.managed import open_managed_project
+from pcbdraft.services.progress import (
+    ProcessStatus,
+    ScopedTaskOutcome,
+    scoped_task_status,
+)
 
 
 class ApplicationProductSessionMixin:
@@ -140,6 +146,23 @@ class ApplicationProductSessionMixin:
                 requested_reason=termination_reason,
                 stage=stage,
             )
+            if project.design_root.is_dir() and not project.design_root.is_symlink():
+                managed = open_managed_project(project.design_root)
+                task_coverage = evaluate_task_coverage(
+                    managed.design,
+                    project.state.get("last_validation"),
+                    design_revision=int(project.state["design_revision"]),
+                )
+                coverage_outcome = ScopedTaskOutcome(task_coverage["outcome"])
+            else:
+                coverage_outcome = ScopedTaskOutcome.INCOMPLETE
+            scoped_outcome, scoped_evidence = scoped_task_status(
+                process_status=process,
+                release_outcome=release_outcome,
+                termination_reason=reason,
+                release_gate_passed=stage.release_gate_passed,
+                task_coverage_outcome=coverage_outcome,
+            )
             receipt = self._product_session_receipt(
                 resolved_receipt_id,
                 project_id,
@@ -153,6 +176,8 @@ class ApplicationProductSessionMixin:
                 stage.release_gate_passed,
                 progress.source_revision,
                 progress,
+                scoped_outcome,
+                scoped_evidence,
             )
             path = self._product_session_store(project.root, receipt)
             result = receipt.to_dict()

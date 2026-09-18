@@ -20,6 +20,7 @@ from typing import Any
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.core.io import atomic_write_bytes, read_bytes_limited
+from pcbdraft.domain.constraint_support import constraint_support
 
 IR_SCHEMA = "pcbdraft-ir"
 IR_VERSION = 2
@@ -679,6 +680,13 @@ class Constraint:
     rationale: str
     provenance: tuple[str, ...]
 
+    @property
+    def verification_support(self) -> str:
+        """Expose support without changing the stable serialized IR envelope."""
+
+        support = constraint_support(self.kind)
+        return support.verification if support is not None else "unsupported"
+
     @classmethod
     def from_dict(cls, value: Any, path: str) -> Constraint:
         item = _strict_mapping(
@@ -1315,7 +1323,7 @@ class Design:
     def clone(self) -> Design:
         return Design.from_dict(copy.deepcopy(self.to_dict()))
 
-    def issues(self) -> list[IRIssue]:
+    def issues(self) -> list[IRIssue]:  # noqa: C901 - exhaustive IR validation
         issues: list[IRIssue] = []
 
         def unique(entries: Iterable[Any], attribute: str, path: str) -> set[str]:
@@ -1498,6 +1506,18 @@ class Design:
                     )
         target_ids = component_ids | net_ids | blocks | power_domains | interfaces
         for index, constraint in enumerate(self.constraints):
+            if constraint_support(constraint.kind) is None:
+                issues.append(
+                    IRIssue(
+                        "warning",
+                        "ir.unsupported_constraint",
+                        f"$.constraints[{index}].kind",
+                        (
+                            f"constraint kind {constraint.kind!r} has no registered "
+                            "deterministic verifier"
+                        ),
+                    )
+                )
             for target in constraint.targets:
                 if target not in target_ids and not target.startswith("board"):
                     issues.append(
