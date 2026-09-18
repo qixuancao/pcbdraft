@@ -13,16 +13,29 @@ export type TranscriptMessage = {
   status: string
 }
 
+export type ProjectActiveTurn = {
+  job_id: string
+  turn_id: string | null
+  status: string
+  started_at: string | null
+}
+
 type Bootstrap = {
   csrf_token: string
   projects: Project[]
 }
 
 export type ProjectSession = {
+  schema: "pcbdraft-gui-session"
+  version: 2
   project_id: string
   status: string
   messages: TranscriptMessage[]
-  active_turn: { job_id: string; turn_id: string; status: string } | null
+  active_turn: ProjectActiveTurn | null
+}
+
+export type MonitorableProjectSession = Omit<ProjectSession, "active_turn"> & {
+  active_turn: (ProjectActiveTurn & { turn_id: string }) | null
 }
 
 export type GuiEvent = {
@@ -40,6 +53,8 @@ export type GuiEvent = {
 }
 
 export type ProjectSnapshot = {
+  schema: "pcbdraft-gui-snapshot"
+  version: 2
   session: ProjectSession
   stream: { stream_id: string; last_sequence: number; oldest_sequence: number | null }
 }
@@ -68,12 +83,21 @@ export class GuiClient {
     return value.project
   }
 
-  async session(projectId: string): Promise<ProjectSession> {
-    return this.#get<ProjectSession>(`/api/projects/${encodeURIComponent(projectId)}/session`)
+  async session(projectId: string): Promise<MonitorableProjectSession> {
+    const session = decodeProjectSession(
+      await this.#get<unknown>(`/api/projects/${encodeURIComponent(projectId)}/session`),
+    )
+    // A v2 active job may have no canonical turn ID. The terminal cannot
+    // correlate assistant deltas in that case, so expose it as unmonitorable.
+    const active = session.active_turn
+    if (!active || active.turn_id === null) return { ...session, active_turn: null }
+    return { ...session, active_turn: { ...active, turn_id: active.turn_id } }
   }
 
   async snapshot(projectId: string): Promise<ProjectSnapshot> {
-    return this.#get<ProjectSnapshot>(`/api/projects/${encodeURIComponent(projectId)}/snapshot`)
+    return decodeProjectSnapshot(
+      await this.#get<unknown>(`/api/projects/${encodeURIComponent(projectId)}/snapshot`),
+    )
   }
 
   async sendMessage(projectId: string, text: string): Promise<{ job_id: string; turn_id: string; status: string }> {
@@ -225,4 +249,58 @@ function isGuiEvent(value: unknown): value is GuiEvent {
     && typeof event.text === "string"
     && event.text.length > 0
     && event.text.length <= 4_096
+}
+
+function decodeProjectSession(value: unknown): ProjectSession {
+  if (!isRecord(value) || value.schema !== "pcbdraft-gui-session" || value.version !== 2) {
+    throw new Error("GUI session returned an unsupported schema/version")
+  }
+  if (
+    typeof value.project_id !== "string"
+    || typeof value.status !== "string"
+    || !Array.isArray(value.messages)
+    || !value.messages.every(isTranscriptMessage)
+    || !isProjectActiveTurn(value.active_turn)
+  ) throw new Error("GUI session returned an invalid v2 payload")
+  return value as ProjectSession
+}
+
+function decodeProjectSnapshot(value: unknown): ProjectSnapshot {
+  if (!isRecord(value) || value.schema !== "pcbdraft-gui-snapshot" || value.version !== 2) {
+    throw new Error("GUI snapshot returned an unsupported schema/version")
+  }
+  const session = decodeProjectSession(value.session)
+  const stream = value.stream
+  if (
+    !isRecord(stream)
+    || typeof stream.stream_id !== "string"
+    || !isNonNegativeInteger(stream.last_sequence)
+    || (stream.oldest_sequence !== null && !isNonNegativeInteger(stream.oldest_sequence))
+  ) throw new Error("GUI snapshot returned an invalid v2 payload")
+  return { ...value, session } as ProjectSnapshot
+}
+
+function isTranscriptMessage(value: unknown): value is TranscriptMessage {
+  if (!isRecord(value)) return false
+  return (value.role === "user" || value.role === "assistant")
+    && typeof value.text === "string"
+    && typeof value.id === "string"
+    && typeof value.status === "string"
+}
+
+function isProjectActiveTurn(value: unknown): value is ProjectActiveTurn | null {
+  if (value === null) return true
+  if (!isRecord(value)) return false
+  return typeof value.job_id === "string"
+    && (value.turn_id === null || typeof value.turn_id === "string")
+    && typeof value.status === "string"
+    && (value.started_at === null || typeof value.started_at === "string")
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
 }

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test"
-import { GuiClient } from "../src/bridge.ts"
+import { GuiClient, type ProjectSession } from "../src/bridge.ts"
 
 const originalFetch = globalThis.fetch
 
@@ -56,6 +56,82 @@ test("createProject sends only the name and returns the public project summary",
   expect(requests[1]!.init?.method).toBe("POST")
   expect(requests[1]!.init?.body).toBe(JSON.stringify({ name: "Sensor board" }))
   expect(new Headers(requests[1]!.init?.headers).get("x-pcbdraft-csrf")).toBe("csrf")
+})
+
+function sessionPayload(overrides: Partial<ProjectSession> = {}): ProjectSession {
+  return {
+    schema: "pcbdraft-gui-session",
+    version: 2,
+    project_id: "board-1",
+    status: "idle",
+    messages: [],
+    active_turn: null,
+    ...overrides,
+  }
+}
+
+test("session accepts the nullable v2 turn ID without exposing an unsafe monitor target", async () => {
+  const nullableActiveTurn: ProjectSession["active_turn"] = {
+    job_id: "job-1",
+    turn_id: null,
+    status: "running",
+    started_at: "2026-09-18T00:00:00Z",
+  }
+  globalThis.fetch = (async (_input, _init) => Response.json(sessionPayload({
+    status: "running",
+    active_turn: nullableActiveTurn,
+  }))) as typeof fetch
+
+  const session = await new GuiClient("http://127.0.0.1:9130").session("board-1")
+
+  expect(session.schema).toBe("pcbdraft-gui-session")
+  expect(session.version).toBe(2)
+  expect(session.status).toBe("running")
+  expect(session.active_turn).toBeNull()
+})
+
+test("session rejects an unsupported or missing contract version", async () => {
+  for (const version of [3, undefined]) {
+    globalThis.fetch = (async (_input, _init) => Response.json({
+      ...sessionPayload(),
+      version,
+    })) as typeof fetch
+
+    const client = new GuiClient("http://127.0.0.1:9130")
+    await expect(client.session("board-1")).rejects.toThrow(
+      "GUI session returned an unsupported schema/version",
+    )
+  }
+})
+
+test("snapshot validates its v2 envelope, nested session, and stream cursor", async () => {
+  globalThis.fetch = (async (_input, _init) => Response.json({
+    schema: "pcbdraft-gui-snapshot",
+    version: 2,
+    session: sessionPayload(),
+    stream: { stream_id: "stream-1", last_sequence: 7, oldest_sequence: null },
+  })) as typeof fetch
+
+  const snapshot = await new GuiClient("http://127.0.0.1:9130").snapshot("board-1")
+
+  expect(snapshot.schema).toBe("pcbdraft-gui-snapshot")
+  expect(snapshot.version).toBe(2)
+  expect(snapshot.session.version).toBe(2)
+  expect(snapshot.stream.last_sequence).toBe(7)
+})
+
+test("snapshot rejects a valid-looking stream wrapped in the wrong schema", async () => {
+  globalThis.fetch = (async (_input, _init) => Response.json({
+    schema: "pcbdraft-gui-snapshot-next",
+    version: 2,
+    session: sessionPayload(),
+    stream: { stream_id: "stream-1", last_sequence: 7, oldest_sequence: null },
+  })) as typeof fetch
+
+  const client = new GuiClient("http://127.0.0.1:9130")
+  await expect(client.snapshot("board-1")).rejects.toThrow(
+    "GUI snapshot returned an unsupported schema/version",
+  )
 })
 
 test("subscribe resumes the SSE stream and stops when the handler returns false", async () => {
