@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Any
 
 from pcbdraft.core.io import load_json_limited
@@ -13,6 +14,15 @@ from pcbdraft.services.progress import ProductSessionTerminalReceipt
 _LOGGER = logging.getLogger(__name__)
 _RECENT_SESSION_LIMIT = 50
 _RECEIPT_LIMIT_BYTES = 1024 * 1024
+
+
+@dataclass(frozen=True)
+class LegacyProjectConversation:
+    """Verified model and display projections for one legacy project session."""
+
+    session_id: str
+    model_history: list[dict[str, Any]]
+    display_history: list[dict[str, Any]]
 
 
 def project_ids_from_history(messages: list[dict[str, Any]]) -> set[str]:
@@ -105,19 +115,41 @@ def find_project_session_id(
     return None
 
 
-def legacy_project_messages(
+def legacy_project_conversation(
     service: Any, project_id: str
-) -> tuple[str, list[dict[str, Any]]] | None:
-    """Return a verified legacy transcript for a project, if one exists."""
+) -> LegacyProjectConversation | None:
+    """Return both verified legacy projections for a project, if one exists."""
 
     from pcbdraft.services.session_db import SessionDB
 
-    session_db = SessionDB()
+    try:
+        session_db = SessionDB()
+    except Exception as exc:  # noqa: BLE001 - legacy recovery is optional
+        _LOGGER.debug("Could not open the legacy session store: %s", exc)
+        return None
     try:
         session_id = find_project_session_id(session_db, service, project_id)
         if not session_id:
             return None
-        _model, display = session_db.get_resume_conversations(session_id)
-        return session_id, display
+        model, display = session_db.get_resume_conversations(session_id)
+        return LegacyProjectConversation(
+            session_id=session_id,
+            model_history=model,
+            display_history=display,
+        )
+    except Exception as exc:  # noqa: BLE001 - native sessions remain authoritative
+        _LOGGER.debug("Could not restore legacy project history: %s", exc)
+        return None
     finally:
         session_db.close()
+
+
+def legacy_project_messages(
+    service: Any, project_id: str
+) -> tuple[str, list[dict[str, Any]]] | None:
+    """Return the verified legacy display transcript for a project, if present."""
+
+    conversation = legacy_project_conversation(service, project_id)
+    if conversation is None:
+        return None
+    return conversation.session_id, conversation.display_history

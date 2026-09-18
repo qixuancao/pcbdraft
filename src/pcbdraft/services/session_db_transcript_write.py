@@ -460,6 +460,48 @@ class SessionTranscriptWriteMixin:
         # Same criticality as append_message: this IS the turn's transcript.
         return self._execute_write(_do, patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
 
+    def seed_messages_if_empty(
+        self, session_id: str, messages: list[dict[str, Any]]
+    ) -> bool:
+        """Atomically seed a newly-created session without replacing live history.
+
+        Compatibility migrations use this after :meth:`ensure_session`. The
+        empty check and inserts share one write transaction, so a concurrent
+        writer always wins cleanly instead of having its rows overwritten.
+        """
+
+        if not messages:
+            return False
+
+        def _do(conn):
+            session = conn.execute(
+                "SELECT ended_at, end_reason FROM sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            if session is None:
+                raise RuntimeError(f"Session not found: {session_id}")
+            if session["ended_at"] is not None:
+                return False
+            existing = conn.execute(
+                "SELECT 1 FROM messages WHERE session_id = ? LIMIT 1",
+                (session_id,),
+            ).fetchone()
+            if existing is not None:
+                return False
+            inserted, tool_calls_total = self._insert_message_rows(
+                conn, session_id, messages
+            )
+            conn.execute(
+                "UPDATE sessions SET message_count = ?, tool_call_count = ? "
+                "WHERE id = ?",
+                (inserted, tool_calls_total, session_id),
+            )
+            return True
+
+        return bool(
+            self._execute_write(_do, patience_s=self._TRANSCRIPT_WRITE_PATIENCE_S)
+        )
+
     def set_latest_matching_message_display_kind(
         self,
         session_id: str,

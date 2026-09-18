@@ -143,9 +143,13 @@ class GuiSessionManagerTests(unittest.TestCase):
             "design_content_hash": "a" * 64,
         }
 
-        reconnected = GuiSessionManager(self.service, jobs=self.jobs).session(
-            "board-one"
-        )
+        with patch(
+            "pcbdraft.services.gui_session.legacy_project_messages",
+            return_value=None,
+        ):
+            reconnected = GuiSessionManager(self.service, jobs=self.jobs).session(
+                "board-one"
+            )
 
         self.assertEqual(reconnected["version"], 2)
         self.assertEqual(reconnected["status"], "idle")
@@ -181,6 +185,36 @@ class GuiSessionManagerTests(unittest.TestCase):
         self.assertEqual(
             [(message["role"], message["text"]) for message in view["messages"]],
             [("user", "Restore this board"), ("assistant", "Restored safely")],
+        )
+
+    def test_native_turn_keeps_verified_legacy_history_as_prefix(self) -> None:
+        self.manager.start("board-one", "Continue routing")
+        turn = self.jobs.store.turns[0]
+        turn.assistant_texts = ("Native reply",)
+        turn.status = TurnStatus.COMPLETED
+        legacy = (
+            "legacy-session",
+            [
+                {"role": "user", "content": "Original requirement"},
+                {"role": "assistant", "content": "Legacy reply"},
+            ],
+        )
+
+        with patch(
+            "pcbdraft.services.gui_session.legacy_project_messages",
+            return_value=legacy,
+        ):
+            view = self.manager.session("board-one")
+
+        self.assertEqual(view["legacy_session_id"], "legacy-session")
+        self.assertEqual(
+            [(message["role"], message["text"]) for message in view["messages"]],
+            [
+                ("user", "Original requirement"),
+                ("assistant", "Legacy reply"),
+                ("user", "Continue routing"),
+                ("assistant", "Native reply"),
+            ],
         )
 
     def test_stop_and_shutdown_use_canonical_job_lifecycle(self) -> None:

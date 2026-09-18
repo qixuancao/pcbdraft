@@ -28,6 +28,7 @@ from pcbdraft.services.assistant_preview import (
     AssistantPreviewSink,
     SafeAssistantPreview,
 )
+from pcbdraft.services.project_history import legacy_project_conversation
 
 
 def initialize_runtime(*, permission_mode: PermissionMode = "workspace") -> None:
@@ -266,6 +267,14 @@ class ConversationOrchestrator(AgentOrchestrator):
                 history = db.get_messages_as_conversation(
                     session_id, repair_alternation=True
                 )
+                if not history:
+                    legacy = legacy_project_conversation(self.service, project_id)
+                    if legacy is not None and legacy.model_history:
+                        db.ensure_session(session_id, source="web")
+                        db.seed_messages_if_empty(session_id, legacy.model_history)
+                        history = db.get_messages_as_conversation(
+                            session_id, repair_alternation=True
+                        )
                 prompt = record.user_message
                 if resumed:
                     prompt = (

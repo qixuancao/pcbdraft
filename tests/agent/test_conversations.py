@@ -21,6 +21,7 @@ from pcbdraft.agent.tooling import DEFAULT_PCB_TOOL_REGISTRY, ToolCall
 from pcbdraft.agent.turns import ToolRunStatus, TurnStatus
 from pcbdraft.core.errors import PCBDraftError
 from pcbdraft.services.gui_session import GuiSessionManager
+from pcbdraft.services.session_db import SessionDB
 from tests.agent.test_tool_bindings import FakePCBService
 
 
@@ -144,6 +145,110 @@ class NativeConversationTests(unittest.TestCase):
         self.assertEqual(turn.status, TurnStatus.COMPLETED)
         self.assertEqual(turn.tool_runs, ())
         self.assertTrue(turn.assistant_texts)
+
+    def test_legacy_history_survives_first_native_turn_and_reopen(self) -> None:
+        legacy_db = SessionDB()
+        legacy_db.create_session("legacy-board-a", source="cli")
+        legacy_db.append_messages_batch(
+            "legacy-board-a",
+            [
+                {"role": "user", "content": "Keep the original LED requirement"},
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "legacy-call",
+                            "type": "function",
+                            "function": {
+                                "name": "pcb_inspect_project",
+                                "arguments": "{}",
+                            },
+                        }
+                    ],
+                },
+                {
+                    "role": "tool",
+                    "tool_name": "pcb_inspect_project",
+                    "tool_call_id": "legacy-call",
+                    "content": json.dumps(
+                        {
+                            "tool": "pcb_inspect_project",
+                            "project_id": "board-a",
+                        }
+                    ),
+                },
+                {"role": "assistant", "content": "The LED requirement is recorded"},
+            ],
+        )
+        legacy_db.close()
+
+        def factory(*, session_id: str, session_db: Any) -> ScriptedAgent:
+            def persist_native(_agent: ScriptedAgent, prompt: str) -> None:
+                session_db.append_messages_batch(
+                    session_id,
+                    [
+                        {"role": "user", "content": prompt},
+                        {"role": "assistant", "content": "已查看，未修改设计。"},
+                    ],
+                )
+
+            agent = ScriptedAgent(session_id, persist_native)
+            self.agents.append(agent)
+            return agent
+
+        orchestrator = ConversationOrchestrator(self.service, agent_factory=factory)
+        turn = orchestrator.start_turn("board-a", "Continue from that requirement")
+        orchestrator.run_turn(
+            "board-a",
+            turn.turn_id,
+            timeout=10,
+            cancellation_requested=lambda: False,
+        )
+
+        model_history = self.agents[0].run_kwargs["conversation_history"]
+        self.assertEqual(model_history[0]["content"], "Keep the original LED requirement")
+        self.assertEqual(
+            model_history[-1]["content"], "The LED requirement is recorded"
+        )
+        native_db_path = (
+            self.service.project_root("board-a")
+            / "agent-turns"
+            / "conversations.sqlite3"
+        )
+        native_db = SessionDB(native_db_path)
+        try:
+            persisted = native_db.get_messages_as_conversation(
+                self.agents[0].session_id, repair_alternation=True
+            )
+        finally:
+            native_db.close()
+        self.assertEqual(
+            [message.get("content") for message in persisted if message["role"] == "user"],
+            ["Keep the original LED requirement", "Continue from that requirement"],
+        )
+
+        class ReopenJobs:
+            agent = orchestrator
+
+            @staticmethod
+            def list(_project_id: str) -> list[dict[str, Any]]:
+                return []
+
+            @staticmethod
+            def shutdown() -> None:
+                return None
+
+        reopened = GuiSessionManager(self.service, jobs=ReopenJobs()).session("board-a")
+        self.assertEqual(
+            [(message["role"], message["text"]) for message in reopened["messages"]],
+            [
+                ("user", "Keep the original LED requirement"),
+                ("assistant", "The LED requirement is recorded"),
+                ("user", "Continue from that requirement"),
+                ("assistant", "已查看，未修改设计。"),
+            ],
+        )
 
     def test_preview_uses_safe_stream_callback_across_split_secrets(self) -> None:
         previews: list[tuple[str, str, str]] = []

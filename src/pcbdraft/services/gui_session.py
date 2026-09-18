@@ -145,11 +145,12 @@ class GuiSessionManager:
         )
         messages = self._messages(turns)
         legacy_session_id = None
-        if not messages:
-            legacy = legacy_project_messages(self.service, project_id)
-            if legacy is not None:
-                legacy_session_id, legacy_history = legacy
-                messages = self._legacy_messages(legacy_history, legacy_session_id)
+        legacy = legacy_project_messages(self.service, project_id)
+        if legacy is not None:
+            legacy_session_id, legacy_history = legacy
+            messages = (
+                self._legacy_messages(legacy_history, legacy_session_id) + messages
+            )[-MAX_MESSAGES:]
         active_args = active.get("args") if isinstance(active, dict) else None
         active_turn_id = (
             active_args.get("turn_id") if isinstance(active_args, dict) else None
