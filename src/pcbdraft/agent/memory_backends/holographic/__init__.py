@@ -157,8 +157,8 @@ class HolographicMemoryProvider(MemoryProvider):
 
     def __init__(self, config: dict | None = None):
         self._config = config or _load_plugin_config()
-        self._store = None
-        self._retriever = None
+        self._store: MemoryStore | None = None
+        self._retriever: FactRetriever | None = None
         self._min_trust = float(self._config.get("min_trust_threshold", 0.3))
 
     @property
@@ -345,6 +345,8 @@ class HolographicMemoryProvider(MemoryProvider):
             action = args["action"]
             store = self._store
             retriever = self._retriever
+            if store is None or retriever is None:
+                return json.dumps({"error": "holographic backend is not initialized"})
 
             if action == "add":
                 fact_id = store.add_fact(
@@ -433,7 +435,10 @@ class HolographicMemoryProvider(MemoryProvider):
         try:
             fact_id = int(args["fact_id"])
             helpful = args["action"] == "helpful"
-            result = self._store.record_feedback(fact_id, helpful=helpful)
+            store = self._store
+            if store is None:
+                return tool_error("holographic backend is not initialized")
+            result = store.record_feedback(fact_id, helpful=helpful)
             return json.dumps(result)
         except KeyError as exc:
             return tool_error(f"Missing required argument: {exc}")
@@ -491,6 +496,9 @@ class HolographicMemoryProvider(MemoryProvider):
         ]
 
         extracted = 0
+        store = self._store
+        if store is None:
+            return
         for msg in messages:
             if msg.get("role") != "user":
                 continue
@@ -514,7 +522,7 @@ class HolographicMemoryProvider(MemoryProvider):
             for pattern in _PREF_PATTERNS:
                 if pattern.search(content):
                     try:
-                        self._store.add_fact(content[:400], category="user_pref")
+                        store.add_fact(content[:400], category="user_pref")
                         extracted += 1
                     except Exception:
                         pass
@@ -523,7 +531,7 @@ class HolographicMemoryProvider(MemoryProvider):
             for pattern in _DECISION_PATTERNS:
                 if pattern.search(content):
                     try:
-                        self._store.add_fact(content[:400], category="project")
+                        store.add_fact(content[:400], category="project")
                         extracted += 1
                     except Exception:
                         pass

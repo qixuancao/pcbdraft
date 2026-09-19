@@ -46,7 +46,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, final
 from urllib.parse import quote, unquote, urlparse
 from urllib.request import url2pathname
 
@@ -59,7 +59,7 @@ from pcbdraft.tools.registry import tool_error
 try:
     import fcntl
 except ImportError:  # pragma: no cover - Windows
-    fcntl = None
+    fcntl = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,14 @@ _PENDING_SESSIONS_RELATIVE_DIR = Path("openviking") / "pending_sessions"
 _RUN_LOCKS_RELATIVE_DIR = Path("openviking") / "runs"
 _LEGACY_RECOVERY_LOCK_FILENAME = "legacy-recovery.lock"
 _LOCK_BUSY_ERRNOS = {errno.EWOULDBLOCK, errno.EACCES, errno.EAGAIN}
-_SETUP_CANCELLED = object()
+
+
+@final
+class _SetupCancelled:
+    """Sentinel returned when the interactive setup flow is cancelled."""
+
+
+_SETUP_CANCELLED = _SetupCancelled()
 _INVALID_SETTING_WARNINGS: set[tuple[str, str]] = set()
 _INVALID_SETTING_WARNINGS_LOCK = threading.Lock()
 
@@ -1448,7 +1455,7 @@ def _validate_openviking_reachability(endpoint: str) -> tuple[bool, str]:
 
 def _validate_openviking_auth(values: dict) -> tuple[bool, str]:
     try:
-        endpoint = _normalize_openviking_url(values.get("endpoint"))
+        endpoint = _normalize_openviking_url(values.get("endpoint") or "")
         client = _VikingClient(
             endpoint,
             _clean_config_value(values.get("api_key")),
@@ -1467,7 +1474,7 @@ def _validate_openviking_auth(values: dict) -> tuple[bool, str]:
 
 def _validate_openviking_root_access(values: dict) -> tuple[bool, str]:
     try:
-        endpoint = _normalize_openviking_url(values.get("endpoint"))
+        endpoint = _normalize_openviking_url(values.get("endpoint") or "")
         client = _VikingClient(
             endpoint,
             _clean_config_value(values.get("api_key")),
@@ -1521,7 +1528,7 @@ def _validate_openviking_setup_values(
     require_api_key: bool = False,
 ) -> tuple[bool, str, str | None]:
     try:
-        endpoint = _normalize_openviking_url(values.get("endpoint"))
+        endpoint = _normalize_openviking_url(values.get("endpoint") or "")
     except _OpenVikingEndpointError as exc:
         return False, str(exc), None
     api_key = _clean_config_value(values.get("api_key"))
@@ -2336,7 +2343,7 @@ def _mirror_manual_config_to_openviking_store(
     select,
     cancelled,
     values: dict,
-) -> Path | object:
+) -> Path | _SetupCancelled:
     while True:
         name = _prompt_profile_name(prompt, select, cancelled)
         if name is _SETUP_CANCELLED:
@@ -2405,7 +2412,7 @@ def _run_create_profile_setup(
             cancelled=cancelled,
             values=values,
         )
-        if ovcli_path is _SETUP_CANCELLED:
+        if isinstance(ovcli_path, _SetupCancelled):
             return _SETUP_CANCELLED
         _link_ovcli_profile(
             config=config,
@@ -3075,6 +3082,13 @@ class OpenVikingMemoryProvider(MemoryProvider):
         with self._client_refresh_lock:
             return self._ensure_client_locked()
 
+    def _require_client(self) -> _VikingClient:
+        """Narrow the initialized client without refreshing configuration."""
+        client = self._client
+        if client is None:
+            raise RuntimeError("OpenViking client is not available")
+        return client
+
     def _ensure_client_locked(self) -> _VikingClient | None:
         """Resolve and publish one client/config state under the refresh lock."""
         if self._shutting_down:
@@ -3181,7 +3195,9 @@ class OpenVikingMemoryProvider(MemoryProvider):
         # Provide brief info about the knowledge base
         try:
             # Check what's in the knowledge base via a root listing
-            resp = self._client.get("/api/v1/fs/ls", params={"uri": "viking://"})
+            resp = self._require_client().get(
+                "/api/v1/fs/ls", params={"uri": "viking://"}
+            )
             result = resp.get("result", [])
             children = len(result) if isinstance(result, list) else 0
             if children == 0:
@@ -3432,7 +3448,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
 
     def _session_has_pending_tokens(self, sid: str) -> bool:
         try:
-            response = self._client.get(f"/api/v1/sessions/{sid}")
+            response = self._require_client().get(f"/api/v1/sessions/{sid}")
         except Exception:
             return False
         session = self._unwrap_result(response)
@@ -3766,7 +3782,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         clear_missing: bool = False,
     ) -> bool:
         try:
-            self._client.post(
+            self._require_client().post(
                 f"/api/v1/sessions/{sid}/commit",
                 {"keep_recent_count": 0},
             )
@@ -4485,7 +4501,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
     ) -> str:
         abstract = self._recall_abstract(item)
         has_explicit_summary = any(
-            isinstance(item.get(key), str) and item.get(key).strip()
+            isinstance(value := item.get(key), str) and value.strip()
             for key in ("abstract", "overview", "text", "content")
         )
         if prefer_abstract and has_explicit_summary:
@@ -4797,10 +4813,10 @@ class OpenVikingMemoryProvider(MemoryProvider):
                     # Reuse the tool_input parsed in the pre-scan when available
                     # (non-empty ids are cached); fall back to parsing for the
                     # uncached empty-id case so we never drop arguments.
-                    prior_call = tool_calls_by_id.get(tool_id) if tool_id else None
+                    cached_call = tool_calls_by_id.get(tool_id) if tool_id else None
                     tool_input = (
-                        prior_call["tool_input"]
-                        if prior_call is not None
+                        cached_call["tool_input"]
+                        if cached_call is not None
                         else cls._tool_call_input(tool_call)
                     )
                     parts.append(
@@ -5252,7 +5268,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         treat None as "unknown" and fall back to the exception-based path.
         """
         try:
-            resp = self._client.get("/api/v1/fs/stat", params={"uri": uri})
+            resp = self._require_client().get("/api/v1/fs/stat", params={"uri": uri})
         except Exception:
             return None
         result = self._unwrap_result(resp)
@@ -5283,7 +5299,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         if endpoint == "/api/v1/search/search" and self._session_id:
             payload["session_id"] = self._session_id
 
-        resp = self._client.post(endpoint, payload)
+        resp = self._require_client().post(endpoint, payload)
         result = resp.get("result", {})
 
         # Format results for the model — keep it concise
@@ -5347,14 +5363,15 @@ class OpenVikingMemoryProvider(MemoryProvider):
             elif level == "overview":
                 endpoint = "/api/v1/content/overview"
 
+        client = self._require_client()
         try:
-            resp = self._client.get(endpoint, params={"uri": resolved_uri})
+            resp = client.get(endpoint, params={"uri": resolved_uri})
         except Exception:
             # OpenViking may return HTTP 500 for abstract/overview reads on normal
             # file URIs (mem_*.md). For those, gracefully fallback to full read.
             if not summary_level or resolved_uri != uri or used_fallback:
                 raise
-            resp = self._client.get("/api/v1/content/read", params={"uri": uri})
+            resp = client.get("/api/v1/content/read", params={"uri": uri})
             used_fallback = True
 
         result = self._unwrap_result(resp)
@@ -5461,7 +5478,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
             "stat": "/api/v1/fs/stat",
         }
         endpoint = endpoint_map.get(action, "/api/v1/fs/ls")
-        resp = self._client.get(endpoint, params={"uri": path})
+        resp = self._require_client().get(endpoint, params={"uri": path})
         result = self._unwrap_result(resp)
 
         # Format list/tree results for readability
@@ -5514,7 +5531,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         # This creates the file, stores the content, and queues vector indexing
         # in a single call — no dependency on session commit / VLM extraction.
         try:
-            result = self._client.post(
+            result = self._require_client().post(
                 "/api/v1/content/write",
                 {
                     "uri": uri,
@@ -5538,7 +5555,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
         if error:
             return tool_error(error)
 
-        resp = self._client.delete(
+        resp = self._require_client().delete(
             "/api/v1/fs",
             params={"uri": uri, "recursive": False},
         )
@@ -5574,17 +5591,20 @@ class OpenVikingMemoryProvider(MemoryProvider):
                 payload[key] = args[key]
 
         parsed_url = urlparse(url)
+        source_path: Path | None
         if _is_remote_resource_source(url):
             source_path = None
         elif parsed_url.scheme == "file":
-            source_path = _path_from_file_uri(url)
-            if isinstance(source_path, str):
-                return tool_error(source_path)
+            file_path = _path_from_file_uri(url)
+            if isinstance(file_path, str):
+                return tool_error(file_path)
+            source_path = file_path
         elif parsed_url.scheme and not _is_windows_absolute_path(url):
             source_path = None
         else:
             source_path = Path(url).expanduser()
 
+        client = self._require_client()
         cleanup_path: Path | None = None
         try:
             if source_path is not None:
@@ -5602,7 +5622,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
                         upload_path = source_path
                     else:
                         return tool_error(f"Unsupported local resource path: {url}")
-                    payload["temp_file_id"] = self._client.upload_temp_file(upload_path)
+                    payload["temp_file_id"] = client.upload_temp_file(upload_path)
                 elif _is_local_path_reference(url):
                     return tool_error(f"Local resource path does not exist: {url}")
                 else:
@@ -5610,7 +5630,7 @@ class OpenVikingMemoryProvider(MemoryProvider):
             else:
                 payload["path"] = url
 
-            resp = self._client.post("/api/v1/resources", payload)
+            resp = client.post("/api/v1/resources", payload)
             result = resp.get("result", {})
         finally:
             if cleanup_path:
