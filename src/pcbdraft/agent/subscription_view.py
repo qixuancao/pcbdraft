@@ -431,8 +431,8 @@ def _dev_current(**over: Any) -> CurrentSubscription:
     base: dict[str, Any] = dict(
         tier_id="plus",
         tier_name="Plus",
-        monthly_credits=Decimal("1000"),
-        credits_remaining=Decimal("420"),
+        monthly_credits=Decimal(1000),
+        credits_remaining=Decimal(420),
         cycle_ends_at="2026-07-01",
     )
     base.update(over)
@@ -501,8 +501,8 @@ def dev_fixture_subscription_state() -> SubscriptionState | None:
             current=_dev_current(
                 tier_id="ultra",
                 tier_name="Ultra",
-                monthly_credits=Decimal("7000"),
-                credits_remaining=Decimal("5000"),
+                monthly_credits=Decimal(7000),
+                credits_remaining=Decimal(5000),
             ),
             tiers=_dev_tiers("ultra"),
             **common,
@@ -520,8 +520,8 @@ def dev_fixture_subscription_state() -> SubscriptionState | None:
             current=_dev_current(
                 tier_id="super",
                 tier_name="Super",
-                monthly_credits=Decimal("3000"),
-                credits_remaining=Decimal("1500"),
+                monthly_credits=Decimal(3000),
+                credits_remaining=Decimal(1500),
                 pending_downgrade_tier_name="Plus",
                 pending_downgrade_at="2026-07-15",
             ),

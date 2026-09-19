@@ -2305,15 +2305,11 @@ def compress_context(
     _trigger_source = "manual" if force else "auto"
     try:
         agent._compression_attempt_id = _attempt_id
-        setattr(
-            agent.context_compressor,
-            "_compression_telemetry_seed",
-            {
-                "attempt_id": _attempt_id,
-                "session_id": agent.session_id or "",
-                "trigger_source": _trigger_source,
-            },
-        )
+        agent.context_compressor._compression_telemetry_seed = {
+            "attempt_id": _attempt_id,
+            "session_id": agent.session_id or "",
+            "trigger_source": _trigger_source,
+        }
     except Exception:
         pass
 

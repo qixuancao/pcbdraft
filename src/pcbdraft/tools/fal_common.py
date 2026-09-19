@@ -135,7 +135,7 @@ class _ManagedFalSyncClient:
         webhook_url: str | None = None,
         priority: Any = None,
         headers: dict[str, str] | None = None,
-        start_timeout: int | float | None = None,
+        start_timeout: float | None = None,
     ):
         url = self._queue_url_format + application
         if path:

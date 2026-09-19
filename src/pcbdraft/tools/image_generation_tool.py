@@ -1608,7 +1608,7 @@ if __name__ == "__main__":
     print("✅ FAL.ai API key found")
 
     try:
-        import fal_client  # noqa: F401
+        import fal_client
 
         print("✅ fal_client library available")
     except ImportError as exc:

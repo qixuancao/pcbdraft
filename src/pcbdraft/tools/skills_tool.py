@@ -124,8 +124,7 @@ def _skills_scan_signature(dirs_to_scan, disabled) -> tuple:
                     try:
                         if entry.is_dir(follow_symlinks=False):
                             em = entry.stat(follow_symlinks=False).st_mtime
-                            if em > m:
-                                m = em
+                            m = max(m, em)
                     except OSError:
                         continue
         except OSError:
@@ -215,8 +214,7 @@ def load_env() -> dict[str, str]:
         for line in f:
             line = line.strip()
             if line and not line.startswith("#") and "=" in line:
-                if line.startswith("export "):
-                    line = line[7:]
+                line = line.removeprefix("export ")
                 key, _, value = line.partition("=")
                 env_vars[key.strip()] = value.strip().strip("\"'")
     return env_vars

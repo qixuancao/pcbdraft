@@ -823,8 +823,7 @@ class ProductSessionTerminalReceipt:
             )
             if self.scoped_evidence_override is ScopedTaskEvidenceKind.TASK_CONTRACT:
                 terminal_contract_facts = (
-                    self.release_outcome
-                    in {TaskOutcome.FAILED, TaskOutcome.BLOCKED}
+                    self.release_outcome in {TaskOutcome.FAILED, TaskOutcome.BLOCKED}
                     or self.process_status
                     in {ProcessStatus.CANCELLED, ProcessStatus.TIMED_OUT}
                     or self.termination_reason.startswith("budget_exhausted:")

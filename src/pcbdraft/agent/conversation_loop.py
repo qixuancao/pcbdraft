@@ -16,9 +16,6 @@ resolved through :func:`_ra` so those patches keep working.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-
-
 import json
 import logging
 import os
@@ -26,6 +23,7 @@ import random
 import re
 import ssl
 import time
+from collections.abc import Callable
 from typing import Any
 
 from pcbdraft.agent.context_engine import automatic_compaction_status_message
@@ -8871,10 +8869,10 @@ def run_conversation(
                 )
                 _attempt = getattr(agent, "_pre_verify_nudges", 0)
                 try:
-                    from pcbdraft.agent.verify_hooks import max_verify_nudges
                     from pcbdraft.agent.extensions.manager import (
                         get_pre_verify_continue_message,
                     )
+                    from pcbdraft.agent.verify_hooks import max_verify_nudges
                     from pcbdraft.interfaces.tui.lifecycle import has_hook
 
                     if (
@@ -9049,10 +9047,12 @@ def run_conversation(
             if _is_local_processing_error:
                 error_msg = (
                     f"Error during local message processing after "
-                    f"OpenAI-compatible API call #{api_call_count}: {str(e)}"
+                    f"OpenAI-compatible API call #{api_call_count}: {e!s}"
                 )
             else:
-                error_msg = f"Error during OpenAI-compatible API call #{api_call_count}: {str(e)}"
+                error_msg = (
+                    f"Error during OpenAI-compatible API call #{api_call_count}: {e!s}"
+                )
             try:
                 print(f"❌ {error_msg}")
             except (OSError, ValueError):

@@ -1001,9 +1001,7 @@ def _create_skill(
         result["category"] = category
     result["hint"] = (
         "To add reference files, templates, or scripts, use "
-        "skill_manage(action='write_file', name='{}', file_path='references/example.md', file_content='...')".format(
-            name
-        )
+        f"skill_manage(action='write_file', name='{name}', file_path='references/example.md', file_content='...')"
     )
     _add_description_prompt_preview(result, content)
     _attach_lint_findings(result, skill_md)

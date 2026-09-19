@@ -517,12 +517,12 @@ def install_iron_proxy(*, force: bool = False) -> Path:
             # the deprecation warning and on 3.14+ to opt into the
             # tarbomb-rejecting default.
             try:
-                tf.extract(member, tmp, filter="data")  # noqa: S202
+                tf.extract(member, tmp, filter="data")
             except TypeError:
                 # Python < 3.12 — filter kw didn't exist yet; the
                 # _pick_tar_member sanitization already rejects path
                 # traversal so this is acceptable.
-                tf.extract(member, tmp)  # noqa: S202
+                tf.extract(member, tmp)
             extracted = tmp / member.name
 
         # Stage into the final directory then atomically rename so the new
@@ -558,7 +558,7 @@ def _http_download(url: str, dest: Path) -> None:
         with (
             urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp,
             open(dest, "wb") as f,
-        ):  # noqa: S310
+        ):
             shutil.copyfileobj(resp, f)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Failed to download {url}: {exc}") from exc
@@ -1071,7 +1071,7 @@ def _detect_docker_bridge_ip() -> str | None:
 
     candidate: str | None = None
     try:
-        res = subprocess.run(  # noqa: S603 — ip is a system binary
+        res = subprocess.run(
             ["ip", "-4", "-o", "addr", "show", "docker0"],
             capture_output=True,
             text=True,
@@ -2275,7 +2275,7 @@ def _build_proxy_subprocess_env(
                     "project_id is empty — proxy will fall back to parent env "
                     "(allow_env_fallback=true).",
                 )
-        except (ImportError,) as exc:
+        except ImportError as exc:
             # The BWS module or one of its runtime deps isn't importable.
             # Mirror the sibling branches: if allow_env_fallback isn't
             # explicitly enabled, fail closed — credential_source=bitwarden

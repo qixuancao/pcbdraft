@@ -263,7 +263,7 @@ def register_local_pet(
     sprite_path = directory / "spritesheet.webp"
     try:
         _write_spritesheet(spritesheet, sprite_path)
-    except Exception as exc:  # noqa: BLE001 - normalize to one error type
+    except Exception as exc:
         raise PetStoreError(f"could not write spritesheet for '{slug}': {exc}") from exc
 
     meta = {
@@ -495,7 +495,7 @@ def _download(url: str, dest: Path, *, timeout: float) -> None:
                 for chunk in resp.iter_bytes():
                     fh.write(chunk)
             tmp.replace(dest)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise PetStoreError(f"download failed for {url}: {exc}") from exc
 
 

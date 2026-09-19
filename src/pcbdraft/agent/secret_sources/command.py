@@ -199,7 +199,7 @@ def _run_helper(
     env["PCBDRAFT_RUNTIME_SECRET_KEY"] = secret_key
 
     try:
-        proc = subprocess.Popen(  # noqa: S602 — command is the user's own config
+        proc = subprocess.Popen(
             ["/bin/sh", "-c", command],
             env=env,
             stdin=subprocess.DEVNULL,

@@ -325,8 +325,8 @@ def _read_config() -> dict:
 def _write_config(cfg: dict, path: Path | None = None) -> None:
     path = path or _local_config_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    from pcbdraft.core.runtime_utils import atomic_json_write
     from pcbdraft.agent.legacy_compat import materialize_honcho_namespaces
+    from pcbdraft.core.runtime_utils import atomic_json_write
 
     cfg = materialize_honcho_namespaces(cfg, existing=_config_path().exists())
     atomic_json_write(path, cfg, mode=0o600)

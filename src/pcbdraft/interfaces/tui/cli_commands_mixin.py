@@ -243,7 +243,7 @@ class CLICommandsMixin:
             return
 
         diff_lines = diff.splitlines()
-        print("")
+        print()
         if len(diff_lines) > 400:
             self._print_diff_text("\n".join(diff_lines[:400]))
             print(
@@ -283,7 +283,7 @@ class CLICommandsMixin:
         if stat_only or not diff:
             return
         diff_lines = diff.splitlines()
-        print("")
+        print()
         if len(diff_lines) > 400:
             self._print_diff_text("\n".join(diff_lines[:400]))
             print(

@@ -59,8 +59,7 @@ def _normalize_rule(rule: Any) -> str | None:
         parsed = urlparse(value)
         value = parsed.netloc or parsed.path
     value = value.split("/", 1)[0].strip().rstrip(".")
-    if value.startswith("www."):
-        value = value[4:]
+    value = value.removeprefix("www.")
     return value or None
 
 

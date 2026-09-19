@@ -105,7 +105,7 @@ class SingletonSlot(Generic[T]):
     factory raises, nothing is cached and the next call retries.
     """
 
-    __slots__ = ("_lock", "_value", "_set")
+    __slots__ = ("_lock", "_set", "_value")
 
     def __init__(self) -> None:
         self._lock = threading.Lock()

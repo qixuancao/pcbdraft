@@ -200,15 +200,15 @@ class _RefAccounting:
     """
 
     __slots__ = (
-        "usage",
-        "cost_usd",
-        "cost_status",
         "cost_source",
+        "cost_status",
+        "cost_usd",
         "messages",
-        "output",
         "model",
+        "output",
         "provider",
         "temperature",
+        "usage",
     )
 
     def __init__(

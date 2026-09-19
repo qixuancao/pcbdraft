@@ -537,7 +537,7 @@ class OpenAICompatibleVideoGenProvider(VideoGenProvider):
         try:
             try:
                 video = self._create_and_poll(client, call_kwargs)
-            except Exception as exc:  # noqa: BLE001 - surface any SDK/API/timeout failure uniformly
+            except Exception as exc:
                 logger.debug("%s video generation failed", self.name, exc_info=True)
                 return error_response(
                     error=f"{self.name} video generation failed: {exc}",

@@ -181,7 +181,7 @@ def cmd_sessions(args, sessions_parser=None):
             # repair has failed and nothing tells them the non-destructive
             # offline recovery path exists. Lead with --inspect-only so
             # they confirm the data is readable before writing anything.
-            print("")
+            print()
             print("  Keep this source for offline recovery:")
             source_hint = report.get("backup_path") or db_path
             print(f"    {source_hint}")

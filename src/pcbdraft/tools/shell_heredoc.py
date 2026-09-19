@@ -268,8 +268,7 @@ def _find_heredoc_close(
         else:
             line = command[cursor:newline]
             after = newline + 1
-        if line.endswith("\r"):
-            line = line[:-1]
+        line = line.removesuffix("\r")
         candidate = line.lstrip("\t") if strip_tabs else line
         if candidate == delimiter:
             return after

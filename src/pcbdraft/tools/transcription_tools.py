@@ -327,7 +327,7 @@ def _transcode_audio_for_stt(
         details = exc.stderr.strip() or exc.stdout.strip() or str(exc)
         logger.error("ffmpeg STT transcode failed for %s: %s", file_path, details)
         return None, f"failed to transcode audio for the STT API: {details}"
-    except Exception as exc:  # noqa: BLE001 - transcode is best-effort
+    except Exception as exc:
         logger.exception("unexpected STT transcode failure for %s: %s", file_path, exc)
         return None, f"failed to transcode audio for the STT API: {exc}"
 
@@ -1323,7 +1323,7 @@ def _dispatch_to_plugin_provider(
     # anyway so a buggy plugin can't break dispatch for everyone.
     try:
         available = plugin_provider.is_available()
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "STT plugin provider '%s' is_available() raised: %s — "
             "treating as unavailable",
@@ -1363,7 +1363,7 @@ def _dispatch_to_plugin_provider(
             language=language,
             **extra_kwargs,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         logger.warning(
             "STT plugin provider '%s' raised: %s",
             key,
@@ -3641,7 +3641,7 @@ def _extract_transcript_text(transcription: Any) -> str:
         text = transcription.strip()
 
     if text is None and hasattr(transcription, "text"):
-        value = getattr(transcription, "text")
+        value = transcription.text
         if isinstance(value, str):
             text = value.strip()
 

@@ -101,8 +101,8 @@ def _cmd_approve(store, platform: str, code: str):
         )
         print(f"  Lockout clears in ~{mins} minute(s).")
         print(
-            "  To reset sooner, delete the '_lockout:{0}' entry from "
-            "~/.pcbdraft/platforms/pairing/_rate_limits.json\n".format(platform)
+            f"  To reset sooner, delete the '_lockout:{platform}' entry from "
+            "~/.pcbdraft/platforms/pairing/_rate_limits.json\n"
         )
     else:
         print(

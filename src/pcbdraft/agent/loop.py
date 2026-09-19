@@ -39,7 +39,6 @@ import logging
 logger = logging.getLogger(__name__)
 import os
 import re
-import sys
 import threading
 import time
 import uuid
@@ -112,9 +111,7 @@ def _session_source_for_agent(platform: str | None) -> str:
 from pcbdraft.agent.interrupt_compat import request_hard_interrupt
 from pcbdraft.agent.iteration_budget import IterationBudget
 from pcbdraft.agent.process_bootstrap import (
-    OpenAI,
     _get_proxy_for_base_url,
-    _SafeWriter,
 )
 from pcbdraft.model.env_loader import load_pcbdraft_dotenv
 from pcbdraft.model.timeouts import (
@@ -136,10 +133,7 @@ else:
 
 # Import our tool system
 from pcbdraft.tools.dispatch import (
-    check_toolset_requirements,
-    get_tool_definitions,
     get_toolset_for_tool,
-    handle_function_call,
 )
 from pcbdraft.tools.interrupt import set_interrupt as _set_interrupt
 from pcbdraft.tools.terminal_tool import cleanup_vm, get_active_env
@@ -197,33 +191,12 @@ from pcbdraft.agent.memory_manager import sanitize_context
 from pcbdraft.agent.memory_provider import is_trivial_prompt
 from pcbdraft.agent.message_preparation import MessagePreparationMixin
 from pcbdraft.agent.message_sanitization import (
-    _SURROGATE_RE,
-    _escape_invalid_chars_in_json_strings,
-    _repair_tool_call_arguments,
-    _sanitize_messages_non_ascii,
-    _sanitize_messages_surrogates,
-    _sanitize_structure_non_ascii,
-    _sanitize_structure_surrogates,
-    _sanitize_surrogates,
-    _sanitize_tools_non_ascii,
-    _strip_images_from_messages,
-    _strip_non_ascii,
-)
-from pcbdraft.agent.message_sanitization import (
     coalesce_tool_call_id as _sanitize_coalesce_tool_call_id,
 )
 from pcbdraft.agent.message_sanitization import (
     uniquify_tool_call_ids as _sanitize_uniquify_tool_call_ids,
 )
 from pcbdraft.agent.process_bootstrap import _get_proxy_from_env  # noqa: F401
-from pcbdraft.agent.prompt_builder import (
-    DEFAULT_AGENT_IDENTITY,
-    build_context_files_prompt,
-    build_environment_hints,
-    build_nous_subscription_prompt,
-    build_skills_system_prompt,
-    load_soul_md,
-)
 from pcbdraft.agent.provider_capabilities import (
     ProviderCapabilitiesMixin,
 )
@@ -249,7 +222,6 @@ from pcbdraft.agent.retry_utils import jittered_backoff  # noqa: F401
 from pcbdraft.agent.session_activity import ActivityProvenance
 from pcbdraft.agent.session_persistence import (
     _DB_PERSISTED_MARKER,
-    _EPHEMERAL_SCAFFOLDING_FLAGS,
     SessionPersistenceMixin,
     _is_ephemeral_scaffolding,
 )
@@ -263,17 +235,11 @@ from pcbdraft.agent.session_record_projection import (
 from pcbdraft.agent.status_delivery import StatusDeliveryMixin
 from pcbdraft.agent.stream_delivery import StreamDeliveryMixin
 from pcbdraft.agent.tool_dispatch_helpers import (
-    _append_subdir_hint_to_multimodal,
     _extract_error_preview,
     _extract_file_mutation_targets,
     _extract_landed_file_mutation_paths,
-    _extract_parallel_scope_path,
-    _is_destructive_command,
     _is_multimodal_tool_result,
     _multimodal_text_summary,
-    _paths_overlap,
-    _should_parallelize_tool_batch,
-    _trajectory_normalize_msg,
 )
 from pcbdraft.agent.tool_guardrails import (
     ToolGuardrailDecision,
@@ -310,7 +276,6 @@ from pcbdraft.model.codex_responses_adapter import (
 )
 from pcbdraft.model.codex_responses_adapter import _summarize_user_message_for_log
 from pcbdraft.model.model_metadata import (
-    estimate_request_tokens_rough,
     is_local_endpoint,
 )
 from pcbdraft.model.usage_pricing import normalize_usage

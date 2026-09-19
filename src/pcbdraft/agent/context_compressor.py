@@ -2846,8 +2846,7 @@ class ContextCompressor(ContextEngine):
         """
         if self.threshold_tokens_cap is not None and self.threshold_tokens_cap > 0:
             _effective_cap = min(self.threshold_tokens_cap, self.context_length)
-            if _effective_cap < self.threshold_tokens:
-                self.threshold_tokens = _effective_cap
+            self.threshold_tokens = min(self.threshold_tokens, _effective_cap)
 
     @staticmethod
     def _effective_threshold_percent(
@@ -4204,7 +4203,7 @@ class ContextCompressor(ContextEngine):
                 if re.search(
                     r"\b(error|failed|exception|traceback|timeout|timed out|fatal)\b",
                     text,
-                    re.I,
+                    re.IGNORECASE,
                 ):
                     blockers.append(text[:500])
 

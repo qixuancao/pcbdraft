@@ -326,7 +326,7 @@ class ContextEngine(ABC):
 
         Default is a no-op.
         """
-        return None
+        return
 
     # -- Optional: pre-flight check ----------------------------------------
 
@@ -443,7 +443,7 @@ class ContextEngine(ABC):
         # (set by conversation_compression) to 0 so status readers don't see a
         # raw -1 or a negative usage_percent on the transitional turn. Mirrors
         # the CLI/gateway status-bar paths (cli.py, tui_gateway/server.py).
-        last_prompt = self.last_prompt_tokens if self.last_prompt_tokens > 0 else 0
+        last_prompt = max(0, self.last_prompt_tokens)
         return {
             "last_prompt_tokens": last_prompt,
             "threshold_tokens": self.threshold_tokens,

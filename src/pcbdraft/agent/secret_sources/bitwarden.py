@@ -280,7 +280,7 @@ def _http_download(url: str, dest: Path) -> None:
         with (
             urllib.request.urlopen(req, timeout=_BWS_DOWNLOAD_TIMEOUT) as resp,
             open(dest, "wb") as f,
-        ):  # noqa: S310
+        ):
             shutil.copyfileobj(resp, f)
     except urllib.error.URLError as exc:
         raise RuntimeError(f"Failed to download {url}: {exc}") from exc

@@ -1459,7 +1459,7 @@ def is_tts_echo(
         return True
     if len(a) < MIN_FRAGMENT_LENGTH_FOR_ECHO or len(a) >= len(b):
         return False
-    for start in range(0, len(b) - len(a) + 1):
+    for start in range(len(b) - len(a) + 1):
         window = b[start : start + len(a)]
         if difflib.SequenceMatcher(None, a, window).ratio() >= threshold:
             return True

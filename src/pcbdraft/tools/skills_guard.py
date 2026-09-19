@@ -1244,9 +1244,9 @@ def scan_skill_cached(
     """Return a scan plus attestation, caching only exact current content."""
     bundle_hash = full_content_hash(skill_path)
     cache_root = cache_dir or skill_path.parent / ".scan-cache"
-    source_identity = hashlib.sha256(
-        f"{source}\0{source_url}".encode("utf-8")
-    ).hexdigest()[:16]
+    source_identity = hashlib.sha256(f"{source}\0{source_url}".encode()).hexdigest()[
+        :16
+    ]
     cache_file = cache_root / f"{bundle_hash.split(':', 1)[1]}-{source_identity}.json"
     try:
         cached = json.loads(cache_file.read_text(encoding="utf-8"))

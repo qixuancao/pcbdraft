@@ -81,11 +81,11 @@ class TodoStore:
 
                 if item_id in existing:
                     # Update only the fields the LLM actually provided
-                    if "content" in t and t["content"]:
+                    if t.get("content"):
                         existing[item_id]["content"] = self._cap_content(
                             str(t["content"]).strip()
                         )
-                    if "status" in t and t["status"]:
+                    if t.get("status"):
                         status = str(t["status"]).strip().lower()
                         if status in VALID_STATUSES:
                             existing[item_id]["status"] = status

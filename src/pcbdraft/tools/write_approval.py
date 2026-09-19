@@ -250,7 +250,7 @@ class GateDecision:
         user-facing "staged for approval" note.
     """
 
-    __slots__ = ("allow", "blocked", "stage", "message")
+    __slots__ = ("allow", "blocked", "message", "stage")
 
     def __init__(self, *, allow=False, blocked=False, stage=False, message=""):
         self.allow = allow

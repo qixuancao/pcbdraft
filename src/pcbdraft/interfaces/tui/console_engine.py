@@ -233,7 +233,7 @@ def _noop_console_command(_args: argparse.Namespace) -> None:
 # dashboard opens a fresh PCBDraftConsoleEngine per /api/console connection, so
 # without memoization every reconnect re-imports + re-parses the whole surface.
 # Cache by args (all hashable strings); callers only read the returned map.
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _extracted_summaries(
     module_name: str,
     builder_name: str,
@@ -249,7 +249,7 @@ def _extracted_summaries(
         return {}
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _registered_summaries(
     root: str,
     module_name: str,
@@ -266,7 +266,7 @@ def _registered_summaries(
         return {}
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _builder_summaries(
     module_name: str,
     builder_name: str,
@@ -280,7 +280,7 @@ def _builder_summaries(
         return {}
 
 
-@functools.lru_cache(maxsize=None)
+@functools.cache
 def _adder_summaries(module_name: str, add_name: str) -> dict[tuple[str, ...], str]:
     try:
         parser, subparsers = _parser_root()
@@ -1378,18 +1378,18 @@ def _apply_confirmed_defaults(args: argparse.Namespace) -> None:
         if hasattr(args, attr):
             setattr(args, attr, True)
     if getattr(args, "_console_command", None) == "import":
-        setattr(args, "force", True)
+        args.force = True
     # Every checkpoints subcommand the console registers as mutating gates its
     # own confirmation on --force, so all three belong here. `prune` reaches
     # _confirm() for its orphan preview, and the console never redirects stdin.
     if getattr(args, "checkpoints_command", None) in {"prune", "clear", "clear-legacy"}:
-        setattr(args, "force", True)
+        args.force = True
     if (
         getattr(args, "plugins_action", None) == "install"
         and not getattr(args, "enable", False)
         and not getattr(args, "no_enable", False)
     ):
-        setattr(args, "no_enable", True)
+        args.no_enable = True
     if getattr(args, "auth_action", None) == "add":
         auth_type = getattr(args, "auth_type", None)
         if auth_type in {"api-key", "api_key"} and not getattr(args, "api_key", None):
@@ -1405,9 +1405,9 @@ def _apply_confirmed_defaults(args: argparse.Namespace) -> None:
         "opt-out",
         "repair-official",
     }:
-        setattr(args, "yes", True)
+        args.yes = True
     if getattr(args, "memory_command", None) == "reset":
-        setattr(args, "yes", True)
+        args.yes = True
 
 
 def _status(_engine: PCBDraftConsoleEngine, args: list[str]) -> str:

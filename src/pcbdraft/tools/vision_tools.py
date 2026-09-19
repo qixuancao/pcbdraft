@@ -1804,7 +1804,7 @@ if __name__ == "__main__":
     print("\nBasic usage:")
     print("  from vision_tools import vision_analyze_tool")
     print("  import asyncio")
-    print("")
+    print()
     print("  async def main():")
     print("      result = await vision_analyze_tool(")
     print("          image_url='https://example.com/image.jpg',")
@@ -1997,8 +1997,7 @@ async def _materialize_video_from_terminal_backend(
     )
 
     source = video_source
-    if source.startswith("file://"):
-        source = source[len("file://") :]
+    source = source.removeprefix("file://")
     suffix = Path(source).suffix.lower()
     if suffix not in _VIDEO_MIME_TYPES:
         raise ValueError(
@@ -2130,8 +2129,7 @@ async def video_analyze_tool(
 
         # Resolve local path vs remote URL
         resolved_url = video_url
-        if resolved_url.startswith("file://"):
-            resolved_url = resolved_url[len("file://") :]
+        resolved_url = resolved_url.removeprefix("file://")
         local_path = Path(os.path.expanduser(resolved_url))
 
         if not _terminal_backend_is_local() and _is_path_like_video_source(video_url):

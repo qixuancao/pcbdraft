@@ -231,8 +231,7 @@ def split_history_for_partial_compress(
     ``(history, [])`` — signaling the caller to fall back to full
     compression or report "nothing to do".
     """
-    if keep_last < 1:
-        keep_last = 1
+    keep_last = max(keep_last, 1)
 
     n = len(history)
     if n == 0:

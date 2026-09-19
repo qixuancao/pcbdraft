@@ -370,7 +370,7 @@ def _make_redirect_header_stripper(
     original_url,
     *,
     strict: bool = False,
-    configured_header_names: "set[str] | frozenset[str]" = frozenset(),
+    configured_header_names: set[str] | frozenset[str] = frozenset(),
 ):
     """Build an httpx response hook that guards cross-origin redirects.
 

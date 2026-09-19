@@ -193,8 +193,7 @@ def parse_frontmatter(content: str) -> tuple[dict[str, Any], str]:
     frontmatter: dict[str, Any] = {}
 
     # Strip only a leading BOM; a BOM mid-content is data, not a marker.
-    if content.startswith("\ufeff"):
-        content = content[1:]
+    content = content.removeprefix("\ufeff")
     body = content
 
     if not content.startswith("---"):

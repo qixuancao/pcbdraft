@@ -406,7 +406,7 @@ def _make_callback(event: str, target: WebhookTarget):
         if event in _TOOL_SCOPED_EVENTS and not target.matches_tool(
             kwargs.get("tool_name")
         ):
-            return None
+            return
         delivery_id = uuid.uuid4().hex
         try:
             body = _serialize_payload(event, kwargs, delivery_id)
@@ -417,9 +417,9 @@ def _make_callback(event: str, target: WebhookTarget):
                 target.label,
                 exc_info=True,
             )
-            return None
+            return
         _enqueue(_build_delivery(event, target, body, delivery_id))
-        return None
+        return
 
     _callback.__name__ = f"outbound_webhook[{event}:{target.label}]"
     _callback.__qualname__ = _callback.__name__
@@ -544,7 +544,7 @@ class _NoRedirectHandler(urlrequest.HTTPRedirectHandler):
     delivery failure instead (surfaced as HTTPError by returning None).
     """
 
-    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
 
 

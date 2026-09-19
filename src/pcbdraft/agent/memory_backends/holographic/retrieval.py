@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import numpy as np
+
     from pcbdraft.agent.memory_backends.holographic.store import MemoryStore
 
 try:

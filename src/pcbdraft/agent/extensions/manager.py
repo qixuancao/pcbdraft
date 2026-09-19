@@ -4109,9 +4109,7 @@ class PluginManager:
             )
             if not is_enabled:
                 loaded = LoadedPlugin(manifest=manifest, enabled=False)
-                loaded.error = "not enabled in config (add {} to plugins.enabled to activate)".format(
-                    lookup_key
-                )
+                loaded.error = f"not enabled in config (add {lookup_key} to plugins.enabled to activate)"
                 self._plugins[lookup_key] = loaded
                 logger.debug("Skipping '%s' (not in plugins.enabled)", lookup_key)
                 continue

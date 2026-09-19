@@ -209,17 +209,17 @@ class ToolEntry:
     """Metadata for a single registered tool."""
 
     __slots__ = (
-        "name",
-        "toolset",
-        "schema",
-        "handler",
         "check_fn",
-        "requires_env",
-        "is_async",
         "description",
-        "emoji",
-        "max_result_size_chars",
         "dynamic_schema_overrides",
+        "emoji",
+        "handler",
+        "is_async",
+        "max_result_size_chars",
+        "name",
+        "requires_env",
+        "schema",
+        "toolset",
     )
 
     def __init__(
@@ -769,7 +769,7 @@ class ToolRegistry:
         is_async: bool = False,
         description: str = "",
         emoji: str = "",
-        max_result_size_chars: int | float | None = None,
+        max_result_size_chars: float | None = None,
         dynamic_schema_overrides: Callable | None = None,
         override: bool = False,
         scope: str | None = None,
@@ -1183,7 +1183,7 @@ class ToolRegistry:
     # ------------------------------------------------------------------
 
     def get_max_result_size(
-        self, name: str, default: int | float | None = None
+        self, name: str, default: float | None = None
     ) -> int | float:
         """Return per-tool max result size, or *default* (or global default)."""
         entry = self.get_entry(name)

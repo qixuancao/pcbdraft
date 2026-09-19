@@ -98,7 +98,7 @@ _COMPACTION_PREFIXES = (
 _FRESH_RESET_END_REASONS = frozenset(_RESET_END_REASONS) | {"new_session"}
 
 
-def _format_timestamp(ts: int | float | str | None) -> str:
+def _format_timestamp(ts: float | str | None) -> str:
     """Convert a Unix timestamp (float/int) or ISO string to a human-readable date.
 
     Returns "unknown" for None, str(ts) if conversion fails.

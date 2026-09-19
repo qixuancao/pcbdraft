@@ -136,6 +136,7 @@ def _is_overdue(job: dict[str, Any], now: datetime) -> bool:
         return False
     try:
         from cron.jobs import _compute_grace_seconds
+
         if next_run.tzinfo is None and now.tzinfo is not None:
             next_run = next_run.replace(tzinfo=now.tzinfo)
         lateness = (now - next_run).total_seconds()

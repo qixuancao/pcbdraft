@@ -6185,7 +6185,6 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             if getattr(exc, "errno", None) == errno.EIO:
                 self._mark_terminal_io_broken("clear_screen")
                 return
-            pass
         except Exception:
             pass
 
@@ -6748,11 +6747,9 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # render that sentinel verbatim — it produced "-1/200K" / "-1%".
             # Clamp it to 0 so the one transitional turn reads as empty context.
             context_tokens = getattr(compressor, "last_prompt_tokens", 0) or 0
-            if context_tokens < 0:
-                context_tokens = 0
+            context_tokens = max(context_tokens, 0)
             context_length = getattr(compressor, "context_length", 0) or 0
-            if context_length < 0:
-                context_length = 0
+            context_length = max(context_length, 0)
             snapshot["context_tokens"] = context_tokens
             snapshot["context_length"] = context_length or None
             snapshot["compressions"] = getattr(compressor, "compression_count", 0) or 0
@@ -8103,7 +8100,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             # the input to be silently dropped (#17666).
             try:
                 return path.read_text(encoding="utf-8")
-            except (OSError, IOError):
+            except OSError:
                 logger.warning(
                     "Paste file gone or unreadable, returning placeholder: %s", path
                 )
@@ -10603,8 +10600,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             print("(._.) No messages to undo.")
             return
 
-        if n < 1:
-            n = 1
+        n = max(n, 1)
 
         # Walk backwards collecting the indices of the last N *real* user
         # messages (exclude display_kind timeline rows and compaction
@@ -11594,7 +11590,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             _cprint(
                 "  ✗ PCBDraft keeps one persistent model; use /model without --once or --session."
             )
-            return None
+            return
         model_input = request.target
         explicit_provider = request.explicit_provider
         is_global_flag = request.is_global
@@ -12374,11 +12370,13 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
             return True
         if base in {"new", "open", "project", "resume"} and raw_args:
             current_project_id = get_current_project_id()
-            should_rotate = base in {"new", "project"} or (
-                current_project_id != previous_project_id
-            ) or (
-                base in {"open", "resume"}
-                and not getattr(self, "conversation_history", None)
+            should_rotate = (
+                base in {"new", "project"}
+                or (current_project_id != previous_project_id)
+                or (
+                    base in {"open", "resume"}
+                    and not getattr(self, "conversation_history", None)
+                )
             )
             if should_rotate:
                 try:
@@ -12689,8 +12687,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         f"(._.) Invalid count {_undo_parts[1]!r} — use /undo or /undo N."
                     )
                     return
-                if _undo_n < 1:
-                    _undo_n = 1
+                _undo_n = max(_undo_n, 1)
             _undo_desc = (
                 "This removes the last user/assistant exchange from history."
                 if _undo_n == 1
@@ -14266,9 +14263,7 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
         total = agent.session_total_tokens
 
         compressor = agent.context_compressor
-        last_prompt = (
-            compressor.last_prompt_tokens if compressor.last_prompt_tokens > 0 else 0
-        )
+        last_prompt = max(0, compressor.last_prompt_tokens)
         ctx_len = compressor.context_length
         pct = min(100, (last_prompt / ctx_len * 100)) if ctx_len else 0
         compressions = compressor.compression_count
@@ -17380,12 +17375,12 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                                         f"children={len(self.agent._active_children)}, "
                                         f"parent._interrupt={self.agent._interrupt_requested}\n"
                                     )
-                                    for _ci, _ch in enumerate(
-                                        self.agent._active_children
-                                    ):
-                                        _f.write(
-                                            f"  child[{_ci}]._interrupt={_ch._interrupt_requested}\n"
+                                    _f.writelines(
+                                        f"  child[{_ci}]._interrupt={_ch._interrupt_requested}\n"
+                                        for _ci, _ch in enumerate(
+                                            self.agent._active_children
                                         )
+                                    )
                             except Exception:
                                 pass
                             break
@@ -18519,7 +18514,6 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                         break
             except Exception:
                 pass
-            return None
 
         def handle_enter(event):
             """Handle Enter key - submit input.

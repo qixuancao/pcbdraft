@@ -141,8 +141,7 @@ def _utc_id(now: datetime | None = None) -> str:
         now = datetime.now(UTC)
     # isoformat → "2026-05-01T13:05:42.123456+00:00"; strip subseconds and tz.
     s = now.replace(microsecond=0).isoformat()
-    if s.endswith("+00:00"):
-        s = s[:-6]
+    s = s.removesuffix("+00:00")
     return s.replace(":", "-") + "Z"
 
 
@@ -546,7 +545,7 @@ def _restore_cron_skill_links(snapshot_dir: Path) -> dict[str, Any]:
 
             if changed:
                 save_jobs(live_jobs)
-    except Exception as e:  # noqa: BLE001 — rollback must not die mid-restore
+    except Exception as e:
         logger.debug("Cron skill-link restore failed: %s", e, exc_info=True)
         report["error"] = f"restore failed mid-flight: {e}"
 

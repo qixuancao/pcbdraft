@@ -1397,7 +1397,6 @@ def run_doctor(args):
                 }
             except Exception:
                 _resolve_auth_provider = None
-                pass
             try:
                 from pcbdraft.model.configuration import (
                     get_compatible_custom_providers as _compatible_custom_providers,

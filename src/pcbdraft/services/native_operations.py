@@ -382,9 +382,9 @@ def _reject_stale_copper_transform(
             ) != _component_footprint_contract(after_component, candidate_graph)
         if not changed:
             continue
-        affected_net_ids = _component_net_ids(before, component_id) | _component_net_ids(
-            candidate, component_id
-        )
+        affected_net_ids = _component_net_ids(
+            before, component_id
+        ) | _component_net_ids(candidate, component_id)
         retained_net_ids = {route.net for route in candidate.native_intent.routes}
         retained_net_ids.update(via.net for via in candidate.native_intent.vias)
         stale_net_ids = affected_net_ids & retained_net_ids

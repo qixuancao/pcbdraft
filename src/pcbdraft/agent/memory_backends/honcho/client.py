@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
-from pcbdraft.agent.secret_scope import get_secret
 from pcbdraft.agent.extensions.bundled.plugin_utils import SingletonSlot
+from pcbdraft.agent.secret_scope import get_secret
 from pcbdraft.core.runtime_environment import get_runtime_home
 from pcbdraft.interfaces.tui.profiles import _get_default_runtime_home
 

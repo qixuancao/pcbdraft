@@ -452,8 +452,7 @@ def _mark_stale_cache_grace() -> None:
     """
     global _models_dev_cache_time
     grace_time = time.time() - _MODELS_DEV_CACHE_TTL + _MODELS_DEV_RETRY_DELAY
-    if grace_time > _models_dev_cache_time:
-        _models_dev_cache_time = grace_time
+    _models_dev_cache_time = max(_models_dev_cache_time, grace_time)
 
 
 def _commit_registry(data: dict[str, Any], *, etag: str = "", where: str) -> None:

@@ -82,7 +82,9 @@ class TerminalAliasTests(unittest.TestCase):
                 ):
                     result = main(tokens)
                 self.assertEqual(result, 2)
-                self.assertIn("previous launcher ignored this option", stderr.getvalue())
+                self.assertIn(
+                    "previous launcher ignored this option", stderr.getvalue()
+                )
                 launch.assert_not_called()
 
 

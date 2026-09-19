@@ -190,7 +190,7 @@ def create_app(adapter: UpstreamAdapter) -> web.Application:
                     ),
                     None,
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 return (
                     _json_error(
                         504,

@@ -143,7 +143,7 @@ def fetch_manifest(
         )
         resp.raise_for_status()
         payload = resp.json()
-    except Exception as exc:  # noqa: BLE001 - normalize to one error type
+    except Exception as exc:
         raise ManifestError(f"could not fetch petdex manifest: {exc}") from exc
 
     pets = payload.get("pets") if isinstance(payload, dict) else None

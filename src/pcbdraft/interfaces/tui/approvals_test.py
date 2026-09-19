@@ -55,7 +55,7 @@ def evaluate_command(command: str, env_type: str = "local") -> dict:
     explanation), and ``normalized_variants`` (the trace of normalized /
     de-obfuscated forms the detectors actually evaluated).
     """
-    import pcbdraft.tools.approval as approval
+    from pcbdraft.tools import approval
 
     # Sync config-persisted "always" patterns so the allowlist check below
     # sees what the runtime would see (load is read-only).

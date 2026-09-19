@@ -268,7 +268,7 @@ def _find_subsequence(tokens: list[str], needle: list[str]) -> int | None:
     if not tokens or not needle or len(needle) > len(tokens):
         return None
     cleaned = [_clean_token(t) for t in tokens]
-    for idx in range(0, len(cleaned) - len(needle) + 1):
+    for idx in range(len(cleaned) - len(needle) + 1):
         if cleaned[idx : idx + len(needle)] == needle:
             return idx
     return None
@@ -708,7 +708,7 @@ def mark_workspace_edited(
                 existing = set(json.loads(row["changed_paths_json"] or "[]"))
             except (TypeError, ValueError):
                 existing = set()
-        merged = sorted((existing | set(changed_paths)))[-200:]
+        merged = sorted(existing | set(changed_paths))[-200:]
         conn.execute(
             """
                 INSERT INTO verification_state(

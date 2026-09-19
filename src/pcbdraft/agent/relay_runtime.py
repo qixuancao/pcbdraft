@@ -949,7 +949,7 @@ class managed_callback_guard:
         self._token = _MANAGED_CALLBACK_DEPTH.set(_MANAGED_CALLBACK_DEPTH.get() + 1)
         return self
 
-    def __exit__(self, *exc_info: Any) -> None:
+    def __exit__(self, *exc_info: object) -> None:
         _MANAGED_CALLBACK_DEPTH.reset(self._token)
 
 
@@ -1203,7 +1203,7 @@ class RelaySessionCoordinator:
             ):
                 return
             lease.host.close_session({"session_id": lease.session_id})
-        except Exception:  # noqa: BLE001 - telemetry must never block end_turn
+        except Exception:
             logger.warning(
                 "PCBDraft Relay deferred session close failed", exc_info=True
             )
@@ -1264,7 +1264,7 @@ class RelaySessionCoordinator:
             with session.lock:
                 if not session.closing:
                     session.rotate_pending = True
-        except Exception:  # noqa: BLE001 - telemetry must never block compaction
+        except Exception:
             logger.warning(
                 "PCBDraft Relay compaction notification failed", exc_info=True
             )

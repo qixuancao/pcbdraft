@@ -537,8 +537,7 @@ def _short_desc(description: str, max_chars: int = 60) -> str:
 def _listing_group_label(source_name: str) -> str:
     """Human-facing group heading for a toolset, e.g. ``mcp-github`` -> ``github``."""
     label = source_name or "other"
-    if label.startswith("mcp-"):
-        label = label[4:]
+    label = label.removeprefix("mcp-")
     return label
 
 

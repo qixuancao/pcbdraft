@@ -3435,7 +3435,7 @@ def _parent_finalization_lock(parent_agent) -> threading.RLock:
         if lock is None:
             lock = threading.RLock()
             try:
-                setattr(parent_agent, "_subagent_finalization_lock", lock)
+                parent_agent._subagent_finalization_lock = lock
             except Exception:
                 return _PARENT_FINALIZATION_FALLBACK_LOCK
     return lock
@@ -3930,7 +3930,7 @@ def delegate_task(
         # Delegation identity for the live registry + process-notification
         # attribution (child-started background processes report under it).
         if live_deleg_id:
-            setattr(child, "_delegation_id", live_deleg_id)
+            child._delegation_id = live_deleg_id
         children.append((i, t, child))
 
     def _execute_and_aggregate(*, honor_parent_interrupt: bool = True) -> dict:

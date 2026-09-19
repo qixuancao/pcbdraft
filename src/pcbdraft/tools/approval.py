@@ -2642,7 +2642,7 @@ _permanent_approved: set = set()
 
 
 class _HumanWaitState:
-    __slots__ = ("pending", "window_started", "completed_seconds")
+    __slots__ = ("completed_seconds", "pending", "window_started")
 
     def __init__(self) -> None:
         self.pending = 0
@@ -2865,7 +2865,7 @@ def _denial_breaker_addendum(session_key: str) -> str:
 class _ApprovalEntry:
     """One pending dangerous-command approval inside a gateway session."""
 
-    __slots__ = ("event", "data", "result", "reason", "acknowledged")
+    __slots__ = ("acknowledged", "data", "event", "reason", "result")
 
     def __init__(self, data: dict):
         self.event = threading.Event()

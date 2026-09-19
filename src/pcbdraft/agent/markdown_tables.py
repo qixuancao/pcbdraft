@@ -54,7 +54,7 @@ def _disp_width(s: str) -> int:
     """
 
     w = wcswidth(s)
-    return w if w > 0 else 0
+    return max(0, w)
 
 
 def _pad_to_width(s: str, target: int) -> str:
@@ -65,10 +65,8 @@ def split_table_row(row: str) -> list[str]:
     """Split ``| a | b | c |`` into ``["a", "b", "c"]`` with trims."""
 
     s = row.strip()
-    if s.startswith("|"):
-        s = s[1:]
-    if s.endswith("|"):
-        s = s[:-1]
+    s = s.removeprefix("|")
+    s = s.removesuffix("|")
     return [c.strip() for c in s.split("|")]
 
 

@@ -36,6 +36,5 @@ __all__ = [
     "check_computer_use_requirements",
     "handle_computer_use",
     "release_computer_use_session",
-    "release_computer_use_session",
     "set_approval_callback",
 ]

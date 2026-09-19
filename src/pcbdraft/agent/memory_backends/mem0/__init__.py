@@ -82,8 +82,8 @@ def _load_config(runtime_home: str | None = None) -> dict:
     individual keys.  This avoids a silent failure when the JSON file exists
     but is missing fields like ``api_key`` that the user set in ``.env``.
     """
-    from pcbdraft.core.runtime_environment import get_runtime_home
     from pcbdraft.agent.legacy_compat import memory_profile_environment
+    from pcbdraft.core.runtime_environment import get_runtime_home
 
     environment = memory_profile_environment(runtime_home)
     config = {

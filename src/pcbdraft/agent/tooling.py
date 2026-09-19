@@ -1589,15 +1589,29 @@ PCB_TOOL_SPECS = (
             effect="authoritative_write",
             risk="medium",
             arguments=(
-                _object_argument("value", "Explicit requirement", _REQUIREMENT_PROPERTIES)
+                _object_argument(
+                    "value", "Explicit requirement", _REQUIREMENT_PROPERTIES
+                )
                 if action != "remove"
                 else _ID("id", "Stable requirement identity"),
             ),
         )
         for name, description, action in (
-            ("add_requirement", "Add one explicit user acceptance requirement", "upsert"),
-            ("update_requirement", "Replace one explicit user acceptance requirement", "upsert"),
-            ("remove_requirement", "Remove one explicit user acceptance requirement", "remove"),
+            (
+                "add_requirement",
+                "Add one explicit user acceptance requirement",
+                "upsert",
+            ),
+            (
+                "update_requirement",
+                "Replace one explicit user acceptance requirement",
+                "upsert",
+            ),
+            (
+                "remove_requirement",
+                "Remove one explicit user acceptance requirement",
+                "remove",
+            ),
         )
     ),
     _flat_spec(

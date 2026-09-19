@@ -219,7 +219,7 @@ def _base_attrs(
 
 
 def _metric(
-    name: str, value: int | float, attrs: dict[str, str], **extra: str
+    name: str, value: float, attrs: dict[str, str], **extra: str
 ) -> GatewayMetric:
     out = dict(attrs)
     for key, val in extra.items():

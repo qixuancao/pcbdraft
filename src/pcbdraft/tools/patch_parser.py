@@ -93,7 +93,7 @@ def parse_v4a_patch(patch_content: str) -> tuple[list[PatchOperation], str | Non
     # inside every HunkLine.content and injects stray carriage returns into an
     # LF target file (and the anchored ``...\s*$`` Begin/End markers would fail
     # to match because of the trailing ``\r``).
-    lines = [ln[:-1] if ln.endswith("\r") else ln for ln in patch_content.split("\n")]
+    lines = [ln.removesuffix("\r") for ln in patch_content.split("\n")]
     operations: list[PatchOperation] = []
 
     # Find patch boundaries. Markers must occupy the whole line at column 0:

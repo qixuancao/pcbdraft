@@ -207,7 +207,9 @@ class NativeConversationTests(unittest.TestCase):
         )
 
         model_history = self.agents[0].run_kwargs["conversation_history"]
-        self.assertEqual(model_history[0]["content"], "Keep the original LED requirement")
+        self.assertEqual(
+            model_history[0]["content"], "Keep the original LED requirement"
+        )
         self.assertEqual(
             model_history[-1]["content"], "The LED requirement is recorded"
         )
@@ -224,7 +226,11 @@ class NativeConversationTests(unittest.TestCase):
         finally:
             native_db.close()
         self.assertEqual(
-            [message.get("content") for message in persisted if message["role"] == "user"],
+            [
+                message.get("content")
+                for message in persisted
+                if message["role"] == "user"
+            ],
             ["Keep the original LED requirement", "Continue from that requirement"],
         )
 

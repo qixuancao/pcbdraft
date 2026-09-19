@@ -43,7 +43,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-import pcbdraft.agent.lsp.eventlog as eventlog
+from pcbdraft.agent.lsp import eventlog
 from pcbdraft.agent.lsp.client import DIAGNOSTICS_DOCUMENT_WAIT, LSPClient
 from pcbdraft.agent.lsp.servers import (
     ServerContext,
@@ -357,7 +357,7 @@ class LSPService:
         try:
             t = timeout if timeout is not None else self._wait_timeout + 2.0
             diags = self._loop.run(self._open_and_wait_async(file_path), timeout=t)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             eventlog.log_timeout(server_id, file_path)
             logger.debug("LSP diagnostics timeout for %s: %s", file_path, e)
             self._mark_broken_for_file(file_path, e)

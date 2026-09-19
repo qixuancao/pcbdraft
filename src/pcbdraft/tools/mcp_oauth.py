@@ -1086,8 +1086,7 @@ def _paste_callback_reader(result: dict) -> None:
     if "?" in line:
         # Either a full URL or "?code=...". Take everything after the first "?".
         query = line.split("?", 1)[1]
-    if query.startswith("?"):
-        query = query[1:]
+    query = query.removeprefix("?")
 
     try:
         params = parse_qs(query)

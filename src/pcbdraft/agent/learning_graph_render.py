@@ -54,7 +54,7 @@ def _to_ts(value: Any) -> float | None:
 
 
 def _clamp(v: float, lo: float, hi: float) -> float:
-    return lo if v < lo else hi if v > hi else v
+    return lo if v < lo else min(v, hi)
 
 
 def _smoothstep(p: float) -> float:
@@ -240,7 +240,7 @@ def _node_meta(node: dict[str, Any]) -> str:
 
 
 class _ChartBucket:
-    __slots__ = ("label", "ts", "skills", "memories", "nodes", "rec")
+    __slots__ = ("label", "memories", "nodes", "rec", "skills", "ts")
 
     def __init__(self, label: str, ts: float):
         self.label = label

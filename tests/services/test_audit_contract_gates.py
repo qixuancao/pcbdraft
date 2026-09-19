@@ -112,7 +112,9 @@ class AuditContractGateRegressionTests(unittest.TestCase):
         self.assertTrue(l3.blocks_production)
         self.assertEqual(l3.metrics["verification_support"], "unsupported")
 
-    def test_flat_agent_can_manage_requirements_and_run_candidate_validation(self) -> None:
+    def test_flat_agent_can_manage_requirements_and_run_candidate_validation(
+        self,
+    ) -> None:
         self.assertEqual(
             DEFAULT_PCB_TOOL_REGISTRY.resolve("add_requirement").external_name,
             "pcb_add_requirement",
@@ -136,9 +138,7 @@ class AuditContractGateRegressionTests(unittest.TestCase):
                 expected_revision=4,
             )
         self.assertEqual(result, {"candidate_ready": True})
-        aggregate.assert_called_once_with(
-            "board", timeout=12.0, expected_revision=4
-        )
+        aggregate.assert_called_once_with("board", timeout=12.0, expected_revision=4)
 
     def test_empty_or_unverified_requirement_contract_is_not_complete(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -152,7 +152,9 @@ class AuditContractGateRegressionTests(unittest.TestCase):
         self.assertNotEqual(product["task_coverage"]["outcome"], "passed")
         self.assertFalse(product["task_coverage"]["complete"])
 
-    def test_requirement_coverage_uses_current_checks_not_prose_or_manual_claims(self) -> None:
+    def test_requirement_coverage_uses_current_checks_not_prose_or_manual_claims(
+        self,
+    ) -> None:
         verified = self._design_with_acceptance("check:l2.erc")
         passed = evaluate_task_coverage(
             verified,
@@ -189,7 +191,9 @@ class AuditContractGateRegressionTests(unittest.TestCase):
         self.assertEqual(coverage["outcome"], "incomplete")
         self.assertEqual(coverage["items"][0]["state"], "stale")
 
-    def test_manufacturing_export_is_rejected_before_current_candidate_gate(self) -> None:
+    def test_manufacturing_export_is_rejected_before_current_candidate_gate(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             service, project_id, _design = _seed_managed_project(Path(temporary))
             with (
@@ -316,7 +320,9 @@ class AuditContractGateRegressionTests(unittest.TestCase):
         self.assertEqual(result["tool_result"]["export"], "export_bom")
         self.assertFalse(result["tool_result"]["production_ready"])
 
-    def test_requirement_operation_invalidates_candidate_gate_and_old_export(self) -> None:
+    def test_requirement_operation_invalidates_candidate_gate_and_old_export(
+        self,
+    ) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             design = self._design_with_acceptance("check:l2.erc")
             service, project_id, _ = _seed_managed_project(

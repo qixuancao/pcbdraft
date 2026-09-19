@@ -214,7 +214,7 @@ def _resolve(configured: str | None) -> BrowserProvider | None:
         """Wrap ``is_available()`` so a buggy provider doesn't kill resolution."""
         try:
             return bool(p.is_available())
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             logger.warning(
                 "Browser provider %s.is_available() raised %s — treating as unavailable",
                 p.name,

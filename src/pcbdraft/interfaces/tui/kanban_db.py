@@ -1660,8 +1660,8 @@ def _cross_process_init_lock(path: Path):
         if _IS_WINDOWS:
             import msvcrt
 
-            locking = getattr(msvcrt, "locking")
-            nb_lock = getattr(msvcrt, "LK_NBLCK")
+            locking = msvcrt.locking
+            nb_lock = msvcrt.LK_NBLCK
             while True:
                 try:
                     handle.seek(0)
@@ -1701,8 +1701,8 @@ def _cross_process_init_lock(path: Path):
                     import msvcrt
 
                     handle.seek(0)
-                    locking = getattr(msvcrt, "locking")
-                    unlock_mode = getattr(msvcrt, "LK_UNLCK")
+                    locking = msvcrt.locking
+                    unlock_mode = msvcrt.LK_UNLCK
                     locking(handle.fileno(), unlock_mode, 1)
                 else:
                     import fcntl
@@ -1754,9 +1754,9 @@ def _dispatch_tick_lock(db_path: Path):
                 import msvcrt
 
                 handle.seek(0)
-                locking = getattr(msvcrt, "locking")
+                locking = msvcrt.locking
                 # LK_NBLCK = non-blocking exclusive byte-range lock.
-                nb_lock = getattr(msvcrt, "LK_NBLCK")
+                nb_lock = msvcrt.LK_NBLCK
                 locking(handle.fileno(), nb_lock, 1)
                 acquired = True
             except (OSError, AttributeError):
@@ -1784,8 +1784,8 @@ def _dispatch_tick_lock(db_path: Path):
                         import msvcrt
 
                         handle.seek(0)
-                        locking = getattr(msvcrt, "locking")
-                        unlock_mode = getattr(msvcrt, "LK_UNLCK")
+                        locking = msvcrt.locking
+                        unlock_mode = msvcrt.LK_UNLCK
                         locking(handle.fileno(), unlock_mode, 1)
                     else:
                         import fcntl

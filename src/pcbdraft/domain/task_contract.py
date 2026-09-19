@@ -68,7 +68,9 @@ def candidate_gate_status(
     return {
         "outcome": "passed" if passed else "failed",
         "passed": passed,
-        "reason": "candidate_validation_passed" if passed else "candidate_validation_failed",
+        "reason": "candidate_validation_passed"
+        if passed
+        else "candidate_validation_failed",
         "run_id": validation.get("run_id"),
         "source_design_revision": source_revision,
         "source_content_hash": source_hash,
@@ -134,9 +136,7 @@ def evaluate_task_coverage(
                     state = "unsupported"
                 else:
                     target = (
-                        identifier
-                        if kind == "check"
-                        else f"l3.constraint.{identifier}"
+                        identifier if kind == "check" else f"l3.constraint.{identifier}"
                     )
                     check = checks.get(target)
                     if check is None:
@@ -144,7 +144,11 @@ def evaluate_task_coverage(
                             state = "unsupported"
                             outcome = "blocked"
                         else:
-                            state = "stale" if isinstance(validation, Mapping) else "unavailable"
+                            state = (
+                                "stale"
+                                if isinstance(validation, Mapping)
+                                else "unavailable"
+                            )
                             outcome = "incomplete"
                     else:
                         check_state = check.get("state")
@@ -154,7 +158,10 @@ def evaluate_task_coverage(
                             for item in check.get("evidence", [])
                             if isinstance(item, str)
                         ]
-                        if check_state in {"completed", "not_applicable"} and check_outcome == "pass":
+                        if (
+                            check_state in {"completed", "not_applicable"}
+                            and check_outcome == "pass"
+                        ):
                             state = "verified"
                             outcome = "passed"
                         elif check_outcome == "fail":
@@ -192,7 +199,9 @@ def evaluate_task_coverage(
         "version": TASK_COVERAGE_VERSION,
         "outcome": overall,
         "complete": overall == "passed",
-        "reason": "all_acceptance_items_verified" if overall == "passed" else "acceptance_items_unresolved",
+        "reason": "all_acceptance_items_verified"
+        if overall == "passed"
+        else "acceptance_items_unresolved",
         "source_design_revision": design_revision,
         "source_content_hash": design_hash,
         "validation_run_id": retained.get("run_id"),

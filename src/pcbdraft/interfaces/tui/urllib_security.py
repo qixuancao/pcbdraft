@@ -177,11 +177,7 @@ def _secure_opener_from_installed_policy(original_url: str, *, ssl_context=None)
     # OpenerDirector injects addheaders after request processors, which would
     # bypass the sanitizer on redirects. Carry them on the initial request
     # instead, then leave the rebuilt opener's late-injection list empty.
-    setattr(
-        secured,
-        "_pcbdraft_initial_addheaders",
-        list(getattr(installed, "addheaders", ())),
-    )
+    secured._pcbdraft_initial_addheaders = list(getattr(installed, "addheaders", ()))
     secured.addheaders = []
     return secured
 

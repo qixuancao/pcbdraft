@@ -200,7 +200,7 @@ def convert_to_trajectory_format(
 
         if msg["role"] == "assistant":
             # Check if this message has tool calls
-            if "tool_calls" in msg and msg["tool_calls"]:
+            if msg.get("tool_calls"):
                 # Format assistant message with tool calls
                 # Add <think> tags around reasoning for trajectory storage
                 content = ""

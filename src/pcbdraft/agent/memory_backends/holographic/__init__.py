@@ -467,8 +467,7 @@ class HolographicMemoryProvider(MemoryProvider):
             if not isinstance(content, str) or _MERGED_SUMMARY_DELIMITER not in content:
                 return None
             pre = content.split(_MERGED_SUMMARY_DELIMITER, 1)[0]
-            if pre.startswith(_MERGED_PRIOR_CONTEXT_HEADER):
-                pre = pre[len(_MERGED_PRIOR_CONTEXT_HEADER) :]
+            pre = pre.removeprefix(_MERGED_PRIOR_CONTEXT_HEADER)
             pre = pre.strip()
             return pre or None
 

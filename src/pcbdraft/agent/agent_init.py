@@ -2233,8 +2233,7 @@ def init_agent(
             compression_min_tail_users = int(str(_raw_min_tail_users).strip())
         except (TypeError, ValueError):
             compression_min_tail_users = 1
-    if compression_min_tail_users < 1:
-        compression_min_tail_users = 1
+    compression_min_tail_users = max(compression_min_tail_users, 1)
     # Cap on compression retry rounds before a turn gives up with "max
     # compression attempts reached" (compression.max_attempts).  Hardcoding 3
     # strands sessions that legitimately need more rounds — e.g. a restart

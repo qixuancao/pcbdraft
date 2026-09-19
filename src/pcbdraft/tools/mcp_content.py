@@ -54,7 +54,7 @@ def _is_reserved_mcp_meta_key(key: str) -> bool:
     )
 
 
-def _strip_reserved_meta_keys(meta) -> "dict[str, Any] | None":
+def _strip_reserved_meta_keys(meta) -> dict[str, Any] | None:
     """Drop protocol-reserved keys from a tool result's ``_meta`` mapping.
 
     Returns the filtered dict, or ``None`` when there is nothing

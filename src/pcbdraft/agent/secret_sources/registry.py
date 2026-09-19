@@ -251,7 +251,7 @@ def _ensure_builtin_sources() -> None:
             from pcbdraft.agent.secret_sources.bitwarden import BitwardenSource
 
             register_source(BitwardenSource(), builtin=True)
-        except Exception:  # noqa: BLE001 — never block startup
+        except Exception:
             logger.warning(
                 "Failed to register bundled Bitwarden secret source",
                 exc_info=True,
@@ -260,7 +260,7 @@ def _ensure_builtin_sources() -> None:
             from pcbdraft.agent.secret_sources.onepassword import OnePasswordSource
 
             register_source(OnePasswordSource(), builtin=True)
-        except Exception:  # noqa: BLE001 — never block startup
+        except Exception:
             logger.warning(
                 "Failed to register bundled 1Password secret source",
                 exc_info=True,
@@ -269,7 +269,7 @@ def _ensure_builtin_sources() -> None:
             from pcbdraft.agent.secret_sources.command import CommandSource
 
             register_source(CommandSource(), builtin=True)
-        except Exception:  # noqa: BLE001 — never block startup
+        except Exception:
             logger.warning(
                 "Failed to register bundled command secret source",
                 exc_info=True,
@@ -383,7 +383,7 @@ def _ordered_enabled_sources(
         try:
             if source.is_enabled(cfg):
                 enabled.append(source)
-        except Exception:  # noqa: BLE001
+        except Exception:
             logger.warning(
                 "Secret source '%s' is_enabled() raised; skipping", name, exc_info=True
             )

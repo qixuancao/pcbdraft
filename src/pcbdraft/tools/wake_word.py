@@ -517,7 +517,6 @@ class _Engine:
 
     def reset(self) -> None:
         """Clear any internal audio/feature buffer (called on every (re)start)."""
-        pass
 
     def close(self) -> None:
         pass

@@ -72,8 +72,7 @@ def _scan_context_content(content: str, filename: str) -> str:
     # artifact, not a prompt injection. Strip a leading U+FEFF silently so a
     # context file (SOUL.md, AGENTS.md, ...) is not blocked wholesale; BOMs
     # elsewhere in the content remain subject to the threat scan below.
-    if content.startswith("\ufeff"):
-        content = content[1:]
+    content = content.removeprefix("\ufeff")
 
     findings = _scan_for_threats(content, scope="context")
     if findings:

@@ -164,7 +164,7 @@ def _estimate_attempt_cost(agent: Any, response: Any) -> Decimal | None:
             base_url=getattr(agent, "base_url", None),
             api_key=getattr(agent, "api_key", None),
         )
-    except Exception:  # noqa: BLE001 — pricing must never break the loop
+    except Exception:
         logger.debug("empty-guard: cost estimation failed", exc_info=True)
         return None
     return getattr(result, "amount_usd", None)
@@ -183,7 +183,7 @@ def _zero_output(agent: Any, response: Any) -> tuple:
             provider=getattr(agent, "provider", None),
             api_mode=getattr(agent, "api_mode", None),
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         logger.debug("empty-guard: usage normalization failed", exc_info=True)
         return (False, False)
     output = getattr(canonical, "output_tokens", None)
@@ -212,7 +212,7 @@ def record_empty_attempt(agent: Any, *, finish_reason: str, response: Any) -> No
     attempts = _attempts(agent)
     if getattr(agent, "_empty_content_retries", 0) == 0:
         attempts.clear()
-        setattr(agent, _STREAK_COST_ATTR, Decimal("0"))
+        setattr(agent, _STREAK_COST_ATTR, Decimal(0))
 
     usage_present, zero_output = _zero_output(agent, response)
     attempts.append(
@@ -227,7 +227,7 @@ def record_empty_attempt(agent: Any, *, finish_reason: str, response: Any) -> No
 
     cost = _estimate_attempt_cost(agent, response)
     if cost is not None and cost > 0:
-        prior = getattr(agent, _STREAK_COST_ATTR, Decimal("0")) or Decimal("0")
+        prior = getattr(agent, _STREAK_COST_ATTR, Decimal(0)) or Decimal(0)
         setattr(agent, _STREAK_COST_ATTR, prior + cost)
 
 

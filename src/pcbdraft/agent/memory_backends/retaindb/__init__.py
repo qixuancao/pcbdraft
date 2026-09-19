@@ -766,8 +766,8 @@ class RetainDBMemoryProvider(MemoryProvider):
     def save_config(self, values, runtime_home):
         """Persist effective project/agent IDs before changing provider settings."""
         from pcbdraft.agent.legacy_compat import effective_memory_namespaces
-        from pcbdraft.model.configuration import read_user_config_raw
         from pcbdraft.core.runtime_utils import atomic_yaml_write
+        from pcbdraft.model.configuration import read_user_config_raw
 
         path = Path(runtime_home) / "config.yaml"
         config = read_user_config_raw(path) if path.exists() else {}

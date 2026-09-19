@@ -166,14 +166,10 @@ class GuiSessionManager:
         state = view.get("state") if isinstance(view, dict) else None
         raw_product = view.get("product_status") if isinstance(view, dict) else None
         candidate_gate = (
-            raw_product.get("candidate_gate")
-            if isinstance(raw_product, dict)
-            else None
+            raw_product.get("candidate_gate") if isinstance(raw_product, dict) else None
         )
         task_coverage = (
-            raw_product.get("task_coverage")
-            if isinstance(raw_product, dict)
-            else None
+            raw_product.get("task_coverage") if isinstance(raw_product, dict) else None
         )
         latest_turn = turns[0] if turns else None
         conversation_status = (

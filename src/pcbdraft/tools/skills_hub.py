@@ -1391,11 +1391,7 @@ class WellKnownSkillSource(SkillSource):
         return query.rstrip("/") + f"{self.BASE_PATH}/index.json"
 
     def _parse_identifier(self, identifier: str) -> dict | None:
-        raw = (
-            identifier[len("well-known:") :]
-            if identifier.startswith("well-known:")
-            else identifier
-        )
+        raw = identifier.removeprefix("well-known:")
         if not raw.startswith(("http://", "https://")):
             return None
 
@@ -2179,8 +2175,7 @@ class SkillsShSource(SkillSource):
     @staticmethod
     def _extract_repo_slug(repo_value: str) -> str | None:
         repo_value = repo_value.strip()
-        if repo_value.startswith("https://github.com/"):
-            repo_value = repo_value[len("https://github.com/") :]
+        repo_value = repo_value.removeprefix("https://github.com/")
         repo_value = repo_value.strip("/")
         parts = repo_value.split("/")
         if len(parts) >= 2:
@@ -2490,7 +2485,7 @@ class ClawHubSource(SkillSource):
             # to `limit` so a browse command renders its first page without
             # walking the entire 50k+ catalog (max_items=0 → unbounded, used
             # only by the offline index builder via search("", limit=0)).
-            catalog = self._load_catalog_index(max_items=limit if limit > 0 else 0)
+            catalog = self._load_catalog_index(max_items=max(0, limit))
             if catalog:
                 return (
                     self._dedupe_results(catalog)[:limit]

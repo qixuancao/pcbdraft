@@ -268,8 +268,7 @@ def _parse_provider_sse_events(text: str) -> list[dict]:
             current["fields"][field.strip().lower()] = ""
             continue
         field = field.strip().lower()
-        if value.startswith(" "):
-            value = value[1:]
+        value = value.removeprefix(" ")
         if field == "event":
             current["event"] = value.strip()
         elif field == "data":
@@ -3344,7 +3343,7 @@ def handle_max_iterations(agent, messages: list, api_call_count: int) -> str:
             e, messages, summary_message, summary_call_outcome
         )
         logger.warning("Failed to get summary response: %s", e)
-        final_response = f"I reached the maximum iterations ({agent.max_iterations}) but couldn't summarize. Error: {str(e)}"
+        final_response = f"I reached the maximum iterations ({agent.max_iterations}) but couldn't summarize. Error: {e!s}"
     finally:
         from pcbdraft.agent import relay_llm
 

@@ -1415,7 +1415,6 @@ class BaseEnvironment(ABC):
         and Local don't need file sync — the host filesystem is directly
         visible inside the container/process.
         """
-        pass
 
     # ------------------------------------------------------------------
     # Unified execute()

@@ -22,9 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 
-import pcbdraft.agent.pet.generate.atlas as atlas
-import pcbdraft.agent.pet.generate.imagegen as imagegen
-import pcbdraft.agent.pet.generate.prompts as prompts
+from pcbdraft.agent.pet.generate import atlas, imagegen, prompts
 from pcbdraft.agent.pet.generate.imagegen import GenerationError, SpriteProvider
 
 logger = logging.getLogger(__name__)
