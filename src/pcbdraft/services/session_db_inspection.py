@@ -5,6 +5,7 @@ projection, and the archived-message existence probe. The host supplies
 connection access, token-count flushing, and a late-bound LIKE escaping hook.
 This module never imports :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

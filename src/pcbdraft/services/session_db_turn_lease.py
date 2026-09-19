@@ -5,6 +5,7 @@ acquire, wait, refresh, and release behavior. The SessionDB host retains
 connection, schema, and transaction authority and supplies late-bound runtime
 hooks. This module never imports :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # User callbacks are explicitly best-effort and must not break lease polling.
 # ruff: noqa: BLE001

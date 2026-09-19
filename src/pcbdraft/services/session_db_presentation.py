@@ -6,6 +6,7 @@ no connection state. The host supplies connection/write helpers, row shaping,
 and compatibility hooks for shared SQL and sanitization helpers. This module
 must never import ``session_db`` so the store remains the composition root.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

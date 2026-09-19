@@ -7,6 +7,7 @@ own; methods access the host's attributes (``self._conn``, ``self.db_path``,
 ``SessionDB.__init__``. It must never import session_db (cycle) — shared
 module-level constants live in session_db_common.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 import json
 import logging
@@ -1885,7 +1886,7 @@ class SessionSearchMixin:
         # (indexed substring matching with ranking and snippets).  For shorter
         # CJK queries (1-2 chars), trigram can't match (it needs ≥9 UTF-8
         # bytes = 3 CJK chars), so we fall back to LIKE.
-        matches: list[dict[str, Any]] = []
+        matches = []
         is_cjk = self._contains_cjk(query)
         if is_cjk:
             raw_query = query.strip('"').strip()
@@ -1907,7 +1908,7 @@ class SessionSearchMixin:
             # message bytes and machine noise — see FTS_TRIGRAM_SQL). A CJK
             # query explicitly filtering on role='tool' must therefore use
             # the LIKE fallback, which scans the base table directly.
-            _wants_tool_rows = bool(role_filter) and "tool" in role_filter
+            _wants_tool_rows = bool(role_filter) and "tool" in (role_filter or [])
 
             # ── CJK-bigram route (messages_fts_cjk, cjk_unicode61) ──────
             # When the bigram index is available it serves EVERY CJK query
@@ -2210,7 +2211,7 @@ class SessionSearchMixin:
         if (
             not matches
             and not is_cjk
-            and not (bool(role_filter) and "tool" in role_filter)
+            and not (bool(role_filter) and "tool" in (role_filter or []))
         ):
             _fb_query = query.strip('"').strip()
             if self._fts_cjk_available:

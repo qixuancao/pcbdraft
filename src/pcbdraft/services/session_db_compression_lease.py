@@ -5,6 +5,7 @@ compaction publication. The host supplies write-transaction execution and the
 shared process-liveness predicate also used by session-turn leases. This module
 never imports :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

@@ -6,6 +6,7 @@ transaction authority and supplies late-bound compatibility hooks for time,
 logging, and SQLite runtime types. This module never imports
 :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

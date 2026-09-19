@@ -6,6 +6,7 @@ normalization, and dynamic compatibility hooks for shared SQL/time helpers.
 This module deliberately does not import ``session_db`` so the composition
 root remains acyclic.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # The two projected-session queries interpolate SQL fragments supplied by the
 # SessionDB composition root; neither fragment contains caller-controlled text.

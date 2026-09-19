@@ -6,6 +6,7 @@ no connection state. The host supplies the writer connection, transaction
 helper, transcript lease lookup, and write patience. This module must never
 import ``session_db`` so the store remains the composition root.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

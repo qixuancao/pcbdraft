@@ -6,6 +6,7 @@ metadata storage, and dynamic compatibility hooks for time and logging. This
 module deliberately does not import ``session_db`` so the composition root
 remains acyclic.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # Maintenance is an explicit best-effort boundary: size probes, FTS merging,
 # checkpoints, pruning, and archiving must not block startup or CLI recovery.

@@ -6,6 +6,7 @@ no connection state. The host supplies ``_conn``, ``_execute_write``, token
 queue flushing, prompt storage/cleanup, and session lookup. This module must
 never import ``session_db`` so the store remains the composition root.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

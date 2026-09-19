@@ -5,6 +5,7 @@ walks durable parent/child chains. The host supplies session lookup, SQLite
 access, and a late-bound JSON decoder. This module never imports
 :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

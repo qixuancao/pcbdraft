@@ -5,6 +5,7 @@ state. The host supplies SQLite access, presentation/deletion methods, and
 dynamic compatibility hooks for shared time, SQL, filtering, and logging
 helpers. This module deliberately does not import ``session_db``.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

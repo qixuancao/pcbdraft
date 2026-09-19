@@ -7,6 +7,7 @@ own; methods access the host's attributes (``self._conn``, ``self.db_path``,
 ``SessionDB.__init__``. It must never import session_db (cycle) — shared
 module-level constants live in session_db_common.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 import json
 import logging

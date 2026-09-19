@@ -5,6 +5,7 @@ state. The host supplies transactional writes, system-prompt cleanup, and
 dynamic delegate-cascade hooks. This module deliberately does not import
 ``session_db`` so the composition root remains acyclic.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

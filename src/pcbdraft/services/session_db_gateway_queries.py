@@ -7,6 +7,7 @@ The list projection retains its historical host accounting flush before the
 read, but never mutates routing identity. This module never imports
 :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # Query strings interpolate only fixed clauses and trusted internal SQL helpers.
 # ruff: noqa: S608

@@ -5,6 +5,7 @@ state. The host supplies SQLite access, transactional writes, row shaping, and
 a dynamic compatibility hook for logging. This module deliberately does not
 import ``session_db`` so the composition root remains acyclic.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # Handoff reads are best-effort polling paths and preserve their historical
 # fail-closed behavior for any database/runtime exception.

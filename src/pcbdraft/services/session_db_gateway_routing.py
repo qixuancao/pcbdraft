@@ -6,6 +6,7 @@ retains connection, locking, transaction, schema, and session-deletion
 authority and supplies late-bound runtime hooks. This module never imports
 :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # Peer lineage SQL interpolates only fixed internal clauses. Routing-entry
 # decoding is best-effort while pruning malformed legacy index rows.

@@ -9,6 +9,7 @@ This module never imports :mod:`pcbdraft.services.session_db`. The legacy
 module installs late-bound hooks so established monkeypatch paths continue to
 control connection behavior after the extraction.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

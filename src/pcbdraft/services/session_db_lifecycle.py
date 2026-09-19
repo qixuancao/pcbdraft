@@ -5,6 +5,7 @@ replacement, and the public compaction commit gateways. Connection, search,
 listing, metadata, token accounting, and lease ownership remain outside this
 mixin. This module never imports :mod:`pcbdraft.services.session_db`.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 # Lifecycle recovery and plugin-era compatibility keep their historical
 # best-effort logging behavior.

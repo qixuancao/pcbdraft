@@ -8,6 +8,7 @@ This module never imports :mod:`pcbdraft.services.session_db`. The legacy
 module supplies late-bound hooks so its established constants, helper
 functions, logger, and monkeypatch paths remain authoritative.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 
