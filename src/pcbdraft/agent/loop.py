@@ -111,6 +111,7 @@ def _session_source_for_agent(platform: str | None) -> str:
 from pcbdraft.agent.interrupt_compat import request_hard_interrupt
 from pcbdraft.agent.iteration_budget import IterationBudget
 from pcbdraft.agent.process_bootstrap import (
+    OpenAI,  # noqa: F401  re-export for `_ra().OpenAI` / patch("run_agent.OpenAI")
     _get_proxy_for_base_url,
 )
 from pcbdraft.model.env_loader import load_pcbdraft_dotenv
@@ -133,7 +134,10 @@ else:
 
 # Import our tool system
 from pcbdraft.tools.dispatch import (
+    check_toolset_requirements,  # noqa: F401  accessed via `_ra()` in agent_init
+    get_tool_definitions,  # noqa: F401  accessed via `_ra()` in agent_init/system_prompt
     get_toolset_for_tool,
+    handle_function_call,  # noqa: F401  accessed via `_ra()` in executor helpers
 )
 from pcbdraft.tools.interrupt import set_interrupt as _set_interrupt
 from pcbdraft.tools.terminal_tool import cleanup_vm, get_active_env
@@ -195,6 +199,17 @@ from pcbdraft.agent.message_sanitization import (
 )
 from pcbdraft.agent.message_sanitization import (
     uniquify_tool_call_ids as _sanitize_uniquify_tool_call_ids,
+)
+from pcbdraft.agent.message_sanitization import (
+    _sanitize_surrogates,  # noqa: F401  imported from loop by interfaces/tui
+)
+from pcbdraft.agent.prompt_builder import (
+    DEFAULT_AGENT_IDENTITY,  # noqa: F401  imported from loop by model/transports
+    build_context_files_prompt,  # noqa: F401  accessed via `_ra()` in system_prompt
+    build_environment_hints,  # noqa: F401  accessed via `_ra()` in system_prompt
+    build_nous_subscription_prompt,  # noqa: F401  accessed via `_ra()` in system_prompt
+    build_skills_system_prompt,  # noqa: F401  accessed via `_ra()` in system_prompt
+    load_soul_md,  # noqa: F401  accessed via `_ra()` in system_prompt
 )
 from pcbdraft.agent.process_bootstrap import _get_proxy_from_env  # noqa: F401
 from pcbdraft.agent.provider_capabilities import (
