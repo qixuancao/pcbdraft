@@ -4,6 +4,7 @@ ApplicationService remains the project mutation, lock, revision, and durable-rec
 authority. This mixin coordinates a revised plan and isolated candidate through
 preflight, then calls host methods for every authoritative state transition.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

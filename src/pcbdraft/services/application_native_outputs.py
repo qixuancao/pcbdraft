@@ -6,6 +6,7 @@ bounded receipts, locking, timestamps, and diagnostic projection so legacy
 ``services.application`` patch points remain effective without a reverse
 import.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

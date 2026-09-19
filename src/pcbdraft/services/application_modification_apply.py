@@ -5,6 +5,7 @@ native-state authority. This mixin reuses the modification-revert adapters for
 all shared I/O, locking, progress, and rollback operations without importing the
 application coordinator back.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

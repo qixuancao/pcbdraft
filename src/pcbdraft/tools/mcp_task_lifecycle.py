@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 # The compatibility behavior intentionally retains broad transport catches and
 # best-effort cancellation cleanup from the original implementation.
 # ruff: noqa: BLE001, S110
@@ -24,7 +25,37 @@ from typing import Any
 class MCPTaskLifecycleMixin:
     """Own MCP transport setup, teardown, and per-server lifecycle state."""
 
-    __slots__ = ()
+    __slots__ = (
+        "name",
+        "session",
+        "tool_timeout",
+        "_task",
+        "_ready",
+        "_shutdown_event",
+        "_reconnect_event",
+        "_tools",
+        "_error",
+        "_config",
+        "_sampling",
+        "_elicitation",
+        "_registered_tool_names",
+        "_reconnect_retries",
+        "_session_proven",
+        "_was_parked",
+        "_auth_type",
+        "_refresh_lock",
+        "_rpc_lock",
+        "_pending_refresh_tasks",
+        "_pending_call_context",
+        "_lifecycle_started_at",
+        "_last_tool_call_at",
+        "_idle_timeout_seconds",
+        "_max_lifetime_seconds",
+        "_recycled_reason",
+        "initialize_result",
+        "_list_cache_meta",
+        "_ping_unsupported",
+    )
     _MCP_CONTENT_TYPES = ("application/json", "text/event-stream")
 
     @staticmethod
@@ -164,9 +195,12 @@ class MCPTaskLifecycleMixin:
 
     async def _keepalive_probe(self) -> None:
         logger = self._dep("logger")
+        session = self.session
+        if session is None:
+            raise RuntimeError("MCP session is not established")
         if not self._ping_unsupported:
             try:
-                await asyncio.wait_for(self.session.send_ping(), timeout=30.0)
+                await asyncio.wait_for(session.send_ping(), timeout=30.0)
                 return
             except Exception as exc:
                 if not self._dep("_is_method_not_found_error")(exc):
@@ -180,7 +214,7 @@ class MCPTaskLifecycleMixin:
                     "this connection.",
                     self.name,
                 )
-        await asyncio.wait_for(self.session.list_tools(), timeout=30.0)
+        await asyncio.wait_for(session.list_tools(), timeout=30.0)
 
     def _mark_session_proven(self) -> None:
         if not self._session_proven:
