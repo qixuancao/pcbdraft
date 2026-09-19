@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Sanitize and emit API hook payloads and delegate debug request dumps."""
 
 # Hook delivery and SDK-object normalization are deliberately best-effort.
@@ -137,7 +138,7 @@ class ApiHookObservabilityMixin:
             return out
         if isinstance(value, (list, tuple, set)):
             seq = list(value)
-            out = [
+            out_items = [
                 cls._hook_jsonable(
                     item,
                     depth=depth + 1,
@@ -148,8 +149,8 @@ class ApiHookObservabilityMixin:
                 for item in seq[:max_sequence]
             ]
             if len(seq) > max_sequence:
-                out.append({"_truncated_items": len(seq) - max_sequence})
-            return out
+                out_items.append({"_truncated_items": len(seq) - max_sequence})
+            return out_items
         try:
             if hasattr(value, "model_dump"):
                 try:
@@ -174,7 +175,7 @@ class ApiHookObservabilityMixin:
         try:
             from dataclasses import asdict, is_dataclass
 
-            if is_dataclass(value):
+            if is_dataclass(value) and not isinstance(value, type):
                 return cls._hook_jsonable(
                     asdict(value),
                     depth=depth + 1,

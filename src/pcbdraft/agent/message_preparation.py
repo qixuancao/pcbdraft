@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Prepare provider-safe messages and multimodal content for the agent."""
 
 # These best-effort transforms retain broad guards from the original agent loop.

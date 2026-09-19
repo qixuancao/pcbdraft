@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Coordinate AIAgent interruption, steering, and active-turn redirects."""
 
 # Turn control is best-effort across optional clients, tools, and child agents.
@@ -116,7 +117,7 @@ class TurnControlMixin:
                 self._interrupt_message = message
                 if hard_cancel:
                     _admit_hard_cancel()
-                self._pending_redirect = None
+                self._pending_redirect: str | None = None
         else:
             self._interrupt_requested = True
             self._interrupt_message = message
@@ -265,7 +266,7 @@ class TurnControlMixin:
         _steer_lock = getattr(self, "_pending_steer_lock", None)
         if _steer_lock is not None:
             with _steer_lock:
-                self._pending_steer = None
+                self._pending_steer: str | None = None
         return True
 
     def steer(self, text: str) -> bool:

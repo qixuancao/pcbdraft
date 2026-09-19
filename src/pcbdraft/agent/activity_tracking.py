@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined,has-type"
 """Track agent activity, provider limits, credits, and cache observations."""
 
 # Observation and provider-metadata handling must never break the agent loop.

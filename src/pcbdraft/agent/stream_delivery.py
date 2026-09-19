@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Streaming output delivery behavior shared by the core agent loop."""
 
 # Stream callbacks and plugin hooks are explicitly best-effort: a display

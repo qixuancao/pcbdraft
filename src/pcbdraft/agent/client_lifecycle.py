@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Release AIAgent client and session-owned resources."""
 
 # Teardown is deliberately best-effort so one broken resource cannot leak others.
@@ -155,7 +156,7 @@ class ClientLifecycleMixin:
             pass
 
         try:
-            self._session_messages = []
+            self._session_messages: list = []
         except Exception:
             pass
 

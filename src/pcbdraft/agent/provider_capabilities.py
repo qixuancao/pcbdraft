@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Resolve provider endpoints, timeouts, and API capability policy."""
 
 from __future__ import annotations
@@ -292,6 +293,8 @@ class ProviderCapabilitiesMixin:
             return None
         for key in ("max_output_tokens", "max_completion_tokens", "max_tokens"):
             raw = api_kwargs.get(key)
+            if raw is None:
+                continue
             try:
                 value = int(raw)
             except (TypeError, ValueError):

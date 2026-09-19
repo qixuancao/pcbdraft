@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined,has-type"
 """Persist AIAgent session messages and repair durable transcript state."""
 
 # Persistence remains best-effort across provider and SQLite compatibility APIs.
@@ -352,11 +353,10 @@ class SessionPersistenceMixin:
                 flushed_session_id != current_session_id
                 or self._last_flushed_db_idx == 0
             ):
-                seed_ids = set()
+                seed_ids: set = set()
             else:
-                seed_ids = getattr(self, "_flushed_db_message_ids", None)
-                if not isinstance(seed_ids, set):
-                    seed_ids = set()
+                raw_seed = getattr(self, "_flushed_db_message_ids", None)
+                seed_ids = raw_seed if isinstance(raw_seed, set) else set()
             self._flushed_db_message_session_id = current_session_id
             history_ids = {
                 id(item)
@@ -580,11 +580,11 @@ class SessionPersistenceMixin:
             # The intrinsic markers are now the sole source of truth. Reset the
             # one-shot seed so no id() outlives this flush to alias a message
             # allocated next turn at a recycled address.
-            self._flushed_db_message_ids = set()
+            self._flushed_db_message_ids: set = set()
             self._last_flushed_db_idx = len(messages)
             # Snapshot for the bounded scan above — only on full success, so
             # a partially-processed list can never be treated as settled.
-            self._db_flush_scan_prefix = messages[:]
+            self._db_flush_scan_prefix: list | None = messages[:]
             return True
         except Exception as e:
             # Force a full re-scan on the next flush: an exception mid-loop

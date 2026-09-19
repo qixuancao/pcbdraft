@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Terminal status output, buffering, and stream diagnostics for agents."""
 
 # Status callbacks and diagnostic collection are deliberately best-effort.

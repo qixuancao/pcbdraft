@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """Clean assistant responses and classify incomplete reasoning output."""
 
 from __future__ import annotations

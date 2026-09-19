@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined"
 """External-memory lifecycle helpers for AIAgent sessions and turns."""
 
 # External memory providers are optional and deliberately best-effort.
