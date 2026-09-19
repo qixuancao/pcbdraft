@@ -43,11 +43,13 @@ CI 门禁（`ci.yml`：ruff/format/mypy/coverage/compileall + kicad-acceptance�
   name" 并中止 | `.venv/bin/mypy` 只输出该错误，退出码 1 | 重命名目录为
   下划线；加载器 `_import_plugin_dir` 已用 `safe_name`（`-`→`_`）且经
   `spec_from_file_location` 直接吃路径，行为不变 |
-| **Ruff 6335 条**（较 09-10 的 8078 继续下降；基线 10565） | `.venv/bin/ruff
-  check src tests` 退出码 1；198 项可 `--fix` | 分模块小批次清理，重点
+| **Ruff 6335 条**（较 09-10 的 8078 继续下降；基线 10565）。本审计后经
+  `--fix`（198 项）与 ISC004 修复（65 项）降至 **6071 条** | `.venv/bin/ruff
+  check src tests` 退出码 1；剩余均为人工项 | 分模块小批次清理，重点
   BLE001/S110/S603/S607/S608 |
-| **format 9 个文件**待格式化（09-10 记录为 6 个，集合有变化） | `.venv/bin/ruff
-  format --check src tests` 退出码 1，1119 个已格式化 | 机械格式化 |
+| **format 9 个文件**待格式化（09-10 记录为 6 个，集合有变化）。本审计后
+  已全部格式化（1128 文件全绿） | `.venv/bin/ruff
+  format --check src tests` 退出码 1，1119 个已格式化 | 机械格式化（已完成） |
 
 ## 其他发现
 
@@ -98,9 +100,9 @@ CI 门禁（`ci.yml`：ruff/format/mypy/coverage/compileall + kicad-acceptance�
 
 1. **P0（合并回 main 的硬前置，成本低）**：修复 mypy 目录名阻断（已修，见后
    续检查点）；收口 `tui/cron.py` 与 `cron_health.py` 的硬导入（已修，全包
-   import walk 0 失败）；format 9 文件；Ruff 按模块分批清零。**注意：mypy 目录
-   名修复后暴露全库 3169 条类型错误（此前被崩溃掩盖），与 Ruff 同级的大额
-   债务，需按模块分批推进**。
+   import walk 0 失败）；format 9 文件（已修，全绿）；Ruff 从 6335 降至
+   6071，剩余人工项按模块分批清零。**注意：mypy 目录名修复后暴露全库 3169
+   条类型错误（此前被崩溃掩盖），与 Ruff 同级的大额债务，需按模块分批推进**。
 2. **P1**：复现定位 I2C 600 秒超时；统一版本声明与 CHANGELOG。
 3. **P2**：全量 unittest/coverage 跑通 → CI 全绿 → `scripts/release-check.sh`
    通过 → 合并回 main 并打 tag。
