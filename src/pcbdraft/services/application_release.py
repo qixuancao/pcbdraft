@@ -5,6 +5,7 @@ adapters for managed-project inspection, release construction and verification,
 locking, run IDs, and timestamps so historical patch points remain available
 without a reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

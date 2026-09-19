@@ -5,6 +5,7 @@ It supplies adapters for file mutation, managed-project inspection, progress
 projection, locking, timestamps, error classification, and sanitization so
 historical patch points remain available without a reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

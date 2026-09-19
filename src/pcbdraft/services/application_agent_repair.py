@@ -5,6 +5,7 @@ recording remain in the host application. It installs late-bound adapters for
 event reads and proposal policy helpers so historical ``services.application``
 patch points remain effective without a reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

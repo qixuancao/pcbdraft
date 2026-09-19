@@ -5,6 +5,7 @@ adapters for receipt identity, locking, terminal classification, timestamps,
 and immutable storage so historical patch points remain available without a
 reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

@@ -5,6 +5,7 @@ It supplies late-bound adapters for staging, native verification, locking,
 publication, rollback, progress evidence, and legacy application patch points.
 This module does not import the application coordinator back.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

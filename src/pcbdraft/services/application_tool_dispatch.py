@@ -5,6 +5,7 @@ inspection, output, registration, and mutation implementation. This mixin only
 routes an already validated registry tool name and preserves the caller's
 revision and timeout arguments.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

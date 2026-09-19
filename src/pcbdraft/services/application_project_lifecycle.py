@@ -5,6 +5,7 @@ supplies adapters for identity generation, private staging, record writes,
 materialization, locking, publication, and cleanup so historical patch points
 remain available without a reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

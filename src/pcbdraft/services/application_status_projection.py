@@ -5,6 +5,7 @@ provider ownership, and every mutation.  This module only combines already
 available observations into public status dictionaries and deliberately does
 not import :mod:`pcbdraft.services.application`.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

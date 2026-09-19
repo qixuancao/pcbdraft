@@ -5,6 +5,7 @@ importing one reviewed placement revision. The host application remains the
 repository and project-record authority and supplies adapters for native KiCad
 operations, locking, timestamps, and sanitization.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

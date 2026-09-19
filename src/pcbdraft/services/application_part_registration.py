@@ -5,6 +5,7 @@ authority. This mixin sequences one inspected part contract through isolated
 native materialization and atomic publication using late-bound host adapters,
 without importing the application coordinator back.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

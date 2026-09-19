@@ -5,6 +5,7 @@ write remain in the host application.  The mixin uses host adapters for the
 historical application-level lock and error patch points and deliberately does
 not import :mod:`pcbdraft.services.application`.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

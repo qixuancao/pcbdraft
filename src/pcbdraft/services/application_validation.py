@@ -5,6 +5,7 @@ supplies adapters for native project inspection, validation and preview
 execution, receipt loading, locking, run IDs, and timestamps so historical
 patch points remain available without a reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

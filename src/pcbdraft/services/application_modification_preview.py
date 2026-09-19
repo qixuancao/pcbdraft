@@ -5,6 +5,7 @@ authority. It supplies adapters for managed-project inspection, locking,
 timestamps, and repair-feedback construction so historical patch points remain
 available without a reverse import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

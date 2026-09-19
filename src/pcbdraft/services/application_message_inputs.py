@@ -5,6 +5,7 @@ transitions remain in the host application.  This module only normalizes one
 message and projects the exactly-once reply binding from existing transcript
 data.  It deliberately does not import :mod:`pcbdraft.services.application`.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 

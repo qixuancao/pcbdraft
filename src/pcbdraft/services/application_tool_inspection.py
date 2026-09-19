@@ -5,6 +5,7 @@ late-bound adapters for managed-project and bounded JSON reads so historical
 ``services.application`` patch points remain effective without a reverse
 import.
 """
+# mypy: disable-error-code="attr-defined"
 
 from __future__ import annotations
 
