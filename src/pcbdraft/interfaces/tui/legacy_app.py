@@ -17647,8 +17647,8 @@ class TerminalApp(CLIAgentSetupMixin, CLICommandsMixin, CLIBillingMixin):
                     _prov_label = _bb.get("provider_label") or "your provider"
                     if _bb.get("is_nous"):
                         _cta_lines = [
-                            "Run [bold]/topup[/] to add credits, or "
-                            "[bold]/subscription[/] to change plan.",
+                            ("Run [bold]/topup[/] to add credits, or "
+                            "[bold]/subscription[/] to change plan."),
                         ]
                     else:
                         _url = _bb.get("billing_url")

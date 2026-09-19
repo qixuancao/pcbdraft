@@ -485,8 +485,8 @@ def map_lost_and_found_rows(
                                     if _looks_like_source(cells[1])
                                     else "recovered",
                                     _heuristic_started_at(cells),
-                                    "[best-effort recovered] legacy session "
-                                    "row (layout unknown)",
+                                    ("[best-effort recovered] legacy session "
+                                    "row (layout unknown)"),
                                 ),
                             ).rowcount
                             == 1

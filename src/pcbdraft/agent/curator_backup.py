@@ -633,8 +633,8 @@ def rollback(backup_id: str | None = None) -> tuple[bool, str, Path | None]:
     if safety_snapshot is None:
         return (
             False,
-            "pre-rollback safety snapshot failed; backups may be disabled "
-            "or unavailable, and current skills were not changed",
+            ("pre-rollback safety snapshot failed; backups may be disabled "
+            "or unavailable, and current skills were not changed"),
             None,
         )
 
@@ -701,8 +701,8 @@ def rollback(backup_id: str | None = None) -> tuple[bool, str, Path | None]:
             # staging dir so the entries can be recovered by hand.
             return (
                 False,
-                f"snapshot extract failed: {e} - could not restore "
-                f"{', '.join(sorted(unrestored))}; staged copies kept at {staged}",
+                (f"snapshot extract failed: {e} - could not restore "
+                f"{', '.join(sorted(unrestored))}; staged copies kept at {staged}"),
                 None,
             )
         try:

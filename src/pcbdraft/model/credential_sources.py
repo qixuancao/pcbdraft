@@ -188,12 +188,12 @@ def _remove_env_source(provider: str, removed) -> RemovalResult:
     if shell_exported:
         result.hints.extend(
             [
-                f"Note: {env_var} is still set in your shell environment "
-                f"(not in $PCBDRAFT_RUNTIME_HOME/.env).",
-                "  Unset it there (shell profile, systemd EnvironmentFile, "
-                "launchd plist, etc.) or it will keep being visible to PCBDraft.",
-                f"  The pool entry is now suppressed — PCBDraft will ignore "
-                f"{env_var} until you reconnect {provider} with `pcbdraft connect`.",
+                (f"Note: {env_var} is still set in your shell environment "
+                f"(not in $PCBDRAFT_RUNTIME_HOME/.env)."),
+                ("  Unset it there (shell profile, systemd EnvironmentFile, "
+                "launchd plist, etc.) or it will keep being visible to PCBDraft."),
+                (f"  The pool entry is now suppressed — PCBDraft will ignore "
+                f"{env_var} until you reconnect {provider} with `pcbdraft connect`."),
             ]
         )
     else:
@@ -389,8 +389,8 @@ def _remove_custom_config(provider: str, removed) -> RemovalResult:
     return RemovalResult(
         hints=[
             f"Suppressed {source_label} — it will not be re-seeded.",
-            "Note: The underlying value in config.yaml is unchanged.  Edit it "
-            "directly if you want to remove the credential from disk.",
+            ("Note: The underlying value in config.yaml is unchanged.  Edit it "
+            "directly if you want to remove the credential from disk."),
         ]
     )
 

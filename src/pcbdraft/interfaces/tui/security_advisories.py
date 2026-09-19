@@ -112,12 +112,12 @@ ADVISORIES: tuple[Advisory, ...] = (
         compromised=(("mistralai", frozenset({"2.4.6"})),),
         remediation=(
             "Run: pip uninstall -y mistralai  (or: uv pip uninstall mistralai)",
-            "Rotate API keys in ~/.pcbdraft/.env (OpenRouter, Anthropic, OpenAI, "
-            "Nous, GitHub, AWS, Google, Mistral, etc.).",
-            "Audit ~/.npmrc, ~/.pypirc, ~/.aws/credentials, ~/.config/gh/hosts.yml, "
-            "and any other credential files for tokens that may have been read.",
-            "Check GitHub for unexpected new SSH keys, deploy keys, or webhook "
-            "additions on repos you have admin on.",
+            ("Rotate API keys in ~/.pcbdraft/.env (OpenRouter, Anthropic, OpenAI, "
+            "Nous, GitHub, AWS, Google, Mistral, etc.)."),
+            ("Audit ~/.npmrc, ~/.pypirc, ~/.aws/credentials, ~/.config/gh/hosts.yml, "
+            "and any other credential files for tokens that may have been read."),
+            ("Check GitHub for unexpected new SSH keys, deploy keys, or webhook "
+            "additions on repos you have admin on."),
             "After cleanup: pcbdraft doctor to dismiss this warning.",
         ),
         published="2026-05-12",

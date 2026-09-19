@@ -572,19 +572,19 @@ def _billing_or_entitlement_message(
                     f"exhausted for {model_label} (included quota + extra-usage credits) — "
                     "but this specific error is not proof of a billing problem."
                 ),
-                "If https://claude.ai/settings/usage still shows quota remaining, this is "
+                ("If https://claude.ai/settings/usage still shows quota remaining, this is "
                 "probably NOT a billing problem: on a Claude subscription (OAuth) token "
                 "Anthropic returns this same message when its content filter rejects part "
-                "of the request — typically a phrase in the system prompt.",
-                "If usage really is exhausted: wait for the billing cycle to reset, or add "
-                "extra usage at https://claude.ai/settings/usage",
-                "You can also switch to an Anthropic API key or another provider with "
-                "/model <model> --provider <provider>.",
+                "of the request — typically a phrase in the system prompt."),
+                ("If usage really is exhausted: wait for the billing cycle to reset, or add "
+                "extra usage at https://claude.ai/settings/usage"),
+                ("You can also switch to an Anthropic API key or another provider with "
+                "/model <model> --provider <provider>."),
                 # The exhaustion latch replays the stored error without issuing
                 # a request, so a real fix looks like it didn't work.
-                "Retry with a fresh credential state using `pcbdraft connect`. Until "
+                ("Retry with a fresh credential state using `pcbdraft connect`. Until "
                 "that cooldown clears, this error can be replayed from cache without "
-                "contacting the API.",
+                "contacting the API."),
             ]
         else:
             lines = [
@@ -592,10 +592,10 @@ def _billing_or_entitlement_message(
                     f"{provider_label} reported that your Claude subscription usage is "
                     f"exhausted for {model_label} (included quota + extra-usage credits)."
                 ),
-                "Options: wait for the billing cycle to reset, or add extra usage at "
-                "https://claude.ai/settings/usage",
-                "You can also switch to an Anthropic API key or another provider with "
-                "/model <model> --provider <provider>.",
+                ("Options: wait for the billing cycle to reset, or add extra usage at "
+                "https://claude.ai/settings/usage"),
+                ("You can also switch to an Anthropic API key or another provider with "
+                "/model <model> --provider <provider>."),
             ]
         return "\n".join(lines)
 

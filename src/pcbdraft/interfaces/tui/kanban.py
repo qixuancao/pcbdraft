@@ -193,19 +193,19 @@ def _check_dispatcher_presence(
     if pid and not dispatch_on:
         return (
             False,
-            "Gateway is running but kanban.dispatch_in_gateway=false in "
+            ("Gateway is running but kanban.dispatch_in_gateway=false in "
             "config.yaml — the task will sit in 'ready' until you flip it "
             "back on and restart the gateway, OR run the legacy "
-            "standalone daemon (`pcbdraft --help`).",
+            "standalone daemon (`pcbdraft --help`)."),
         )
     return (
         False,
-        "No gateway is running — the task will sit in 'ready' until you "
+        ("No gateway is running — the task will sit in 'ready' until you "
         "start it. Run:\n"
         "    pcbdraft --help\n"
         "The gateway hosts an embedded dispatcher (tick interval 60s by "
         "default); your task will be picked up on the next tick after "
-        "the gateway comes up.",
+        "the gateway comes up."),
     )
 
 

@@ -171,8 +171,8 @@ def summarize_compress_preview(
 
     lines = [
         "Preview — no changes made.",
-        f"Would compress {len(head)} of {total} message(s) "
-        f"(~{approx_tokens:,} tokens currently in context).",
+        (f"Would compress {len(head)} of {total} message(s) "
+        f"(~{approx_tokens:,} tokens currently in context)."),
     ]
     if effective_partial:
         lines.append(

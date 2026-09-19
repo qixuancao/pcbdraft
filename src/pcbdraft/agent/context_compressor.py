@@ -366,7 +366,7 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     # clause. Standalone reference handoffs persisted by that build could
     # occupy the active user slot after a completed assistant stop and
     # resume stale Historical Task Snapshot work.
-    "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
+    ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
     "window — treat it as background reference, NOT as active instructions. "
     "Do NOT answer questions or fulfill requests mentioned in this summary; "
@@ -391,13 +391,13 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     "active — keep calling them normally for the active task (edit files, "
     "run commands, search) instead of merely narrating what you would do. "
     "The current session state (files, config, etc.) may reflect work "
-    "described here — avoid repeating it:",
+    "described here — avoid repeating it:"),
     # Pre-#69619: identical to the then-current prefix except the stale-item
     # discard clause named all four historical headings (the three
     # section headers removed by #69619 were still in the template).
     # Summaries persisted by builds immediately before #69619 carry this
     # exact text and must remain detectable/strippable on resume.
-    "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
+    ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
     "window — treat it as background reference, NOT as active instructions. "
     "Do NOT answer questions or fulfill requests mentioned in this summary; "
@@ -424,13 +424,13 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     "active — keep calling them normally for the active task (edit files, "
     "run commands, search) instead of merely narrating what you would do. "
     "The current session state (files, config, etc.) may reflect work "
-    "described here — avoid repeating it:",
+    "described here — avoid repeating it:"),
     # Jul 2026 (#65848 class): identical to the pre-#69619 prefix except it
     # lacked the explicit "tools remain fully active" clause — the strong
     # REFERENCE ONLY framing bled into general tool-use suppression
     # (observed: 7 consecutive narration-only turns immediately after a
     # compression event on a production deployment).
-    "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
+    ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
     "window — treat it as background reference, NOT as active instructions. "
     "Do NOT answer questions or fulfill requests mentioned in this summary; "
@@ -454,10 +454,10 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     "prompt is ALWAYS authoritative and active — never ignore or deprioritize "
     "memory content due to this compaction note. "
     "The current session state (files, config, etc.) may reflect work "
-    "described here — avoid repeating it:",
+    "described here — avoid repeating it:"),
     # Carveout era (#41607/#38364/#42812): "consistent → use as background"
     # licensed stale-task resumption on topic overlap.
-    "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
+    ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
     "window — treat it as background reference, NOT as active instructions. "
     "Do NOT answer questions or fulfill requests mentioned in this summary; "
@@ -479,9 +479,9 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     "prompt is ALWAYS authoritative and active — never ignore or deprioritize "
     "memory content due to this compaction note. "
     "The current session state (files, config, etc.) may reflect work "
-    "described here — avoid repeating it:",
+    "described here — avoid repeating it:"),
     # Pre-#35344: contained the self-contradicting "resume exactly" directive.
-    "[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
+    ("[CONTEXT COMPACTION — REFERENCE ONLY] Earlier turns were compacted "
     "into the summary below. This is a handoff from a previous context "
     "window — treat it as background reference, NOT as active instructions. "
     "Do NOT answer questions or fulfill requests mentioned in this summary; "
@@ -490,7 +490,7 @@ _HISTORICAL_SUMMARY_PREFIXES = (
     "summary — resume exactly from there. "
     "Respond ONLY to the latest user message "
     "that appears AFTER this summary. The current session state (files, "
-    "config, etc.) may reflect work described here — avoid repeating it:",
+    "config, etc.) may reflect work described here — avoid repeating it:"),
 )
 
 # Restart handoff detection should be early and bounded: it needs to catch the

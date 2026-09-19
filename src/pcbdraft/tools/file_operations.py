@@ -1477,8 +1477,8 @@ class ShellFileOperations(FileOperations):
         end_line = offset + limit - 1
         truncated = total_lines > end_line
         hint_parts = [
-            f"Transcoded from {encoding.upper()} to UTF-8 for display. "
-            "Text edits via patch/write_file would re-encode as UTF-8."
+            (f"Transcoded from {encoding.upper()} to UTF-8 for display. "
+            "Text edits via patch/write_file would re-encode as UTF-8.")
         ]
         if truncated:
             hint_parts.append(

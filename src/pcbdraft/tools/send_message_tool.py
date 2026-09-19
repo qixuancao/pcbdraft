@@ -802,8 +802,8 @@ def resolve_send_target(
         return (
             None,
             None,
-            f"Could not resolve '{target_ref}' on {platform_name}. "
-            "The plugin parser did not recognize it and no channel-directory entry matched.",
+            (f"Could not resolve '{target_ref}' on {platform_name}. "
+            "The plugin parser did not recognize it and no channel-directory entry matched."),
         )
     if pass_unresolved_references:
         return _pass_through_unresolved()

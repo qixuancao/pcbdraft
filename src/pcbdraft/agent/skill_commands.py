@@ -816,9 +816,9 @@ def build_stacked_skill_invocation_message(
     # in extract_user_instruction_from_skill_message() applies unchanged.
     typed = " ".join(k for k in cmd_keys if k)
     header_lines = [
-        f'[IMPORTANT: The user has invoked the "{typed}" stacked skill bundle, '
+        (f'[IMPORTANT: The user has invoked the "{typed}" stacked skill bundle, '
         f"loading {len(loaded_names)} skills together. Treat every skill below "
-        "as active guidance for this turn.]",
+        "as active guidance for this turn.]"),
         "",
         f"Skills loaded: {', '.join(loaded_names)}",
     ]

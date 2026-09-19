@@ -2894,45 +2894,45 @@ def _migrate_add_optional_columns(conn: sqlite3.Connection) -> None:
 # asserts a rebuilt legacy DB is byte-identical to a fresh one.
 _REBUILD_SPECS = {
     "task_events": (
-        "CREATE TABLE task_events ("
+        ("CREATE TABLE task_events ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " task_id TEXT NOT NULL, run_id INTEGER, kind TEXT NOT NULL,"
-        " payload TEXT, created_at INTEGER NOT NULL)",
+        " payload TEXT, created_at INTEGER NOT NULL)"),
         (
             "CREATE INDEX idx_events_task ON task_events(task_id, created_at)",
             "CREATE INDEX idx_events_run ON task_events(run_id, id)",
         ),
     ),
     "task_comments": (
-        "CREATE TABLE task_comments ("
+        ("CREATE TABLE task_comments ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " task_id TEXT NOT NULL, author TEXT NOT NULL, body TEXT NOT NULL,"
-        " created_at INTEGER NOT NULL)",
+        " created_at INTEGER NOT NULL)"),
         ("CREATE INDEX idx_comments_task ON task_comments(task_id, created_at)",),
     ),
     "task_runs": (
-        "CREATE TABLE task_runs ("
+        ("CREATE TABLE task_runs ("
         " id INTEGER PRIMARY KEY AUTOINCREMENT,"
         " task_id TEXT NOT NULL, profile TEXT, step_key TEXT,"
         " status TEXT NOT NULL, claim_lock TEXT, claim_expires INTEGER,"
         " worker_pid INTEGER, max_runtime_seconds INTEGER,"
         " last_heartbeat_at INTEGER, started_at INTEGER NOT NULL,"
         " ended_at INTEGER, outcome TEXT, summary TEXT, metadata TEXT,"
-        " error TEXT)",
+        " error TEXT)"),
         (
             "CREATE INDEX idx_runs_task ON task_runs(task_id, started_at)",
             "CREATE INDEX idx_runs_status ON task_runs(status)",
         ),
     ),
     "kanban_notify_subs": (
-        "CREATE TABLE kanban_notify_subs ("
+        ("CREATE TABLE kanban_notify_subs ("
         " task_id TEXT NOT NULL, platform TEXT NOT NULL, chat_id TEXT NOT NULL,"
         " thread_id TEXT NOT NULL DEFAULT '', user_id TEXT, user_id_alt TEXT,"
         " chat_type TEXT,"
         " notifier_profile TEXT, delivery_mode TEXT NOT NULL DEFAULT 'notify',"
         " delivery_metadata TEXT, created_at INTEGER NOT NULL,"
         " last_event_id INTEGER NOT NULL DEFAULT 0,"
-        " PRIMARY KEY (task_id, platform, chat_id, thread_id))",
+        " PRIMARY KEY (task_id, platform, chat_id, thread_id))"),
         ("CREATE INDEX idx_notify_task ON kanban_notify_subs(task_id)",),
     ),
 }
@@ -9035,8 +9035,8 @@ def reconcile_orphaned_running(
                 (
                     tid,
                     "dispatcher",
-                    "reconciliation: card was 'running' with no valid claim "
-                    "(dead/gone worker) — requeued to ready",
+                    ("reconciliation: card was 'running' with no valid claim "
+                    "(dead/gone worker) — requeued to ready"),
                     now,
                 ),
             )

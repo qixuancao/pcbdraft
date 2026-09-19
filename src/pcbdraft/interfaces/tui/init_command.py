@@ -79,11 +79,11 @@ def build_init_prompt(
             else "generate an AGENTS.md project-instructions file"
         )
         + f" for the project at: {cwd}\n",
-        "AGENTS.md is the instruction file coding agents (PCBDraft included) "
+        ("AGENTS.md is the instruction file coding agents (PCBDraft included) "
         "load as project context every session. It should teach an agent how "
         "to work in THIS repo: what the project is, how to set up, the exact "
         "build/test/lint commands, the conventions the code actually follows, "
-        "and the pitfalls that waste time.\n",
+        "and the pitfalls that waste time.\n"),
         "Do this:\n"
         "1. Inspect the project with your read-only tools (`read_file`, "
         "`search_files`) — start with manifests and toolchain files "

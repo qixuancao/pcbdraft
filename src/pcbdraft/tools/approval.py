@@ -808,8 +808,8 @@ DANGEROUS_PATTERNS = [
     # Port of openai/codex#33464 ("recognize force options when they follow
     # operands").
     (
-        r'\brm\s+(?!--(?:\s|$))(?:(?!\s--(?:\s|$))[^\n"\';|&])*\s'
-        r"(?:-[a-z]*r[a-z]*\b|--recursive\b)",
+        (r'\brm\s+(?!--(?:\s|$))(?:(?!\s--(?:\s|$))[^\n"\';|&])*\s'
+        r"(?:-[a-z]*r[a-z]*\b|--recursive\b)"),
         "recursive delete (flags after operands)",
     ),
     # Windows shell front-ends have destructive built-ins that do not look like

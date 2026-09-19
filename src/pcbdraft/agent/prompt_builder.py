@@ -794,15 +794,15 @@ def hud_surface_note(valid_tool_names: "set[str] | None" = None) -> str:
         return ""
 
     sentences = [
-        "[Note: this message came from HUD mode — a small floating PCBDraft "
+        ("[Note: this message came from HUD mode — a small floating PCBDraft "
         "window sitting over whatever the user is actually working in, so an "
         'unqualified "this" or "here" usually means the app behind the HUD '
         "rather than anything inside PCBDraft. read_window_below identifies "
-        "that app.",
-        "They move the HUD from app to app mid-conversation, so one you "
+        "that app."),
+        ("They move the HUD from app to app mid-conversation, so one you "
         "identified on an earlier turn is still a live target: a reference "
         "that does not fit the window below may name one from a turn or two "
-        "ago, and a single message can span both.",
+        "ago, and a single message can span both."),
     ]
     if "computer_use" in names:
         sentences.append(

@@ -111,8 +111,8 @@ def _resolve_modal_image(image_spec: Any) -> Any:
     add_python = any(base in lower for base in ("ubuntu", "debian"))
 
     setup_commands = [
-        "RUN rm -rf /usr/local/lib/python*/site-packages/pip* 2>/dev/null; "
-        "python -m ensurepip --upgrade --default-pip 2>/dev/null || true",
+        ("RUN rm -rf /usr/local/lib/python*/site-packages/pip* 2>/dev/null; "
+        "python -m ensurepip --upgrade --default-pip 2>/dev/null || true"),
     ]
     if add_python:
         setup_commands.insert(

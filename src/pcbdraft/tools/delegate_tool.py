@@ -2335,8 +2335,8 @@ def _trim_summary_with_footer(
     footer_lines = [
         "",
         "─" * 8 + " [SUMMARY TRUNCATED] " + "─" * 8,
-        f"Showing {len(head):,} chars (head) + {len(tail):,} chars (tail) "
-        f"of {original_len:,} total — trimmed to protect the parent's context window.",
+        (f"Showing {len(head):,} chars (head) + {len(tail):,} chars (tail) "
+        f"of {original_len:,} total — trimmed to protect the parent's context window."),
     ]
     if spill_path:
         # read_file is 1-indexed; +2 moves past the last head line shown.

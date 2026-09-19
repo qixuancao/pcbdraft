@@ -1488,8 +1488,8 @@ def _validate_openviking_user_key_scope(values: dict) -> tuple[bool, str]:
         return True, ""
     return (
         False,
-        "That key has ROOT access. Choose Root API key and provide account/user, "
-        "or enter a user API key.",
+        ("That key has ROOT access. Choose Root API key and provide account/user, "
+        "or enter a user API key."),
     )
 
 
@@ -1693,8 +1693,8 @@ def _start_local_openviking_server(endpoint: str) -> tuple[str, str]:
         listener = _describe_local_port_listener(host, port)
         return (
             _LOCAL_SERVER_OCCUPIED,
-            f"Port {host}:{port} is occupied by {listener}. PCBDraft did not start "
-            "openviking-server because the listener has not passed OpenViking's /health check.",
+            (f"Port {host}:{port} is occupied by {listener}. PCBDraft did not start "
+            "openviking-server because the listener has not passed OpenViking's /health check."),
         )
     server_cmd = shutil.which("openviking-server")
     if not server_cmd:
@@ -1845,8 +1845,8 @@ def _classify_runtime_openviking_health(
             if identity == _OPENVIKING_IDENTITY_UNHEALTHY:
                 return (
                     "responded",
-                    f"Service at {endpoint} responded but reported unhealthy OpenViking status."
-                    f"{_local_listener_suffix(endpoint)}",
+                    (f"Service at {endpoint} responded but reported unhealthy OpenViking status."
+                    f"{_local_listener_suffix(endpoint)}"),
                 )
             if identity in _OPENVIKING_IDENTIFIED_STATES:
                 return "healthy", ""
@@ -1858,16 +1858,16 @@ def _classify_runtime_openviking_health(
                 )
             return (
                 "responded",
-                f"Service at {endpoint} responded, but its /health response is not valid OpenViking."
-                f"{_local_listener_suffix(endpoint)}",
+                (f"Service at {endpoint} responded, but its /health response is not valid OpenViking."
+                f"{_local_listener_suffix(endpoint)}"),
             )
         if client.health():
             return "healthy", ""
     except _OpenVikingHTTPError as e:
         return (
             "responded",
-            f"Service at {endpoint} responded with {_format_openviking_exception(e)}."
-            f"{_local_listener_suffix(endpoint)}",
+            (f"Service at {endpoint} responded with {_format_openviking_exception(e)}."
+            f"{_local_listener_suffix(endpoint)}"),
         )
     except Exception:
         return "unreachable", ""

@@ -368,11 +368,11 @@ def _normalize_to_supported_image(
         return (
             None,
             None,
-            "This is an SVG, which vision models cannot read directly, and no "
+            ("This is an SVG, which vision models cannot read directly, and no "
             "SVG rasterizer is installed (tried cairosvg, svglib, rsvg-convert, "
             "inkscape). Convert the SVG to PNG first — e.g. open it in a browser "
             "and screenshot it, or install a rasterizer "
-            "(`pip install cairosvg`) — then re-run vision_analyze on the PNG.",
+            "(`pip install cairosvg`) — then re-run vision_analyze on the PNG."),
         )
 
     # Other non-supported raster formats (BMP, TIFF, ...): re-encode via Pillow.
@@ -390,9 +390,9 @@ def _normalize_to_supported_image(
     return (
         None,
         None,
-        f"Image format {detected_mime!r} is not supported by the vision API "
+        (f"Image format {detected_mime!r} is not supported by the vision API "
         f"and could not be converted to PNG (install Pillow for raster "
-        f"conversion). Convert it to PNG or JPEG and try again.",
+        f"conversion). Convert it to PNG or JPEG and try again."),
     )
 
 

@@ -2752,10 +2752,10 @@ def run_doctor(args):
                         )
                     ],
                     [
-                        "OpenRouter account has insufficient credits. "
+                        ("OpenRouter account has insufficient credits. "
                         "Choose a provider with 'pcbdraft connect' "
                         "to switch providers, or fund your OpenRouter account "
-                        "at https://openrouter.ai/settings/credits"
+                        "at https://openrouter.ai/settings/credits")
                     ],
                 )
             if r.status_code == 429:
@@ -2769,8 +2769,8 @@ def run_doctor(args):
                         )
                     ],
                     [
-                        "OpenRouter rate limit hit — consider switching to "
-                        "a different provider or waiting"
+                        ("OpenRouter rate limit hit — consider switching to "
+                        "a different provider or waiting")
                     ],
                 )
             return _ConnectivityResult(
@@ -3053,8 +3053,8 @@ def run_doctor(args):
                     )
                 ],
                 [
-                    f"AWS Bedrock: {err_name} — check IAM permissions for "
-                    f"bedrock:ListFoundationModels"
+                    (f"AWS Bedrock: {err_name} — check IAM permissions for "
+                    f"bedrock:ListFoundationModels")
                 ],
             )
 

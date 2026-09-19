@@ -606,8 +606,8 @@ def fetch_bitwarden_secrets(
                     age = max(0.0, time.time() - stale.fetched_at)
                     _CACHE[cache_key] = stale
                     return stale.secrets, [
-                        f"bws live fetch failed ({exc}); falling back to "
-                        f"stale ENCRYPTED disk cache ({int(age)}s old)"
+                        (f"bws live fetch failed ({exc}); falling back to "
+                        f"stale ENCRYPTED disk cache ({int(age)}s old)")
                     ]
             elif cache_ttl_seconds > 0:
                 stale = _DISK_CACHE.read(cache_key, float("inf"), home_path)
@@ -615,8 +615,8 @@ def fetch_bitwarden_secrets(
                     age = max(0.0, time.time() - stale.fetched_at)
                     _CACHE[cache_key] = stale
                     return stale.secrets, [
-                        f"bws live fetch failed ({exc}); "
-                        f"falling back to stale disk cache ({int(age)}s old)"
+                        (f"bws live fetch failed ({exc}); "
+                        f"falling back to stale disk cache ({int(age)}s old)")
                     ]
         raise
     entry = _CachedFetch(secrets=secrets, fetched_at=time.time())
