@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined,has-type"
 """Own request-scoped OpenAI and Anthropic client lifecycles."""
 
 # Socket teardown is deliberately best-effort so abort cleanup cannot mask

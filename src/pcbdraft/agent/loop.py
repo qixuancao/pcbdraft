@@ -567,12 +567,14 @@ class AIAgent(
         "have been dropped to keep the conversation alive. See issue #15236.]"
     )
 
+    _anthropic_base_url: str | None
+
     @property
-    def base_url(self) -> str:
+    def base_url(self) -> str | None:
         return self._base_url
 
     @base_url.setter
-    def base_url(self, value: str) -> None:
+    def base_url(self, value: str | None) -> None:
         self._base_url = value
         self._base_url_lower = value.lower() if value else ""
         self._base_url_hostname = base_url_hostname(value)

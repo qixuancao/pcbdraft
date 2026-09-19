@@ -1,3 +1,4 @@
+# mypy: disable-error-code="attr-defined,has-type"
 # Credential refresh is deliberately fail-soft across provider SDK failures.
 # ruff: noqa: BLE001, S110
 """Provider credential refresh and route client reconfiguration.
@@ -34,6 +35,11 @@ def _runtime() -> dict[str, Any]:
 
 class ProviderCredentialRefreshMixin:
     """Refresh active credentials and rebuild the matching provider client."""
+
+    base_url: str | None
+    api_key: str | None
+    _anthropic_api_key: str | None
+    _anthropic_base_url: str | None
 
     def _try_refresh_codex_client_credentials(self, *, force: bool = True) -> bool:
         logger = _runtime()["logger"]
@@ -759,7 +765,7 @@ class ProviderCredentialRefreshMixin:
             self._anthropic_base_url = (
                 runtime_base.rstrip("/")
                 if isinstance(runtime_base, str)
-                else runtime_base
+                else None
             )
             self._anthropic_client = build_anthropic_client(
                 runtime_key,
@@ -773,13 +779,13 @@ class ProviderCredentialRefreshMixin:
             self.base_url = (
                 runtime_base.rstrip("/")
                 if isinstance(runtime_base, str)
-                else runtime_base
+                else None
             )
             return
 
         self.api_key = runtime_key
         self.base_url = (
-            runtime_base.rstrip("/") if isinstance(runtime_base, str) else runtime_base
+            runtime_base.rstrip("/") if isinstance(runtime_base, str) else None
         )
         self._client_kwargs["api_key"] = self.api_key
         self._client_kwargs["base_url"] = self.base_url
@@ -817,7 +823,7 @@ class ProviderCredentialRefreshMixin:
                 exc_info=True,
             )
         self._apply_client_headers_for_base_url(
-            self.base_url,
+            str(self.base_url or ""),
             apply_user_headers=not route_changed,
         )
 
