@@ -6,7 +6,7 @@
 | 题面 | [嘉立创 EDA 文档中心](https://wiki.lceda.cn/zh-hans/contest/lq-contests/true-question/15th-province-p1.html)（含 4 张题面图与理论题答案） |
 | 参考工程 | [OSHWHub 社区“十五届国赛参考答案”](https://oshwhub.com/cini/shi-wu-jie-guo-sai-eda-can-kao-da-an)（社区上传，非主办方标准答案；国赛题与省赛 P1 非同一题面） |
 | 原题满分 | 客观题 15 分 + 设计题 85 分 |
-| 本包状态 | 任务定义已整理；参考网表与答案键在仓库外私有目录；**未运行** |
+| 本包状态 | M1 输入包已建立（AI 重建资源）；参考网表与答案键在仓库外私有目录；**未运行** |
 
 ## 能力目标
 
@@ -23,15 +23,19 @@ M2 依赖 M1 稳定后再上。
 ## M1 输入（运行时的被测材料）
 
 1. 充电控制区电路图（题面图 3）及其文本化描述：器件 `U13 BCON`、
-   `R18 2K`、`R19/R20 510R`、`LED4/LED5`（0805）、`C13/C14 10uF`、
-   `CN1 ZX-XH2.54-2PZZ`（等价 JST XH 2P）。
-2. 器件封装对照表（原题“元器件封装表”中本区器件）。
+   `R18 2K`、`R19/R20 510R`、`LED4/LED5`（0805）、`C13/C14 10uF`
+   （C1206）、`CN1 ZX-XH2.54-2PZZ`（2.50 mm pitch 的 JST XH 等价物）。
+2. 器件封装对照表（原题“元器件封装表”中本区器件）；CN1 的原题封装名为
+   `CONN-TH_2P-P2.50_HX25003-2A`，本包暂以 stock JST XH footprint 作为
+   pitch-equivalent，外形和机械适配仍需人工确认。
 3. `BCON` 符号与 `SOP_BCON` 封装：**首跑作为给定资源提供**；从原理图
    与封装图（题面图 1、图 2）还原符号与封装是独立里程碑 M0，单列。
+   可运行输入包见本目录 `input/`：`prompt.txt`、`symbols/LQEDA.kicad_sym`
+   和 `footprints/LQEDA.pretty/SOP_BCON.kicad_mod`。
 4. 设计规则：双层板；最小线宽 10 mil；安全间距：焊盘到焊盘 7.5 mil、
    焊盘到挖槽 7 mil、其它 8 mil；过孔外径 ≥25 mil、内径 ≥15 mil。
 5. 交付要求：全部器件顶层放置；顶层丝印；顶层与底层 GND 铺铜；
-   网络布线率 100%；保留原题网络名（VBUS/VDD/VBAT/PROG/STAT/GND）
+   网络布线率 100%；保留原题网络名（VBUS/VBAT/PROG/STAT/GND/LED4_A/LED5_A）
    与位号。
 
 ## M1 验收（四层）
@@ -46,7 +50,10 @@ M2 依赖 M1 稳定后再上。
    极性、封装与板边间距；记录每项证据。
 
 参考网表与逐网络判定清单见仓库外私有目录（运行时不暴露）：
-`/mnt/2T/pcbdraft-holdout/lq-eda/15th-province-p1/answer-key.md`。
+`/mnt/2T/pcbdraft-holdout/lq-eda/15th-province-p1/answer-v1.json`。
+旧版 `answer-key.md` 保留为历史记录，未被覆盖。公开 `contract.json` 不含
+参考端点；R/C 两端 pin 交换按对称元件策略判定，LED、BCON、CN1 的命名
+引脚仍需精确匹配。
 
 ## M2 输入与附加要求（原题保留）
 
@@ -73,8 +80,11 @@ M2 依赖 M1 稳定后再上。
 
 - 参考工程为社区上传，未逐项核对；**参考网表以题面图 3 为准**，
   参考工程仅作交叉检查。
-- 题面图 2（SOP_BCON）的精确焊盘尺寸需要更高分辨率复核后才能用于
-  M0 判定；在完成复核前 M0 只作为待办。
+- 题面图 2（SOP_BCON）给出 pad 1--5 的 1.2 × 0.5 mm 长圆形、pad1 为
+  原点、排距 2.0 mm、同侧相邻间距 0.9 mm；当前资源仍是 AI 重建，M0
+  需要人工对照确认。
+- `LQEDA:BCON` 的 5 个 pin 在公开资源中统一声明为 passive，因为题面不
+  给电气类型；ERC 不应被解释为已验证供电、驱动或开漏行为。
 - `ZX-XH2.54-2PZZ` 无 KiCad 官方封装，首跑以
   `Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical` 作为等价物，
   等价性需人工确认。
