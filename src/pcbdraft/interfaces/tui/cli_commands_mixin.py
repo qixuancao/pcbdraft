@@ -11,6 +11,7 @@ Import discipline (mirrors gateway/slash_commands.py, PR #41886):
     from ``legacy_app``. That resolves at call time when the implementation is
     fully loaded, so the mixin never creates a top-level import cycle.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 
@@ -21,10 +22,25 @@ import threading
 import time
 import uuid
 from datetime import datetime
+from typing import TypedDict
 from urllib.parse import urlparse
 
 from rich import box as rich_box
 from rich.markup import escape as _escape
+
+
+class _CronCreateFlags(TypedDict, total=False):
+    name: str | None
+    deliver: str | None
+    repeat: int | None
+    skills: list[str]
+    add_skills: list[str]
+    remove_skills: list[str]
+    clear_skills: bool
+    all: bool
+    prompt: str | None
+    schedule: str | None
+    positionals: list[str]
 from rich.panel import Panel
 
 from pcbdraft.agent.turn_context import extract_api_content_sidecar
@@ -1796,8 +1812,8 @@ class CLICommandsMixin:
                     normalized.append(text)
             return normalized
 
-        def _parse_flags(tokens):
-            opts = {
+        def _parse_flags(tokens) -> _CronCreateFlags | None:
+            opts: _CronCreateFlags = {
                 "name": None,
                 "deliver": None,
                 "repeat": None,
@@ -3565,7 +3581,7 @@ class CLICommandsMixin:
         last = getattr(self, "_focus_last_counted_tool", None)
         if not would_display_tool_line(saved, function_name, last):
             return
-        self._focus_last_counted_tool = function_name
+        self._focus_last_counted_tool: str | None = function_name
         self._focus_hidden_lines = int(getattr(self, "_focus_hidden_lines", 0)) + 1
 
     def _emit_focus_recovery_line(self) -> None:
@@ -3989,7 +4005,7 @@ class CLICommandsMixin:
         )
 
         if arg in {"fast", "on"}:
-            self.service_tier = "priority"
+            self.service_tier: str | None = "priority"
             saved_value = "fast"
             label = "FAST"
         elif arg in {"normal", "off"}:

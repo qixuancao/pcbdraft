@@ -11,6 +11,7 @@ Import discipline mirrors ``pcbdraft.interfaces.tui.cli_commands_mixin``:
     constants) are imported LAZILY from ``legacy_app`` inside each method. The
     mixin never imports the implementation at module load time, avoiding a cycle.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 

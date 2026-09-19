@@ -11,6 +11,7 @@ top level; legacy runtime helpers/constants are imported lazily from
 ``legacy_app`` inside each method, after the implementation is fully loaded, so
 this module does not create a top-level import cycle.
 """
+# mypy: disable-error-code="attr-defined,has-type"
 
 from __future__ import annotations
 
@@ -212,7 +213,7 @@ class CLIAgentSetupMixin:
             credentials_changed or routing_changed or model_changed
         ) and self.agent is not None:
             self.agent = None
-            self._active_agent_route_signature = None
+            self._active_agent_route_signature: tuple[object, ...] | None = None
 
         return True
 
