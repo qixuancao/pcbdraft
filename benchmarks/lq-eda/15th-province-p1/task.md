@@ -6,7 +6,7 @@
 | 题面 | [嘉立创 EDA 文档中心](https://wiki.lceda.cn/zh-hans/contest/lq-contests/true-question/15th-province-p1.html)（含 4 张题面图与理论题答案） |
 | 参考工程 | [OSHWHub 社区“十五届国赛参考答案”](https://oshwhub.com/cini/shi-wu-jie-guo-sai-eda-can-kao-da-an)（社区上传，非主办方标准答案；国赛题与省赛 P1 非同一题面） |
 | 原题满分 | 客观题 15 分 + 设计题 85 分 |
-| 本包状态 | M1 输入包已建立（AI 重建资源）；参考网表与答案键在仓库外私有目录；**未运行** |
+| 本包状态 | M1 已完成一次 clean 单跑；v2 复评分 fail，候选不通过；M2 停止 |
 
 ## 能力目标
 
@@ -49,11 +49,10 @@ M2 依赖 M1 稳定后再上。
 4. **检查与复核**：ERC/DRC 按上表规则通过；人工复核器件选型可采购性、
    极性、封装与板边间距；记录每项证据。
 
-参考网表与逐网络判定清单见仓库外私有目录（运行时不暴露）：
-`/mnt/2T/pcbdraft-holdout/lq-eda/15th-province-p1/answer-v1.json`。
+参考网表与逐网络判定清单保存在仓库外私有 holdout（运行时不暴露，路径不写入公开任务文档）。
 旧版 `answer-key.md` 保留为历史记录，未被覆盖。公开 `contract.json` 不含
-参考端点；R/C 两端 pin 交换按对称元件策略判定，LED、BCON、CN1 的命名
-引脚仍需精确匹配。
+参考端点；R/C 两端 pin 交换按对称元件策略判定，LED 极性、BCON 的功能/命名
+引脚与 CN1 的确切引脚编号仍需按契约复核；CN1 不要求连接器库函数名等于网络名。
 
 ## M2 输入与附加要求（原题保留）
 
