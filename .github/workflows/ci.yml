@@ -29,7 +29,10 @@ jobs:
         run: |
           sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends kicad kicad-libraries
+          # kicad-libraries lists the stock libraries as Recommends; install
+          # them explicitly because this job disables all recommendations.
+          sudo apt-get install --yes --no-install-recommends \
+            kicad kicad-libraries kicad-symbols kicad-footprints kicad-templates
           [[ "$(kicad-cli --version)" =~ ^10\.0\.[0-9]+$ ]]
       - name: Initialize KiCad user library tables
         run: scripts/prepare-kicad-environment.sh
@@ -65,7 +68,10 @@ jobs:
         run: |
           sudo add-apt-repository --yes ppa:kicad/kicad-10.0-releases
           sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends kicad kicad-libraries
+          # kicad-libraries lists the stock libraries as Recommends; install
+          # them explicitly because this job disables all recommendations.
+          sudo apt-get install --yes --no-install-recommends \
+            kicad kicad-libraries kicad-symbols kicad-footprints kicad-templates
           [[ "$(kicad-cli --version)" =~ ^10\.0\.[0-9]+$ ]]
       - name: Initialize KiCad user library tables
         run: scripts/prepare-kicad-environment.sh
