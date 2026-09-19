@@ -252,6 +252,23 @@ def _contract_preflight(task: Path) -> dict[str, object]:
     prompt_path = input_spec.get("prompt")
     if prompt_path != "input/prompt.txt":
         raise RuntimeError("task contract prompt path is not the worker input")
+    prompt_hashes = [
+        value
+        for value in (contract.get("prompt_sha256"), input_spec.get("prompt_sha256"))
+        if value is not None
+    ]
+    if not prompt_hashes or not all(
+        isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+        for value in prompt_hashes
+    ):
+        raise RuntimeError("task contract prompt_sha256 is missing or invalid")
+    if len(set(prompt_hashes)) != 1:
+        raise RuntimeError("task contract prompt_sha256 fields disagree")
+    prompt_file = task / prompt_path
+    if prompt_file.is_symlink() or not prompt_file.is_file():
+        raise RuntimeError("task contract prompt resource is unavailable")
+    if _sha256(prompt_file) != prompt_hashes[0]:
+        raise RuntimeError("task contract prompt hash mismatch")
     declared_files: list[tuple[str, object]] = []
     for key in ("custom_symbols", "custom_footprints"):
         entries = input_spec.get(key)
@@ -294,6 +311,7 @@ def _contract_preflight(task: Path) -> dict[str, object]:
         "path": CONTRACT_FILE,
         "sha256": _sha256(contract_path),
         "task_id": contract.get("task_id"),
+        "prompt_sha256": prompt_hashes[0],
         "stock_symbol_ids": stock_spec["symbol_ids"],
         "stock_footprint_ids": stock_spec["footprint_ids"],
         "custom_symbol_ids": [

@@ -47,6 +47,9 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
             "task_id": "test-task",
             "input": {
                 "prompt": "input/prompt.txt",
+                "prompt_sha256": hashlib.sha256(
+                    (task / "input/prompt.txt").read_bytes()
+                ).hexdigest(),
                 "custom_symbols": [
                     {
                         "library_id": "LQEDA:BCON",
@@ -153,6 +156,17 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
                 },
             )
             self.assertEqual([item["path"] for item in runtime_records], [".env"])
+
+    def test_contract_prompt_hash_mismatch_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = self._task(root)
+            contract_path = task / "contract.json"
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            contract["input"]["prompt_sha256"] = "0" * 64
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "prompt hash mismatch"):
+                RUNNER._contract_preflight(task)
 
     def test_worker_environment_is_private_and_sets_both_kicad_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
