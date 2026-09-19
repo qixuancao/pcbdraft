@@ -51,13 +51,29 @@ CI 门禁（`ci.yml`：ruff/format/mypy/coverage/compileall + kicad-acceptance�
 
 ## 其他发现
 
-- **messaging 死引用**：`pcbdraft.services.messaging` 包不存在，但约 10 处惰性
-  import 仍指向它（`agent/relay_runtime.py:173`、`agent/memory_backends/honcho/
-  cli.py:465`、`agent/extensions/manager.py:2927/4602`、`agent/system_prompt.py:
-  761`、`interfaces/tui/platform_actions.py:88/98`、`interfaces/tui/platforms.py:
-  106/124`、`interfaces/tui/security_audit_startup.py:202`）。运行时多数有
-  try/except 或条件分支兜底，但全包导入完整性检查被阻断；需要按退役政策删除
-  引用或改为明确不支持。
+- **messaging 死引用（74 处、17 个文件，比初查的"约 10 处"严重得多）**：
+  `pcbdraft.services.messaging` 包不存在，全部为惰性 import（函数内），模块导入
+  不受影响，但调用即 `ImportError`。重灾区 `tools/send_message_tool.py`（约 40
+  处）、`tools/yuanbao_tools.py`、`interfaces/tui/send_cmd.py`、`gateway_enroll.py`、
+  `pairing.py`、`doctor.py`、`platforms.py`、`platform_actions.py`、
+  `cli_commands_mixin.py`、`legacy_app.py`、`tools/process_registry.py`、
+  `tools/skills_tool.py`、`agent/extensions/manager.py`、`agent/relay_runtime.py`、
+  `agent/system_prompt.py`、`interfaces/tui/security_audit_startup.py`（有
+  try/except 兜底）、`tools/toolsets.py`。网关已退役（NATIVE_RUNTIME.md），这些
+  引用需要按退役政策删除或改为明确的不支持错误，列为后续批次。
+- **cron 子系统整体缺失**：`cron.*`（jobs/scheduler/lifecycle_guard/
+  blueprint_catalog/suggestions/notepad/executions）包不存在，约 20 处惰性
+  import 分布在 agent/curator、monitoring/cron_health、model/configuration、
+  tools/blueprints、interfaces/tui（cron.py、console_engine、blueprint_cmd、
+  suggestions_cmd、legacy_app）。其中 `interfaces/tui/cron.py:21` 对
+  `cron.lifecycle_guard` 的**模块级硬导入**使全包导入检查失败，`agent/monitoring/
+  cron_health.py` 同样硬导入 `cron.jobs`；本审计已把这两处改为惰性/降级，全包
+  导入 walk 恢复 0 失败。TUI 的 `/cron` 命令与网关健康导出仍会在调用时
+  ImportError，需后续决策：重建、删除命令或明确不支持。
+- **全包导入检查的两个合法例外**：`pcbdraft.__main__` 导入即执行 CLI（标准
+  `python -m` 行为）；`pcbdraft.kicad.pcbnew_worker` 是设计上由 KiCad 子进程
+  `python3 -I` 调用的独立 worker，宿主环境无 `pcbnew` 属正常。import-all 检查
+  应显式排除这两者。
 - **版本不一致**：CHANGELOG Unreleased 声称推进到 `1.1.0.dev0`，`pyproject.toml`
   仍为 `0.1.0`；需用户拍板统一。
 - **I2C 示例超时**：2026-09-09 单次尝试案例中 I2C 唯一尝试 600 秒超时、无
@@ -80,8 +96,11 @@ CI 门禁（`ci.yml`：ruff/format/mypy/coverage/compileall + kicad-acceptance�
 
 ## 优先级建议
 
-1. **P0（合并回 main 的硬前置，成本低）**：修复 mypy 目录名阻断；收口
-   messaging 死引用；format 9 文件；Ruff 按模块分批清零。
+1. **P0（合并回 main 的硬前置，成本低）**：修复 mypy 目录名阻断（已修，见后
+   续检查点）；收口 `tui/cron.py` 与 `cron_health.py` 的硬导入（已修，全包
+   import walk 0 失败）；format 9 文件；Ruff 按模块分批清零。**注意：mypy 目录
+   名修复后暴露全库 3169 条类型错误（此前被崩溃掩盖），与 Ruff 同级的大额
+   债务，需按模块分批推进**。
 2. **P1**：复现定位 I2C 600 秒超时；统一版本声明与 CHANGELOG。
 3. **P2**：全量 unittest/coverage 跑通 → CI 全绿 → `scripts/release-check.sh`
    通过 → 合并回 main 并打 tag。

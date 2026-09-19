@@ -12,16 +12,6 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent.resolve()
 
-# Gateway-lifecycle command detection lives in ``cron.lifecycle_guard`` so it
-# can be shared across every job-creation path (CLI + the agent's ``cronjob``
-# model tool via ``cron.jobs.create_job``) without a circular import. Re-export
-# ``_contains_gateway_lifecycle_command`` here for back-compat: ``tools/
-# terminal_tool.py`` imports it from this module to hard-block the same
-# commands at execution time when ``_PCBDRAFT_GATEWAY=1``.
-from cron.lifecycle_guard import (  # noqa: F401  (re-exported for terminal_tool)
-    contains_gateway_lifecycle_command as _contains_gateway_lifecycle_command,
-)
-
 from pcbdraft.interfaces.tui.colors import Colors, color
 
 

@@ -9,15 +9,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from cron.jobs import (
-    _compute_grace_seconds,
-    get_catch_up_occurrence_count,
-    get_ticker_heartbeat_age,
-    get_ticker_success_age,
-    load_jobs,
-)
-from cron.scheduler import get_running_job_ids
-
 from pcbdraft.agent.monitoring.events import CronExecutionEvent
 from pcbdraft.agent.monitoring.gateway_health import GatewayMetric
 from pcbdraft.core.clock import now as _pcbdraft_now
@@ -144,15 +135,28 @@ def _is_overdue(job: dict[str, Any], now: datetime) -> bool:
     if next_run is None or not isinstance(schedule, dict):
         return False
     try:
+        from cron.jobs import _compute_grace_seconds
         if next_run.tzinfo is None and now.tzinfo is not None:
             next_run = next_run.replace(tzinfo=now.tzinfo)
         lateness = (now - next_run).total_seconds()
         return lateness > _compute_grace_seconds(schedule)
-    except (TypeError, ValueError):
+    except (ImportError, TypeError, ValueError):
         return False
 
 
 def build_cron_health_snapshot() -> CronHealthSnapshot:
+    try:
+        from cron.jobs import (
+            get_catch_up_occurrence_count,
+            get_ticker_heartbeat_age,
+            get_ticker_success_age,
+            load_jobs,
+        )
+        from cron.scheduler import get_running_job_ids
+    except ImportError:
+        logger.debug("cron package unavailable", exc_info=True)
+        return CronHealthSnapshot(metrics=[], events=[])
+
     metrics: list[GatewayMetric] = []
     for name, reader in (
         ("pcbdraft.cron.scheduler.heartbeat_age_seconds", get_ticker_heartbeat_age),
