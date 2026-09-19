@@ -33,7 +33,8 @@ import math
 import os
 import shutil
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -547,8 +548,17 @@ def _canonical_pin_function(value: str | None) -> str | None:
     value = value.strip()
     if not value:
         return None
-    # KiCad's XML exporter appends a unit suffix (for example A_2).
-    if "_" in value and value.rsplit("_", 1)[1].isdigit():
+    # KiCad's XML exporter appends a unit suffix (for example A_2).  The
+    # stock connector's meaningful function is itself Pin_1/Pin_2, so only
+    # strip a trailing unit when there is already a Pin_N base component.
+    pieces = value.split("_")
+    if len(pieces) >= 3 and pieces[0].casefold() == "pin" and pieces[-1].isdigit():
+        value = "_".join(pieces[:-1])
+    elif (
+        "_" in value
+        and value.rsplit("_", 1)[1].isdigit()
+        and not (len(pieces) == 2 and pieces[0].casefold() == "pin")
+    ):
         value = value.rsplit("_", 1)[0]
     return value.casefold()
 
@@ -1182,47 +1192,51 @@ def _board_checks(
     return checks
 
 
-def _export_netlist(
-    project: ManagedProject, output: Path, timeout: float, library_root: Path
-) -> Path:
-    executable = find_kicad_cli()
-    if executable is None:
-        raise PCBDraftError("kicad-cli not found")
-    target = output / "netlist.kicadxml"
-    library_paths = {
+@contextmanager
+def _scoped_library_environment(library_root: Path) -> Iterator[None]:
+    """Expose one run's private KiCad libraries during KiCad checks."""
+
+    paths = {
         "KICAD_SYMBOL_DIR": library_root / "libraries" / "symbols",
         "KICAD10_SYMBOL_DIR": library_root / "libraries" / "symbols",
         "KICAD_FOOTPRINT_DIR": library_root / "libraries" / "footprints",
         "KICAD10_FOOTPRINT_DIR": library_root / "libraries" / "footprints",
     }
-    saved_environment: dict[str, str | None] = {}
+    saved = {name: os.environ.get(name) for name in paths}
     try:
-        for name, path in library_paths.items():
-            if path.is_dir():
-                saved_environment[name] = os.environ.get(name)
-                os.environ[name] = str(path)
-        result = run_command(
-            [
-                executable,
-                "sch",
-                "export",
-                "netlist",
-                "--format",
-                "kicadxml",
-                "--output",
-                str(target),
-                str(project.schematic_path),
-            ],
-            cwd=project.root,
-            timeout=timeout,
-            max_output_bytes=COMMAND_OUTPUT_LIMIT,
-        )
+        for name, path in paths.items():
+            if path.is_dir() and not path.is_symlink():
+                os.environ[name] = str(path.resolve(strict=True))
+        yield
     finally:
-        for name, value in saved_environment.items():
+        for name, value in saved.items():
             if value is None:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+
+
+def _export_netlist(project: ManagedProject, output: Path, timeout: float) -> Path:
+    executable = find_kicad_cli()
+    if executable is None:
+        raise PCBDraftError("kicad-cli not found")
+    target = output / "netlist.kicadxml"
+    result = run_command(
+        [
+            executable,
+            "sch",
+            "export",
+            "netlist",
+            "--format",
+            "kicadxml",
+            "--output",
+            str(target),
+            str(project.schematic_path),
+        ],
+        cwd=project.root,
+        timeout=timeout,
+        max_output_bytes=COMMAND_OUTPUT_LIMIT,
+    )
     if result.timed_out or result.output_limited or result.returncode != 0:
         raise PCBDraftError(
             f"KiCad netlist export failed: exit_code_{result.returncode}"
@@ -1309,6 +1323,7 @@ def _write_score(
             "Pad-to-slot clearance is unknown unless an explicit native rule evidence is available.",
             "Top silkscreen is a layer-presence check, not complete placement or dimension review.",
             "Ground-zone checks require a filled positive-area zone on each requested layer, not full-plane continuity.",
+            "Managed validation uses the raw run's private library overlay read-only; the derived score does not copy that library tree.",
         ],
     }
     (output / "score.json").write_text(
@@ -1409,9 +1424,8 @@ def score_run(
     netlist_path: Path | None = None
     native: Mapping[str, Any] | None = None
     try:
-        netlist_path = _export_netlist(
-            project, output, timeout=min(timeout, 120.0), library_root=run_root
-        )
+        with _scoped_library_environment(run_root):
+            netlist_path = _export_netlist(project, output, timeout=min(timeout, 120.0))
         identity["netlist_sha256"] = _sha256(netlist_path)
         observed_components, observed_networks = _parse_netlist(netlist_path)
         checks.append(_component_check(expected_components, observed_components))
@@ -1429,12 +1443,13 @@ def score_run(
     except (PCBDraftError, ValidationError, OSError) as exc:
         checks.append(_check("netlist_export", None, reason=str(exc)))
     try:
-        native = inspect_native_board(
-            project.design,
-            project.board_path,
-            include_connectivity=True,
-            include_spatial=True,
-        )
+        with _scoped_library_environment(run_root):
+            native = inspect_native_board(
+                project.design,
+                project.board_path,
+                include_connectivity=True,
+                include_spatial=True,
+            )
         checks.extend(_board_checks(project, native, rules))
     except (PCBDraftError, ValidationError, OSError) as exc:
         checks.append(
@@ -1444,7 +1459,8 @@ def score_run(
                 reason=f"native board inspection unavailable: {exc}",
             )
         )
-    checks.append(_validation_check(project, output, timeout=min(timeout, 180.0)))
+    with _scoped_library_environment(run_root):
+        checks.append(_validation_check(project, output, timeout=min(timeout, 180.0)))
     return _write_score(answer_key, identity, checks, output, netlist_path)
 
 

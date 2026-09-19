@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -25,6 +27,215 @@ SCORE = _load_scorer()
 
 
 class LqEdaScoreTests(unittest.TestCase):
+    def test_private_library_environment_is_visible_and_restored(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "libraries" / "symbols").mkdir(parents=True)
+            (root / "libraries" / "footprints").mkdir(parents=True)
+            schematic = root / "main.kicad_sch"
+            schematic.write_text("(kicad_sch)", encoding="utf-8")
+            project = SimpleNamespace(root=root, schematic_path=schematic)
+            observed: dict[str, str] = {}
+
+            def probe(*_args: object, **_kwargs: object) -> object:
+                for name in (
+                    "KICAD_SYMBOL_DIR",
+                    "KICAD10_SYMBOL_DIR",
+                    "KICAD_FOOTPRINT_DIR",
+                    "KICAD10_FOOTPRINT_DIR",
+                ):
+                    observed[name] = os.environ[name]
+                return SimpleNamespace(
+                    timed_out=False, output_limited=False, returncode=0
+                )
+
+            original = {
+                name: f"original-{name}"
+                for name in (
+                    "KICAD_SYMBOL_DIR",
+                    "KICAD10_SYMBOL_DIR",
+                    "KICAD_FOOTPRINT_DIR",
+                    "KICAD10_FOOTPRINT_DIR",
+                )
+            }
+            with mock.patch.dict(os.environ, original, clear=False):
+                with (
+                    mock.patch.object(
+                        SCORE, "find_kicad_cli", return_value="/usr/bin/kicad-cli"
+                    ),
+                    mock.patch.object(SCORE, "run_command", side_effect=probe),
+                ):
+                    with SCORE._scoped_library_environment(root):
+                        SCORE._export_netlist(project, root / "derived", timeout=1.0)
+                    self.assertEqual(
+                        observed["KICAD_SYMBOL_DIR"],
+                        str((root / "libraries" / "symbols").resolve()),
+                    )
+                    self.assertEqual(
+                        observed["KICAD10_FOOTPRINT_DIR"],
+                        str((root / "libraries" / "footprints").resolve()),
+                    )
+                    with (
+                        self.assertRaisesRegex(RuntimeError, "restore"),
+                        SCORE._scoped_library_environment(root),
+                    ):
+                        raise RuntimeError("restore")
+                for name, value in original.items():
+                    self.assertEqual(os.environ[name], value)
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for name in original:
+                    os.environ.pop(name, None)
+                with (
+                    self.assertRaisesRegex(RuntimeError, "absent"),
+                    SCORE._scoped_library_environment(root),
+                ):
+                    raise RuntimeError("absent")
+                for name in original:
+                    self.assertNotIn(name, os.environ)
+
+    def test_stock_connector_pinfunction_normalization_preserves_pin_number(
+        self,
+    ) -> None:
+        self.assertEqual(SCORE._canonical_pin_function("Pin_1"), "pin_1")
+        self.assertEqual(SCORE._canonical_pin_function("Pin_1_1"), "pin_1")
+        self.assertEqual(SCORE._canonical_pin_function("Pin_2"), "pin_2")
+        self.assertEqual(SCORE._canonical_pin_function("Pin_2_2"), "pin_2")
+
+    def test_score_run_scopes_private_libraries_for_all_kicad_checks(self) -> None:
+        names = (
+            "KICAD_SYMBOL_DIR",
+            "KICAD10_SYMBOL_DIR",
+            "KICAD_FOOTPRINT_DIR",
+            "KICAD10_FOOTPRINT_DIR",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run = root / "run"
+            libraries = run / "libraries"
+            (libraries / "symbols").mkdir(parents=True)
+            (libraries / "footprints").mkdir(parents=True)
+            source_project = (
+                run / "output" / "repository" / "projects" / "case" / "design"
+            )
+            source_project.mkdir(parents=True)
+            manifest_value = {"design": {"content_hash": "a" * 64}}
+            (source_project / SCORE.MANIFEST_NAME).write_text(
+                json.dumps(manifest_value), encoding="utf-8"
+            )
+            answer = root / "answer.json"
+            answer.write_text(
+                json.dumps(
+                    {
+                        "schema": SCORE.ANSWER_SCHEMA,
+                        "version": 1,
+                        "task_id": "scoped-env",
+                        "expected_components": {
+                            "R1": {
+                                "value": "1k",
+                                "symbol": "Device:R",
+                                "footprint": "Resistor_SMD:R_0805_2012Metric",
+                            }
+                        },
+                        "expected_nets": {"GND": ["R1.1"]},
+                        "rules": {"layers": 2},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            seen: dict[str, dict[str, str]] = {}
+
+            def capture(label: str) -> None:
+                seen[label] = {name: os.environ[name] for name in names}
+
+            def copy_project(_source: Path, destination: Path) -> None:
+                destination.mkdir(parents=True)
+                (destination / SCORE.MANIFEST_NAME).write_text(
+                    json.dumps(manifest_value), encoding="utf-8"
+                )
+
+            def open_project(path: Path) -> SimpleNamespace:
+                design = SimpleNamespace(content_hash=lambda: "a" * 64, revision=0)
+                return SimpleNamespace(
+                    root=path,
+                    manifest_path=path / SCORE.MANIFEST_NAME,
+                    manifest=manifest_value,
+                    design=design,
+                    schematic_path=path / "main.kicad_sch",
+                    board_path=path / "main.kicad_pcb",
+                    assert_synchronized=lambda: None,
+                )
+
+            def export(_project: object, output: Path, timeout: float) -> Path:
+                del timeout
+                capture("export")
+                target = output / "netlist.kicadxml"
+                target.write_text("<export/>", encoding="utf-8")
+                return target
+
+            def inspect(*_args: object, **_kwargs: object) -> dict[str, object]:
+                capture("inspect")
+                return {}
+
+            def validate(*_args: object, **_kwargs: object) -> dict[str, object]:
+                capture("validation")
+                return SCORE._check("managed_validation", True)
+
+            with mock.patch.dict(os.environ, {}, clear=False):
+                for name in names:
+                    os.environ.pop(name, None)
+                with (
+                    mock.patch.object(
+                        SCORE,
+                        "_input_contract_binding_check",
+                        return_value=SCORE._check("input_contract_binding", True),
+                    ),
+                    mock.patch.object(
+                        SCORE, "_locate_project", return_value=source_project
+                    ),
+                    mock.patch.object(
+                        SCORE,
+                        "_artifact_inventory_check",
+                        return_value=(SCORE._check("raw_run_receipt", True), "r", "i"),
+                    ),
+                    mock.patch.object(SCORE, "_copy_project", side_effect=copy_project),
+                    mock.patch.object(
+                        SCORE, "open_managed_project", side_effect=open_project
+                    ),
+                    mock.patch.object(SCORE, "_export_netlist", side_effect=export),
+                    mock.patch.object(
+                        SCORE,
+                        "_parse_netlist",
+                        return_value=(
+                            {
+                                "R1": {
+                                    "value": "1k",
+                                    "symbol": "Device:R",
+                                    "footprint": "Resistor_SMD:R_0805_2012Metric",
+                                }
+                            },
+                            {"GND": (SCORE._ObservedEndpoint("R1", "1", None),)},
+                        ),
+                    ),
+                    mock.patch.object(
+                        SCORE, "inspect_native_board", side_effect=inspect
+                    ),
+                    mock.patch.object(SCORE, "_board_checks", return_value=[]),
+                    mock.patch.object(SCORE, "_validation_check", side_effect=validate),
+                ):
+                    score = SCORE.score_run(run, answer, root / "score")
+                self.assertEqual(score["overall"]["status"], "pass")
+                for label in ("export", "inspect", "validation"):
+                    self.assertEqual(
+                        seen[label]["KICAD_SYMBOL_DIR"],
+                        str((libraries / "symbols").resolve()),
+                    )
+                    self.assertEqual(
+                        seen[label]["KICAD10_FOOTPRINT_DIR"],
+                        str((libraries / "footprints").resolve()),
+                    )
+                for name in names:
+                    self.assertNotIn(name, os.environ)
+
     def test_symmetric_two_terminal_mapping_is_global(self) -> None:
         endpoint = SCORE._Endpoint
         observed = SCORE._ObservedEndpoint
