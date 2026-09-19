@@ -779,7 +779,7 @@ def _resolve_minimax_tts_runtime(
 #       provider: piper-en
 #       providers:
 #         piper-en:
-#           type: command
+#           "type": command
 #           command: "piper -m ~/model.onnx -f {output_path} < {input_path}"
 #           output_format: wav
 #

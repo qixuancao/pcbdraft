@@ -358,7 +358,8 @@ def evaluate_credits_notices(
             # Belt-and-suspenders: a producer could set subscription_limit_micros
             # without subscription_limit_usd. Render "$?" rather than "$None".
             _cap_usd = state.subscription_limit_usd or "?"
-            _level = current_band[1]  # type: ignore[index]  (current_band set when target_band set)
+            # current_band is set whenever target_band is set.
+            _level = current_band[1]  # type: ignore[index]
             # Report absolute dollars used, not a bare "N% used": the percentage is
             # only meaningful against a Nous subscription cap (no cap → never fires),
             # so dollars are clearer and don't imply a universal %. Used = cap −
