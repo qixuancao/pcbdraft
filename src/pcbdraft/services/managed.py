@@ -40,6 +40,7 @@ from pcbdraft.domain.requirements import (
     load_requirements,
 )
 from pcbdraft.kicad.pcb import PcbGeneration, generate_pcb, inspect_native_board
+from pcbdraft.kicad.project_libraries import materialize_project_libraries
 from pcbdraft.kicad.schematic import (
     SchematicGeneration,
     generate_schematic,
@@ -325,6 +326,9 @@ def materialize_managed_design(
                     qualification.canonical_bytes(),
                     mode=0o644,
                 )
+            _copy_existing_project_library_tables(
+                _inferred_project_root(resolved_graph), temporary
+            )
 
             stem = design.design_id
             schematic = generate_schematic(
@@ -342,6 +346,11 @@ def materialize_managed_design(
                 route_net_ids=route_net_ids,
                 allow_incomplete=allow_incomplete,
             )
+            library_files = materialize_project_libraries(
+                temporary,
+                design,
+                resolved_graph,
+            )
             files = {
                 "manifest": MANAGED_MANIFEST,
                 "requirements": REQUIREMENTS_NAME,
@@ -352,6 +361,7 @@ def materialize_managed_design(
                 "kicad_project": pcb.project_path.name,
                 "worker_receipt": pcb.worker_receipt.name,
             }
+            files.update(library_files)
             if plan is not None:
                 files["circuit_plan"] = CIRCUIT_PLAN_NAME
             if qualification is not None:
@@ -421,6 +431,32 @@ def materialize_managed_design(
     return ManagedGeneration(project=project, schematic=schematic, pcb=pcb)
 
 
+def _inferred_project_root(graph: PartGraph) -> Path | None:
+    source = Path(graph.source)
+    if source.name != PART_CATALOG_NAME:
+        return None
+    root = source.parent
+    if root.is_dir() and not root.is_symlink():
+        return root
+    return None
+
+
+def _copy_existing_project_library_tables(
+    source_root: Path | None, target_root: Path
+) -> None:
+    if source_root is None:
+        return
+    for name in ("sym-lib-table", "fp-lib-table"):
+        source = source_root / name
+        if not source.exists():
+            continue
+        if source.is_symlink() or not source.is_file():
+            raise ValidationError(f"existing project library table is unsafe: {source}")
+        target = target_root / name
+        shutil.copyfile(source, target)
+        target.chmod(0o644)
+
+
 def open_managed_project(value: str | Path) -> ManagedProject:
     root = canonical_project(value)
     validate_agent_tree(root)
@@ -431,7 +467,10 @@ def open_managed_project(value: str | Path) -> ManagedProject:
     _validate_manifest(manifest)
     assert_supported_kicad_version(str(manifest["sync"].get("kicad_support", "")))
     files = manifest["files"]
-    paths = {name: _managed_member(root, relative) for name, relative in files.items()}
+    paths = {
+        name: _managed_member(root, relative, allow_nested=name.startswith("library:"))
+        for name, relative in files.items()
+    }
     design = load_design(paths["ir"])
     graph = (
         PartGraph.load(paths["part_catalog"])
@@ -538,16 +577,46 @@ def _validate_manifest(value: Any) -> None:
     project_local_files = legacy_files | {"part_catalog"}
     generic_files = project_local_files | {"circuit_plan"}
     qualified_generic_files = generic_files | {"component_qualification"}
-    if not isinstance(value["files"], dict) or set(value["files"]) not in (
+    files = value["files"]
+    base_file_sets = (
         legacy_files,
         project_local_files,
         generic_files,
         qualified_generic_files,
+    )
+    if not isinstance(files, dict):
+        raise ValidationError("managed project file map is malformed")
+    keys = set(files)
+    base = next(
+        (candidate for candidate in reversed(base_file_sets) if candidate <= keys), None
+    )
+    extras = keys - (base or set())
+    if base is None or any(
+        not isinstance(key, str)
+        or not (
+            key in {"symbol_table", "footprint_table"}
+            or _valid_library_manifest_entry(key, files.get(key))
+        )
+        for key in extras
     ):
         raise ValidationError("managed project file map is malformed")
-    if not isinstance(value["hashes"], dict) or set(value["hashes"]) != set(
-        value["files"]
-    ) - {"manifest"}:
+    if "symbol_table" in files and files["symbol_table"] != "sym-lib-table":
+        raise ValidationError("managed project symbol table reference is malformed")
+    if "footprint_table" in files and files["footprint_table"] != "fp-lib-table":
+        raise ValidationError("managed project footprint table reference is malformed")
+    for name in base:
+        relative = files[name]
+        if (
+            not isinstance(relative, str)
+            or not relative
+            or Path(relative).is_absolute()
+            or relative in {".", ".."}
+            or len(Path(relative).parts) != 1
+        ):
+            raise ValidationError("managed project file map is malformed")
+    if not isinstance(value["hashes"], dict) or set(value["hashes"]) != keys - {
+        "manifest"
+    }:
         raise ValidationError("managed project hash map is malformed")
     for digest in value["hashes"].values():
         if (
@@ -574,23 +643,51 @@ def _validate_manifest(value: Any) -> None:
         raise ValidationError("managed project native snapshots are malformed")
 
 
-def _managed_member(root: Path, relative: Any) -> Path:
+def _managed_member(root: Path, relative: Any, *, allow_nested: bool = False) -> Path:
+    relative_path = Path(relative) if isinstance(relative, str) else Path()
     if (
         not isinstance(relative, str)
         or not relative
-        or Path(relative).is_absolute()
-        or len(Path(relative).parts) != 1
+        or relative_path.is_absolute()
         or relative in {".", ".."}
+        or ".." in relative_path.parts
+        or (not allow_nested and len(relative_path.parts) != 1)
+        or (allow_nested and relative_path.parts[0] != "libraries")
     ):
         raise ValidationError("managed project contains an unsafe file reference")
     member = root / relative
     try:
-        info = member.lstat()
+        resolved = member.resolve(strict=True)
+        info = resolved.lstat()
     except OSError as exc:
         raise ValidationError(f"managed project file is missing: {relative}") from exc
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or member.is_symlink():
+    if (
+        not resolved.is_relative_to(root)
+        or not stat.S_ISREG(info.st_mode)
+        or info.st_nlink != 1
+        or member.is_symlink()
+    ):
         raise ValidationError(f"managed project file is unsafe: {relative}")
-    return member
+    return resolved
+
+
+def _valid_library_manifest_entry(key: Any, relative: Any) -> bool:
+    if not isinstance(key, str) or not isinstance(relative, str):
+        return False
+    if key.startswith("library:symbol:"):
+        library = key.removeprefix("library:symbol:")
+        return bool(library) and relative == f"libraries/symbols/{library}.kicad_sym"
+    if key.startswith("library:footprint:"):
+        value = key.removeprefix("library:footprint:")
+        if ":" not in value:
+            return False
+        library, name = value.split(":", 1)
+        return (
+            bool(library)
+            and bool(name)
+            and relative == f"libraries/footprints/{library}.pretty/{name}.kicad_mod"
+        )
+    return False
 
 
 def _relativize_generation_paths(generation: dict[str, Any]) -> None:
