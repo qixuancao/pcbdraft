@@ -13,6 +13,7 @@ from collections.abc import Callable
 from typing import Any
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.domain.constraint_support import validate_constraint_write
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.operations import (
     ConnectGroupEntry,
@@ -388,4 +389,31 @@ def _flat_semantic_operations(
             operation_builder("place_footprint", entry.to_tool_arguments(), design)
             for entry in placement_entries
         ]
-    return [operation_builder(tool_name, arguments, design)]
+    operation = operation_builder(tool_name, arguments, design)
+    if tool_name in {"add_constraint", "update_constraint"}:
+        value = operation.get("args", {}).get("value")
+        if not isinstance(value, dict):
+            raise ValidationError("constraint write must contain an object value")
+        kind = value.get("kind")
+        validate_constraint_write(
+            kind,
+            value.get("params"),
+        )
+        if kind == "manufacturing_rules":
+            expected = {
+                "min_track_mm": design.board.min_track_mm,
+                "min_clearance_mm": design.board.min_clearance_mm,
+                "min_drill_mm": design.board.min_drill_mm,
+                "edge_clearance_mm": design.board.edge_clearance_mm,
+            }
+            mismatches = sorted(
+                name
+                for name, board_value in expected.items()
+                if abs(float(value["params"][name]) - board_value) > 1e-12
+            )
+            if mismatches:
+                raise ValidationError(
+                    "manufacturing_rules constraint does not match the board contract: "
+                    + ", ".join(mismatches)
+                )
+    return [operation]

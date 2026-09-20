@@ -14,7 +14,12 @@ from typing import Any
 
 from pcbdraft.core.errors import ValidationError
 from pcbdraft.domain.assertions import evaluate_assertion
-from pcbdraft.domain.constraint_support import constraint_support
+from pcbdraft.domain.constraint_support import (
+    ASSERTION_PREDICATES,
+    CURRENT_LIMIT_REQUIRED_FIELDS,
+    MANUFACTURING_RULE_FIELDS,
+    constraint_support,
+)
 from pcbdraft.domain.ir import Design
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.scope import evaluate_scope
@@ -158,6 +163,13 @@ def evaluate_semantic_rules(
                 finding = _power_budget_finding(design, constraint)
             elif constraint.kind == "assertion":
                 failure = evaluate_assertion(design, graph, constraint)
+                if failure == "assertion predicate is missing or unsupported":
+                    failure = (
+                        failure
+                        + "; supported predicates: "
+                        + ", ".join(ASSERTION_PREDICATES)
+                        + "; human/mechanical review belongs in a requirement"
+                    )
                 finding = (
                     _finding(
                         "intent.assertion",
@@ -273,12 +285,24 @@ def _coverage_findings(
             for constraint in design.constraints
         ):
             continue
+        details: dict[str, Any] = {"constraint_kind": kind}
+        message = f"required {kind} constraint is absent"
+        if kind == "current_limit":
+            details.update(
+                {
+                    "required_params": ",".join(CURRENT_LIMIT_REQUIRED_FIELDS),
+                    "target_guidance": (
+                        "include the LED and its series resistor component IDs; "
+                        "do not invent electrical values"
+                    ),
+                }
+            )
         result.append(
             _finding(
                 "intent.required_constraint_missing",
                 object_id,
-                f"required {kind} constraint is absent",
-                constraint_kind=kind,
+                message,
+                **details,
             )
         )
     for interface in design.interfaces:
@@ -1271,6 +1295,10 @@ def _manufacturing_finding(design: Design, constraint: Any) -> RuleFinding | Non
         constraint.id,
         "manufacturing constraint does not match the board contract",
         fields=",".join(sorted(mismatches)),
+        required_fields=",".join(MANUFACTURING_RULE_FIELDS),
+        expected_values=",".join(
+            f"{name}={expected[name]}" for name in MANUFACTURING_RULE_FIELDS
+        ),
     )
 
 

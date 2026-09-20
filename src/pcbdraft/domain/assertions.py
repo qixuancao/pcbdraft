@@ -10,15 +10,11 @@ from __future__ import annotations
 
 from typing import Any
 
+from pcbdraft.domain.constraint_support import ASSERTION_PREDICATES
 from pcbdraft.domain.ir import Constraint, Design
 from pcbdraft.domain.parts import PartGraph
 
-ASSERTION_KINDS = {
-    "all_power_inputs_connected",
-    "components_share_net",
-    "interface_net_count",
-    "net_endpoint_count",
-}
+ASSERTION_KINDS = frozenset(ASSERTION_PREDICATES)
 
 
 def evaluate_assertion(

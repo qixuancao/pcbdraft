@@ -1420,7 +1420,18 @@ _CONSTRAINT_PROPERTIES: dict[str, Any] = {
     "id": _TEXT_SCHEMA,
     "kind": {"type": "string", "enum": list(SUPPORTED_CONSTRAINT_KINDS)},
     "targets": {"type": "array", "items": _TEXT_SCHEMA},
-    "params": _PARAMETERS_SCHEMA,
+    "params": {
+        **_PARAMETERS_SCHEMA,
+        "description": (
+            "Named parameters. assertion requires predicate in "
+            "all_power_inputs_connected, components_share_net, "
+            "interface_net_count, or net_endpoint_count; "
+            "manufacturing_rules requires min_track_mm, min_clearance_mm, "
+            "min_drill_mm, and edge_clearance_mm; current_limit requires "
+            "supply_v, forward_v, and max_current_a, with optional "
+            "resistance_ohm. Human/mechanical review is a requirement, not an assertion."
+        ),
+    },
     "severity": {
         "type": "string",
         "enum": ["advisory", "required", "release_blocking"],

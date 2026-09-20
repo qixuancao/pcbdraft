@@ -2217,7 +2217,12 @@ class FlatPCBServiceTests(unittest.TestCase):
                         "id": "board_rules",
                         "kind": "manufacturing_rules",
                         "targets": ["board"],
-                        "params": [{"name": "min_clearance_mm", "value": 0.25}],
+                        "params": [
+                            {"name": "edge_clearance_mm", "value": 0.5},
+                            {"name": "min_clearance_mm", "value": 0.2},
+                            {"name": "min_drill_mm", "value": 0.3},
+                            {"name": "min_track_mm", "value": 0.2},
+                        ],
                         "severity": "release_blocking",
                         "rationale": "Use the updated manufacturing clearance.",
                     }
