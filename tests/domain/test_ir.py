@@ -12,6 +12,23 @@ from tests.support.design_factory import minimal_design_dict
 
 
 class SemanticIRTests(unittest.TestCase):
+    def test_ground_plane_policy_is_optional_and_canonical(self) -> None:
+        baseline = Design.from_dict(minimal_design_dict())
+        self.assertNotIn("ground_plane_layers", baseline.to_dict()["board"])
+
+        explicit_value = minimal_design_dict()
+        explicit_value["board"]["ground_plane_layers"] = [1, 0]
+        explicit = Design.from_dict(explicit_value)
+        self.assertEqual(explicit.board.ground_plane_layers, (0, 1))
+        self.assertEqual(explicit.to_dict()["board"]["ground_plane_layers"], [0, 1])
+        self.assertNotEqual(baseline.content_hash(), explicit.content_hash())
+
+        for invalid in ([0, 0], [0, 2], [True, 1], [0]):
+            value = minimal_design_dict()
+            value["board"]["ground_plane_layers"] = invalid
+            with self.subTest(invalid=invalid), self.assertRaises(ValidationError):
+                Design.from_dict(value)
+
     def test_v1_read_preserves_bytes_until_a_successful_write(self) -> None:
         legacy = Design.from_dict(minimal_design_dict())
 

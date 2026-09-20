@@ -296,6 +296,29 @@ def _actual_layers(count):
     return [pcbnew.F_Cu, *available[1:-1][: count - 2], pcbnew.B_Cu]
 
 
+def _ground_plane_layer_indices(rules, layer_count):
+    """Resolve the bounded GND plane policy without exposing arbitrary zones."""
+
+    raw = rules.get("ground_plane_layers")
+    if raw is None:
+        # Preserve the historical default: B.Cu on two-layer boards and the
+        # first internal plane on boards with an internal copper layer.
+        return (1 if layer_count >= 3 else layer_count - 1,)
+    if not isinstance(raw, list) or len(raw) != 2:
+        raise ValueError("ground_plane_layers must contain exactly two layers")
+    parsed = []
+    for index, layer in enumerate(raw):
+        if isinstance(layer, bool) or not isinstance(layer, int):
+            raise TypeError(f"ground_plane_layers[{index}] must be an integer")
+        if layer < 0 or layer >= layer_count:
+            raise ValueError(f"ground_plane_layers[{index}] is outside board layers")
+        parsed.append(layer)
+    expected = (0, layer_count - 1)
+    if tuple(sorted(parsed)) != expected:
+        raise ValueError("ground_plane_layers must select the outer copper layers")
+    return expected
+
+
 def _stable(design_id, kind, identifier):
     return str(uuid.uuid5(WORKER_NAMESPACE, f"{design_id}/{kind}/{identifier}"))
 
@@ -1031,6 +1054,7 @@ def build_job(job, output_path):
             "edge_clearance_mm",
             "via_diameter_mm",
         },
+        {"ground_plane_layers"},
     )
     width_mm = _number(rules["width_mm"], "width_mm", positive=True)
     height_mm = _number(rules["height_mm"], "height_mm", positive=True)
@@ -1038,6 +1062,8 @@ def build_job(job, output_path):
     if isinstance(layers, bool) or not isinstance(layers, int):
         raise TypeError("board.layers must be an integer")
     actual_layers = _actual_layers(layers)
+    reference_layer_indices = _ground_plane_layer_indices(rules, layers)
+    reference_layers = [actual_layers[index] for index in reference_layer_indices]
     components = job.get("components")
     nets = job.get("nets")
     segments = job.get("segments")
@@ -1205,18 +1231,20 @@ def build_job(job, output_path):
     ground_name = next((name for name in net_items if name.lstrip("/") == "GND"), None)
     if ground_name is None:
         raise ValueError("build job lacks the required GND reference net")
-    reference_layer = actual_layers[1] if layers >= 3 else actual_layers[-1]
-    reference_plane = _add_reference_plane(
-        board,
-        design_id,
-        net_items[ground_name],
-        reference_layer,
-        width_mm,
-        height_mm,
-        _number(rules["edge_clearance_mm"], "edge_clearance_mm", positive=True),
-        _number(rules["min_clearance_mm"], "min_clearance_mm", positive=True),
-        uuid_replacements,
-    )
+    reference_planes = [
+        _add_reference_plane(
+            board,
+            design_id,
+            net_items[ground_name],
+            layer,
+            width_mm,
+            height_mm,
+            _number(rules["edge_clearance_mm"], "edge_clearance_mm", positive=True),
+            _number(rules["min_clearance_mm"], "min_clearance_mm", positive=True),
+            uuid_replacements,
+        )
+        for layer in reference_layers
+    ]
     for index, entry in enumerate(segments):
         segment = _strict(
             entry, {"net", "layer", "x1_mm", "y1_mm", "x2_mm", "y2_mm", "width_mm"}
@@ -1301,12 +1329,26 @@ def build_job(job, output_path):
         board.Add(via)
 
     if not pcbnew.ZONE_FILLER(board).Fill(board.Zones()):
-        raise ValueError("pcbnew failed to fill the GND reference plane")
-    if not reference_plane.HasFilledPolysForLayer(reference_layer):
-        raise ValueError("GND reference plane has no filled polygon")
-    reference_area_mm2 = round(float(reference_plane.CalculateFilledArea()) / 1e12, 6)
-    if reference_area_mm2 <= 0:
-        raise ValueError("GND reference plane has non-positive filled area")
+        raise ValueError("pcbnew failed to fill the GND reference planes")
+    reference_plane_receipts = []
+    for index, reference_plane in enumerate(reference_planes):
+        reference_layer = reference_layers[index]
+        if not reference_plane.HasFilledPolysForLayer(reference_layer):
+            raise ValueError("GND reference plane has no filled polygon")
+        reference_area_mm2 = round(
+            float(reference_plane.CalculateFilledArea()) / 1e12, 6
+        )
+        if reference_area_mm2 <= 0:
+            raise ValueError("GND reference plane has non-positive filled area")
+        reference_plane_receipts.append(
+            {
+                "net": ground_name,
+                "layer": str(board.GetLayerName(reference_layer)),
+                "filled": True,
+                "area_mm2": reference_area_mm2,
+                "pad_connection": "thermal_relief",
+            }
+        )
 
     target = Path(output_path).resolve(strict=False)
     if target.suffix != ".kicad_pcb" or target.is_symlink():
@@ -1365,17 +1407,9 @@ def build_job(job, output_path):
             "nets": len(nets),
             "segments": len(segments),
             "vias": len(vias),
-            "zones": 1,
+            "zones": len(reference_planes),
         },
-        "reference_planes": [
-            {
-                "net": ground_name,
-                "layer": str(board.GetLayerName(reference_layer)),
-                "filled": True,
-                "area_mm2": reference_area_mm2,
-                "pad_connection": "thermal_relief",
-            }
-        ],
+        "reference_planes": reference_plane_receipts,
     }
 
 

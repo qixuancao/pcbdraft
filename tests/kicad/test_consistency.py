@@ -1766,7 +1766,7 @@ class NativeConsistencyTests(unittest.TestCase):
         before = _native_design()
         zone = NativeCopper(
             "zone",
-            "3V3",
+            "GND",
             10.0,
             ("layer=B.Cu", "connection=thermal_relief", "area=10"),
         )
@@ -1810,6 +1810,155 @@ class NativeConsistencyTests(unittest.TestCase):
             replace(_delta_board(layers), copper=(internal_zone,)),
         )
         self.assertTrue(report.passed, report.to_dict())
+
+        wrong_layer = replace(
+            internal_zone,
+            geometry=("layer=F.Cu", "connection=thermal_relief", "area=9"),
+        )
+        report = compare_native_operation_delta(
+            "update_board_rules",
+            {"changes": {"entries": [{"field": "layers", "value": 4}]}},
+            before,
+            layers,
+            before_board,
+            replace(_delta_board(layers), copper=(wrong_layer,)),
+        )
+        self.assertFalse(report.passed, report.to_dict())
+
+        explicit_value = before.to_dict()
+        explicit_value["board"]["ground_plane_layers"] = [0, 1]
+        explicit = Design.from_dict(explicit_value)
+        explicit_board = replace(
+            _delta_board(explicit),
+            copper=(
+                NativeCopper(
+                    "zone",
+                    "GND",
+                    9.0,
+                    ("layer=F.Cu", "connection=thermal_relief", "area=9"),
+                ),
+                zone,
+            ),
+        )
+        default_board = replace(_delta_board(before), copper=(zone,))
+        report = compare_native_operation_delta(
+            "update_board_rules",
+            {"changes": {"entries": [{"field": "ground_plane_layers", "value": None}]}},
+            explicit,
+            before,
+            explicit_board,
+            default_board,
+        )
+        self.assertTrue(report.passed, report.to_dict())
+
+    def test_ground_plane_rule_allows_only_requested_gnd_zone_delta(self) -> None:
+        before_design = _board_design()
+        candidate_value = before_design.to_dict()
+        candidate_value["board"]["ground_plane_layers"] = [0, 1]
+        candidate_design = Design.from_dict(candidate_value)
+        segment = NativeCopper(
+            "segment",
+            "GND",
+            5.0,
+            ("layer=0", "x1=0", "y1=0", "x2=5", "y2=0", "width=0.2"),
+        )
+        back_zone = NativeCopper(
+            "zone",
+            "GND",
+            10.0,
+            ("layer=B.Cu", "connection=thermal_relief", "area=10"),
+        )
+        front_zone = NativeCopper(
+            "zone",
+            "GND",
+            10.0,
+            ("layer=F.Cu", "connection=thermal_relief", "area=10"),
+        )
+        before_board = replace(_delta_board(before_design), copper=(segment, back_zone))
+        after_board = replace(
+            _delta_board(candidate_design), copper=(segment, back_zone, front_zone)
+        )
+        arguments = {
+            "changes": {"entries": [{"field": "ground_plane_layers", "value": [0, 1]}]}
+        }
+        report = compare_native_operation_delta(
+            "update_board_rules",
+            arguments,
+            before_design,
+            candidate_design,
+            before_board,
+            after_board,
+        )
+        self.assertTrue(report.passed, report.to_dict())
+
+        changed_route = replace(
+            after_board,
+            copper=(
+                NativeCopper(
+                    "segment",
+                    "GND",
+                    6.0,
+                    ("layer=0", "x1=0", "y1=0", "x2=6", "y2=0", "width=0.2"),
+                ),
+                back_zone,
+                front_zone,
+            ),
+        )
+        rejected = compare_native_operation_delta(
+            "update_board_rules",
+            arguments,
+            before_design,
+            candidate_design,
+            before_board,
+            changed_route,
+        )
+        self.assertFalse(rejected.passed, rejected.to_dict())
+        self.assertFalse(
+            next(
+                item.passed
+                for item in rejected.checks
+                if item.name == "native_ground_copper_preserved"
+            )
+        )
+
+        wrong_layer = replace(
+            after_board,
+            copper=(
+                segment,
+                back_zone,
+                replace(
+                    front_zone,
+                    geometry=(
+                        "layer=In1.Cu",
+                        "connection=thermal_relief",
+                        "area=10",
+                    ),
+                ),
+            ),
+        )
+        rejected_layer = compare_native_operation_delta(
+            "update_board_rules",
+            arguments,
+            before_design,
+            candidate_design,
+            before_board,
+            wrong_layer,
+        )
+        self.assertFalse(rejected_layer.passed, rejected_layer.to_dict())
+
+        wrong_net = replace(
+            after_board,
+            copper=(segment, back_zone, replace(front_zone, net="3V3")),
+        )
+        rejected_net = compare_native_operation_delta(
+            "update_board_rules",
+            arguments,
+            before_design,
+            candidate_design,
+            before_board,
+            wrong_net,
+        )
+        self.assertFalse(rejected_net.passed, rejected_net.to_dict())
 
     def test_operation_delta_covers_outline_footprint_via_and_unroute(self) -> None:
         base = _native_design()

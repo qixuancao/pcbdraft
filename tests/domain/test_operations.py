@@ -39,6 +39,25 @@ def operation(
 
 
 class SemanticOperationTests(unittest.TestCase):
+    def test_update_board_rules_can_introduce_explicit_ground_plane_policy(
+        self,
+    ) -> None:
+        before = Design.from_dict(minimal_design_dict())
+        after = apply_change_set(
+            before,
+            change_set(
+                before,
+                [
+                    operation(
+                        "update_board",
+                        {"changes": {"ground_plane_layers": [0, 1]}},
+                    )
+                ],
+            ),
+        )
+        self.assertEqual(after.board.ground_plane_layers, (0, 1))
+        self.assertEqual(after.to_dict()["board"]["ground_plane_layers"], [0, 1])
+
     def test_add_update_remove_component_maintains_block_membership(self) -> None:
         before = Design.from_dict(minimal_design_dict())
         added = apply_change_set(

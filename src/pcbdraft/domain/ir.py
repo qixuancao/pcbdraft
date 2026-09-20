@@ -746,6 +746,11 @@ class BoardSpec:
     min_clearance_mm: float
     min_drill_mm: float
     finish: str
+    # ``None`` retains the historical single reference plane.  An explicit
+    # pair is deliberately narrow: only the outer copper layers may be
+    # selected, keeping this a board-level GND-plane policy rather than a
+    # general arbitrary-zone editor.
+    ground_plane_layers: tuple[int, ...] | None = None
 
     @classmethod
     def from_dict(cls, value: Any, path: str = "$.board") -> BoardSpec:
@@ -763,7 +768,7 @@ class BoardSpec:
                 "min_drill_mm",
                 "finish",
             },
-            optional=set(),
+            optional={"ground_plane_layers"},
         )
         for name in (
             "width_mm",
@@ -782,6 +787,39 @@ class BoardSpec:
             or item["layers"] < 1
         ):
             raise ValidationError(f"{path}.layers must be a positive integer")
+        raw_ground_plane_layers = item.get("ground_plane_layers")
+        ground_plane_layers: tuple[int, ...] | None
+        if raw_ground_plane_layers is None:
+            ground_plane_layers = None
+        else:
+            if (
+                not isinstance(raw_ground_plane_layers, list)
+                or len(raw_ground_plane_layers) != 2
+            ):
+                raise ValidationError(
+                    f"{path}.ground_plane_layers must contain exactly two logical layers"
+                )
+            parsed_layers: list[int] = []
+            for index, layer in enumerate(raw_ground_plane_layers):
+                if isinstance(layer, bool) or not isinstance(layer, int):
+                    raise ValidationError(
+                        f"{path}.ground_plane_layers[{index}] must be an integer"
+                    )
+                if layer < 0 or layer >= int(item["layers"]):
+                    raise ValidationError(
+                        f"{path}.ground_plane_layers[{index}] is outside the board layers"
+                    )
+                parsed_layers.append(layer)
+            if len(set(parsed_layers)) != len(parsed_layers):
+                raise ValidationError(
+                    f"{path}.ground_plane_layers must not contain duplicate layers"
+                )
+            expected_layers = (0, int(item["layers"]) - 1)
+            if tuple(sorted(parsed_layers)) != expected_layers:
+                raise ValidationError(
+                    f"{path}.ground_plane_layers must select the outer copper layers"
+                )
+            ground_plane_layers = expected_layers
         return cls(
             width_mm=float(item["width_mm"]),
             height_mm=float(item["height_mm"]),
@@ -792,10 +830,11 @@ class BoardSpec:
             min_clearance_mm=float(item["min_clearance_mm"]),
             min_drill_mm=float(item["min_drill_mm"]),
             finish=_identifier(item["finish"], f"{path}.finish"),
+            ground_plane_layers=ground_plane_layers,
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "width_mm": self.width_mm,
             "height_mm": self.height_mm,
             "layers": self.layers,
@@ -806,6 +845,9 @@ class BoardSpec:
             "min_drill_mm": self.min_drill_mm,
             "finish": self.finish,
         }
+        if self.ground_plane_layers is not None:
+            result["ground_plane_layers"] = list(self.ground_plane_layers)
+        return result
 
 
 @dataclass(frozen=True, order=True)

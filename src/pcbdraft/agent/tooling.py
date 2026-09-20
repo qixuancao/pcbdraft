@@ -1496,6 +1496,7 @@ _BOARD_RULE_CHANGE_SCHEMA: dict[str, Any] = {
                 "min_clearance_mm",
                 "min_drill_mm",
                 "finish",
+                "ground_plane_layers",
             ],
         },
         "value": {
@@ -1503,6 +1504,13 @@ _BOARD_RULE_CHANGE_SCHEMA: dict[str, Any] = {
                 {"type": "number"},
                 {"type": "integer"},
                 {"type": "string", "minLength": 1},
+                {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "items": {"type": "integer", "minimum": 0},
+                },
+                {"type": "null"},
             ]
         },
     },
@@ -1788,7 +1796,7 @@ PCB_TOOL_SPECS = (
     ),
     _flat_spec(
         "update_board_rules",
-        "Update semantic board fabrication rules",
+        "Update semantic board rules; ground_plane_layers may only select both outer copper layers",
         effect="authoritative_write",
         risk="high",
         arguments=(

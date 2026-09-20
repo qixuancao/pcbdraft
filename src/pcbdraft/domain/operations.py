@@ -938,7 +938,11 @@ def _apply_operation(  # noqa: C901 - exhaustive typed operation reducer
         changes = args.get("changes")
         if not isinstance(changes, Mapping) or not changes:
             raise ValidationError("args.changes must be a non-empty object")
-        allowed = set(board)
+        # The optional ground-plane policy is intentionally omitted from
+        # legacy board dictionaries so old content hashes remain stable.  It
+        # is nevertheless a closed board field when a structured board-rules
+        # update explicitly introduces it.
+        allowed = set(board) | {"ground_plane_layers"}
         unknown = set(changes) - allowed
         if unknown:
             raise ValidationError(f"unknown board fields: {', '.join(sorted(unknown))}")

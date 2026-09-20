@@ -11,9 +11,10 @@ from typing import cast
 
 from pcbdraft.core.process import run_command
 from pcbdraft.domain.blocks import BlockRegistry
+from pcbdraft.domain.operations import ChangeSet, apply_change_set
 from pcbdraft.domain.parts import PartGraph
 from pcbdraft.domain.requirements import RequirementsSpec, compile_requirements
-from pcbdraft.kicad.pcb import generate_pcb
+from pcbdraft.kicad.pcb import generate_pcb, inspect_native_board
 from pcbdraft.kicad.schematic import generate_schematic
 from pcbdraft.model.providers import IntentProvider
 from pcbdraft.services.application import ApplicationService
@@ -161,6 +162,59 @@ class NativeKiCadGenerationTests(unittest.TestCase):
                     "tuning_profile_track_geometries",
                     "footprint_filters_mismatch",
                 },
+            )
+
+    def test_explicit_ground_plane_policy_fills_both_outer_layers(self) -> None:
+        operation = ApplicationService._flat_semantic_operation(
+            "update_board_rules",
+            {
+                "changes": {
+                    "entries": [{"field": "ground_plane_layers", "value": [0, 1]}]
+                }
+            },
+            self.design,
+        )
+        explicit = apply_change_set(
+            self.design,
+            ChangeSet.from_dict(
+                {
+                    "schema": "pcbdraft-change-set",
+                    "version": 1,
+                    "id": "dual_plane",
+                    "base_hash": self.design.content_hash(),
+                    "intent": "Add bounded outer-layer reference planes.",
+                    "actor": "unit-test",
+                    "operations": [operation],
+                    "provenance": ["tests/kicad/test_generation.py"],
+                }
+            ),
+        )
+        self.assertEqual(explicit.board.ground_plane_layers, (0, 1))
+        with tempfile.TemporaryDirectory(
+            prefix="pcbdraft-dual-plane-test-"
+        ) as temporary:
+            board_path = Path(temporary) / "dual-plane.kicad_pcb"
+            generated = generate_pcb(explicit, board_path, graph=self.graph)
+            self.assertEqual(
+                [item["layer"] for item in generated.reference_planes],
+                ["F.Cu", "B.Cu"],
+            )
+            self.assertTrue(
+                all(
+                    item["filled"] and item["area_mm2"] > 0
+                    for item in generated.reference_planes
+                )
+            )
+            inspected = inspect_native_board(explicit, generated.path)
+            zones = [
+                item for item in inspected["zones"] if item["net"].lstrip("/") == "GND"
+            ]
+            self.assertEqual(
+                sorted(
+                    (item["layer"], item["filled"], item["area_mm2"] > 0)
+                    for item in zones
+                ),
+                [("B.Cu", True, True), ("F.Cu", True, True)],
             )
 
     def test_flat_add_materializes_unplaced_stock_footprint_without_ir_pose(

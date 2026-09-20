@@ -911,6 +911,7 @@ def compare_native_operation_delta(
     ignored_endpoints: set[Endpoint] = set()
     ignored_pads: set[Endpoint] = set()
     ignored_copper: NativeCopper | None = None
+    ignored_zones: set[tuple[str | None, str]] = set()
     allow_zone_refill = False
     allow_zone_layer_change = False
 
@@ -1091,6 +1092,34 @@ def compare_native_operation_delta(
                     True,
                     "no native artifact delta",
                     ",".join(sorted(semantic_fields)),
+                )
+            )
+        if changed_fields & {"layers", "ground_plane_layers"}:
+            expected_layers = _ground_plane_layer_names(candidate_design)
+            before_layers = _ground_plane_layer_names(before_design)
+            ignored_zones.update(
+                ("GND", layer) for layer in (*expected_layers, *before_layers)
+            )
+            expected_zone_state = tuple(
+                sorted((layer, True, "thermal_relief") for layer in expected_layers)
+            )
+            actual_zone_state = _ground_plane_zone_state(after)
+            checks.append(
+                NativeDeltaCheck(
+                    "native_ground_plane_zones",
+                    actual_zone_state == expected_zone_state,
+                    str(expected_zone_state),
+                    str(actual_zone_state),
+                )
+            )
+            before_ground_copper = _non_zone_copper_state(before, "GND")
+            after_ground_copper = _non_zone_copper_state(after, "GND")
+            checks.append(
+                NativeDeltaCheck(
+                    "native_ground_copper_preserved",
+                    before_ground_copper == after_ground_copper,
+                    f"{len(before_ground_copper)} GND tracks/vias preserved",
+                    f"{len(after_ground_copper)} GND tracks/vias observed",
                 )
             )
     elif policy in {
@@ -1450,6 +1479,7 @@ def compare_native_operation_delta(
         ignored_copper=ignored_copper,
         allow_zone_refill=allow_zone_refill,
         allow_zone_layer_change=allow_zone_layer_change,
+        ignored_zones=frozenset(ignored_zones),
     )
     after_unrelated = _unrelated_native_state(
         after,
@@ -1461,6 +1491,7 @@ def compare_native_operation_delta(
         ignored_copper=ignored_copper,
         allow_zone_refill=allow_zone_refill,
         allow_zone_layer_change=allow_zone_layer_change,
+        ignored_zones=frozenset(ignored_zones),
     )
     if before_schematic is not None and after_schematic is not None:
         before_unrelated += _unrelated_schematic_state(
@@ -1502,6 +1533,68 @@ def _argument_change_names(arguments: Mapping[str, Any]) -> set[str]:
             if isinstance(item, Mapping) and isinstance(item.get("field"), str)
         }
     return {str(key) for key in raw}
+
+
+def _ground_plane_layer_names(design: Design) -> tuple[str, ...]:
+    layer_count = design.board.layers
+    names = (
+        ("F.Cu",)
+        if layer_count == 1
+        else (
+            "F.Cu",
+            *(f"In{index}.Cu" for index in range(1, layer_count - 1)),
+            "B.Cu",
+        )
+    )
+    configured = design.board.ground_plane_layers
+    indices = (
+        configured
+        if configured is not None
+        else (1 if layer_count >= 3 else layer_count - 1,)
+    )
+    return tuple(names[index] for index in indices)
+
+
+def _zone_layer(value: NativeCopper) -> str:
+    for entry in value.geometry:
+        if entry.startswith("layer="):
+            return entry.removeprefix("layer=")
+    return ""
+
+
+def _zone_connection(value: NativeCopper) -> str:
+    for entry in value.geometry:
+        if entry.startswith("connection="):
+            return entry.removeprefix("connection=")
+    return ""
+
+
+def _ground_plane_zone_state(
+    projection: NativeBoardProjection,
+) -> tuple[tuple[str, bool, str], ...]:
+    return tuple(
+        sorted(
+            (
+                _zone_layer(item),
+                item.measure > 0,
+                _zone_connection(item),
+            )
+            for item in projection.copper
+            if item.kind == "zone" and item.net == "GND"
+        )
+    )
+
+
+def _non_zone_copper_state(
+    projection: NativeBoardProjection, net: str
+) -> tuple[NativeCopper, ...]:
+    return tuple(
+        sorted(
+            item
+            for item in projection.copper
+            if item.kind in {"segment", "via"} and item.net == net
+        )
+    )
 
 
 def _schematic_component(
@@ -1882,6 +1975,7 @@ def _unrelated_native_state(
     ignored_copper: NativeCopper | None,
     allow_zone_refill: bool,
     allow_zone_layer_change: bool,
+    ignored_zones: frozenset[tuple[str | None, str]] = frozenset(),
 ) -> tuple[object, ...]:
     copper = [
         item
@@ -1929,6 +2023,7 @@ def _unrelated_native_state(
             ignored_nets=ignored_nets,
             ignore_area=allow_zone_refill,
             ignore_layer=allow_zone_layer_change,
+            ignored_zones=ignored_zones,
         ),
         () if ignored_board_rules else value.board_rules,
         tuple(item for item in value.nets if item not in ignored_nets),
@@ -1941,6 +2036,7 @@ def _zone_state(
     ignored_nets: frozenset[str],
     ignore_area: bool,
     ignore_layer: bool,
+    ignored_zones: frozenset[tuple[str | None, str]] = frozenset(),
 ) -> tuple[tuple[str | None, tuple[str, ...]], ...]:
     """Keep zone identity while allowing only deterministic refill variation."""
 
@@ -1956,6 +2052,7 @@ def _zone_state(
         )
         for item in zones
         if item.net not in ignored_nets
+        and (item.net, _zone_layer(item)) not in ignored_zones
     )
     return tuple(sorted(result, key=lambda item: (item[0] or "", item[1])))
 

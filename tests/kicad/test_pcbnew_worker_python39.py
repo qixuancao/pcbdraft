@@ -62,6 +62,19 @@ class PcbnewWorkerPython39Tests(unittest.TestCase):
             ],
         )
 
+    def test_ground_plane_policy_defaults_or_selects_only_outer_layers(self) -> None:
+        worker = self._load_worker()
+
+        self.assertEqual(worker._ground_plane_layer_indices({}, 2), (1,))
+        self.assertEqual(worker._ground_plane_layer_indices({}, 4), (1,))
+        self.assertEqual(
+            worker._ground_plane_layer_indices({"ground_plane_layers": [3, 0]}, 4),
+            (0, 3),
+        )
+        for raw in ([0, 0], [0, 4], [1, 2], [True, 3], [0]):
+            with self.subTest(raw=raw), self.assertRaises((TypeError, ValueError)):
+                worker._ground_plane_layer_indices({"ground_plane_layers": raw}, 4)
+
     def test_canonical_board_is_identical_for_lf_and_crlf_input(self) -> None:
         worker = self._load_worker()
         board_lf = "(kicad_pcb\n  (generator pcbnew)\n  (version 20240108)\n)\n"

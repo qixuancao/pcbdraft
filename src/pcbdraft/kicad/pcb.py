@@ -350,7 +350,12 @@ def generate_pcb(
     )
     if result.get("mode") != "build" or not isinstance(result.get("sha256"), str):
         raise PCBDraftError("pcbnew worker returned a malformed build receipt")
-    reference_planes = _parse_reference_planes(result.get("reference_planes"))
+    reference_planes = _parse_reference_planes(
+        result.get("reference_planes"),
+        expected_layers=_expected_ground_plane_layer_names(
+            design.board.layers, design.board.ground_plane_layers
+        ),
+    )
     assert_supported_kicad_version(str(result.get("kicad_version", "")))
     actual_hash = sha256_file(target, max_bytes=128 * 1024 * 1024)
     if actual_hash != result["sha256"]:
@@ -379,27 +384,80 @@ def generate_pcb(
     )
 
 
-def _parse_reference_planes(value: Any) -> tuple[dict[str, Any], ...]:
+def _expected_ground_plane_layer_names(
+    layer_count: int, configured_layers: tuple[int, ...] | None
+) -> tuple[str, ...]:
+    if layer_count < 1:
+        raise PCBDraftError("board layer count must be positive")
+    names = (
+        ("F.Cu",)
+        if layer_count == 1
+        else (
+            "F.Cu",
+            *tuple(f"In{index}.Cu" for index in range(1, layer_count - 1)),
+            "B.Cu",
+        )
+    )
+    indices = (
+        configured_layers
+        if configured_layers is not None
+        else (1 if layer_count >= 3 else layer_count - 1,)
+    )
+    if any(index < 0 or index >= len(names) for index in indices):
+        raise PCBDraftError("ground-plane layer index is outside the board layers")
+    return tuple(names[index] for index in indices)
+
+
+def _parse_reference_planes(
+    value: Any, *, expected_layers: tuple[str, ...] | None = None
+) -> tuple[dict[str, Any], ...]:
     required = {"net", "layer", "filled", "area_mm2", "pad_connection"}
-    if not isinstance(value, list) or len(value) != 1:
-        raise PCBDraftError("pcbnew worker did not return one reference plane")
-    plane = value[0]
-    if not isinstance(plane, dict) or set(plane) != required:
-        raise PCBDraftError("pcbnew worker returned a malformed reference plane")
-    area = plane.get("area_mm2")
+    if not isinstance(value, list) or not value:
+        raise PCBDraftError("pcbnew worker did not return reference planes")
+    if expected_layers is not None and len(value) != len(expected_layers):
+        raise PCBDraftError(
+            "pcbnew worker returned an unexpected reference-plane count"
+        )
+    parsed: list[dict[str, Any]] = []
+    seen_layers: set[str] = set()
+    for index, plane in enumerate(value):
+        if not isinstance(plane, dict) or set(plane) != required:
+            raise PCBDraftError(
+                f"pcbnew worker returned a malformed reference plane at index {index}"
+            )
+        area = plane.get("area_mm2")
+        layer = plane.get("layer")
+        if (
+            not isinstance(plane.get("net"), str)
+            or plane["net"].lstrip("/") != "GND"
+            or not isinstance(layer, str)
+            or layer in seen_layers
+            or not (
+                layer in {"F.Cu", "B.Cu"}
+                or (
+                    layer.startswith("In")
+                    and layer.endswith(".Cu")
+                    and layer[2:-3].isdigit()
+                )
+            )
+            or plane.get("filled") is not True
+            or isinstance(area, bool)
+            or not isinstance(area, (int, float))
+            or not math.isfinite(float(area))
+            or float(area) <= 0
+            or plane.get("pad_connection") != "thermal_relief"
+        ):
+            raise PCBDraftError("pcbnew worker reference-plane evidence is invalid")
+        seen_layers.add(layer)
+        parsed.append(dict(plane))
     if (
-        not isinstance(plane.get("net"), str)
-        or plane["net"].lstrip("/") != "GND"
-        or plane.get("layer") not in {"B.Cu", "In1.Cu"}
-        or plane.get("filled") is not True
-        or isinstance(area, bool)
-        or not isinstance(area, (int, float))
-        or not math.isfinite(float(area))
-        or float(area) <= 0
-        or plane.get("pad_connection") != "thermal_relief"
+        expected_layers is not None
+        and tuple(item["layer"] for item in parsed) != expected_layers
     ):
-        raise PCBDraftError("pcbnew worker reference-plane evidence is invalid")
-    return (dict(plane),)
+        raise PCBDraftError(
+            "pcbnew worker reference-plane layers do not match the board policy"
+        )
+    return tuple(parsed)
 
 
 def inspect_footprints(
@@ -1704,6 +1762,21 @@ def _build_job(
                 }
             )
     nets.sort(key=lambda entry: str(entry["name"]))
+    board_rules: dict[str, Any] = {
+        "width_mm": design.board.width_mm,
+        "height_mm": design.board.height_mm,
+        "layers": design.board.layers,
+        "thickness_mm": design.board.thickness_mm,
+        "min_clearance_mm": design.board.min_clearance_mm,
+        "min_track_mm": design.board.min_track_mm,
+        "min_drill_mm": design.board.min_drill_mm,
+        "min_hole_clearance_mm": max(design.board.min_clearance_mm, 0.15),
+        "min_hole_to_hole_mm": max(design.board.min_clearance_mm, 0.2),
+        "edge_clearance_mm": design.board.edge_clearance_mm,
+        "via_diameter_mm": max(design.board.min_drill_mm + 0.3, 0.6),
+    }
+    if design.board.ground_plane_layers is not None:
+        board_rules["ground_plane_layers"] = list(design.board.ground_plane_layers)
     return {
         "schema": "pcbdraft-pcbnew-job",
         "version": 1,
@@ -1714,19 +1787,7 @@ def _build_job(
             "revision": design.revision,
             "ir_hash": design.content_hash(),
         },
-        "board": {
-            "width_mm": design.board.width_mm,
-            "height_mm": design.board.height_mm,
-            "layers": design.board.layers,
-            "thickness_mm": design.board.thickness_mm,
-            "min_clearance_mm": design.board.min_clearance_mm,
-            "min_track_mm": design.board.min_track_mm,
-            "min_drill_mm": design.board.min_drill_mm,
-            "min_hole_clearance_mm": max(design.board.min_clearance_mm, 0.15),
-            "min_hole_to_hole_mm": max(design.board.min_clearance_mm, 0.2),
-            "edge_clearance_mm": design.board.edge_clearance_mm,
-            "via_diameter_mm": max(design.board.min_drill_mm + 0.3, 0.6),
-        },
+        "board": board_rules,
         "components": [
             _component_job(design, component, graph.get(component.part_id), placements)
             for component in sorted(components, key=lambda entry: entry.reference)
