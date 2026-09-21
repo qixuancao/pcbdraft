@@ -168,6 +168,17 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "prompt hash mismatch"):
                 RUNNER._contract_preflight(task)
 
+    def test_contract_task_id_must_be_nonempty_and_path_safe(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task = self._task(root)
+            contract_path = task / "contract.json"
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            contract["task_id"] = "../unsafe"
+            contract_path.write_text(json.dumps(contract), encoding="utf-8")
+            with self.assertRaisesRegex(RuntimeError, "task_id is missing or unsafe"):
+                RUNNER._contract_preflight(task)
+
     def test_worker_environment_is_private_and_sets_both_kicad_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -292,12 +303,18 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
             )
             result = json.loads((run_root / "result.json").read_text(encoding="utf-8"))
             self.assertEqual(manifest["limits"]["attempts"], 1)
+            self.assertEqual(manifest["task"]["id"], "test-task")
+            self.assertEqual(manifest["task"]["directory_name"], "task")
             self.assertFalse(result["answer_key_supplied_to_worker"])
             self.assertEqual(
                 manifest["result"]["sha256"], RUNNER._sha256(run_root / "result.json")
             )
             self.assertEqual(worker.call_args.kwargs["timeout"], 900)
             self.assertNotIn("answer", worker.call_args.args[0])
+            request = json.loads(
+                (run_root / "request.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(request["run_id"], "lq-eda-pilot:test-task")
 
 
 if __name__ == "__main__":

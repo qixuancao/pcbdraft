@@ -37,6 +37,7 @@ DEFAULT_MAX_OUTPUT_BYTES = 8 * 1024 * 1024
 RUNTIME_TEMPLATE_FILES = ("config.yaml", "auth.json", ".env")
 TASK_INPUT_FILES = ("prompt.txt", "symbols", "footprints")
 CONTRACT_FILE = "contract.json"
+TASK_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
 PLACEHOLDER_RE = re.compile(
     r"(?i)(?:\bplaceholder\b|\bhash[ _-]?pending\b|"
     r"\bto[ _-]?be[ _-]?generated\b)"
@@ -242,6 +243,16 @@ def _contract_preflight(task: Path) -> dict[str, object]:
         raise RuntimeError("unsupported LQ EDA task contract schema")
     if contract.get("version") != 1:
         raise RuntimeError("unsupported LQ EDA task contract version")
+    task_id = contract.get("task_id")
+    if not isinstance(task_id, str) or not TASK_ID_RE.fullmatch(task_id):
+        raise RuntimeError("task contract task_id is missing or unsafe")
+    input_revision = contract.get("input_revision", 1)
+    if (
+        not isinstance(input_revision, int)
+        or isinstance(input_revision, bool)
+        or input_revision < 1
+    ):
+        raise RuntimeError("task contract input_revision is missing or invalid")
     _assert_no_placeholders(contract_path.parent, label="task")
 
     input_spec = contract.get("input")
@@ -310,7 +321,8 @@ def _contract_preflight(task: Path) -> dict[str, object]:
     return {
         "path": CONTRACT_FILE,
         "sha256": _sha256(contract_path),
-        "task_id": contract.get("task_id"),
+        "task_id": task_id,
+        "input_revision": input_revision,
         "prompt_sha256": prompt_hashes[0],
         "stock_symbol_ids": stock_spec["symbol_ids"],
         "stock_footprint_ids": stock_spec["footprint_ids"],
@@ -728,7 +740,8 @@ def _prepare(
         "source": source,
         "contract": contract,
         "task": {
-            "id": task.name,
+            "id": contract["task_id"],
+            "directory_name": task.name,
             "input_files": input_records,
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest(),
             "answer_key_supplied_to_worker": False,
@@ -770,7 +783,7 @@ def _run(args: argparse.Namespace) -> int:
         {
             "schema": "pcbdraft-boardbench-worker-request",
             "version": 1,
-            "run_id": "lq-eda-pilot",
+            "run_id": f"lq-eda-pilot:{manifest['contract']['task_id']}",
             "prompt": prompt,
         },
     )

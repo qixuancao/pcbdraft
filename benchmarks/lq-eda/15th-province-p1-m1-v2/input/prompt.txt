@@ -1,0 +1,59 @@
+Create the M1 charging-control-area KiCad project for the 15th Blue Bridge Cup EDA
+provincial P1 adaptation. This is input revision 2 of the task; preserve the
+editable native KiCad project and do not claim fabrication, production readiness,
+hardware operation, or human engineering review.
+
+Use the supplied custom library resources under `input/symbols` and
+`input/footprints` for U13. Resolve the remaining symbols and footprints from the
+installed KiCad libraries.
+
+Required components and values:
+
+- U13, value BCON, symbol `LQEDA:BCON`, footprint `LQEDA:SOP_BCON`;
+- R18 = 2K, R19 = 510R, R20 = 510R, all 0805 SMD resistors;
+- LED4 and LED5, 0805 LEDs;
+- C13 = 10uF and C14 = 10uF, non-polarized `Device:C`, 1206 SMD capacitors;
+- CN1 = ZX-XH2.54-2PZZ, using the stock KiCad JST XH 2-pin vertical footprint
+  `Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical` as a declared
+  stock-footprint adaptation. Its pitch, body, and mechanical fit require human
+  confirmation; it is not silently treated as exact package identity.
+
+Use the original network names `VBUS`, `VBAT`, `PROG`, `STAT`, `GND`,
+`LED4_A`, and `LED5_A`.
+
+The circuit topology shown in official figure 3 is:
+
+- U13 pin 5 PROG connects to R18; the other end of R18 connects to GND.
+- U13 pin 4 VDD connects to VBUS. C14 is from VBUS to GND. R19 starts at
+  VBUS and feeds LED4; R20 starts at VBUS and feeds LED5.
+- U13 pin 1 STAT is the common LED cathode node. LED4's anode goes through
+  R19 to VBUS as `LED4_A`; LED5's anode goes through R20 to VBUS as `LED5_A`.
+- U13 pin 2 VSS connects to GND.
+- U13 pin 3 VBAT connects to CN1 pin 1 and to one terminal of C13; the other
+  terminal of C13 and CN1 pin 2 connect to GND.
+
+C13 and C14 are explicitly non-polarized `Device:C` components in this input
+contract. Do not infer or enforce capacitor polarity or orientation; their two
+terminals are symmetric for scoring when all net memberships are correct.
+
+Place every component on the top copper layer. Use a two-layer board, top and
+bottom GND copper zones, top silkscreen, minimum track width 10 mil, pad-to-pad
+clearance 7.5 mil, pad-to-slot clearance 7 mil, all other clearances 8 mil, via
+outside diameter at least 25 mil and drill at least 15 mil. Route every net so
+the final board has zero unconnected items. Preserve the listed references,
+values, pin numbers, and network names.
+
+The environment may expose a bounded structured `ground_plane_layers` board-rule
+operation; for this two-layer task `[0, 1]` denotes the requested F.Cu/B.Cu
+GND planes. This is an operational hint about an available tool, not a private
+answer key or a substitute for topology scoring.
+
+This is a low-voltage, non-safety-critical pilot. The independent scoring answer
+remains outside this input directory. The BCON resource is labelled
+`ai_reviewed_pilot`; it is an AI reconstruction from the official figures, not an
+independent human sign-off. No sourced BCON supply/current limits or LED Vf/
+current_limit parameters are provided; do not invent those values or claim that
+the task verifies them.
+
+Source: official figure 1--3 at
+https://wiki.lceda.cn/zh-hans/contest/lq-contests/true-question/15th-province-p1.html

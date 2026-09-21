@@ -258,6 +258,131 @@ class LqEdaScoreTests(unittest.TestCase):
         passed, _ = SCORE._compare_networks(expected, inconsistent, frozenset({"R1"}))
         self.assertFalse(passed)
 
+    def test_public_contract_semantics_are_exact_and_fail_closed(self) -> None:
+        public = {
+            "schema": "pcbdraft-lq-eda-task-contract",
+            "version": 1,
+            "task_id": "15th-province-p1-m1-v2",
+            "components": [
+                {
+                    "ref": "R18",
+                    "value": "2K",
+                    "symbol": "Device:R",
+                    "footprint": "Resistor_SMD:R_0805_2012Metric",
+                },
+                {
+                    "ref": "C13",
+                    "value": "10uF",
+                    "symbol": "Device:C",
+                    "footprint": "Capacitor_SMD:C_1206_3216Metric",
+                },
+            ],
+            "rules": {
+                "layers": 2,
+                "minimum_track_width_mil": 10,
+                "ground_copper_zones": ["F.Cu", "B.Cu"],
+            },
+            "scoring_boundary": {
+                "symmetric_two_terminal_components": ["R18", "C13"],
+                "polarized_or_named_pin_components": ["U13"],
+            },
+        }
+        private = {
+            "task_id": "15th-province-p1-m1-v2",
+            "expected_components": {
+                "R18": {
+                    "value": "2K",
+                    "symbol": "Device:R",
+                    "footprint": "Resistor_SMD:R_0805_2012Metric",
+                },
+                "C13": {
+                    "value": "10uF",
+                    "symbol": "Device:C",
+                    "footprint": "Capacitor_SMD:C_1206_3216Metric",
+                },
+            },
+            "rules": {
+                "layers": 2,
+                "minimum_track_width_mil": 10,
+                "ground_copper_zones": ["F.Cu", "B.Cu"],
+            },
+            "symmetric_two_terminal_components": ["R18", "C13"],
+        }
+        self.assertEqual(
+            SCORE._public_contract_consistency_check(public, private)["status"],
+            "pass",
+        )
+        for field, value in (
+            ("task_id", "15th-province-p1-m1"),
+            ("expected_components", {"R18": private["expected_components"]["R18"]}),
+            (
+                "rules",
+                {
+                    "layers": 2,
+                    "minimum_track_width_mil": 9,
+                    "ground_copper_zones": ["F.Cu", "B.Cu"],
+                },
+            ),
+            ("symmetric_two_terminal_components", ["R18"]),
+        ):
+            changed = json.loads(json.dumps(private))
+            changed[field] = value
+            self.assertEqual(
+                SCORE._public_contract_consistency_check(public, changed)["status"],
+                "fail",
+                msg=field,
+            )
+
+    def test_legacy_answer_without_contract_path_skips_semantic_check(self) -> None:
+        self.assertIsNone(
+            SCORE._public_contract_check(
+                {"schema": SCORE.ANSWER_SCHEMA, "version": 1, "task_id": "legacy"},
+                Path("/nonexistent-run"),
+            )
+        )
+
+    def test_new_input_revision_requires_bound_public_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run = Path(temporary) / "run"
+            run.mkdir()
+            (run / "manifest.json").write_text(
+                json.dumps({"contract": {"input_revision": 2}}), encoding="utf-8"
+            )
+            result = SCORE._public_contract_check(
+                {"schema": SCORE.ANSWER_SCHEMA, "version": 1, "task_id": "v2"},
+                run,
+            )
+        self.assertEqual(result["status"], "unknown")
+
+    def test_bound_public_contract_hash_drift_or_missing_file_cannot_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            run = Path(temporary) / "run"
+            run.mkdir()
+            (run / "manifest.json").write_text(
+                json.dumps({"contract": {"input_revision": 2}}), encoding="utf-8"
+            )
+            binding = {
+                "contract_path": "benchmarks/lq-eda/15th-province-p1/contract.json",
+                "contract_sha256": "0" * 64,
+            }
+            drifted = SCORE._public_contract_check(
+                {"task_id": "15th-province-p1-m1", "public_input_binding": binding},
+                run,
+            )
+            missing_binding = dict(binding)
+            missing_binding["contract_path"] = (
+                "benchmarks/lq-eda/does-not-exist/contract.json"
+            )
+            missing = SCORE._public_contract_check(
+                {
+                    "task_id": "15th-province-p1-m1",
+                    "public_input_binding": missing_binding,
+                },
+                run,
+            )
+        self.assertEqual(drifted["status"], "fail")
+        self.assertEqual(missing["status"], "unknown")
+
     def test_known_native_rule_failure_is_not_hidden_by_unknown_rule(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             settings = Path(temporary) / "project.kicad_pro"
@@ -428,7 +553,11 @@ class LqEdaScoreTests(unittest.TestCase):
             )
             manifest = {
                 "status": "completed",
-                "contract": {"sha256": "e" * 64, "prompt_sha256": prompt_hash},
+                "contract": {
+                    "sha256": "e" * 64,
+                    "prompt_sha256": prompt_hash,
+                    "task_id": "binding-fixture",
+                },
                 "task": {
                     "prompt_sha256": prompt_hash,
                     "input_files": [
@@ -445,6 +574,7 @@ class LqEdaScoreTests(unittest.TestCase):
                 json.dumps(manifest), encoding="utf-8"
             )
             answer = {
+                "task_id": "binding-fixture",
                 "public_input_binding": {
                     "contract_sha256": "e" * 64,
                     "prompt_sha256": prompt_hash,
@@ -452,7 +582,7 @@ class LqEdaScoreTests(unittest.TestCase):
                         "input/symbols/LQEDA.kicad_sym": symbol_hash,
                         "input/footprints/LQEDA.kicad_mod": footprint_hash,
                     },
-                }
+                },
             }
             self.assertEqual(
                 SCORE._input_contract_binding_check(binding_root, answer)["status"],

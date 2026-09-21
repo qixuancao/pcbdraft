@@ -1,0 +1,215 @@
+{
+  "schema": "pcbdraft-lq-eda-task-contract",
+  "version": 1,
+  "input_revision": 2,
+  "task_id": "15th-province-p1-m1-v2",
+  "title": "15th Blue Bridge Cup EDA provincial P1 charging-control area M1 v2",
+  "cohort": "ai_reviewed_pilot",
+  "status": "input_contract_only_not_run",
+  "source": {
+    "official_page": "https://wiki.lceda.cn/zh-hans/contest/lq-contests/true-question/15th-province-p1.html",
+    "official_figures": [1, 2, 3],
+    "retrieved_utc": "2026-09-19",
+    "adaptation": "LCEDA project workflow is replaced by editable KiCad native files; M1 uses the official charging-control-area topology and a custom KiCad resource library.",
+    "figure_urls": {
+      "figure_1": "https://wiki.lceda.cn/storage/images/zh-hans/contest/lq-contests/true-question/15th-province-p1/15th-province-p1_20241016_135325.png",
+      "figure_2_and_3": "https://wiki.lceda.cn/storage/images/zh-hans/contest/lq-contests/true-question/15th-province-p1/15th-province-p1_20241016_135822.png",
+      "figure_4": "https://wiki.lceda.cn/storage/images/zh-hans/contest/lq-contests/true-question/15th-province-p1/15th-province-p1_20241016_140108.png"
+    }
+  },
+  "input": {
+    "prompt": "input/prompt.txt",
+    "prompt_sha256": "8a7c9c666655f87297d1ba9ac9a73c2804025afe3b859af9f14430ef3518bcf6",
+    "custom_symbols": [
+      {
+        "library_id": "LQEDA:BCON",
+        "path": "input/symbols/LQEDA.kicad_sym",
+        "sha256": "9113d26f4204bc3245af32543d1d33d7c518be4eee92f4066128e5eceafef8ff",
+        "byte_copy_of": "15th-province-p1/input/symbols/LQEDA.kicad_sym"
+      }
+    ],
+    "custom_footprints": [
+      {
+        "library_id": "LQEDA:SOP_BCON",
+        "path": "input/footprints/LQEDA.pretty/SOP_BCON.kicad_mod",
+        "sha256": "c73839c209c478cc693d7a22eda943e01f1baa8c3d94d4fbcbba47f1e32fc03f",
+        "byte_copy_of": "15th-province-p1/input/footprints/LQEDA.pretty/SOP_BCON.kicad_mod"
+      }
+    ],
+    "custom_symbol_electrical_model": {
+      "library_id": "LQEDA:BCON",
+      "pin_type": "passive",
+      "reason": "The official figures provide pin numbers and names but no electrical-type declarations; no type was inferred.",
+      "erc_boundary": "ERC cannot establish BCON power-input, open-drain, or other device semantics; topology and named-pin scoring remain independent evaluator checks."
+    },
+    "stock_libraries": {
+      "required": true,
+      "version_family": "KiCad 10.0",
+      "symbol_ids": [
+        "Device:R",
+        "Device:LED",
+        "Device:C",
+        "Connector_Generic:Conn_01x02"
+      ],
+      "footprint_ids": [
+        "Resistor_SMD:R_0805_2012Metric",
+        "LED_SMD:LED_0805_2012Metric",
+        "Capacitor_SMD:C_1206_3216Metric",
+        "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"
+      ]
+    }
+  },
+  "components": [
+    {"ref": "U13", "value": "BCON", "symbol": "LQEDA:BCON", "footprint": "LQEDA:SOP_BCON"},
+    {"ref": "R18", "value": "2K", "symbol": "Device:R", "footprint": "Resistor_SMD:R_0805_2012Metric"},
+    {"ref": "R19", "value": "510R", "symbol": "Device:R", "footprint": "Resistor_SMD:R_0805_2012Metric"},
+    {"ref": "R20", "value": "510R", "symbol": "Device:R", "footprint": "Resistor_SMD:R_0805_2012Metric"},
+    {"ref": "LED4", "value": "LED", "symbol": "Device:LED", "footprint": "LED_SMD:LED_0805_2012Metric"},
+    {"ref": "LED5", "value": "LED", "symbol": "Device:LED", "footprint": "LED_SMD:LED_0805_2012Metric"},
+    {"ref": "C13", "value": "10uF", "symbol": "Device:C", "footprint": "Capacitor_SMD:C_1206_3216Metric"},
+    {"ref": "C14", "value": "10uF", "symbol": "Device:C", "footprint": "Capacitor_SMD:C_1206_3216Metric"},
+    {"ref": "CN1", "value": "ZX-XH2.54-2PZZ", "symbol": "Connector_Generic:Conn_01x02", "footprint": "Connector_JST:JST_XH_B2B-XH-A_1x02_P2.50mm_Vertical"}
+  ],
+  "network_names": ["VBUS", "VBAT", "PROG", "STAT", "GND", "LED4_A", "LED5_A"],
+  "rules": {
+    "layers": 2,
+    "minimum_track_width_mil": 10,
+    "pad_to_pad_clearance_mil": 7.5,
+    "pad_to_slot_clearance_mil": 7,
+    "other_clearance_mil": 8,
+    "via_outer_diameter_min_mil": 25,
+    "via_drill_min_mil": 15,
+    "all_components_on": "F.Cu",
+    "silkscreen": "F.SilkS",
+    "ground_copper_zones": ["F.Cu", "B.Cu"],
+    "unconnected_items": 0
+  },
+  "public_evidence_requirements": [
+    "editable .kicad_pro, .kicad_sch and .kicad_pcb",
+    "receipt-bound native ERC and DRC results",
+    "sch/PCB parity and zero unconnected items",
+    "receipt-bound board.svg preview",
+    "recorded limitations and unresolved engineering review items"
+  ],
+  "acceptance_matrix": {
+    "automated": [
+      {
+        "id": "resource_integrity",
+        "check": "Every public prompt and custom-resource path exists and matches its contract SHA-256.",
+        "evidence": "contract preflight and byte/hash comparison",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "component_metadata",
+        "check": "All nine references have the exact declared value, symbol, and footprint mapping.",
+        "evidence": "scorer schematic-netlist component metadata comparison; PCB parity is a separate managed-validation check",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "topology_endpoint_sets",
+        "check": "Every declared network has the complete expected endpoint set, with no missing or extra endpoints, using the private holdout answer.",
+        "evidence": "independent scorer netlist comparison; endpoint answer is not in this package",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "native_rules_and_connectivity",
+        "check": "Automated validation checks the exposed layer, track/clearance, via, placement/silkscreen, expected GND-zone layer presence with filled positive area, and zero-unconnected fields; it does not establish actual GND-zone connectivity/effective coverage, and unsupported pad-to-slot or manufacturing fields remain unknown.",
+        "evidence": "revision-bound native inspection and supported rule receipts",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "schematic_pcb_parity",
+        "check": "Managed validation confirms the editable schematic/PCB/project artifacts remain synchronized and bound to the final revision.",
+        "evidence": "managed validation receipt and artifact manifest",
+        "independent_of": ["topology_endpoint_sets", "engineering_candidate"],
+        "unknown_is_pass": false
+      },
+      {
+        "id": "erc_drc_receipts",
+        "check": "ERC and DRC receipts are complete, bound to the final design revision/content hash, and their reported errors/warnings are recorded.",
+        "evidence": "native ERC/DRC receipt artifacts",
+        "independent_of": ["topology_endpoint_sets", "engineering_candidate"],
+        "unknown_is_pass": false
+      },
+      {
+        "id": "engineering_candidate",
+        "check": "The engineering-candidate gate passes only when candidate_ready is true and all required editable artifacts and validations are complete; false or unknown fails.",
+        "evidence": "candidate validation and artifact manifest",
+        "independent_of": ["topology_endpoint_sets", "erc_drc_receipts"],
+        "unknown_is_pass": false
+      }
+    ],
+    "manual_or_unknown": [
+      {
+        "id": "bcon_resource_review",
+        "check": "Human review of the AI-reconstructed BCON symbol/footprint against official figures.",
+        "status_if_not_reviewed": "unknown",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "bcon_electrical_semantics",
+        "check": "Power-input, drive, open-drain, and other BCON electrical semantics are not inferred from pin names.",
+        "status_if_not_verified": "unknown",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "unspecified_electrical_parameters",
+        "check": "No BCON supply/current-limit or LED Vf/current_limit value is invented without a sourced specification.",
+        "status_if_not_sourced": "unknown",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "cn1_mechanical_equivalence",
+        "check": "Human confirmation that the stock JST footprint adaptation, pitch, body, and mechanical fit are appropriate for declared CN1 ZX-XH2.54-2PZZ.",
+        "status_if_not_reviewed": "unknown",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "zone_coverage_and_pad_slot",
+        "check": "Human or separately supported native review confirms GND-zone connectivity/effective coverage and pad-to-slot clearance; positive-area zone presence alone is insufficient.",
+        "status_if_not_reviewed": "unknown",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "silkscreen_geometry_and_legibility",
+        "check": "Human review confirms silkscreen dimensions, legibility, and clearance; automated presence is not a dimensional or readability sign-off.",
+        "status_if_not_reviewed": "unknown",
+        "unknown_is_pass": false
+      },
+      {
+        "id": "manufacturability_and_hardware",
+        "check": "Human manufacturability, procurement, and hardware-operation review.",
+        "status_if_not_tested": "unknown",
+        "unknown_is_pass": false
+      }
+    ],
+    "unknown_is_not_pass": true
+  },
+  "scoring_boundary": {
+    "reference_netlist_included": false,
+    "answer_key": "private holdout only",
+    "symmetric_two_terminal_components": ["R18", "R19", "R20", "C13", "C14"],
+    "symmetric_pin_policy": "For the listed non-polarized two-terminal components, endpoint-set comparison must accept a pin-1/pin-2 swap when the component identity, value, footprint, and all net memberships remain correct.",
+    "polarized_or_named_pin_components": ["U13", "LED4", "LED5", "CN1"],
+    "required_evaluator_checks": [
+      "exact component/reference/value/footprint mapping",
+      "exact endpoint-set comparison for every declared net",
+      "native rule, ERC/DRC, and connectivity evidence bound to the final design revision",
+      "independent engineering-candidate validation",
+      "human review of polarity, package equivalence, and manufacturability"
+    ],
+    "unknown_is_not_pass": true,
+    "hardware_tested": false,
+    "human_engineering_review": false,
+    "production_ready": false
+  },
+  "limitations": [
+    "This v2 input contract is not a benchmark result and has not been executed.",
+    "C13 and C14 are deliberately non-polarized Device:C inputs; no capacitor polarity or orientation claim is made.",
+    "Custom BCON resources are an AI reconstruction from official figures and require independent human review.",
+    "The official figure gives package geometry but not a manufacturer qualification or a verified BCON datasheet.",
+    "The task has no sourced BCON supply/current-limit or LED Vf/current_limit parameters; those values must not be invented.",
+    "CN1 uses a stock 2.50 mm JST XH footprint as a declared stock-footprint adaptation for ZX-XH2.54-2PZZ; pitch, body outline, and mechanical fit require human confirmation.",
+    "ERC cannot establish BCON power-input, drive, open-drain, or other electrical semantics when the supplied symbol declares all pins passive."
+  ]
+}

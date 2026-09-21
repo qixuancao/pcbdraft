@@ -423,6 +423,20 @@ def _input_contract_binding_check(
     else:
         unknown.append("contract_sha256")
 
+    expected_task = answer_key.get("task_id")
+    observed_task = contract.get("task_id") if isinstance(contract, Mapping) else None
+    if isinstance(expected_task, str) and isinstance(observed_task, str):
+        if expected_task != observed_task:
+            mismatches.append(
+                {
+                    "field": "task_id",
+                    "expected": expected_task,
+                    "observed": observed_task,
+                }
+            )
+    else:
+        unknown.append("task_id")
+
     expected_prompt = binding.get("prompt_sha256")
     observed_prompts = []
     if isinstance(contract, Mapping) and isinstance(contract.get("prompt_sha256"), str):
@@ -640,6 +654,216 @@ def _swappable_references(answer_key: Mapping[str, Any]) -> frozenset[str]:
             "answer key pin-swap references must be an array of strings"
         )
     return frozenset(values)
+
+
+def _strict_swappable_references(answer_key: Mapping[str, Any]) -> frozenset[str]:
+    """Read all supported swap aliases and reject conflicting declarations."""
+
+    declarations: list[tuple[str, Any]] = []
+    for key in (
+        "pin_swap_components",
+        "non_polarized_references",
+        "symmetric_two_terminal_components",
+    ):
+        if key in answer_key:
+            declarations.append((key, answer_key[key]))
+    policy = answer_key.get("pin_policy")
+    if isinstance(policy, Mapping):
+        for key in ("swappable_references", "pin_swap_components"):
+            if key in policy:
+                declarations.append((f"pin_policy.{key}", policy[key]))
+    if not declarations:
+        raise ValidationError("answer key has no explicit pin-swap declaration")
+    normalized: list[tuple[str, frozenset[str]]] = []
+    for label, value in declarations:
+        if not isinstance(value, list) or not all(
+            isinstance(item, str) and item for item in value
+        ):
+            raise ValidationError(f"{label} must be an array of strings")
+        if len(set(value)) != len(value):
+            raise ValidationError(f"{label} contains duplicate references")
+        normalized.append((label, frozenset(value)))
+    first = normalized[0][1]
+    if any(value != first for _, value in normalized[1:]):
+        raise ValidationError("answer key pin-swap declarations disagree")
+    return first
+
+
+def _public_contract_consistency_check(
+    public_contract: Mapping[str, Any], answer_key: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Fail closed when private scoring semantics drift from the public contract."""
+
+    try:
+        if public_contract.get("schema") != "pcbdraft-lq-eda-task-contract":
+            raise ValidationError("public contract schema is unsupported")
+        if public_contract.get("version") != 1:
+            raise ValidationError("public contract version is unsupported")
+        public_task = public_contract.get("task_id")
+        private_task = answer_key.get("task_id")
+        if not isinstance(public_task, str) or not public_task:
+            raise ValidationError("public contract task_id is missing")
+        if not isinstance(private_task, str) or not private_task:
+            raise ValidationError("answer key task_id is missing")
+        mismatches: list[dict[str, Any]] = []
+        if public_task != private_task:
+            mismatches.append(
+                {"field": "task_id", "expected": public_task, "observed": private_task}
+            )
+
+        public_components = _component_rows(
+            {"components": public_contract.get("components")}
+        )
+        private_components = _component_rows(answer_key)
+        if public_components != private_components:
+            mismatches.append(
+                {
+                    "field": "components",
+                    "expected": public_components,
+                    "observed": private_components,
+                }
+            )
+
+        public_rules = public_contract.get("rules")
+        private_rules = answer_key.get("rules")
+        if not isinstance(public_rules, Mapping):
+            raise ValidationError("public contract rules are missing")
+        if not isinstance(private_rules, Mapping):
+            raise ValidationError("answer key rules are missing")
+        if dict(public_rules) != dict(private_rules):
+            mismatches.append(
+                {
+                    "field": "rules",
+                    "expected": dict(public_rules),
+                    "observed": dict(private_rules),
+                }
+            )
+
+        boundary = public_contract.get("scoring_boundary")
+        if not isinstance(boundary, Mapping):
+            raise ValidationError("public contract scoring_boundary is missing")
+        public_swaps = boundary.get("symmetric_two_terminal_components")
+        if not isinstance(public_swaps, list) or not all(
+            isinstance(item, str) and item for item in public_swaps
+        ):
+            raise ValidationError(
+                "public contract symmetric_two_terminal_components is invalid"
+            )
+        if len(set(public_swaps)) != len(public_swaps):
+            raise ValidationError(
+                "public contract symmetric_two_terminal_components contains duplicates"
+            )
+        private_swaps = _strict_swappable_references(answer_key)
+        if frozenset(public_swaps) != private_swaps:
+            mismatches.append(
+                {
+                    "field": "symmetric_two_terminal_components",
+                    "expected": sorted(public_swaps),
+                    "observed": sorted(private_swaps),
+                }
+            )
+        component_refs = set(public_components)
+        invalid_swaps = sorted(private_swaps - component_refs)
+        if invalid_swaps:
+            mismatches.append(
+                {
+                    "field": "symmetric_two_terminal_components",
+                    "observed": invalid_swaps,
+                    "reason": "swap reference is not a declared component",
+                }
+            )
+        polarized = boundary.get("polarized_or_named_pin_components")
+        if polarized is not None:
+            if not isinstance(polarized, list) or not all(
+                isinstance(item, str) and item for item in polarized
+            ):
+                raise ValidationError(
+                    "public contract polarized_or_named_pin_components is invalid"
+                )
+            overlap = sorted(private_swaps & set(polarized))
+            if overlap:
+                mismatches.append(
+                    {
+                        "field": "symmetric_two_terminal_components",
+                        "observed": overlap,
+                        "reason": "polarized or named-pin component is swappable",
+                    }
+                )
+    except ValidationError as exc:
+        return _check(
+            "public_contract_consistency",
+            False,
+            reason=str(exc),
+        )
+    return _check(
+        "public_contract_consistency",
+        not mismatches,
+        expected="public contract task_id/components/rules/swap",
+        observed={"mismatches": mismatches or "exact"},
+        reason="private answer semantics drift from the public contract"
+        if mismatches
+        else None,
+    )
+
+
+def _public_contract_check(
+    answer_key: Mapping[str, Any], run_root: Path
+) -> dict[str, Any] | None:
+    """Load and hash-bind the public contract for new answer keys.
+
+    Legacy answer keys without a contract path retain their existing behavior;
+    a new bound key cannot pass when its public contract is unavailable.
+    """
+
+    _, receipt = _run_receipt(run_root)
+    receipt_contract = receipt.get("contract") if isinstance(receipt, Mapping) else None
+    input_revision = (
+        receipt_contract.get("input_revision", 1)
+        if isinstance(receipt_contract, Mapping)
+        else 1
+    )
+    requires_public_binding = (
+        isinstance(input_revision, int)
+        and not isinstance(input_revision, bool)
+        and input_revision >= 2
+    )
+    binding = answer_key.get("public_input_binding")
+    if not isinstance(binding, Mapping) or "contract_path" not in binding:
+        if requires_public_binding:
+            return _check(
+                "public_contract_consistency",
+                None,
+                reason="input revision requires a public contract binding",
+            )
+        return None
+    raw_path = binding.get("contract_path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        return _check(
+            "public_contract_consistency",
+            None,
+            reason="public contract path is missing",
+        )
+    repo_root = Path(__file__).resolve().parents[1]
+    try:
+        contract_path = _safe_relative_path(repo_root, raw_path, "public contract")
+        if contract_path.is_symlink() or not contract_path.is_file():
+            raise ValidationError("public contract is missing or unsafe")
+        expected_hash = binding.get("contract_sha256")
+        if not isinstance(expected_hash, str):
+            raise ValidationError("public contract hash is missing")
+        observed_hash = _sha256(contract_path)
+        if observed_hash != expected_hash:
+            return _check(
+                "public_contract_consistency",
+                False,
+                expected=expected_hash,
+                observed=observed_hash,
+                reason="public contract hash differs from the answer binding",
+            )
+        public_contract = _load_json(contract_path)
+    except (OSError, ValidationError) as exc:
+        return _check("public_contract_consistency", None, reason=str(exc))
+    return _public_contract_consistency_check(public_contract, answer_key)
 
 
 def _apply_pin_checks(
@@ -1358,6 +1582,9 @@ def score_run(
         binding.get("contract_sha256") if isinstance(binding, Mapping) else None
     )
     checks: list[dict[str, Any]] = [_input_contract_binding_check(run_root, answer_key)]
+    public_contract_check = _public_contract_check(answer_key, run_root)
+    if public_contract_check is not None:
+        checks.append(public_contract_check)
     receipt_hash: str | None = None
     inventory_hash: str | None = None
     identity: dict[str, Any] = {
