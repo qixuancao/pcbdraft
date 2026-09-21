@@ -783,7 +783,10 @@ def _run(args: argparse.Namespace) -> int:
         {
             "schema": "pcbdraft-boardbench-worker-request",
             "version": 1,
-            "run_id": f"lq-eda-pilot:{manifest['contract']['task_id']}",
+            # The worker owns the run-id grammar.  Keep the contract task id
+            # unchanged so the runner cannot introduce invalid punctuation or
+            # push a valid 128-character id over the worker's limit.
+            "run_id": manifest["contract"]["task_id"],
             "prompt": prompt,
         },
     )

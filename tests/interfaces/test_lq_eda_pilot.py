@@ -12,6 +12,8 @@ from pathlib import Path
 from types import ModuleType
 from unittest import mock
 
+from pcbdraft.interfaces.boardbench_worker import _request_document
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
@@ -30,7 +32,7 @@ RUNNER = _load_runner()
 
 
 class LqEdaPilotRunnerTests(unittest.TestCase):
-    def _task(self, root: Path) -> Path:
+    def _task(self, root: Path, *, task_id: str = "test-task") -> Path:
         task = root / "task"
         (task / "input" / "symbols").mkdir(parents=True)
         (task / "input" / "footprints").mkdir(parents=True)
@@ -44,7 +46,7 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
         contract = {
             "schema": "pcbdraft-lq-eda-task-contract",
             "version": 1,
-            "task_id": "test-task",
+            "task_id": task_id,
             "input": {
                 "prompt": "input/prompt.txt",
                 "prompt_sha256": hashlib.sha256(
@@ -81,8 +83,10 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
         (task / "contract.json").write_text(json.dumps(contract), encoding="utf-8")
         return task
 
-    def _args(self, root: Path, command: str = "prepare") -> object:
-        task = self._task(root)
+    def _args(
+        self, root: Path, command: str = "prepare", *, task_id: str = "test-task"
+    ) -> object:
+        task = self._task(root, task_id=task_id)
         template = root / "runtime-template"
         template.mkdir()
         (template / "config.yaml").write_text(
@@ -314,7 +318,70 @@ class LqEdaPilotRunnerTests(unittest.TestCase):
             request = json.loads(
                 (run_root / "request.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(request["run_id"], "lq-eda-pilot:test-task")
+            self.assertEqual(request["run_id"], "test-task")
+            self.assertEqual(
+                _request_document(run_root / "request.json"),
+                ("test-task", "Build the PCB from the supplied input resources."),
+            )
+
+    def test_generated_request_uses_worker_maximum_run_id_length(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            task_id = "a" * 128
+            source = root / "source"
+            (source / "src" / "pcbdraft").mkdir(parents=True)
+            (source / "src" / "pcbdraft" / "__init__.py").write_text(
+                "", encoding="utf-8"
+            )
+            args = self._args(root, "run", task_id=task_id)
+            with (
+                mock.patch.object(
+                    RUNNER,
+                    "_source_identity",
+                    return_value={"commit": "a" * 40, "dirty": False, "tree": "b" * 40},
+                ),
+                mock.patch.object(
+                    RUNNER,
+                    "_import_probe",
+                    return_value={
+                        "package_file": str(source / "src" / "pcbdraft" / "__init__.py")
+                    },
+                ),
+                mock.patch.object(
+                    RUNNER,
+                    "_resolver_probe",
+                    return_value={"symbols": ["Device:R"], "footprints": []},
+                ),
+                mock.patch.object(
+                    RUNNER,
+                    "_runtime_probe",
+                    return_value={
+                        "python_version": "3.13.0",
+                        "configured": True,
+                        "usable": True,
+                    },
+                ),
+                mock.patch.object(
+                    RUNNER,
+                    "_run_worker",
+                    return_value=(0, False, b"", b"", 0.01, False),
+                ),
+                mock.patch.object(
+                    RUNNER,
+                    "_inventory",
+                    return_value={
+                        "project_count": 1,
+                        "native_artifacts": [],
+                        "board_svgs": [],
+                        "receipts": [],
+                    },
+                ),
+                mock.patch("sys.stdout", new_callable=io.StringIO),
+                mock.patch("sys.stderr", new_callable=io.StringIO),
+            ):
+                self.assertEqual(RUNNER._run(args), 0)
+            request_path = root / "private-run" / "request.json"
+            self.assertEqual(_request_document(request_path)[0], task_id)
 
 
 if __name__ == "__main__":
