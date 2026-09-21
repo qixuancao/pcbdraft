@@ -52,3 +52,17 @@ public/private semantic checks 通过；公开文档不记录私有路径或 end
 
 本轮未运行模型、未执行 live M1、未产生 M1 评分结果；未跑全量测试、full
 KiCad 验收或 E2E。
+
+## Prepare 证据（仅输入预检）
+
+主 agent 在干净且已 push 的提交
+`6e6860ed8551957829a2bf5c52f3c89342cfaf91` 上完成 prepare；证据目录 basename
+为 `pcbdraft-lq-m1-v2-preflight-20260921`，manifest SHA-256 为
+`ca610f5edb6372722006d35f3e0da8c8bdd26dbac1ab6dbb295f33f1257a0438`。manifest
+状态为 `prepared`，`input_revision=2`，`attempts=0`，
+`answer_key_supplied_to_worker=false`；runtime/import/custom+stock resolver
+检查通过。主调用 scorer 的 `input_contract_binding` 和
+`public_contract_consistency` 均通过；不存在 request/result。
+
+这只证明输入准备和契约绑定，不表示模型调用、可编辑工程或完整 M1 通过。
+BCON/LED/CN1 的输入与人工工程未知仍未闭合，M2 保持停止。
