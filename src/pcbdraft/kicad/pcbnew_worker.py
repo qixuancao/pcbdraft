@@ -733,7 +733,12 @@ def inspect_board_job(job):
                     else (
                         "thermal_relief"
                         if zone.GetPadConnection() == pcbnew.ZONE_CONNECTION_THERMAL
-                        else "other"
+                        else (
+                            "thermal_relief_pth"
+                            if zone.GetPadConnection()
+                            == pcbnew.ZONE_CONNECTION_THT_THERMAL
+                            else "other"
+                        )
                     )
                 ),
             }
@@ -1014,9 +1019,9 @@ def _add_reference_plane(
     zone.SetLayer(layer)
     zone.SetNet(net_item)
     zone.SetLocalClearance(pcbnew.FromMM(local_clearance_mm))
-    # Thermal relief is deterministic and keeps the through-hole programming
-    # header hand-solderable while retaining a continuous low-current reference.
-    zone.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
+    # Keep through-hole pads hand-solderable while connecting surface-mount pads
+    # solidly. Tight SMD pad rows may not have room for two thermal spokes.
+    zone.SetPadConnection(pcbnew.ZONE_CONNECTION_THT_THERMAL)
     zone.SetThermalReliefGap(pcbnew.FromMM(0.2))
     zone.SetThermalReliefSpokeWidth(pcbnew.FromMM(0.3))
     outline = zone.Outline()
@@ -1346,7 +1351,7 @@ def build_job(job, output_path):
                 "layer": str(board.GetLayerName(reference_layer)),
                 "filled": True,
                 "area_mm2": reference_area_mm2,
-                "pad_connection": "thermal_relief",
+                "pad_connection": "thermal_relief_pth",
             }
         )
 

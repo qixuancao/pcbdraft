@@ -445,7 +445,8 @@ def _parse_reference_planes(
             or not isinstance(area, (int, float))
             or not math.isfinite(float(area))
             or float(area) <= 0
-            or plane.get("pad_connection") != "thermal_relief"
+            or plane.get("pad_connection")
+            not in {"thermal_relief", "thermal_relief_pth"}
         ):
             raise PCBDraftError("pcbnew worker reference-plane evidence is invalid")
         seen_layers.add(layer)

@@ -77,7 +77,8 @@ class NativeKiCadGenerationTests(unittest.TestCase):
             self.assertTrue(first_pcb.reference_planes[0]["filled"])
             self.assertGreater(first_pcb.reference_planes[0]["area_mm2"], 0)
             self.assertEqual(
-                first_pcb.reference_planes[0]["pad_connection"], "thermal_relief"
+                first_pcb.reference_planes[0]["pad_connection"],
+                "thermal_relief_pth",
             )
             self.assertGreaterEqual(
                 sum(via.net == "GND" for via in first_pcb.routing.vias), 2
