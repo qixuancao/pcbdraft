@@ -181,6 +181,92 @@ class ConstraintWriteContractTests(unittest.TestCase):
         ]
         self.assertEqual(self._add(value)[0]["op"], "upsert_constraint")
 
+    def test_routing_requires_validator_width_and_existing_nets_before_write(self):
+        self.design.nets = (
+            SimpleNamespace(id="net_signal"),
+            SimpleNamespace(id="net_gnd"),
+        )
+        value = self._value(
+            "route_signal",
+            "routing",
+            ["net_signal"],
+            {
+                "all_other_clearance_mm": 0.2,
+                "pad_to_pad_clearance_mm": 0.19,
+                "via_drill_min_mm": 0.3,
+            },
+        )
+        with self.assertRaisesRegex(ValidationError, "missing width_mm"):
+            self._add(value)
+        self.assertEqual(self.design.constraints, ())
+
+        for params, message in (
+            ({"width_mm": 0.2, "pad_to_slot_clearance_mm": 0.18}, "unsupported"),
+            ({"width_mm": 0.19}, "board.min_track_mm"),
+            ({"width_mm": 0.25, "neckdown_width_mm": 0.1}, "board.min_track_mm"),
+            ({"width_mm": 0.25, "max_length_mm": 0}, "max_length_mm"),
+            ({"width_mm": 0.25, "auto_route": "yes"}, "auto_route"),
+            (
+                {"width_mm": 0.25, "min_reference_stitching_vias": 1},
+                "continuous_reference_net",
+            ),
+        ):
+            with self.subTest(params=params):
+                value["params"] = [
+                    {"name": name, "value": number} for name, number in params.items()
+                ]
+                with self.assertRaisesRegex(ValidationError, message):
+                    self._add(value)
+
+        valid = {
+            "width_mm": 0.25,
+            "auto_route": True,
+            "neckdown_width_mm": 0.2,
+            "continuous_reference_net": "net_gnd",
+            "reference_connection_policy": "ensure_connected",
+            "min_reference_stitching_vias": 0,
+        }
+        value["params"] = [
+            {"name": name, "value": number} for name, number in valid.items()
+        ]
+        self.assertEqual(self._add(value)[0]["args"]["value"]["params"], valid)
+        self.design.constraints = (SimpleNamespace(id="route_signal"),)
+        bad_update = self._value("route_signal", "routing", ["net_signal"], {})
+        with self.assertRaisesRegex(ValidationError, "missing width_mm"):
+            self._update(bad_update)
+        self.assertEqual(len(self.design.constraints), 1)
+        self.assertEqual(self._update(value)[0]["op"], "upsert_constraint")
+
+        value["targets"] = ["missing_net"]
+        with self.assertRaisesRegex(ValidationError, "existing net IDs"):
+            self._update(value)
+
+    def test_placement_region_requires_named_region_and_component_targets(self):
+        self.design.components = (SimpleNamespace(id="u13"),)
+        value = self._value(
+            "top_region", "placement_region", ["u13"], {"layer": "F.Cu", "side": "top"}
+        )
+        with self.assertRaisesRegex(
+            ValidationError, "exactly one supported named region"
+        ):
+            self._add(value)
+        self.assertEqual(self.design.constraints, ())
+
+        for region in ("F.Cu", "upper", [], None):
+            with self.subTest(region=region):
+                value["params"] = [{"name": "region", "value": region}]
+                with self.assertRaisesRegex(ValidationError, "supported named region"):
+                    self._add(value)
+
+        value["params"] = [{"name": "region", "value": "top"}]
+        self.assertEqual(self._add(value)[0]["op"], "upsert_constraint")
+        self.design.constraints = (SimpleNamespace(id="top_region"),)
+        value["targets"] = ["unknown_component"]
+        with self.assertRaisesRegex(ValidationError, "existing component IDs"):
+            self._update(value)
+        value["targets"] = ["u13"]
+        self.assertEqual(self._update(value)[0]["op"], "upsert_constraint")
+
     def test_historical_invalid_constraint_still_loads_and_fails_semantics(self):
         from pcbdraft.domain.ir import Constraint
 

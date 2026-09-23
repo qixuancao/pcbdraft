@@ -1429,7 +1429,12 @@ _CONSTRAINT_PROPERTIES: dict[str, Any] = {
             "manufacturing_rules requires min_track_mm, min_clearance_mm, "
             "min_drill_mm, and edge_clearance_mm; current_limit requires "
             "supply_v, forward_v, and max_current_a, with optional "
-            "resistance_ohm. Human/mechanical review is a requirement, not an assertion."
+            "resistance_ohm; routing requires width_mm >= board min_track_mm "
+            "and existing net targets (board clearance/via values belong in board rules "
+            "or manufacturing_rules); placement_region requires exactly region "
+            "with a supported named board region and existing component targets "
+            "(top names a board third, not the F.Cu side). "
+            "Human/mechanical review is a requirement, not an assertion."
         ),
     },
     "severity": {

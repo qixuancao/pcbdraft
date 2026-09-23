@@ -259,7 +259,7 @@ class PCBToolingTests(unittest.TestCase):
         self.assertEqual(specs["set_board_outline"].risk, "high")
         self.assertEqual(
             DEFAULT_PCB_TOOL_REGISTRY.schema_fingerprint(),
-            "fa4c066efc2f3796c719c45d665a9c16d4b8a0446d2188fb57ff2e0432d335a7",
+            "3f1dfce268bf0f81a8d7d12484144f31c517c4a6571f498616033dd760a8aab9",
         )
         self.assertTrue(
             all(

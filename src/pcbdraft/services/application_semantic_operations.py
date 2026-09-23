@@ -399,6 +399,40 @@ def _flat_semantic_operations(
             kind,
             value.get("params"),
         )
+        if kind == "routing":
+            params = value["params"]
+            minimum = design.board.min_track_mm
+            for name in ("width_mm", "neckdown_width_mm"):
+                if name in params and float(params[name]) + 1e-12 < minimum:
+                    raise ValidationError(
+                        f"routing {name} must be at least board.min_track_mm ({minimum})"
+                    )
+            net_ids = {net.id for net in design.nets}
+            targets = value.get("targets")
+            if (
+                not isinstance(targets, list)
+                or not targets
+                or not all(isinstance(target, str) for target in targets)
+                or not set(targets) <= net_ids
+            ):
+                raise ValidationError("routing targets must be existing net IDs")
+            reference = params.get("continuous_reference_net")
+            if reference is not None and reference not in net_ids:
+                raise ValidationError(
+                    "routing continuous_reference_net must be an existing net ID"
+                )
+        elif kind == "placement_region":
+            component_ids = {component.id for component in design.components}
+            targets = value.get("targets")
+            if (
+                not isinstance(targets, list)
+                or not targets
+                or not all(isinstance(target, str) for target in targets)
+                or not set(targets) <= component_ids
+            ):
+                raise ValidationError(
+                    "placement_region targets must be existing component IDs"
+                )
         if kind == "manufacturing_rules":
             expected = {
                 "min_track_mm": design.board.min_track_mm,

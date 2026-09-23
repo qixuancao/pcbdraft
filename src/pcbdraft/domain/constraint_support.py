@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pcbdraft.core.errors import ValidationError
+from pcbdraft.domain.spatial_contracts import BOARD_REGIONS
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,15 @@ MANUFACTURING_RULE_FIELDS = (
 )
 CURRENT_LIMIT_REQUIRED_FIELDS = ("forward_v", "max_current_a", "supply_v")
 CURRENT_LIMIT_OPTIONAL_FIELDS = ("resistance_ohm",)
+ROUTING_OPTIONAL_FIELDS = (
+    "auto_route",
+    "neckdown_width_mm",
+    "neckdown_max_length_mm_per_pad",
+    "max_length_mm",
+    "continuous_reference_net",
+    "min_reference_stitching_vias",
+    "reference_connection_policy",
+)
 
 
 def validate_constraint_write(
@@ -95,6 +105,86 @@ def validate_constraint_write(
             params,
             required=CURRENT_LIMIT_REQUIRED_FIELDS,
             optional=CURRENT_LIMIT_OPTIONAL_FIELDS,
+        )
+    elif kind == "placement_region":
+        region = params.get("region")
+        if (
+            set(params) != {"region"}
+            or not isinstance(region, str)
+            or region not in BOARD_REGIONS
+        ):
+            raise ValidationError(
+                "placement_region constraint params require exactly one supported "
+                "named region (top, bottom, left, right, center, or a corner)"
+            )
+    elif kind == "routing":
+        _validate_routing_write(params)
+
+
+def _routing_number(params: Mapping[str, Any], name: str, *, positive: bool) -> float:
+    value = params[name]
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) < 0
+        or (positive and float(value) == 0)
+    ):
+        bound = "positive" if positive else "non-negative"
+        raise ValidationError(
+            f"routing constraint parameter {name} must be finite and {bound}"
+        )
+    return float(value)
+
+
+def _validate_routing_write(params: Mapping[str, Any]) -> None:
+    allowed = {"width_mm", *ROUTING_OPTIONAL_FIELDS}
+    unknown = set(params) - allowed
+    if "width_mm" not in params or unknown:
+        details = []
+        if "width_mm" not in params:
+            details.append("missing width_mm")
+        if unknown:
+            details.append("unsupported " + ", ".join(sorted(unknown)))
+        raise ValidationError(
+            "routing constraint params require width_mm: " + "; ".join(details)
+        )
+    nominal = _routing_number(params, "width_mm", positive=True)
+    if "neckdown_width_mm" in params:
+        neckdown = _routing_number(params, "neckdown_width_mm", positive=True)
+        if neckdown > nominal:
+            raise ValidationError("routing neckdown_width_mm cannot exceed width_mm")
+    for name in ("max_length_mm", "neckdown_max_length_mm_per_pad"):
+        if name in params:
+            _routing_number(params, name, positive=name == "max_length_mm")
+    if "auto_route" in params and not isinstance(params["auto_route"], bool):
+        raise ValidationError("routing auto_route must be a boolean")
+    reference = params.get("continuous_reference_net")
+    dependent = {"min_reference_stitching_vias", "reference_connection_policy"}
+    if reference is None:
+        if dependent & set(params):
+            raise ValidationError(
+                "routing reference-plane fields require continuous_reference_net"
+            )
+        return
+    if not isinstance(reference, str) or not reference:
+        raise ValidationError("routing continuous_reference_net must be a net ID")
+    policy = params.get("reference_connection_policy", "explicit_stitching_minimum")
+    if not isinstance(policy, str) or policy not in {
+        "ensure_connected",
+        "explicit_stitching_minimum",
+    }:
+        raise ValidationError("routing reference_connection_policy is unsupported")
+    minimum = params.get("min_reference_stitching_vias")
+    lower_bound = 0 if policy == "ensure_connected" else 1
+    if (
+        isinstance(minimum, bool)
+        or not isinstance(minimum, int)
+        or minimum < lower_bound
+    ):
+        raise ValidationError(
+            "routing min_reference_stitching_vias must be an integer at least "
+            f"{lower_bound} for {policy}"
         )
 
 
